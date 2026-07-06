@@ -616,3 +616,150 @@ body {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ==========================================
+   MOBILE RESPONSIVE STYLES (max 768px)
+   ========================================== */
+@media (max-width: 768px) {
+
+  /* ---- Header ---- */
+  .header-container {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+
+  .logo-image {
+    height: 30px;
+  }
+
+  .logo-text {
+    font-size: 1.1rem;
+  }
+
+  /* ---- Gallery ---- */
+  .gallery-layout {
+    padding: 10px 8px 170px 8px;
+    max-height: calc(100vh - 56px);
+  }
+
+  .gallery-grid {
+    gap: 8px;
+  }
+
+  .gallery-item {
+    height: 200px;
+  }
+
+  .gallery-item.ratio-9-16,
+  .gallery-item.ratio-3-4 {
+    height: 260px;
+  }
+
+  /* Suppress hover lift on touch */
+  .gallery-item:hover {
+    transform: none;
+  }
+
+  /* ---- Action buttons ---- */
+  .action-circle-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .action-circle-btn::after {
+    display: none;
+  }
+
+  /* ---- Bottom bar ---- */
+  .bottom-controls-wrapper {
+    bottom: 10px;
+    padding: 0 8px;
+    max-width: 100%;
+  }
+
+  .options-floating-panel {
+    padding: 12px;
+    border-radius: 16px;
+    margin-bottom: 8px;
+    gap: 10px;
+  }
+
+  .aspect-ratios-container {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .ratio-chip {
+    padding: 5px 8px;
+    font-size: 0.72rem;
+  }
+
+  .prompt-pill-bar {
+    border-radius: 20px;
+    padding: 10px 10px 10px 14px;
+    gap: 8px;
+  }
+
+  .prompt-textarea {
+    font-size: 0.9rem;
+  }
+
+  .item-prompt {
+    font-size: 0.68rem;
+  }
+
+  .tab-btn {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+  }
+}
+
+/* ==========================================
+   VERY SMALL SCREENS (max 480px)
+   ========================================== */
+@media (max-width: 480px) {
+
+  .header-container {
+    padding: 8px 12px;
+  }
+
+  .logo-image {
+    height: 26px;
+  }
+
+  .logo-text {
+    font-size: 0.95rem;
+  }
+
+  .gallery-layout {
+    padding: 8px 6px 165px 6px;
+  }
+
+  .gallery-grid {
+    gap: 6px;
+  }
+
+  .gallery-item {
+    height: 175px;
+  }
+
+  .gallery-item.ratio-9-16,
+  .gallery-item.ratio-3-4 {
+    height: 240px;
+  }
+
+  .gallery-item.ratio-16-9,
+  .gallery-item.ratio-4-3 {
+    height: 150px;
+  }
+
+  .action-circle-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .bottom-controls-wrapper {
+    padding: 0 6px;
+  }
+}
+

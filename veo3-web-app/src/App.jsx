@@ -813,13 +813,13 @@ function App() {
 
   if (!user) {
     return (
-      <div className="container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '80vh' }}>
-        <img src="/logo.png" alt="meo3 logo" style={{ width: '100px', height: '100px', marginBottom: '24px', borderRadius: '20px', objectFit: 'contain', boxShadow: '0 8px 32px rgba(59, 130, 246, 0.2)' }} />
-        <h1 className="logo-text" style={{ fontSize: '3.5rem', marginBottom: '24px', background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 'bold' }}>meo3</h1>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '40px', fontSize: '1.2rem' }}>
+      <div className="container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '80vh', padding: '20px' }}>
+        <img src="/logo.png" alt="meo3 logo" style={{ width: '80px', height: '80px', marginBottom: '20px', borderRadius: '20px', objectFit: 'contain', boxShadow: '0 8px 32px rgba(59, 130, 246, 0.2)' }} />
+        <h1 className="logo-text" style={{ fontSize: 'clamp(2rem, 10vw, 3.5rem)', marginBottom: '16px', background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 'bold' }}>meo3</h1>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '32px', fontSize: 'clamp(0.9rem, 4vw, 1.2rem)', textAlign: 'center', lineHeight: '1.5' }}>
           Tạo ảnh và video AI chuyên nghiệp với nền tảng Cloud mạnh mẽ.
         </p>
-        <button className="glass-button" onClick={handleLogin} style={{ padding: '16px 32px', fontSize: '1.2rem' }}>
+        <button className="glass-button" onClick={handleLogin} style={{ padding: '14px 28px', fontSize: 'clamp(1rem, 4vw, 1.2rem)' }}>
           Đăng nhập bằng Google
         </button>
       </div>
@@ -1070,8 +1070,8 @@ function App() {
 
       {/* Retention Notice Banner */}
       <div style={{
-        margin: '16px 32px 0 32px',
-        padding: '8px 16px',
+        margin: '10px 10px 0 10px',
+        padding: '8px 12px',
         borderRadius: '10px',
         background: 'rgba(239, 68, 68, 0.08)',
         border: '1px solid rgba(239, 68, 68, 0.15)',
@@ -2034,17 +2034,17 @@ function App() {
             </div>
 
             {/* Content Container (Split View) */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', minHeight: 0 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', minHeight: 0, flexDirection: 'column' }}>
               {/* Left Side: Media Render */}
               <div style={{ 
                 flex: '1.3', 
-                minWidth: '280px', 
+                minWidth: '0', 
                 background: '#0a0a0c', 
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'center',
-                padding: '24px',
-                maxHeight: '60vh'
+                padding: '16px',
+                maxHeight: '50vh'
               }}>
                 {activeLightboxMedia.type === 'video' ? (
                   <video 
@@ -2065,7 +2065,7 @@ function App() {
               </div>
 
               {/* Right Side: Metadata / Prompts */}
-              <div style={{ flex: '1', minWidth: '260px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', borderLeft: '1px solid rgba(255, 255, 255, 0.05)', background: 'rgba(10, 10, 12, 0.3)' }}>
+              <div style={{ flex: '1', minWidth: '0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', background: 'rgba(10, 10, 12, 0.3)' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mô tả đầy đủ (Prompt)</span>
                   <div style={{ 
