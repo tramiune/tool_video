@@ -41,6 +41,7 @@ function App() {
   const [selectedTierForPay, setSelectedTierForPay] = useState(null);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+  const [userProfileLoaded, setUserProfileLoaded] = useState(false);
 
   // User Document / Subscription Listener
   useEffect(() => {
@@ -48,6 +49,7 @@ function App() {
       setUserTier('free');
       setUserExpiryDate(null);
       setPendingPayment(null);
+      setUserProfileLoaded(false);
       return;
     }
     const userDocRef = doc(db, 'users', user.uid);
@@ -70,19 +72,34 @@ function App() {
         setPendingPayment(null);
         setCurrentUserIsAdmin(false);
       }
+      setUserProfileLoaded(true);
     });
     return () => unsubscribe();
   }, [user]);
 
-  // Listen to hash change for Admin mode
+  // Listen to hash change for Admin mode with security guard
   useEffect(() => {
     const handleHashChange = () => {
-      setIsAdminView(window.location.hash === '#admin');
+      const isHashAdmin = window.location.hash === '#admin';
+      if (isHashAdmin) {
+        if (!user) {
+          window.location.hash = '';
+          setIsAdminView(false);
+          return;
+        }
+        if (userProfileLoaded && !currentUserIsAdmin) {
+          window.location.hash = '';
+          setIsAdminView(false);
+          alert("Bạn không có quyền truy cập trang quản trị!");
+          return;
+        }
+      }
+      setIsAdminView(isHashAdmin);
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [user, userProfileLoaded, currentUserIsAdmin]);
 
   // Fetch all users list in Admin mode
   useEffect(() => {
