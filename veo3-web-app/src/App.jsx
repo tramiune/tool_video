@@ -1310,14 +1310,14 @@ function App() {
           style={{ 
             flexDirection: 'column', 
             alignItems: 'stretch', 
-            borderRadius: '24px', 
-            padding: '16px', 
-            gap: '12px' 
+            borderRadius: '20px', 
+            padding: '10px 12px', 
+            gap: '6px' 
           }}
         >
           {/* Row 1: Previews / Upload Placeholders */}
           {activeTab === 'video' ? (
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '8px' }}>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '2px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
               {/* Start Image Box */}
               <div 
                 onClick={() => {
@@ -1327,9 +1327,9 @@ function App() {
                   }
                 }}
                 style={{ 
-                  width: '36px', 
-                  height: '36px', 
-                  borderRadius: '8px', 
+                  width: '28px', 
+                  height: '28px', 
+                  borderRadius: '6px', 
                   border: '1px dashed rgba(255, 255, 255, 0.2)',
                   background: (startFile || startLibraryUrl) ? 'none' : 'rgba(255, 255, 255, 0.02)',
                   display: 'flex',
@@ -1364,9 +1364,9 @@ function App() {
                   }
                 }}
                 style={{ 
-                  width: '36px', 
-                  height: '36px', 
-                  borderRadius: '8px', 
+                  width: '28px', 
+                  height: '28px', 
+                  borderRadius: '6px', 
                   border: '1px dashed rgba(255, 255, 255, 0.2)',
                   background: (endFile || endLibraryUrl) ? 'none' : 'rgba(255, 255, 255, 0.02)',
                   display: 'flex',
@@ -1419,7 +1419,7 @@ function App() {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             disabled={isSubmitting}
-            style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', padding: '4px 0', fontSize: '0.95rem' }}
+            style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', padding: '2px 0', fontSize: '0.9rem' }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -1428,8 +1428,8 @@ function App() {
             }}
           />
 
-          {/* Row 3: Action Toolbar (Plus/Upload on left, Send and Mode Toggle on right) */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '8px' }}>
+          {/* Row 3: Action Toolbar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px' }}>
             <div style={{ position: 'relative' }}>
               <button 
                 type="button" 
