@@ -1139,10 +1139,14 @@ function App() {
                       loop 
                       muted 
                       playsInline
-                      onMouseEnter={(e) => e.currentTarget.play()}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.muted = false;
+                        e.currentTarget.play().catch(() => {});
+                      }}
                       onMouseLeave={(e) => {
                         e.currentTarget.pause();
                         e.currentTarget.currentTime = 0;
+                        e.currentTarget.muted = true;
                       }}
                       style={{ cursor: 'pointer' }}
                     />
