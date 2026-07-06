@@ -42,6 +42,7 @@ function App() {
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
   const [userProfileLoaded, setUserProfileLoaded] = useState(false);
+  const [activeLightboxMedia, setActiveLightboxMedia] = useState(null); // null or { type, mediaUrl, prompt }
 
   // User Document / Subscription Listener
   useEffect(() => {
@@ -1148,14 +1149,21 @@ function App() {
                         e.currentTarget.currentTime = 0;
                         e.currentTarget.muted = true;
                       }}
-                      style={{ cursor: 'pointer' }}
+                      onClick={() => setActiveLightboxMedia({ type: 'video', mediaUrl: task.mediaUrl, prompt: task.prompt })}
+                      style={{ cursor: 'zoom-in' }}
                     />
-                    <div className="video-play-overlay">
+                    <div className="video-play-overlay" onClick={() => setActiveLightboxMedia({ type: 'video', mediaUrl: task.mediaUrl, prompt: task.prompt })} style={{ cursor: 'zoom-in' }}>
                       <Play size={16} fill="currentColor" style={{ marginLeft: '2px' }} />
                     </div>
                   </>
                 ) : (
-                  <img src={task.mediaUrl} alt={task.prompt} loading="lazy" />
+                  <img 
+                    src={task.mediaUrl} 
+                    alt={task.prompt} 
+                    loading="lazy" 
+                    onClick={() => setActiveLightboxMedia({ type: 'image', mediaUrl: task.mediaUrl, prompt: task.prompt })}
+                    style={{ cursor: 'zoom-in' }}
+                  />
                 )}
                 
                 {/* Floating Actions in Top-Right Corner */}
@@ -1969,6 +1977,139 @@ function App() {
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Media Overlay */}
+      {activeLightboxMedia && (
+        <div 
+          onClick={() => setActiveLightboxMedia(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(5, 5, 8, 0.92)',
+            backdropFilter: 'blur(20px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 20000,
+            padding: '24px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'rgba(20, 20, 25, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '24px',
+              width: '100%',
+              maxWidth: '900px',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 30px 80px rgba(0, 0, 0, 0.8)',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Header / Actions */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Chi Tiết Tác Phẩm</span>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button 
+                  onClick={() => handleDownload(activeLightboxMedia.mediaUrl, `${activeLightboxMedia.type}_detail.${activeLightboxMedia.type === 'video' ? 'mp4' : 'jpg'}`)}
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px 16px', fontSize: '0.78rem', color: '#fff', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Download size={13} /> Tải Xuống
+                </button>
+                <button 
+                  onClick={() => setActiveLightboxMedia(null)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Container (Split View) */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', minHeight: 0 }}>
+              {/* Left Side: Media Render */}
+              <div style={{ 
+                flex: '1.3', 
+                minWidth: '280px', 
+                background: '#0a0a0c', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                padding: '24px',
+                maxHeight: '60vh'
+              }}>
+                {activeLightboxMedia.type === 'video' ? (
+                  <video 
+                    src={activeLightboxMedia.mediaUrl} 
+                    controls 
+                    autoPlay 
+                    loop 
+                    playsInline 
+                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} 
+                  />
+                ) : (
+                  <img 
+                    src={activeLightboxMedia.mediaUrl} 
+                    alt="" 
+                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} 
+                  />
+                )}
+              </div>
+
+              {/* Right Side: Metadata / Prompts */}
+              <div style={{ flex: '1', minWidth: '260px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', borderLeft: '1px solid rgba(255, 255, 255, 0.05)', background: 'rgba(10, 10, 12, 0.3)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mô tả đầy đủ (Prompt)</span>
+                  <div style={{ 
+                    padding: '16px', 
+                    background: 'rgba(255, 255, 255, 0.02)', 
+                    border: '1px solid rgba(255, 255, 255, 0.05)', 
+                    borderRadius: '12px', 
+                    fontSize: '0.85rem', 
+                    color: '#ececf1', 
+                    lineHeight: '1.5',
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    fontStyle: 'italic',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}>
+                    "{activeLightboxMedia.prompt}"
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => {
+                    handleCopyText(activeLightboxMedia.prompt);
+                    alert("Đã sao chép prompt thành công!");
+                  }}
+                  style={{ width: '100%', padding: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '10px', color: '#3b82f6', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s' }}
+                >
+                  Sao Chép Prompt
+                </button>
+
+                <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', marginTop: '4px' }} />
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Định dạng:</span>
+                    <span style={{ color: '#fff', fontWeight: '500' }}>{activeLightboxMedia.type === 'video' ? 'Video (MP4)' : 'Ảnh (JPG)'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                    <span>Thời gian lưu trữ còn lại:</span>
+                    <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Dưới 24 giờ</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
