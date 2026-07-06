@@ -1,0 +1,26 @@
+VEO3 Flow Automation Setup 1.9.18.exe
+VEO3 Flow Automation Setup 1.9.18.rar
+extracted/
+extracted_asar/
+node_modules/
+.DS_Store
+dist/
+.env
+serviceAccountKey.json
+veo3-api-server/serviceAccountKey.json
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.idea/
+.vscode/
+*.suo
+*.ntvsca
+*.njsproj
+*.sln
+*.sw?

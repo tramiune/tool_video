@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "VEO3 REST API Solver",
+  "version": "1.0.0",
+  "description": "Giải reCAPTCHA Enterprise cho VEO3 API Server thông qua tab Chrome thật.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://labs.google/*",
+    "http://localhost:3456/*",
+    "http://127.0.0.1:3456/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://labs.google/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "injected.js",
+        "socket.io.min.js"
+      ],
+      "matches": [
+        "https://labs.google/*"
+      ]
+    }
+  ]
+}

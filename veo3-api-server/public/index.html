@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VEO3 Flow Studio 🔓</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg: #090a0f;
+      --card-bg: rgba(18, 20, 32, 0.7);
+      --border: rgba(255, 255, 255, 0.08);
+      --primary: #5c7cfa;
+      --primary-hover: #4c6ef5;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --success: #22c55e;
+      --warning: #eab308;
+      --danger: #ef4444;
+      --glow: rgba(92, 124, 250, 0.15);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(92, 124, 250, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(116, 143, 252, 0.05) 0px, transparent 50%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Header Grid */
+    header {
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(9, 10, 15, 0.8);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand .logo-icon {
+      font-size: 28px;
+      animation: pulse 2s infinite;
+    }
+
+    .brand h1 {
+      font-size: 20px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #a5b4fc, #6366f1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+
+    .system-status {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 13px;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.03);
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .status-dot.active { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.warning { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+    .status-dot.error { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+
+    /* Layout Main */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      height: calc(100vh - 69px);
+    }
+
+    .workspace-pane {
+      padding: 32px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .sidebar-pane {
+      border-left: 1px solid var(--border);
+      background: rgba(14, 16, 27, 0.5);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Tabs */
+    .tabs-nav {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.03);
+    }
+    .tab-btn.active {
+      color: white;
+      background: var(--primary);
+      box-shadow: 0 4px 12px rgba(92, 124, 250, 0.3);
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    .tab-content.active { display: block; }
+
+    /* Forms */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    textarea, select, input[type="text"] {
+      width: 100%;
+      background: rgba(9, 10, 15, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      transition: all 0.2s;
+      outline: none;
+    }
+    textarea:focus, select:focus, input[type="text"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--glow);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* Image Dropzones */
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(255,255,255,0.01);
+      position: relative;
+      overflow: hidden;
+      min-height: 120px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    .dropzone:hover {
+      border-color: var(--primary);
+      background: rgba(92, 124, 250, 0.02);
+    }
+    .dropzone input[type="file"] {
+      display: none;
+    }
+    .dropzone img {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      top: 0; left: 0;
+      z-index: 10;
+    }
+    .dropzone-clear {
+      position: absolute;
+      top: 8px; right: 8px;
+      background: rgba(0,0,0,0.6);
+      border: none;
+      color: white;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      z-index: 20;
+      cursor: pointer;
+      display: none;
+      font-weight: bold;
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      background: var(--primary);
+      border: none;
+      padding: 14px 28px;
+      border-radius: 12px;
+      color: white;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 4px 14px rgba(92, 124, 250, 0.4);
+    }
+    .btn:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+    .btn:active {
+      transform: translateY(0);
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Quick suggestions */
+    .suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .sug-tag {
+      font-size: 11px;
+      background: rgba(255,255,255,0.04);
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      transition: all 0.2s;
+    }
+    .sug-tag:hover {
+      background: rgba(92, 124, 250, 0.1);
+      border-color: var(--primary);
+    }
+
+    /* Task Sidebar */
+    .sidebar-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-header h2 {
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .task-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .task-item {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .task-item:hover {
+      background: rgba(255,255,255,0.04);
+      border-color: rgba(255,255,255,0.15);
+    }
+    .task-item.active {
+      border-color: var(--primary);
+      background: rgba(92, 124, 250, 0.03);
+    }
+    .task-item-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 11px;
+    }
+    .task-badge {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 10px;
+    }
+    .task-badge.queued { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+    .task-badge.generating { background: rgba(234, 179, 8, 0.15); color: var(--warning); animation: pulse 1.5s infinite; }
+    .task-badge.completed { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+    .task-badge.failed { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+
+    .task-item-prompt {
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Task Details / Playback */
+    .result-container {
+      margin-top: 12px;
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+    }
+    .playback-wrapper {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      position: relative;
+    }
+    .playback-wrapper.portrait {
+      aspect-ratio: 9/16;
+      max-width: 320px;
+      margin: 0 auto;
+    }
+    video, .image-result {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .image-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .image-grid-item {
+      aspect-ratio: 1/1;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .image-grid-item img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+
+    /* Animations */
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; height: auto; }
+      .sidebar-pane { border-left: none; border-top: 1px solid var(--border); height: 400px; }
+    }
+
+    /* Toast Notification */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      background: rgba(18, 20, 32, 0.95);
+      border: 1px solid var(--border);
+      padding: 12px 24px;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      color: white;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      backdrop-filter: blur(10px);
+      animation: slideUp 0.3s ease forwards;
+      pointer-events: auto;
+    }
+    .toast.error {
+      border-color: rgba(239, 68, 68, 0.4);
+      background: rgba(20, 10, 15, 0.95);
+      color: #fca5a5;
+    }
+    .toast.success {
+      border-color: rgba(34, 197, 94, 0.4);
+      background: rgba(10, 20, 15, 0.95);
+      color: #86efac;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(12px); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <span class="logo-icon">🎬</span>
+      <h1>VEO3 Flow Studio</h1>
+    </div>
+    
+    <div class="system-status">
+      <div class="status-item">
+        <div class="status-dot" id="dot-extension"></div>
+        <span>Captcha Extension: <strong id="val-extension">Checking...</strong></span>
+      </div>
+      <div class="status-item">
+        <div class="status-dot" id="dot-token"></div>
+        <span>Google Session: <strong id="val-token">Checking...</strong></span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Workspace -->
+    <div class="workspace-pane">
+      <div class="tabs-nav">
+        <button class="tab-btn active" onclick="switchTab('tab-video', this)">🎬 Tạo Video (VEO3)</button>
+        <button class="tab-btn" onclick="switchTab('tab-image', this)">📷 Tạo Ảnh (Imagen 3)</button>
+        <button class="tab-btn" onclick="switchTab('tab-settings', this)">⚙️ Cài Đặt</button>
+      </div>
+
+      <!-- Tab Video -->
+      <div id="tab-video" class="tab-content active">
+        <div class="card">
+          <form id="form-video" onsubmit="submitVideo(event)">
+            <div class="form-group">
+              <label>Mô tả Video (Prompt - Mỗi dòng 1 prompt để tạo hàng loạt)</label>
+              <textarea id="video-prompt" rows="5" placeholder="Ví dụ:&#10;a cinematic wide shot of a futuristic neon city under rain...&#10;a red fox running through a snowy forest..." required></textarea>
+              <div class="suggestions">
+                <span class="sug-tag" onclick="usePrompt('video', 'cinematic view of a cozy cottage in deep snow forest, warm light glowing from window, slow motion')">🏡 Cottage Tuyết</span>
+                <span class="sug-tag" onclick="usePrompt('video', 'macro shot of a droplets on a green leaf, reflecting morning sun light, beautiful depth of field')">💧 Giọt Sương Lá</span>
+                <span class="sug-tag" onclick="usePrompt('video', 'epic drone shot of dramatic basalt cliffs in Iceland, ocean waves crashing, moody atmosphere')">⛰️ Drone Iceland</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Video Model</label>
+                <select id="video-model">
+                  <option value="veo_3_1_fast_low_priority">Veo 3.1 Fast Relaxed (Khuyên dùng/Mặc định)</option>
+                  <option value="veo_3_1_lite_low_priority">Veo 3.1 Lite Relaxed (Tiết kiệm)</option>
+                  <option value="veo_3_1_fast">Veo 3.1 Fast (Cao cấp)</option>
+                  <option value="veo_3_1_quality">Veo 3.1 Quality (Chất lượng cao)</option>
+                  <option value="veo_3_1_lite">Veo 3.1 Lite</option>
+                  <option value="abra">Abra (Omni model)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Tỷ Lệ Khung Hình</label>
+                <select id="video-aspect">
+                  <option value="16:9">Landscape (16:9)</option>
+                  <option value="9:16">Portrait (9:16)</option>
+                  <option value="1:1">Square (1:1)</option>
+                  <option value="4:3">TV Standard (4:3)</option>
+                  <option value="3:4">Portrait (3:4)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Thời Lượng (Giây)</label>
+                <select id="video-duration">
+                  <option value="6">6 Giây (Khuyên dùng)</option>
+                  <option value="4">4 Giây</option>
+                  <option value="8">8 Giây (Chỉ hỗ trợ Abra)</option>
+                  <option value="10">10 Giây (Chỉ hỗ trợ Abra)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Số Lượng</label>
+                <select id="video-count">
+                  <option value="1">1 Video</option>
+                  <option value="2">2 Video (Tạo song song)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Ảnh Tham Chiếu (Image-to-Video / Interpolation)</label>
+              <div class="upload-grid">
+                <div class="dropzone" id="dz-start" onclick="document.getElementById('file-start').click()">
+                  <span>🖼️ Khung hình ĐẦU (Start Image)</span>
+                  <span style="font-size: 11px; opacity:0.6;">Kéo ảnh hoặc click để chọn</span>
+                  <input type="file" id="file-start" accept="image/*" onchange="handleFileChange(this, 'dz-start')">
+                  <button type="button" class="dropzone-clear" onclick="clearFile(event, 'file-start', 'dz-start')">×</button>
+                </div>
+                <div class="dropzone" id="dz-end" onclick="document.getElementById('file-end').click()">
+                  <span>🖼️ Khung hình CUỐI (End Image - Tùy chọn)</span>
+                  <span style="font-size: 11px; opacity:0.6;">Dành cho Interpolation (Start -> End)</span>
+                  <input type="file" id="file-end" accept="image/*" onchange="handleFileChange(this, 'dz-end')">
+                  <button type="button" class="dropzone-clear" onclick="clearFile(event, 'file-end', 'dz-end')">×</button>
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" class="btn" id="btn-submit-video">🚀 Bắt Đầu Tạo Video</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Tab Image -->
+      <div id="tab-image" class="tab-content">
+        <div class="card">
+          <form id="form-image" onsubmit="submitImage(event)">
+            <div class="form-group">
+              <label>Mô tả Ảnh (Prompt - Mỗi dòng 1 prompt để tạo hàng loạt)</label>
+              <textarea id="image-prompt" rows="5" placeholder="Ví dụ:&#10;a beautiful oil painting of an astronaut in garden...&#10;cyberpunk samurai looking over dystopian cityscape..." required></textarea>
+              <div class="suggestions">
+                <span class="sug-tag" onclick="usePrompt('image', 'cyberpunk samurai looking over dystopian cityscape, retro futuristic, glowing neon lights, digital art')">🥷 Cyberpunk Samurai</span>
+                <span class="sug-tag" onclick="usePrompt('image', 'cute fluffy kitten playing with yarn ball, soft studio lighting, pastel colors, 3d render')">🐱 Mèo Con Yarn</span>
+                <span class="sug-tag" onclick="usePrompt('image', 'breathtaking landscape painting of floating islands under fantasy sky, waterfall flowing into clouds, hyperdetailed')">🏝️ Đảo Bay</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Ảnh Model</label>
+                <select id="image-model">
+                  <option value="imagen_4">Imagen 3.5 High-Quality</option>
+                  <option value="nano_banana_2">Narwhal (Fast)</option>
+                  <option value="nano_banana_pro">Gemini Pix 2</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Tỷ Lệ Khung Hình</label>
+                <select id="image-aspect">
+                  <option value="1:1">Square (1:1)</option>
+                  <option value="16:9">Landscape (16:9)</option>
+                  <option value="9:16">Portrait (9:16)</option>
+                  <option value="4:3">Standard (4:3)</option>
+                  <option value="3:4">Portrait (3:4)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Số Lượng</label>
+                <select id="image-count">
+                  <option value="2">2 Ảnh (Mặc định)</option>
+                  <option value="4">4 Ảnh</option>
+                  <option value="1">1 Ảnh</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Ảnh Gốc Tham Chiếu (Image-to-Image)</label>
+                <div class="dropzone" id="dz-ref" onclick="document.getElementById('file-ref').click()" style="min-height: 58px; flex-direction: row; gap: 10px;">
+                  <span>🖼️ Nạp ảnh tham chiếu (Tùy chọn)</span>
+                  <input type="file" id="file-ref" accept="image/*" onchange="handleFileChange(this, 'dz-ref')">
+                  <button type="button" class="dropzone-clear" onclick="clearFile(event, 'file-ref', 'dz-ref')">×</button>
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" class="btn" id="btn-submit-image">🚀 Bắt Đầu Tạo Ảnh</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Tab Settings -->
+      <div id="tab-settings" class="tab-content">
+        <div class="card">
+          <div class="form-group">
+            <label>Cập nhật Cookies Google Labs Flow</label>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+              Dán chuỗi cookies dạng JSON array hoặc raw cookie string vào đây và nhấn Cập nhật.
+            </p>
+            <textarea id="cookies-input" rows="8" placeholder='[{"name": "...", "value": "..."}, ...]'></textarea>
+          </div>
+          <button type="button" class="btn" onclick="updateCookies()">💾 Cập Nhật Cookies</button>
+        </div>
+      </div>
+
+      <!-- Live Result Display -->
+      <div id="task-detail-card" class="card result-container" style="display: none;">
+        <h2 id="detail-title">Kết quả Task</h2>
+        <p id="detail-prompt" style="font-size: 13px; color: var(--text-muted); margin: 8px 0 16px; font-style: italic;"></p>
+        
+        <div id="detail-media-container">
+          <!-- Playback or Images grid will go here -->
+        </div>
+      </div>
+
+      <!-- Real-time Terminal Log Console -->
+      <div class="card" style="margin-top: 24px; padding: 16px; background: rgba(8, 9, 15, 0.95); border-color: rgba(255,255,255,0.05);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; cursor: pointer;" onclick="toggleConsole()">
+          <h3 style="font-size: 13px; font-weight: 700; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+            <span>💻</span> Live Server Logs
+          </h3>
+          <span id="console-arrow" style="font-size: 12px; opacity: 0.6;">▼ Thu gọn</span>
+        </div>
+        <div id="console-body" style="height: 150px; overflow-y: auto; font-family: monospace; font-size: 11px; line-height: 1.6; background: #000; border-radius: 8px; padding: 12px; border: 1px solid rgba(255,255,255,0.05); color: #38bdf8; text-align: left;">
+          <div style="color: var(--text-muted);">[System] Đang lắng nghe log từ server...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar Task History -->
+    <div class="sidebar-pane">
+      <div class="sidebar-header">
+        <h2>Lịch Sử Task</h2>
+        <span style="font-size: 11px; opacity: 0.6;" id="queue-status">0 đang chờ</span>
+      </div>
+      <div class="task-list" id="task-list-container">
+        <!-- Live task items will go here -->
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const activeTasks = new Set();
+    let selectedTaskId = null;
+
+    // Toast notifications helper
+    function showToast(message, type = 'info') {
+      let container = document.querySelector('.toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+      }
+      
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `
+        <span>${type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️'}</span>
+        <span>${message}</span>
+      `;
+      
+      container.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
+
+    // Tabs switching
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    // Helper to autofill prompts
+    function usePrompt(type, text) {
+      if (type === 'video') {
+        document.getElementById('video-prompt').value = text;
+      } else {
+        document.getElementById('image-prompt').value = text;
+      }
+    }
+
+    // Dropzones handlers
+    function handleFileChange(input, zoneId) {
+      const file = input.files[0];
+      const zone = document.getElementById(zoneId);
+      const clearBtn = zone.querySelector('.dropzone-clear');
+      
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          let img = zone.querySelector('img');
+          if (!img) {
+            img = document.createElement('img');
+            zone.appendChild(img);
+          }
+          img.src = e.target.result;
+          clearBtn.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function clearFile(e, inputId, zoneId) {
+      e.stopPropagation();
+      const input = document.getElementById(inputId);
+      const zone = document.getElementById(zoneId);
+      const img = zone.querySelector('img');
+      const clearBtn = zone.querySelector('.dropzone-clear');
+      
+      input.value = '';
+      if (img) img.remove();
+      clearBtn.style.display = 'none';
+    }
+
+    // Submit Video Task
+    async function submitVideo(e) {
+      e.preventDefault();
+      const rawPrompt = document.getElementById('video-prompt').value;
+      const prompts = rawPrompt.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+      if (prompts.length === 0) return;
+
+      const btn = document.getElementById('btn-submit-video');
+      btn.disabled = true;
+      btn.textContent = '⏳ Đang khởi tạo...';
+
+      const aspect = document.getElementById('video-aspect').value;
+      const model = document.getElementById('video-model').value;
+      const count = document.getElementById('video-count').value;
+      const duration = document.getElementById('video-duration').value;
+      const fileStart = document.getElementById('file-start').files[0];
+      const fileEnd = document.getElementById('file-end').files[0];
+
+      let queuedCount = 0;
+      let firstTaskId = null;
+
+      try {
+        for (const prompt of prompts) {
+          const formData = new FormData();
+          formData.append('prompt', prompt);
+          formData.append('aspectRatio', aspect);
+          formData.append('model', model);
+          formData.append('count', count);
+          formData.append('durationSeconds', duration);
+          if (fileStart) formData.append('startImage', fileStart);
+          if (fileEnd) formData.append('endImage', fileEnd);
+
+          const res = await fetch('/api/generate-video', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await res.json();
+          if (data.success) {
+            activeTasks.add(data.taskId);
+            if (!firstTaskId) firstTaskId = data.taskId;
+            queuedCount++;
+          } else {
+            showToast('Tạo video thất bại: ' + (data.error || 'Lỗi không rõ'), 'error');
+          }
+        }
+
+        if (queuedCount > 0) {
+          refreshTaskList();
+          if (firstTaskId) selectTask(firstTaskId);
+          document.getElementById('video-prompt').value = '';
+          clearFile(new Event('click'), 'file-start', 'dz-start');
+          clearFile(new Event('click'), 'file-end', 'dz-end');
+          showToast(`Đã thêm ${queuedCount} video vào hàng đợi thành công!`, 'success');
+        }
+      } catch (err) {
+        showToast('Lỗi kết nối tới server: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 Bắt Đầu Tạo Video';
+      }
+    }
+
+    // Submit Image Task
+    async function submitImage(e) {
+      e.preventDefault();
+      const rawPrompt = document.getElementById('image-prompt').value;
+      const prompts = rawPrompt.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+      if (prompts.length === 0) return;
+
+      const btn = document.getElementById('btn-submit-image');
+      btn.disabled = true;
+      btn.textContent = '⏳ Đang khởi tạo...';
+
+      const aspect = document.getElementById('image-aspect').value;
+      const model = document.getElementById('image-model').value;
+      const count = document.getElementById('image-count').value;
+      const fileRef = document.getElementById('file-ref').files[0];
+
+      let queuedCount = 0;
+      let firstTaskId = null;
+
+      try {
+        for (const prompt of prompts) {
+          const formData = new FormData();
+          formData.append('prompt', prompt);
+          formData.append('aspectRatio', aspect);
+          formData.append('model', model);
+          formData.append('count', count);
+          if (fileRef) formData.append('referenceImage', fileRef);
+
+          const res = await fetch('/api/generate-image', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await res.json();
+          if (data.success) {
+            activeTasks.add(data.taskId);
+            if (!firstTaskId) firstTaskId = data.taskId;
+            queuedCount++;
+          } else {
+            showToast('Tạo ảnh thất bại: ' + (data.error || 'Lỗi không rõ'), 'error');
+          }
+        }
+
+        if (queuedCount > 0) {
+          refreshTaskList();
+          if (firstTaskId) selectTask(firstTaskId);
+          document.getElementById('image-prompt').value = '';
+          clearFile(new Event('click'), 'file-ref', 'dz-ref');
+          showToast(`Đã thêm ${queuedCount} ảnh vào hàng đợi thành công!`, 'success');
+        }
+      } catch (err) {
+        showToast('Lỗi kết nối tới server: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 Bắt Đầu Tạo Ảnh';
+      }
+    }
+
+    // Fetch System health
+    async function updateSystemStats() {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        
+        const extDot = document.getElementById('dot-extension');
+        const extVal = document.getElementById('val-extension');
+        if (data.connectedClients > 0) {
+          extDot.className = 'status-dot active';
+          extVal.textContent = `${data.connectedClients} Chrome Tab(s)`;
+        } else {
+          extDot.className = 'status-dot error';
+          extVal.textContent = 'Not Connected';
+        }
+      } catch(e) {}
+
+      try {
+        const res = await fetch('/api/token-status');
+        const data = await res.json();
+        
+        const tokenDot = document.getElementById('dot-token');
+        const tokenVal = document.getElementById('val-token');
+        if (data.hasToken) {
+          tokenDot.className = 'status-dot active';
+          tokenVal.textContent = `Online (${data.age}s old)`;
+        } else {
+          tokenDot.className = 'status-dot error';
+          tokenVal.textContent = 'Offline';
+        }
+      } catch(e) {}
+    }
+
+    let userTier = 'SERVICE_TIER_INTERMEDIATE';
+    let modelConfigData = null;
+
+    async function loadAllowedModels() {
+      try {
+        const res = await fetch('/api/user-info');
+        const data = await res.json();
+        
+        userTier = data.userTier;
+        modelConfigData = data.modelConfig;
+        
+        // 1. Populate Video Models Select
+        const videoSelect = document.getElementById('video-model');
+        videoSelect.innerHTML = '';
+        
+        data.modelConfig.videoModelFamilies.forEach(family => {
+          const isAllowed = family.usages.some(usage => {
+            const cost = usage.creditMapping[userTier]?.cost;
+            return cost !== 'UNAVAILABLE';
+          });
+          
+          if (isAllowed) {
+            const opt = document.createElement('option');
+            opt.value = family.id;
+            opt.textContent = `${family.displayName}`;
+            videoSelect.appendChild(opt);
+          }
+        });
+        
+        // 2. Populate Image Models Select
+        const imageSelect = document.getElementById('image-model');
+        imageSelect.innerHTML = '';
+        
+        data.modelConfig.imageModelFamilies.forEach(family => {
+          const isAllowed = family.usages.some(usage => {
+            const cost = usage.creditMapping[userTier]?.cost;
+            return cost !== 'UNAVAILABLE';
+          });
+          
+          if (isAllowed) {
+            const opt = document.createElement('option');
+            opt.value = family.id;
+            opt.textContent = `${family.displayName}`;
+            imageSelect.appendChild(opt);
+          }
+        });
+        
+        // Hook select change to update durations dynamically
+        videoSelect.addEventListener('change', updateAllowedDurations);
+        updateAllowedDurations();
+        
+      } catch(e) {
+        console.error('Failed to load allowed models:', e);
+      }
+    }
+
+    function updateAllowedDurations() {
+      if (!modelConfigData) return;
+      const videoSelect = document.getElementById('video-model');
+      const selectedModel = videoSelect.value;
+      const durationSelect = document.getElementById('video-duration');
+      
+      const family = modelConfigData.videoModelFamilies.find(f => f.id === selectedModel);
+      if (!family) return;
+      
+      durationSelect.innerHTML = '';
+      
+      const addedDurations = new Set();
+      family.usages.forEach(usage => {
+        const cost = usage.creditMapping[userTier]?.cost;
+        if (cost !== 'UNAVAILABLE') {
+          const sec = usage.videoLengthSeconds;
+          if (sec && !addedDurations.has(sec)) {
+            addedDurations.add(sec);
+            const opt = document.createElement('option');
+            opt.value = sec;
+            opt.textContent = `${sec} Giây (Chi phí: ${cost}đ)`;
+            durationSelect.appendChild(opt);
+          }
+        }
+      });
+      
+      // If no explicit durations, default is 8s
+      if (addedDurations.size === 0) {
+        const opt = document.createElement('option');
+        opt.value = '8';
+        opt.textContent = '8 Giây (Mặc định)';
+        durationSelect.appendChild(opt);
+      }
+    }
+
+    // Cookies upload
+    async function updateCookies() {
+      const input = document.getElementById('cookies-input').value;
+      if (!input.trim()) return showToast('Vui lòng nhập cookies!', 'error');
+
+      let parsedCookies;
+      try {
+        parsedCookies = JSON.parse(input);
+      } catch(e) {
+        parsedCookies = input; // If plaintext string
+      }
+
+      try {
+        const res = await fetch('/api/set-cookies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cookies: parsedCookies })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Cập nhật cookies thành công! Trình duyệt đang tải lại...', 'success');
+          document.getElementById('cookies-input').value = '';
+          updateSystemStats();
+        } else {
+          showToast('Lỗi: ' + data.error, 'error');
+        }
+      } catch(err) {
+        showToast('Lỗi kết nối: ' + err.message, 'error');
+      }
+    }
+
+    // Poll Task Statuses
+    async function pollTasks() {
+      if (activeTasks.size === 0) return;
+      
+      let queueCount = 0;
+      for (const taskId of activeTasks) {
+        try {
+          const res = await fetch(`/api/status/${taskId}`);
+          const task = await res.json();
+          
+          // Update item in sidebar UI
+          const itemEl = document.getElementById(`task-${taskId}`);
+          if (itemEl) {
+            const badge = itemEl.querySelector('.task-badge');
+            badge.className = `task-badge ${task.status}`;
+            badge.textContent = task.status;
+            
+            if (task.status === 'generating') {
+              itemEl.querySelector('.task-item-meta span:nth-child(2)').textContent = task.progress || 'starting...';
+            }
+          }
+
+          if (task.status === 'queued') queueCount++;
+
+          if (task.status === 'completed' || task.status === 'failed') {
+            activeTasks.delete(taskId);
+            
+            // Show toast notification
+            if (task.status === 'completed') {
+              showToast(`Tạo thành công ${task.type === 'video' ? 'video' : 'ảnh'} cho prompt: "${task.prompt.substring(0, 30)}..."`, 'success');
+            } else {
+              showToast(`Sinh ${task.type === 'video' ? 'video' : 'ảnh'} thất bại: ${task.error || 'Lỗi hệ thống'}`, 'error');
+            }
+
+            // Refresh detailed view if currently selected
+            if (selectedTaskId === taskId) {
+              displayTaskDetails(task);
+            }
+          }
+        } catch(e) {}
+      }
+
+      document.getElementById('queue-status').textContent = `${queueCount} đang chờ`;
+      
+      // Periodic check
+      setTimeout(pollTasks, 3000);
+    }
+
+    // Refresh Sidebar Task List
+    async function refreshTaskList() {
+      // Typically, in a real app you'd fetch all tasks from server. For our simple server,
+      // we maintain tasks locally or construct items dynamically.
+      const container = document.getElementById('task-list-container');
+      
+      // Let's query all tasks stored in our UI cache
+      const listHtml = Object.values(tasksCache).map(task => {
+        const timeStr = new Date(task.createdAt || Date.now()).toLocaleTimeString('vi-VN');
+        const activeClass = selectedTaskId === task.id ? 'active' : '';
+        return `
+          <div class="task-item ${activeClass}" id="task-${task.id}" onclick="selectTask('${task.id}')">
+            <div class="task-item-meta">
+              <span class="task-badge ${task.status}">${task.status}</span>
+              <span>${timeStr}</span>
+            </div>
+            <div class="task-item-prompt">${task.type === 'video' ? '🎬' : '📷'} ${task.prompt}</div>
+          </div>
+        `;
+      }).reverse().join('');
+      
+      container.innerHTML = listHtml;
+    }
+
+    const tasksCache = {};
+
+    async function selectTask(taskId) {
+      selectedTaskId = taskId;
+      
+      // Highlight in list
+      document.querySelectorAll('.task-item').forEach(el => el.classList.remove('active'));
+      const itemEl = document.getElementById(`task-${taskId}`);
+      if (itemEl) itemEl.classList.add('active');
+
+      try {
+        const res = await fetch(`/api/status/${taskId}`);
+        const task = await res.json();
+        
+        tasksCache[taskId] = task;
+        displayTaskDetails(task);
+      } catch(e) {}
+    }
+
+    function displayTaskDetails(task) {
+      const container = document.getElementById('task-detail-card');
+      const title = document.getElementById('detail-title');
+      const promptText = document.getElementById('detail-prompt');
+      const mediaContainer = document.getElementById('detail-media-container');
+
+      container.style.display = 'block';
+      title.textContent = `Kết quả Task: ${task.type === 'video' ? 'Video' : 'Ảnh'}`;
+      promptText.textContent = `"${task.prompt}"`;
+      mediaContainer.innerHTML = '';
+
+      if (task.status === 'queued') {
+        mediaContainer.innerHTML = `
+          <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+            <div style="font-size: 24px; margin-bottom: 12px;">⏳</div>
+            <div>Task đang nằm trong hàng đợi của Server...</div>
+          </div>
+        `;
+      } else if (task.status === 'generating') {
+        mediaContainer.innerHTML = `
+          <div style="text-align: center; padding: 40px; color: var(--warning);">
+            <div style="font-size: 24px; margin-bottom: 12px; animation: pulse 1s infinite;">⚙️</div>
+            <div>Đang giao tiếp với Google Labs để sinh media...</div>
+            <div style="font-size: 12px; margin-top: 8px; opacity: 0.8;">Tiến trình: ${task.progress || 'Đang tạo...'}</div>
+          </div>
+        `;
+      } else if (task.status === 'failed') {
+        mediaContainer.innerHTML = `
+          <div style="text-align: center; padding: 40px; color: var(--danger);">
+            <div style="font-size: 24px; margin-bottom: 12px;">❌ Task Thất Bại</div>
+            <div style="font-size: 14px;">Chi tiết lỗi: <strong>${task.error || 'Lỗi máy chủ Google'}</strong></div>
+          </div>
+        `;
+      } else if (task.status === 'completed') {
+        if (task.type === 'video') {
+          const videoHtml = task.media.map(item => {
+            if (item.status === 'success') {
+              const isPortrait = task.aspectRatio === '9:16' || task.aspectRatio === '3:4';
+              const wrapperClass = isPortrait ? 'playback-wrapper portrait' : 'playback-wrapper';
+              return `
+                <div style="margin-bottom: 20px;">
+                  <div class="${wrapperClass}">
+                    <video src="${item.url}" controls autoplay loop></video>
+                  </div>
+                  <div style="margin-top: 12px; display: flex; gap: 10px; justify-content: center;">
+                    <a href="${item.url}" target="_blank" download="veo3_${item.mediaId}.mp4" class="btn" style="width: auto; padding: 8px 16px; font-size: 13px;">📥 Tải Video</a>
+                  </div>
+                </div>
+              `;
+            } else {
+              return `
+                <div style="text-align: center; padding: 20px; border: 1px solid var(--border); border-radius: 8px; color: var(--danger);">
+                  ⚠️ Không lấy được link tải cho Video: ${item.error || 'Lỗi server ngầm'}
+                </div>
+              `;
+            }
+          }).join('');
+          mediaContainer.innerHTML = videoHtml;
+        } else {
+          // Image result
+          const successMedia = task.media.filter(m => m.status === 'success');
+          if (successMedia.length > 0) {
+            const gridHtml = successMedia.map(item => `
+              <div style="margin-bottom: 20px; text-align: center;">
+                <div style="border-radius: 12px; overflow: hidden; border: 1px solid var(--border); max-width: 500px; margin: 0 auto;">
+                  <img src="${item.url}" style="width:100%; height:auto; display:block;">
+                </div>
+                <div style="margin-top: 12px; display: flex; gap: 10px; justify-content: center;">
+                  <a href="${item.url}" target="_blank" download="imagen_${item.mediaId}.png" class="btn" style="width: auto; padding: 8px 16px; font-size: 13px;">📥 Tải Ảnh</a>
+                </div>
+              </div>
+            `).join('');
+            mediaContainer.innerHTML = gridHtml;
+          } else {
+            mediaContainer.innerHTML = `
+              <div style="text-align: center; padding: 20px; color: var(--danger);">
+                ⚠️ Không có ảnh nào được tạo thành công
+              </div>
+            `;
+          }
+        }
+      }
+    }
+
+    // Add task to local UI cache and update sidebar
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const res = await originalFetch.apply(this, args);
+      const clone = res.clone();
+      try {
+        const url = args[0];
+        if (url.includes('/api/generate-video') || url.includes('/api/generate-image')) {
+          const data = await clone.json();
+          if (data.success) {
+            // Read form inputs to cache task details immediately
+            const taskId = data.taskId;
+            const isVideo = url.includes('video');
+            
+            tasksCache[taskId] = {
+              id: taskId,
+              type: isVideo ? 'video' : 'image',
+              status: 'queued',
+              prompt: isVideo ? document.getElementById('video-prompt').value : document.getElementById('image-prompt').value,
+              createdAt: Date.now()
+            };
+            refreshTaskList();
+            pollTasks();
+          }
+        }
+      } catch(e) {}
+      return res;
+    };
+
+    const socket = io();
+
+    let isConsoleCollapsed = false;
+    function toggleConsole() {
+      const body = document.getElementById('console-body');
+      const arrow = document.getElementById('console-arrow');
+      isConsoleCollapsed = !isConsoleCollapsed;
+      if (isConsoleCollapsed) {
+        body.style.display = 'none';
+        arrow.textContent = '▲ Mở rộng';
+      } else {
+        body.style.display = 'block';
+        arrow.textContent = '▼ Thu gọn';
+        body.scrollTop = body.scrollHeight;
+      }
+    }
+
+    socket.on('server_log', (log) => {
+      const consoleBody = document.getElementById('console-body');
+      if (!consoleBody) return;
+      
+      const logRow = document.createElement('div');
+      let color = '#38bdf8'; // info
+      let prefix = '[INFO]';
+      if (log.type === 'success') {
+        color = '#4ade80';
+        prefix = '[SUCCESS]';
+      } else if (log.type === 'warn') {
+        color = '#fbbf24';
+        prefix = '[WARN] ⚠️';
+      } else if (log.type === 'error') {
+        color = '#f87171';
+        prefix = '[ERROR] ❌';
+      } else if (log.type === 'debug') {
+        color = '#c084fc';
+        prefix = '[DEBUG] 🔍';
+      }
+      
+      logRow.style.color = color;
+      logRow.style.marginBottom = '4px';
+      logRow.innerHTML = `<span style="color: #64748b;">[${log.time}]</span> <strong>${prefix}</strong> ${log.msg}`;
+      consoleBody.appendChild(logRow);
+      
+      if (!isConsoleCollapsed) {
+        consoleBody.scrollTop = consoleBody.scrollHeight;
+      }
+    });
+
+    // Initial setups
+    updateSystemStats();
+    loadAllowedModels();
+    setInterval(updateSystemStats, 5000);
+  </script>
+</body>
+</html>
