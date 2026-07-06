@@ -48,6 +48,18 @@ module.exports = {
       for (const p of paths) {
         if (fs.existsSync(p)) return p;
       }
+    } else if (platform === 'linux') {
+      // Linux/Ubuntu paths
+      const paths = [
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/usr/bin/brave-browser'
+      ];
+      const fs = require('fs');
+      for (const p of paths) {
+        if (fs.existsSync(p)) return p;
+      }
     }
     return null;
   }
