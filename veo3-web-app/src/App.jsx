@@ -1246,7 +1246,7 @@ function App() {
                   onClick={() => setActiveTab('image')}
                   disabled={isSubmitting}
                 >
-                  <ImageIcon size={14} /> Image
+                  <ImageIcon size={14} /> Ảnh
                 </button>
               </div>
 
@@ -1407,7 +1407,7 @@ function App() {
           <input 
             type="text"
             className="prompt-textarea"
-            placeholder={activeTab === 'video' ? "Describe the video you want to create..." : "Describe the image you want to create..."}
+            placeholder={activeTab === 'video' ? "Mô tả video bạn muốn tạo..." : "Mô tả hình ảnh bạn muốn tạo..."}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             disabled={isSubmitting}
@@ -1607,7 +1607,7 @@ function App() {
                 }}
               >
                 {activeTab === 'video' ? <Video size={12} /> : <ImageIcon size={12} />}
-                <span>{activeTab}</span>
+                <span>{activeTab === 'video' ? 'Video' : 'Ảnh'}</span>
               </button>
 
               <button 
