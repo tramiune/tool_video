@@ -1921,7 +1921,7 @@ function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                   <div style={{ padding: '12px', background: '#fff', borderRadius: '16px', boxShadow: '0 8px 30px rgba(0,0,0,0.3)', width: '200px', height: '200px' }}>
                     <img 
-                      src={`https://img.vietqr.io/image/OCB-CASS03121403-compact2.png?amount=${getUpgradeCost(selectedTierForPay)}&addInfo=${encodeURIComponent(pendingPayment ? pendingPayment.code : 'VE')}&accountName=CAO%20THI%20QUYNH%20TRAM`} 
+                      src={`https://img.vietqr.io/image/OCB-CASS26030609-compact.png?amount=${getUpgradeCost(selectedTierForPay)}&addInfo=${encodeURIComponent(pendingPayment ? pendingPayment.code : 'VE')}&accountName=VAN%20THI%20HANG`} 
                       alt="VietQR Payment Code" 
                       style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
                     />
@@ -1938,13 +1938,13 @@ function App() {
                   <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Số tài khoản:</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem' }}>CASS03121403</span>
-                      <button type="button" onClick={() => handleCopyText('CASS03121403')} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', padding: '2px 6px', fontSize: '0.65rem', color: '#3b82f6', cursor: 'pointer', fontWeight: 'bold' }}>Copy</button>
+                      <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem' }}>CASS26030609</span>
+                      <button type="button" onClick={() => handleCopyText('CASS26030609')} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', padding: '2px 6px', fontSize: '0.65rem', color: '#3b82f6', cursor: 'pointer', fontWeight: 'bold' }}>Copy</button>
                     </div>
                   </div>
                   <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Tên người thụ hưởng:</span>
-                    <span style={{ color: '#fff', fontWeight: '600' }}>CAO THI QUYNH TRAM</span>
+                    <span style={{ color: '#fff', fontWeight: '600' }}>VAN THI HANG</span>
                   </div>
                   <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Số tiền chuyển khoản:</span>
