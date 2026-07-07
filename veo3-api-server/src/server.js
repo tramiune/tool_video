@@ -105,8 +105,23 @@ app.post('/api/set-cookies', async (req, res) => {
     fs.writeFileSync(config.COOKIE_FILE, serialized, 'utf-8');
     logger.info('Cookies updated successfully. Injecting into browser...');
     
-    await browserManager.injectCookies();
-    await browserManager.refreshSession();
+    // Sync to Firestore
+    try {
+      await db.collection('settings').doc('cookies').set({
+        cookies: serialized,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      logger.info('Cookies synced to Firestore settings/cookies');
+    } catch (dbErr) {
+      logger.warn('Failed to sync cookies to Firestore:', dbErr);
+    }
+    
+    if (browserManager.browser && browserManager.cdp) {
+      await browserManager.injectCookies();
+      await browserManager.refreshSession();
+    } else {
+      logger.info('Browser not initialized yet. Cookies will be injected on startup.');
+    }
 
     res.json({ success: true, message: 'Cookies updated and injected successfully' });
   } catch (err) {
@@ -158,7 +173,7 @@ app.post('/api/payment-webhook', async (req, res) => {
       const content = tx.content || tx.description || tx.transferContent || '';
       logger.info(`Received payment webhook. Content: "${content}", Amount: ${tx.amount}`);
 
-      const match = content.match(/VE\d{5,6}/i) || content.match(/ME\d{5,6}/i);
+      const match = content.match(/VE\d{5,6}/i);
       if (!match) {
         logger.warn(`No payment code found in content: "${content}"`);
         continue;
@@ -209,6 +224,68 @@ app.post('/api/payment-webhook', async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+// ─── FIRESTORE COOKIE SYNC LISTENER ──────────────────────────────────────────
+
+function startCookieSyncListener() {
+  return new Promise((resolve) => {
+    logger.info("Starting Firestore Listener for cookies...");
+    let resolved = false;
+
+    db.collection('settings').doc('cookies').onSnapshot(async (doc) => {
+      let remoteCookiesUpdated = false;
+      if (doc.exists) {
+        const data = doc.data();
+        const remoteCookies = data.cookies;
+        
+        if (remoteCookies) {
+          // Read local cookies
+          let localCookies = '';
+          if (fs.existsSync(config.COOKIE_FILE)) {
+            try {
+              localCookies = fs.readFileSync(config.COOKIE_FILE, 'utf-8').trim();
+            } catch (e) {
+              logger.error("Failed to read local cookies file", e);
+            }
+          }
+          
+          // Compare and update if different
+          if (remoteCookies !== localCookies) {
+            logger.info("Cookies changed in Firestore. Updating local cookies.json...");
+            try {
+              fs.writeFileSync(config.COOKIE_FILE, remoteCookies, 'utf-8');
+              remoteCookiesUpdated = true;
+            } catch (err) {
+              logger.error("Failed to update local cookies from Firestore", err);
+            }
+          }
+        }
+      } else {
+        logger.warn("No cookies document found in settings collection in Firestore.");
+      }
+
+      if (!resolved) {
+        resolved = true;
+        resolve(); // Resolve on first snapshot so startup continues
+      } else if (remoteCookiesUpdated) {
+        // Subsequent update, apply dynamically
+        logger.info("Re-injecting updated cookies and refreshing browser session...");
+        try {
+          await browserManager.injectCookies();
+          await browserManager.refreshSession();
+        } catch (err) {
+          logger.error("Failed to refresh session with updated cookies:", err);
+        }
+      }
+    }, (err) => {
+      logger.error("Firestore cookies listener error:", err);
+      if (!resolved) {
+        resolved = true;
+        resolve(); // Continue startup even if database listener fails
+      }
+    });
+  });
+}
 
 // ─── FIRESTORE WORKER LISTENER ──────────────────────────────────────────────
 
@@ -616,16 +693,19 @@ async function cleanupOldTasks() {
 // Start HTTP + Socket.io Server
 captchaService.attach(io);
 
-// Start Firestore Listener
-startFirestoreListener();
+// Start Firestore Cookie Sync first
+startCookieSyncListener().then(() => {
+  // Start Firestore Listener
+  startFirestoreListener();
 
-// Start periodic cleanup on startup and then every hour
-cleanupOldTasks();
-setInterval(cleanupOldTasks, 60 * 60 * 1000);
+  // Start periodic cleanup on startup and then every hour
+  cleanupOldTasks();
+  setInterval(cleanupOldTasks, 60 * 60 * 1000);
 
-// Initialize Browser Manager on start so it is warmed up
-browserManager.initialize().catch(err => {
-  logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
+  // Initialize Browser Manager on start so it is warmed up
+  browserManager.initialize().catch(err => {
+    logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
+  });
 });
 
 server.listen(config.PORT, () => {
