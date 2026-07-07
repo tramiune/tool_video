@@ -160,7 +160,7 @@
     success('Socket.IO library ready');
 
     const socket = io(serverUrl, {
-      transports: ['polling', 'websocket'],
+      transports: ['websocket'],
       autoConnect: true,
       reconnection: true,
       reconnectionDelay: 1000,
