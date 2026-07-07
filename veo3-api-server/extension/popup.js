@@ -3,6 +3,12 @@ let SERVER = 'http://127.0.0.1:3456';
 chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (settings) => {
   if (chrome.runtime.lastError || !settings?.serverUrl) return;
   SERVER = settings.serverUrl;
+  
+  const inputUrl = document.getElementById('input-url');
+  if (inputUrl) {
+    inputUrl.value = SERVER;
+  }
+  
   const footer = document.querySelector('.footer');
   if (footer) {
     try {
@@ -111,6 +117,29 @@ document.getElementById('btn-refresh').addEventListener('click', async () => {
       btn.textContent = '🔄 Force Refresh';
     }, 2000);
   }
+});
+
+document.getElementById('btn-save').addEventListener('click', () => {
+  const inputUrl = document.getElementById('input-url');
+  if (!inputUrl) return;
+  const newUrl = inputUrl.value.trim();
+  if (!newUrl) return;
+
+  chrome.runtime.sendMessage({
+    type: 'SAVE_SETTINGS',
+    settings: { serverUrl: newUrl }
+  }, (res) => {
+    if (res?.ok) {
+      const btnSave = document.getElementById('btn-save');
+      btnSave.textContent = '✅';
+      btnSave.style.background = '#22c55e';
+      setTimeout(() => {
+        btnSave.textContent = 'Lưu';
+        btnSave.style.background = '';
+        location.reload();
+      }, 1000);
+    }
+  });
 });
 
 checkHealth();
