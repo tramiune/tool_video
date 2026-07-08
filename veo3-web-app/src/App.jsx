@@ -123,6 +123,7 @@ function App() {
   const [limitError, setLimitError] = useState(null);
   const [selectedTierForPay, setSelectedTierForPay] = useState(null);
   const [qrLoading, setQrLoading] = useState(true);
+  const [videoDuration, setVideoDuration] = useState(8);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
   const [userProfileLoaded, setUserProfileLoaded] = useState(false);
@@ -1314,6 +1315,7 @@ function App() {
         error: null,
         model: activeTab === 'video' ? 'veo_3_1_lite' : 'imagen_4',
         aspectRatio: aspectRatio,
+        durationSeconds: activeTab === 'video' ? videoDuration : null,
         startImage: startFrameUrl,
         endImage: endFrameUrl,
         referenceImages: referenceImagesUrls,
@@ -1863,6 +1865,28 @@ function App() {
                 </button>
               ))}
             </div>
+
+            {/* Video Duration Selector */}
+            {activeTab === 'video' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '10px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Thời lượng video:</span>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {[4, 6, 8].map(sec => (
+                    <button
+                      key={sec}
+                      type="button"
+                      className={`ratio-chip ${videoDuration === sec ? 'active' : ''}`}
+                      onClick={() => setVideoDuration(sec)}
+                      disabled={isSubmitting}
+                      style={{ padding: '6px 16px', flexDirection: 'row', gap: '6px', alignItems: 'center' }}
+                    >
+                      <Clock size={12} style={{ opacity: 0.7 }} />
+                      <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{sec}s</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
