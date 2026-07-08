@@ -556,6 +556,7 @@ function App() {
                               }}
                             >
                               <option value="free">Free</option>
+                              <option value="hocvien">Học viên (30 ảnh/ngày)</option>
                               <option value="basic_69k">Basic (69k)</option>
                               <option value="standard_99k">Standard (99k)</option>
                               <option value="premium_169k">Premium (169k)</option>
@@ -713,6 +714,7 @@ function App() {
     const usage = getTodayUsage();
     const limits = {
       free: { videos: 0, images: 0 },
+      hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 10, images: 20 },
       standard_99k: { videos: 20, images: 40 },
       premium_169k: { videos: Infinity, images: Infinity }
@@ -1225,6 +1227,7 @@ function App() {
     // Limit checking
     const limits = {
       free: { videos: 0, images: 0 },
+      hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 10, images: 20 },
       standard_99k: { videos: 20, images: 40 },
       premium_169k: { videos: Infinity, images: Infinity }
@@ -1480,7 +1483,8 @@ function App() {
                   <span>Gói: {
                     userTier === 'premium_169k' ? 'Premium' :
                     userTier === 'standard_99k' ? 'Standard' :
-                    userTier === 'basic_69k' ? 'Basic' : 'Free'
+                    userTier === 'basic_69k' ? 'Basic' :
+                    userTier === 'hocvien' ? 'Học viên' : 'Free'
                   }</span>
                   {userTier !== 'free' && userExpiryDate && (
                     <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>
@@ -1492,11 +1496,11 @@ function App() {
                 <div style={{ padding: '4px 8px 8px 8px', fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>Video hôm nay:</span>
-                    <span>{getTodayUsage().videos}/{userTier === 'free' ? 0 : userTier === 'basic_69k' ? 10 : userTier === 'standard_99k' ? 20 : '∞'}</span>
+                    <span>{getTodayUsage().videos}/{userTier === 'free' || userTier === 'hocvien' ? 0 : userTier === 'basic_69k' ? 10 : userTier === 'standard_99k' ? 20 : '∞'}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>Ảnh hôm nay:</span>
-                    <span>{getTodayUsage().images}/{userTier === 'free' ? 0 : userTier === 'basic_69k' ? 20 : userTier === 'standard_99k' ? 40 : '∞'}</span>
+                    <span>{getTodayUsage().images}/{userTier === 'free' ? 0 : userTier === 'hocvien' ? 30 : userTier === 'basic_69k' ? 20 : userTier === 'standard_99k' ? 40 : '∞'}</span>
                   </div>
                 </div>
 
@@ -2217,7 +2221,7 @@ function App() {
             </div>
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>Hết lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'}</h3>
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-              Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'basic_69k' ? 'Basic' : 'Standard'}</strong>.
+              Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Basic' : userTier === 'standard_99k' ? 'Standard' : 'Premium'}</strong>.
             </p>
             <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
               <button 
