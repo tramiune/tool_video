@@ -132,7 +132,7 @@ function App() {
   const [tryonGarmentFile, setTryonGarmentFile] = useState(null);
   const [tryonDescription, setTryonDescription] = useState('');
   const [tryonModel, setTryonModel] = useState('nano_banana_pro');
-  const [tryonAspectRatio, setTryonAspectRatio] = useState('1:1');
+  const [tryonAspectRatio, setTryonAspectRatio] = useState('9:16');
   const [tryonIsSubmitting, setTryonIsSubmitting] = useState(false);
   const [tryonPreserveBody, setTryonPreserveBody] = useState(true);
   const [tryonToolType, setTryonToolType] = useState('tryon'); // 'tryon' | 'clean_916' | 'swap_face' | 'change_bg' | 'brighten_skin'
@@ -979,7 +979,7 @@ function App() {
         <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           {tryonToolType === 'tryon' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'none', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Mô tả loại trang phục (ví dụ: "áo thun", "áo hoodie đen", "váy đỏ"):</span>
               <input 
                 type="text" 
@@ -1030,7 +1030,7 @@ function App() {
           )}
 
           {tryonToolType === 'tryon' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'none', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
               <input 
                 type="checkbox" 
                 id="tryonPreserveBody"
@@ -1044,7 +1044,7 @@ function App() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Tỷ lệ ảnh đầu ra:</span>
               <select
@@ -1061,7 +1061,7 @@ function App() {
               </select>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'none', flexDirection: 'column', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Model sinh ảnh:</span>
               <select
                 value={tryonModel}
