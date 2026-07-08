@@ -129,6 +129,64 @@ app.post('/api/set-cookies', async (req, res) => {
   }
 });
 
+// AI Virtual Try-On endpoint: receives person and garment images, uploads to R2, and queues a task
+app.post('/api/try-on', upload.fields([
+  { name: 'personImage', maxCount: 1 },
+  { name: 'garmentImage', maxCount: 1 }
+]), async (req, res) => {
+  const { userId, model, aspectRatio, description } = req.body;
+  if (!req.files || !req.files['personImage'] || !req.files['garmentImage']) {
+    return res.status(400).json({ error: 'Missing personImage or garmentImage files' });
+  }
+
+  try {
+    const personFile = req.files['personImage'][0];
+    const garmentFile = req.files['garmentImage'][0];
+    
+    // Upload person to R2
+    logger.info(`VTON: Uploading person image to R2...`);
+    const personBuffer = fs.readFileSync(personFile.path);
+    const personExt = path.extname(personFile.originalname) || '.jpg';
+    const personKey = `meo3/inputs/${uuidv4()}${personExt}`;
+    const personUrl = await uploadToR2(personBuffer, personKey, 'image/jpeg');
+    
+    // Upload garment to R2
+    logger.info(`VTON: Uploading garment image to R2...`);
+    const garmentBuffer = fs.readFileSync(garmentFile.path);
+    const garmentExt = path.extname(garmentFile.originalname) || '.jpg';
+    const garmentKey = `meo3/inputs/${uuidv4()}${garmentExt}`;
+    const garmentUrl = await uploadToR2(garmentBuffer, garmentKey, 'image/jpeg');
+    
+    // Delete temp local files
+    try { fs.unlinkSync(personFile.path); } catch (e) {}
+    try { fs.unlinkSync(garmentFile.path); } catch (e) {}
+
+    // Construct the prompt referencing input_file_0.png and input_file_1.png
+    const clothDesc = description ? description.trim() : 'clothing';
+    const promptText = `A professional studio photo of the person in input_file_0.png wearing the exact ${clothDesc} from input_file_1.png, photorealistic, high quality`;
+
+    // Save task to Firestore
+    const taskData = {
+      userId: userId || 'anonymous',
+      type: 'image',
+      status: 'pending',
+      prompt: promptText,
+      aspectRatio: aspectRatio || '1:1',
+      model: model || 'nano_banana_pro',
+      referenceImages: [personUrl, garmentUrl],
+      createdAt: Date.now()
+    };
+
+    const docRef = await db.collection('tasks').add(taskData);
+    logger.success(`VTON Task successfully created: ${docRef.id}`);
+
+    res.json({ success: true, taskId: docRef.id, status: 'queued' });
+  } catch (err) {
+    logger.error('VTON API failed', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Local file upload endpoint: forwards files to R2 to store input assets in R2
 app.post('/api/upload', upload.array('files'), async (req, res) => {
   try {

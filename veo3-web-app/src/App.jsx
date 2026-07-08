@@ -43,6 +43,14 @@ function App() {
   const [copiedText, setCopiedText] = useState(false);
   const [userProfileLoaded, setUserProfileLoaded] = useState(false);
   const [activeLightboxMedia, setActiveLightboxMedia] = useState(null); // null or { type, mediaUrl, prompt }
+  
+  const [isTryOnView, setIsTryOnView] = useState(false);
+  const [tryonPersonFile, setTryonPersonFile] = useState(null);
+  const [tryonGarmentFile, setTryonGarmentFile] = useState(null);
+  const [tryonDescription, setTryonDescription] = useState('');
+  const [tryonModel, setTryonModel] = useState('nano_banana_pro');
+  const [tryonAspectRatio, setTryonAspectRatio] = useState('1:1');
+  const [tryonIsSubmitting, setTryonIsSubmitting] = useState(false);
 
   // User Document / Subscription Listener
   useEffect(() => {
@@ -78,10 +86,13 @@ function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // Listen to hash change for Admin mode with security guard
+  // Listen to hash change for Admin & TryOn mode with security guard
   useEffect(() => {
     const handleHashChange = () => {
-      const isHashAdmin = window.location.hash === '#admin';
+      const hash = window.location.hash;
+      const isHashAdmin = hash === '#admin';
+      const isHashTryOn = hash === '#tryon';
+      
       if (isHashAdmin) {
         if (!user) {
           window.location.hash = '';
@@ -96,6 +107,7 @@ function App() {
         }
       }
       setIsAdminView(isHashAdmin);
+      setIsTryOnView(isHashTryOn);
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
@@ -596,6 +608,293 @@ function App() {
     );
   };
 
+  const tryonPersonInputRef = useRef(null);
+  const tryonGarmentInputRef = useRef(null);
+
+  const handleTryOnSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!tryonPersonFile || !tryonGarmentFile) {
+      alert("Vui lòng chọn đầy đủ cả 2 ảnh!");
+      return;
+    }
+    
+    // Limits check
+    const usage = getTodayUsage();
+    const limits = {
+      free: { videos: 0, images: 0 },
+      basic_69k: { videos: 10, images: 20 },
+      standard_99k: { videos: 20, images: 40 },
+      premium_169k: { videos: Infinity, images: Infinity }
+    };
+    const currentLimits = limits[userTier] || limits.free;
+    if (usage.images >= currentLimits.images) {
+      setLimitError(`Bạn đã dùng hết hạn mức tạo ảnh trong ngày (${currentLimits.images} ảnh/ngày). Vui lòng nâng cấp gói cước!`);
+      setShowPricingModal(true);
+      return;
+    }
+
+    setTryonIsSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('personImage', tryonPersonFile);
+      formData.append('garmentImage', tryonGarmentFile);
+      formData.append('userId', user.uid);
+      formData.append('description', tryonDescription);
+      formData.append('model', tryonModel);
+      formData.append('aspectRatio', tryonAspectRatio);
+
+      const res = await fetch(`${API_BASE}/api/try-on`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Server error');
+      }
+
+      const data = await res.json();
+      console.log("VTON Task created:", data);
+      
+      // Reset files & description
+      setTryonPersonFile(null);
+      setTryonGarmentFile(null);
+      setTryonDescription('');
+
+      // Redirect back to home to see task
+      window.location.hash = '';
+      setIsTryOnView(false);
+    } catch (err) {
+      console.error(err);
+      alert(`Không thể bắt đầu thay đồ: ${err.message}`);
+    } finally {
+      setTryonIsSubmitting(false);
+    }
+  };
+
+  const renderTryOnView = () => {
+    return (
+      <div className="container" style={{ maxWidth: '800px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
+        
+        {/* Hidden inputs */}
+        <input 
+          type="file" 
+          ref={tryonPersonInputRef} 
+          style={{ display: 'none' }} 
+          accept="image/*" 
+          onChange={(e) => setTryonPersonFile(e.target.files[0] || null)}
+        />
+        <input 
+          type="file" 
+          ref={tryonGarmentInputRef} 
+          style={{ display: 'none' }} 
+          accept="image/*" 
+          onChange={(e) => setTryonGarmentFile(e.target.files[0] || null)}
+        />
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <ImageIcon size={28} style={{ color: '#3b82f6' }} />
+              <h1 style={{ fontSize: '2rem', fontWeight: '800', margin: 0 }}>Bộ Thay Đồ AI</h1>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>
+              Upload ảnh người mẫu và ảnh quần áo để AI tự động thử đồ miễn phí
+            </p>
+          </div>
+          <button 
+            onClick={() => {
+              window.location.hash = '';
+              setIsTryOnView(false);
+            }}
+            className="glass-button" 
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontSize: '0.85rem' }}
+          >
+            <ArrowLeft size={16} />
+            Quay lại
+          </button>
+        </div>
+
+        {/* Tryon Container Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
+          
+          {/* Card 1: Person Image */}
+          <div 
+            onClick={() => tryonPersonInputRef.current?.click()}
+            style={{ 
+              background: 'rgba(255,255,255,0.02)', 
+              border: '2px dashed rgba(255,255,255,0.1)', 
+              borderRadius: '16px', 
+              padding: '24px', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              minHeight: '260px',
+              cursor: 'pointer',
+              transition: 'border-color 0.2s',
+              textAlign: 'center',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+            onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
+          >
+            {tryonPersonFile ? (
+              <>
+                <img 
+                  src={URL.createObjectURL(tryonPersonFile)} 
+                  alt="Person Preview" 
+                  style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, objectFit: 'contain', background: '#09090b' }} 
+                />
+                <button 
+                  type="button" 
+                  onClick={(e) => { e.stopPropagation(); setTryonPersonFile(null); }} 
+                  style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(239, 68, 68, 0.9)', border: 'none', color: '#fff', width: '24px', height: '24px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 'bold', zIndex: 10 }}
+                >
+                  ×
+                </button>
+              </>
+            ) : (
+              <>
+                <Upload size={36} style={{ color: 'var(--text-secondary)', marginBottom: '12px' }} />
+                <div style={{ fontSize: '0.95rem', fontWeight: 'bold' }}>1. Tải ảnh người mẫu / model</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>Hỗ trợ JPG, PNG (Nên chọn ảnh rõ mặt và dáng người)</div>
+              </>
+            )}
+          </div>
+
+          {/* Card 2: Garment Image */}
+          <div 
+            onClick={() => tryonGarmentInputRef.current?.click()}
+            style={{ 
+              background: 'rgba(255,255,255,0.02)', 
+              border: '2px dashed rgba(255,255,255,0.1)', 
+              borderRadius: '16px', 
+              padding: '24px', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              minHeight: '260px',
+              cursor: 'pointer',
+              transition: 'border-color 0.2s',
+              textAlign: 'center',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.borderColor = '#10b981'}
+            onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
+          >
+            {tryonGarmentFile ? (
+              <>
+                <img 
+                  src={URL.createObjectURL(tryonGarmentFile)} 
+                  alt="Garment Preview" 
+                  style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, objectFit: 'contain', background: '#09090b' }} 
+                />
+                <button 
+                  type="button" 
+                  onClick={(e) => { e.stopPropagation(); setTryonGarmentFile(null); }} 
+                  style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(239, 68, 68, 0.9)', border: 'none', color: '#fff', width: '24px', height: '24px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 'bold', zIndex: 10 }}
+                >
+                  ×
+                </button>
+              </>
+            ) : (
+              <>
+                <Upload size={36} style={{ color: 'var(--text-secondary)', marginBottom: '12px' }} />
+                <div style={{ fontSize: '0.95rem', fontWeight: 'bold' }}>2. Tải ảnh trang phục / quần áo</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>Hỗ trợ chụp phẳng hoặc chụp trên nền trơn</div>
+              </>
+            )}
+          </div>
+
+        </div>
+
+        {/* Options Panel */}
+        <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Mô tả loại trang phục (ví dụ: "áo thun", "áo hoodie đen", "váy đỏ"):</span>
+            <input 
+              type="text" 
+              placeholder="Nhập mô tả ngắn bằng tiếng Việt hoặc tiếng Anh..."
+              value={tryonDescription}
+              onChange={(e) => setTryonDescription(e.target.value)}
+              style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Tỷ lệ ảnh đầu ra:</span>
+              <select
+                value={tryonAspectRatio}
+                onChange={(e) => setTryonAspectRatio(e.target.value)}
+                style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
+              >
+                <option value="1:1">1:1 (Ảnh vuông)</option>
+                <option value="3:4">3:4 (Ảnh đứng vừa)</option>
+                <option value="9:16">9:16 (Ảnh dọc TikTok/Story)</option>
+                <option value="4:3">4:3 (Ảnh ngang vừa)</option>
+                <option value="16:9">16:9 (Ảnh ngang HD)</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Model sinh ảnh:</span>
+              <select
+                value={tryonModel}
+                onChange={(e) => setTryonModel(e.target.value)}
+                style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
+              >
+                <option value="nano_banana_pro">Gemini Pix 2 (Imagen 3 Pro)</option>
+                <option value="nano_banana_2">Narwhal (Imagen 3 Fast)</option>
+              </select>
+            </div>
+          </div>
+
+          <button
+            onClick={handleTryOnSubmit}
+            disabled={tryonIsSubmitting || !tryonPersonFile || !tryonGarmentFile}
+            className="glass-button"
+            style={{
+              padding: '14px',
+              background: (tryonIsSubmitting || !tryonPersonFile || !tryonGarmentFile) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '0.95rem',
+              fontWeight: 'bold',
+              cursor: (tryonIsSubmitting || !tryonPersonFile || !tryonGarmentFile) ? 'default' : 'pointer',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '10px'
+            }}
+          >
+            {tryonIsSubmitting ? (
+              <>
+                <Loader size={16} className="spin-loader" />
+                Đang gửi yêu cầu...
+              </>
+            ) : (
+              <>
+                <Play size={16} />
+                Bắt đầu Thay đồ AI
+              </>
+            )}
+          </button>
+
+        </div>
+
+      </div>
+    );
+  };
+
   // Hidden file inputs
   const startInputRef = useRef(null);
   const endInputRef = useRef(null);
@@ -830,6 +1129,10 @@ function App() {
     return renderAdminView();
   }
 
+  if (isTryOnView) {
+    return renderTryOnView();
+  }
+
   const RATIOS = [
     { value: '16:9', label: '16:9', width: 14, height: 8 },
     { value: '4:3', label: '4:3', width: 14, height: 10.5 },
@@ -1002,6 +1305,33 @@ function App() {
                   }}
                 >
                   Nâng cấp Gói dịch vụ
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserDropdown(false);
+                    window.location.hash = '#tryon';
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '8px 10px',
+                    background: 'rgba(59,130,246,0.1)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#3b82f6',
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    marginTop: '4px'
+                  }}
+                >
+                  <ImageIcon size={12} />
+                  Bộ thay đồ AI
                 </button>
 
                 {currentUserIsAdmin && (
