@@ -194,6 +194,20 @@ app.post('/api/try-on', upload.fields([
   }
 });
 
+// Retrieve task status and output details
+app.get('/api/tasks/:id', async (req, res) => {
+  try {
+    const docRef = db.collection('tasks').doc(req.params.id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    res.json({ id: docSnap.id, ...docSnap.data() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Local file upload endpoint: forwards files to R2 to store input assets in R2
 app.post('/api/upload', upload.array('files'), async (req, res) => {
   try {
