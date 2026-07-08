@@ -10,52 +10,10 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
 const playMeowThreeTimes = () => {
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
-    
-    const playOne = (delay) => {
-      const osc = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-      
-      osc.type = 'triangle';
-      
-      const t = ctx.currentTime + delay;
-      
-      // Frequency envelope: starts low, quick rise, slide down
-      osc.frequency.setValueAtTime(320, t);
-      osc.frequency.exponentialRampToValueAtTime(780, t + 0.12);
-      osc.frequency.exponentialRampToValueAtTime(550, t + 0.28);
-      osc.frequency.exponentialRampToValueAtTime(320, t + 0.5);
-      
-      // Gain envelope
-      gainNode.gain.setValueAtTime(0, t);
-      gainNode.gain.linearRampToValueAtTime(0.2, t + 0.04);
-      gainNode.gain.linearRampToValueAtTime(0.16, t + 0.2);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-      
-      // Bandpass filter to create nasal/vocal meow formant
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(800, t);
-      filter.frequency.exponentialRampToValueAtTime(1600, t + 0.12);
-      filter.frequency.exponentialRampToValueAtTime(950, t + 0.28);
-      filter.Q.value = 1.6;
-      
-      osc.connect(filter);
-      filter.connect(gainNode);
-      gainNode.connect(ctx.destination);
-      
-      osc.start(t);
-      osc.stop(t + 0.55);
-    };
-    
-    // Play 3 times with 0.55s delay
-    playOne(0);
-    playOne(0.55);
-    playOne(1.10);
+    const audio = new Audio('/meo.mp3');
+    audio.play().catch(e => console.log("Audio play blocked by browser:", e));
   } catch (e) {
-    console.warn("Web Audio meow failed:", e);
+    console.warn("Audio play failed:", e);
   }
 };
 
