@@ -51,6 +51,7 @@ function App() {
   const [tryonModel, setTryonModel] = useState('nano_banana_pro');
   const [tryonAspectRatio, setTryonAspectRatio] = useState('1:1');
   const [tryonIsSubmitting, setTryonIsSubmitting] = useState(false);
+  const [tryonPreserveBody, setTryonPreserveBody] = useState(true);
 
   // User Document / Subscription Listener
   useEffect(() => {
@@ -642,6 +643,7 @@ function App() {
       formData.append('description', tryonDescription);
       formData.append('model', tryonModel);
       formData.append('aspectRatio', tryonAspectRatio);
+      formData.append('preserve', tryonPreserveBody);
 
       const res = await fetch(`${API_BASE}/api/try-on`, {
         method: 'POST',
@@ -825,6 +827,19 @@ function App() {
               onChange={(e) => setTryonDescription(e.target.value)}
               style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
             />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <input 
+              type="checkbox" 
+              id="tryonPreserveBody"
+              checked={tryonPreserveBody}
+              onChange={(e) => setTryonPreserveBody(e.target.checked)}
+              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+            />
+            <label htmlFor="tryonPreserveBody" style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.9)', cursor: 'pointer', fontWeight: '500', userSelect: 'none' }}>
+              Giữ nguyên tư thế, khuôn mặt và nền của ảnh gốc (Preserve pose & background)
+            </label>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>

@@ -134,7 +134,7 @@ app.post('/api/try-on', upload.fields([
   { name: 'personImage', maxCount: 1 },
   { name: 'garmentImage', maxCount: 1 }
 ]), async (req, res) => {
-  const { userId, model, aspectRatio, description } = req.body;
+  const { userId, model, aspectRatio, description, preserve } = req.body;
   if (!req.files || !req.files['personImage'] || !req.files['garmentImage']) {
     return res.status(400).json({ error: 'Missing personImage or garmentImage files' });
   }
@@ -163,7 +163,14 @@ app.post('/api/try-on', upload.fields([
 
     // Construct the prompt referencing input_file_0.png and input_file_1.png
     const clothDesc = description ? description.trim() : 'clothing';
-    const promptText = `A professional studio photo of the person in input_file_0.png wearing the exact ${clothDesc} from input_file_1.png, photorealistic, high quality`;
+    const shouldPreserve = preserve === 'true' || preserve === true;
+    
+    let promptText;
+    if (shouldPreserve) {
+      promptText = `A photo of the exact same person from input_file_0.png in the exact same pose, expression, hair and background, but wearing the exact ${clothDesc} from input_file_1.png, photorealistic, high quality`;
+    } else {
+      promptText = `A professional studio photo of the person in input_file_0.png wearing the exact ${clothDesc} from input_file_1.png, photorealistic, high quality`;
+    }
 
     // Save task to Firestore
     const taskData = {
