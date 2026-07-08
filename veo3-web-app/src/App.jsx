@@ -2560,125 +2560,119 @@ function App() {
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(5, 5, 8, 0.92)',
+            background: 'rgba(5, 5, 8, 0.95)',
             backdropFilter: 'blur(20px)',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 20000,
-            padding: '24px'
+            padding: '16px'
           }}
         >
+          {/* Main Wrapper */}
           <div 
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: 'rgba(20, 20, 25, 0.85)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '24px',
               width: '100%',
+              height: '100%',
               maxWidth: '900px',
               display: 'flex',
               flexDirection: 'column',
-              boxShadow: '0 30px 80px rgba(0, 0, 0, 0.8)',
-              overflow: 'hidden'
+              position: 'relative'
             }}
           >
             {/* Header / Actions */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', marginBottom: '12px' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Chi Tiết Tác Phẩm</span>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <button 
                   onClick={() => handleDownload(activeLightboxMedia.mediaUrl, `${activeLightboxMedia.type}_detail.${activeLightboxMedia.type === 'video' ? 'mp4' : 'jpg'}`)}
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px 16px', fontSize: '0.78rem', color: '#fff', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '8px 16px', fontSize: '0.78rem', color: '#fff', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
                   <Download size={13} /> Tải Xuống
                 </button>
                 <button 
                   onClick={() => setActiveLightboxMedia(null)}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+                  style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '50%', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px' }}
                 >
-                  <X size={20} />
+                  <X size={18} />
                 </button>
               </div>
             </div>
 
-            {/* Content Container (Split View) */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', minHeight: 0, flexDirection: 'column' }}>
-              {/* Left Side: Media Render */}
-              <div style={{ 
-                flex: '1.3', 
-                minWidth: '0', 
-                background: '#0a0a0c', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                padding: '16px',
-                maxHeight: '50vh'
-              }}>
-                {activeLightboxMedia.type === 'video' ? (
-                  <video 
-                    src={activeLightboxMedia.mediaUrl} 
-                    controls 
-                    autoPlay 
-                    loop 
-                    playsInline 
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} 
-                  />
-                ) : (
-                  <img 
-                    src={activeLightboxMedia.mediaUrl} 
-                    alt="" 
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} 
-                  />
-                )}
-              </div>
+            {/* Media Render Container - Flex: 1 to maximize height */}
+            <div style={{ 
+              flex: '1', 
+              minHeight: 0, 
+              width: '100%',
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              background: '#020204',
+              borderRadius: '16px',
+              padding: '8px'
+            }}>
+              {activeLightboxMedia.type === 'video' ? (
+                <video 
+                  src={activeLightboxMedia.mediaUrl} 
+                  controls 
+                  autoPlay 
+                  loop 
+                  playsInline 
+                  style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} 
+                />
+              ) : (
+                <img 
+                  src={activeLightboxMedia.mediaUrl} 
+                  alt="" 
+                  style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} 
+                />
+              )}
+            </div>
 
-              {/* Right Side: Metadata / Prompts */}
-              <div style={{ flex: '1', minWidth: '0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', background: 'rgba(10, 10, 12, 0.3)' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mô tả đầy đủ (Prompt)</span>
-                  <div style={{ 
-                    padding: '16px', 
-                    background: 'rgba(255, 255, 255, 0.02)', 
-                    border: '1px solid rgba(255, 255, 255, 0.05)', 
-                    borderRadius: '12px', 
-                    fontSize: '0.85rem', 
-                    color: '#ececf1', 
-                    lineHeight: '1.5',
-                    maxHeight: '180px',
-                    overflowY: 'auto',
-                    fontStyle: 'italic',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word'
-                  }}>
-                    "{activeLightboxMedia.prompt}"
-                  </div>
-                </div>
-
+            {/* Bottom Card for Prompts and Metadata */}
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '8px', 
+              padding: '16px', 
+              background: 'rgba(20, 20, 25, 0.6)', 
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255, 255, 255, 0.05)', 
+              borderRadius: '16px',
+              marginTop: '12px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mô tả đầy đủ (Prompt)</span>
                 <button 
                   onClick={() => {
                     handleCopyText(activeLightboxMedia.prompt);
                     alert("Đã sao chép prompt thành công!");
                   }}
-                  style={{ width: '100%', padding: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '10px', color: '#3b82f6', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s' }}
+                  style={{ background: 'rgba(59, 130, 246, 0.15)', border: 'none', borderRadius: '6px', color: '#3b82f6', fontSize: '0.72rem', fontWeight: 'bold', padding: '4px 8px', cursor: 'pointer' }}
                 >
                   Sao Chép Prompt
                 </button>
-
-                <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', marginTop: '4px' }} />
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Định dạng:</span>
-                    <span style={{ color: '#fff', fontWeight: '500' }}>{activeLightboxMedia.type === 'video' ? 'Video (MP4)' : 'Ảnh (JPG)'}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
-                    <span>Thời gian lưu trữ còn lại:</span>
-                    <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Dưới 24 giờ</span>
-                  </div>
-                </div>
+              </div>
+              <div style={{ 
+                fontSize: '0.8rem', 
+                color: '#ececf1', 
+                lineHeight: '1.4',
+                maxHeight: '60px',
+                overflowY: 'auto',
+                fontStyle: 'italic',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
+              }}>
+                "{activeLightboxMedia.prompt}"
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px', marginTop: '2px' }}>
+                <div>Định dạng: <span style={{ color: '#fff', fontWeight: '500' }}>{activeLightboxMedia.type === 'video' ? 'Video (MP4)' : 'Ảnh (JPG)'}</span></div>
+                <div>Lưu trữ: <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Dưới 24 giờ</span></div>
               </div>
             </div>
+
           </div>
         </div>
       )}
