@@ -8,6 +8,89 @@ import './index.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
+const BG_PRESETS = [
+  {
+    name: 'Ví dụ 1: Phòng ngủ Hàn Quốc sang trọng',
+    prompt: 'a luxurious modern Korean-style bedroom with a large floor-to-ceiling window, soft natural daylight, elegant beige and cream tones, minimalist furniture, marble and wood accents, warm LED ambient lighting, and a clean premium aesthetic.'
+  },
+  {
+    name: 'Ví dụ 2: Studio Hàn Quốc sáng trắng',
+    prompt: 'a bright minimalist Korean-style studio interior with soft white walls, light wood furniture, sheer curtains, clean styling, subtle decor, and soft daylight coming from a large window.'
+  },
+  {
+    name: 'Ví dụ 3: Căn hộ luxury kiểu khách sạn',
+    prompt: 'a luxury hotel-style bedroom with beige marble walls, a large upholstered bed, warm indirect LED lighting, elegant wood panels, floor-to-ceiling curtains, and a refined modern premium atmosphere.'
+  },
+  {
+    name: 'Ví dụ 4: Phòng ngủ view thành phố (Phòng thay đồ luxury)',
+    prompt: 'a high-end walk-in closet interior with warm lighting, wood cabinetry, soft beige walls, a large mirror, elegant shelving, and a clean luxury Korean aesthetic.'
+  },
+  {
+    name: 'Ví dụ 5: Background khác hẳn nhưng vẫn sang',
+    prompt: 'a high-end walk-in closet interior with warm lighting, wood cabinetry, soft beige walls, a large mirror, elegant shelving, and a clean luxury Korean aesthetic.'
+  },
+  {
+    name: 'Ví dụ 6: Quán cafe ngoài trời kiểu Hàn Quốc',
+    prompt: 'a stylish outdoor Korean-style cafe terrace with cream umbrellas, wooden tables, beige chairs, soft natural daylight, green plants, minimalist decor, and a cozy premium lifestyle aesthetic.'
+  },
+  {
+    name: 'Ví dụ 7: Đường phố Seoul buổi chiều',
+    prompt: 'a modern Seoul street during golden hour with warm sunlight, clean sidewalks, elegant buildings, neutral beige tones, subtle greenery, soft shadows, and a premium Korean fashion photography vibe.'
+  },
+  {
+    name: 'Ví dụ 8: Ban công luxury view thành phố',
+    prompt: 'a luxury apartment balcony with a wide city skyline view, glass railing, beige outdoor sofa, soft natural daylight, minimalist decor, warm wood accents, and a clean high-end Korean lifestyle aesthetic.'
+  },
+  {
+    name: 'Ví dụ 9: Rooftop Hàn Quốc sang trọng',
+    prompt: 'a modern Korean rooftop terrace with city view, warm LED ambient lighting, beige lounge seating, green plants, glass railing, soft evening sky, and a clean premium atmosphere.'
+  },
+  {
+    name: 'Ví dụ 10: Sân vườn biệt thự',
+    prompt: 'a luxurious villa garden with manicured greenery, stone pathway, beige outdoor furniture, warm natural sunlight, elegant landscaping, soft shadows, and a clean premium resort-like aesthetic.'
+  },
+  {
+    name: 'Ví dụ 11: Lối vào khách sạn 5 sao',
+    prompt: 'a luxury hotel entrance walkway with marble flooring, elegant glass doors, warm ambient lighting, beige and gold tones, green plants, clean architecture, and a high-end fashion editorial atmosphere.'
+  },
+  {
+    name: 'Ví dụ 12: Công viên Hàn Quốc mùa xuân',
+    prompt: 'a beautiful Korean park in spring with cherry blossom trees, a clean walking path, fresh greenery, soft pastel tones, gentle natural sunlight, and a romantic elegant outdoor atmosphere.'
+  },
+  {
+    name: 'Ví dụ 13: Bãi biển resort sang nhẹ',
+    prompt: 'a quiet luxury beachside resort setting with soft white sand, gentle ocean view, cream lounge chairs, beige umbrellas, warm natural sunlight, and a clean elegant premium vacation aesthetic.'
+  },
+  {
+    name: 'Ví dụ 14: Khu phố cổ Hanok Hàn Quốc',
+    prompt: 'a charming Korean hanok-style street with traditional wooden architecture, clean stone path, soft daylight, beige and natural wood tones, elegant cultural atmosphere, and a modern premium feel.'
+  },
+  {
+    name: 'Ví dụ 15: Vườn hoa nhẹ nhàng',
+    prompt: 'a soft outdoor flower garden with pastel flowers, green bushes, a clean stone pathway, natural daylight, gentle breeze atmosphere, romantic Korean photography style, and a fresh feminine aesthetic.'
+  },
+  {
+    name: 'Ví dụ 16: Phố mua sắm luxury',
+    prompt: 'a high-end shopping street with elegant storefronts, clean glass windows, beige stone pavement, soft natural daylight, minimalist luxury branding atmosphere, and a premium Korean street-style fashion vibe.'
+  },
+  {
+    name: 'Ví dụ 17: Cầu thang ngoài trời sang trọng',
+    prompt: 'an elegant outdoor staircase with beige stone steps, modern architecture, green plants, soft daylight, clean shadows, marble and wood accents, and a luxurious Korean editorial photography aesthetic.'
+  },
+  {
+    name: 'Ví dụ 18: Khu nghỉ dưỡng trên núi',
+    prompt: 'a peaceful luxury mountain resort terrace with wooden flooring, glass railing, soft natural daylight, distant mountain view, beige outdoor furniture, warm neutral tones, and a clean premium retreat atmosphere.'
+  },
+  {
+    name: 'Ví dụ 19: Hồ bơi villa cao cấp',
+    prompt: 'a luxury villa poolside setting with a clean blue swimming pool, beige lounge chairs, marble flooring, warm sunlight, minimalist architecture, green plants, and a premium resort-style aesthetic.'
+  },
+  {
+    name: 'Ví dụ 20: Sân trước căn hộ hiện đại',
+    prompt: 'a modern Korean apartment outdoor courtyard with clean stone pavement, beige building facade, minimalist landscaping, soft daylight, warm neutral tones, and a refined high-end residential atmosphere.'
+  }
+];
+
 function App() {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') || 'video');
   const [prompt, setPrompt] = useState('');
@@ -52,6 +135,9 @@ function App() {
   const [tryonAspectRatio, setTryonAspectRatio] = useState('1:1');
   const [tryonIsSubmitting, setTryonIsSubmitting] = useState(false);
   const [tryonPreserveBody, setTryonPreserveBody] = useState(true);
+  const [tryonToolType, setTryonToolType] = useState('tryon'); // 'tryon' | 'clean_916' | 'swap_face' | 'change_bg' | 'brighten_skin'
+  const [tryonSelectedBgPreset, setTryonSelectedBgPreset] = useState(BG_PRESETS[0].prompt);
+  const [tryonCustomBgDescription, setTryonCustomBgDescription] = useState('');
 
   // User Document / Subscription Listener
   useEffect(() => {
@@ -614,8 +700,12 @@ function App() {
 
   const handleTryOnSubmit = async (e) => {
     if (e) e.preventDefault();
-    if (!tryonPersonFile || !tryonGarmentFile) {
-      alert("Vui lòng chọn đầy đủ cả 2 ảnh!");
+    if (!tryonPersonFile) {
+      alert("Vui lòng chọn ảnh gốc!");
+      return;
+    }
+    if (tryonToolType === 'tryon' && !tryonGarmentFile) {
+      alert("Vui lòng chọn ảnh trang phục!");
       return;
     }
     
@@ -638,12 +728,17 @@ function App() {
     try {
       const formData = new FormData();
       formData.append('personImage', tryonPersonFile);
-      formData.append('garmentImage', tryonGarmentFile);
+      if (tryonGarmentFile) {
+        formData.append('garmentImage', tryonGarmentFile);
+      }
       formData.append('userId', user.uid);
       formData.append('description', tryonDescription);
       formData.append('model', tryonModel);
       formData.append('aspectRatio', tryonAspectRatio);
       formData.append('preserve', tryonPreserveBody);
+      formData.append('toolType', tryonToolType);
+      formData.append('bgPreset', tryonSelectedBgPreset);
+      formData.append('bgCustom', tryonCustomBgDescription);
 
       const res = await fetch(`${API_BASE}/api/try-on`, {
         method: 'POST',
@@ -662,6 +757,7 @@ function App() {
       setTryonPersonFile(null);
       setTryonGarmentFile(null);
       setTryonDescription('');
+      setTryonCustomBgDescription('');
 
       // Redirect back to home to see task
       window.location.hash = '';
@@ -699,10 +795,14 @@ function App() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <ImageIcon size={28} style={{ color: '#3b82f6' }} />
-              <h1 style={{ fontSize: '2rem', fontWeight: '800', margin: 0 }}>Bộ Thay Đồ AI</h1>
+              <h1 style={{ fontSize: '2rem', fontWeight: '800', margin: 0 }}>Công cụ Hình ảnh AI</h1>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>
-              Upload ảnh người mẫu và ảnh quần áo để AI tự động thử đồ miễn phí
+              {tryonToolType === 'tryon' && 'Thay trang phục chuyên nghiệp bằng trí tuệ nhân tạo'}
+              {tryonToolType === 'clean_916' && 'Tự động xóa vật thể thừa, logo và mở rộng ảnh sang dọc 9:16'}
+              {tryonToolType === 'swap_face' && 'Thay đổi khuôn mặt của người mẫu sang gương mặt mới'}
+              {tryonToolType === 'change_bg' && 'Thay đổi phông nền phía sau người mẫu, giữ nguyên người'}
+              {tryonToolType === 'brighten_skin' && 'Tự động nâng tone, làm trắng da mịn màng tự nhiên'}
             </p>
           </div>
           <button 
@@ -715,6 +815,61 @@ function App() {
           >
             <ArrowLeft size={16} />
             Quay lại
+          </button>
+        </div>
+
+        {/* Tool Selector Tabs */}
+        <div className="tab-selector" style={{ alignSelf: 'flex-start', background: 'rgba(255,255,255,0.02)', padding: '4px', borderRadius: '10px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+          <button 
+            type="button" 
+            className={`tab-btn ${tryonToolType === 'tryon' ? 'active' : ''}`}
+            onClick={() => {
+              setTryonToolType('tryon');
+            }}
+            style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: '6px', cursor: 'pointer', border: 'none', background: tryonToolType === 'tryon' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', color: tryonToolType === 'tryon' ? '#3b82f6' : 'var(--text-secondary)' }}
+          >
+            1. Thay đồ AI
+          </button>
+          <button 
+            type="button" 
+            className={`tab-btn ${tryonToolType === 'clean_916' ? 'active' : ''}`}
+            onClick={() => {
+              setTryonToolType('clean_916');
+              setTryonAspectRatio('9:16');
+            }}
+            style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: '6px', cursor: 'pointer', border: 'none', background: tryonToolType === 'clean_916' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', color: tryonToolType === 'clean_916' ? '#3b82f6' : 'var(--text-secondary)' }}
+          >
+            2. Xoá chi tiết & Đổi 9:16
+          </button>
+          <button 
+            type="button" 
+            className={`tab-btn ${tryonToolType === 'swap_face' ? 'active' : ''}`}
+            onClick={() => {
+              setTryonToolType('swap_face');
+            }}
+            style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: '6px', cursor: 'pointer', border: 'none', background: tryonToolType === 'swap_face' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', color: tryonToolType === 'swap_face' ? '#3b82f6' : 'var(--text-secondary)' }}
+          >
+            3. Đổi khuôn mặt AI
+          </button>
+          <button 
+            type="button" 
+            className={`tab-btn ${tryonToolType === 'change_bg' ? 'active' : ''}`}
+            onClick={() => {
+              setTryonToolType('change_bg');
+            }}
+            style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: '6px', cursor: 'pointer', border: 'none', background: tryonToolType === 'change_bg' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', color: tryonToolType === 'change_bg' ? '#3b82f6' : 'var(--text-secondary)' }}
+          >
+            4. Thay nền AI
+          </button>
+          <button 
+            type="button" 
+            className={`tab-btn ${tryonToolType === 'brighten_skin' ? 'active' : ''}`}
+            onClick={() => {
+              setTryonToolType('brighten_skin');
+            }}
+            style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: '6px', cursor: 'pointer', border: 'none', background: tryonToolType === 'brighten_skin' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', color: tryonToolType === 'brighten_skin' ? '#3b82f6' : 'var(--text-secondary)' }}
+          >
+            5. Làm trắng da AI
           </button>
         </div>
 
@@ -768,79 +923,123 @@ function App() {
           </div>
 
           {/* Card 2: Garment Image */}
-          <div 
-            onClick={() => tryonGarmentInputRef.current?.click()}
-            style={{ 
-              background: 'rgba(255,255,255,0.02)', 
-              border: '2px dashed rgba(255,255,255,0.1)', 
-              borderRadius: '16px', 
-              padding: '24px', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              minHeight: '260px',
-              cursor: 'pointer',
-              transition: 'border-color 0.2s',
-              textAlign: 'center',
-              position: 'relative',
-              overflow: 'hidden'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.borderColor = '#10b981'}
-            onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
-          >
-            {tryonGarmentFile ? (
-              <>
-                <img 
-                  src={URL.createObjectURL(tryonGarmentFile)} 
-                  alt="Garment Preview" 
-                  style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, objectFit: 'contain', background: '#09090b' }} 
-                />
-                <button 
-                  type="button" 
-                  onClick={(e) => { e.stopPropagation(); setTryonGarmentFile(null); }} 
-                  style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(239, 68, 68, 0.9)', border: 'none', color: '#fff', width: '24px', height: '24px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 'bold', zIndex: 10 }}
-                >
-                  ×
-                </button>
-              </>
-            ) : (
-              <>
-                <Upload size={36} style={{ color: 'var(--text-secondary)', marginBottom: '12px' }} />
-                <div style={{ fontSize: '0.95rem', fontWeight: 'bold' }}>2. Tải ảnh trang phục / quần áo</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>Hỗ trợ chụp phẳng hoặc chụp trên nền trơn</div>
-              </>
-            )}
-          </div>
+          {tryonToolType === 'tryon' && (
+            <div 
+              onClick={() => tryonGarmentInputRef.current?.click()}
+              style={{ 
+                background: 'rgba(255,255,255,0.02)', 
+                border: '2px dashed rgba(255,255,255,0.1)', 
+                borderRadius: '16px', 
+                padding: '24px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                minHeight: '260px',
+                cursor: 'pointer',
+                transition: 'border-color 0.2s',
+                textAlign: 'center',
+                position: 'relative',
+                overflow: 'hidden'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.borderColor = '#10b981'}
+              onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
+            >
+              {tryonGarmentFile ? (
+                <>
+                  <img 
+                    src={URL.createObjectURL(tryonGarmentFile)} 
+                    alt="Garment Preview" 
+                    style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, objectFit: 'contain', background: '#09090b' }} 
+                  />
+                  <button 
+                    type="button" 
+                    onClick={(e) => { e.stopPropagation(); setTryonGarmentFile(null); }} 
+                    style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(239, 68, 68, 0.9)', border: 'none', color: '#fff', width: '24px', height: '24px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 'bold', zIndex: 10 }}
+                  >
+                    ×
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Upload size={36} style={{ color: 'var(--text-secondary)', marginBottom: '12px' }} />
+                  <div style={{ fontSize: '0.95rem', fontWeight: 'bold' }}>2. Tải ảnh trang phục / quần áo</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>Hỗ trợ chụp phẳng hoặc chụp trên nền trơn</div>
+                </>
+              )}
+            </div>
+          )}
 
         </div>
 
         {/* Options Panel */}
         <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Mô tả loại trang phục (ví dụ: "áo thun", "áo hoodie đen", "váy đỏ"):</span>
-            <input 
-              type="text" 
-              placeholder="Nhập mô tả ngắn bằng tiếng Việt hoặc tiếng Anh..."
-              value={tryonDescription}
-              onChange={(e) => setTryonDescription(e.target.value)}
-              style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
-            />
-          </div>
+          {tryonToolType === 'tryon' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Mô tả loại trang phục (ví dụ: "áo thun", "áo hoodie đen", "váy đỏ"):</span>
+              <input 
+                type="text" 
+                placeholder="Nhập mô tả ngắn bằng tiếng Việt hoặc tiếng Anh..."
+                value={tryonDescription}
+                onChange={(e) => setTryonDescription(e.target.value)}
+                style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
+              />
+            </div>
+          )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <input 
-              type="checkbox" 
-              id="tryonPreserveBody"
-              checked={tryonPreserveBody}
-              onChange={(e) => setTryonPreserveBody(e.target.checked)}
-              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-            />
-            <label htmlFor="tryonPreserveBody" style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.9)', cursor: 'pointer', fontWeight: '500', userSelect: 'none' }}>
-              Giữ nguyên tư thế, khuôn mặt và nền của ảnh gốc (Preserve pose & background)
-            </label>
-          </div>
+          {tryonToolType === 'change_bg' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderLeft: '3px solid #3b82f6', paddingLeft: '14px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Chọn phông nền mẫu:</span>
+                <select
+                  value={tryonSelectedBgPreset}
+                  onChange={(e) => {
+                    setTryonSelectedBgPreset(e.target.value);
+                  }}
+                  style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
+                >
+                  {BG_PRESETS.map((preset, index) => (
+                    <option key={index} value={preset.prompt}>
+                      {preset.name}
+                    </option>
+                  ))}
+                  <option value="custom">-- Tự nhập mô tả nền riêng --</option>
+                </select>
+              </div>
+
+              {(tryonSelectedBgPreset === 'custom' || true) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>Mô tả nền tự do (nếu muốn tự ghi bằng tiếng Việt/tiếng Anh):</span>
+                  <input 
+                    type="text" 
+                    placeholder="Ví dụ: bãi biển Phú Quốc hoàng hôn ấm áp, resort sang trọng..."
+                    value={tryonCustomBgDescription}
+                    onChange={(e) => setTryonCustomBgDescription(e.target.value)}
+                    style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
+                  />
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
+                    * Nếu chọn phông nền mẫu ở trên và nhập cả mô tả ở đây, hệ thống sẽ ưu tiên mô tả tự do này.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tryonToolType === 'tryon' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <input 
+                type="checkbox" 
+                id="tryonPreserveBody"
+                checked={tryonPreserveBody}
+                onChange={(e) => setTryonPreserveBody(e.target.checked)}
+                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              <label htmlFor="tryonPreserveBody" style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.9)', cursor: 'pointer', fontWeight: '500', userSelect: 'none' }}>
+                Giữ nguyên tư thế, khuôn mặt và nền của ảnh gốc (Preserve pose & background)
+              </label>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -848,7 +1047,8 @@ function App() {
               <select
                 value={tryonAspectRatio}
                 onChange={(e) => setTryonAspectRatio(e.target.value)}
-                style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
+                disabled={tryonToolType === 'clean_916'}
+                style={{ background: '#16161a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', color: '#fff', fontSize: '0.85rem', outline: 'none', opacity: tryonToolType === 'clean_916' ? 0.5 : 1 }}
               >
                 <option value="1:1">1:1 (Ảnh vuông)</option>
                 <option value="3:4">3:4 (Ảnh đứng vừa)</option>
@@ -873,17 +1073,17 @@ function App() {
 
           <button
             onClick={handleTryOnSubmit}
-            disabled={tryonIsSubmitting || !tryonPersonFile || !tryonGarmentFile}
+            disabled={tryonIsSubmitting || !tryonPersonFile || (tryonToolType === 'tryon' && !tryonGarmentFile)}
             className="glass-button"
             style={{
               padding: '14px',
-              background: (tryonIsSubmitting || !tryonPersonFile || !tryonGarmentFile) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              background: (tryonIsSubmitting || !tryonPersonFile || (tryonToolType === 'tryon' && !tryonGarmentFile)) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
               color: '#fff',
               border: 'none',
               borderRadius: '8px',
               fontSize: '0.95rem',
               fontWeight: 'bold',
-              cursor: (tryonIsSubmitting || !tryonPersonFile || !tryonGarmentFile) ? 'default' : 'pointer',
+              cursor: (tryonIsSubmitting || !tryonPersonFile || (tryonToolType === 'tryon' && !tryonGarmentFile)) ? 'default' : 'pointer',
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',
@@ -899,7 +1099,11 @@ function App() {
             ) : (
               <>
                 <Play size={16} />
-                Bắt đầu Thay đồ AI
+                {tryonToolType === 'tryon' && 'Bắt đầu Thay đồ AI'}
+                {tryonToolType === 'clean_916' && 'Bắt đầu Xóa phần thừa'}
+                {tryonToolType === 'swap_face' && 'Bắt đầu Đổi khuôn mặt'}
+                {tryonToolType === 'change_bg' && 'Bắt đầu Thay nền'}
+                {tryonToolType === 'brighten_skin' && 'Bắt đầu Làm trắng da'}
               </>
             )}
           </button>

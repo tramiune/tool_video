@@ -129,47 +129,141 @@ app.post('/api/set-cookies', async (req, res) => {
   }
 });
 
-// AI Virtual Try-On endpoint: receives person and garment images, uploads to R2, and queues a task
+// AI Image Tools endpoint: handles try-on, clean & extend 9:16, or swap face
 app.post('/api/try-on', upload.fields([
   { name: 'personImage', maxCount: 1 },
   { name: 'garmentImage', maxCount: 1 }
 ]), async (req, res) => {
-  const { userId, model, aspectRatio, description, preserve } = req.body;
-  if (!req.files || !req.files['personImage'] || !req.files['garmentImage']) {
-    return res.status(400).json({ error: 'Missing personImage or garmentImage files' });
+  const { userId, model, aspectRatio, description, preserve, toolType, bgPreset, bgCustom } = req.body;
+  if (!req.files || !req.files['personImage']) {
+    return res.status(400).json({ error: 'Missing personImage file' });
   }
 
   try {
     const personFile = req.files['personImage'][0];
-    const garmentFile = req.files['garmentImage'][0];
     
     // Upload person to R2
-    logger.info(`VTON: Uploading person image to R2...`);
+    logger.info(`Image Tool: Uploading person image to R2...`);
     const personBuffer = fs.readFileSync(personFile.path);
     const personExt = path.extname(personFile.originalname) || '.jpg';
     const personKey = `meo3/inputs/${uuidv4()}${personExt}`;
     const personUrl = await uploadToR2(personBuffer, personKey, 'image/jpeg');
     
-    // Upload garment to R2
-    logger.info(`VTON: Uploading garment image to R2...`);
-    const garmentBuffer = fs.readFileSync(garmentFile.path);
-    const garmentExt = path.extname(garmentFile.originalname) || '.jpg';
-    const garmentKey = `meo3/inputs/${uuidv4()}${garmentExt}`;
-    const garmentUrl = await uploadToR2(garmentBuffer, garmentKey, 'image/jpeg');
-    
-    // Delete temp local files
+    // Delete temp person file
     try { fs.unlinkSync(personFile.path); } catch (e) {}
-    try { fs.unlinkSync(garmentFile.path); } catch (e) {}
 
-    // Construct the prompt referencing input_file_0.png and input_file_1.png
-    const clothDesc = description ? description.trim() : 'clothing';
-    const shouldPreserve = preserve === 'true' || preserve === true;
-    
+    let garmentUrl = null;
+    if (req.files['garmentImage'] && req.files['garmentImage'][0]) {
+      const garmentFile = req.files['garmentImage'][0];
+      logger.info(`Image Tool: Uploading garment image to R2...`);
+      const garmentBuffer = fs.readFileSync(garmentFile.path);
+      const garmentExt = path.extname(garmentFile.originalname) || '.jpg';
+      const garmentKey = `meo3/inputs/${uuidv4()}${garmentExt}`;
+      garmentUrl = await uploadToR2(garmentBuffer, garmentKey, 'image/jpeg');
+      
+      // Delete temp garment file
+      try { fs.unlinkSync(garmentFile.path); } catch (e) {}
+    }
+
     let promptText;
-    if (shouldPreserve) {
-      promptText = `A photo of the exact same person from input_file_0.png in the exact same pose, expression, hair and background, but wearing the exact ${clothDesc} from input_file_1.png. The clothing must look exactly identical to the garment in input_file_1.png, preserving every single detail, print, logo, pattern, texture, and color exactly as shown, without any modifications or additions, photorealistic, high quality`;
+    let refImages = [personUrl];
+    let finalAspectRatio = aspectRatio || '1:1';
+
+    if (toolType === 'clean_916') {
+      // Tool 2: Clean and Extend to 9:16
+      promptText = `Extend this image to a clean 9:16 vertical portrait. Keep the same person, face, hairstyle, body proportions, pose, dress, lighting, camera angle, and interior exactly as the original. Preserve the original composition and photorealistic quality. Remove all UI overlays, including text, logos, search bar, captions, hashtags, buttons, profile picture, like/comment/share icons, watermark, and any app interface. Naturally reconstruct the hidden background behind the removed elements, matching the surrounding wall panels, furniture, lighting, shadows, and perspective seamlessly. Do not change the woman's appearance, expression, makeup, clothing, or body shape. Do not add or remove objects except those hidden by the overlays. Ultra realistic, DSLR photography, high detail, sharp focus, soft natural skin texture, clean luxury interior, 8K.`;
+      finalAspectRatio = '9:16';
+    } else if (toolType === 'swap_face') {
+      // Tool 3: Face swap
+      promptText = `Keep the same hairstyle, makeup style, skin tone, age range, body proportions, pose, dress, lighting, camera angle, and luxury interior. Transform the face into a completely new fictional East Asian woman with a unique identity. Change all facial features, including eye shape, eyebrow shape, nose, lips, jawline, cheekbones, face contour, forehead, and facial proportions. Ensure she does not resemble the original person while maintaining the same beauty level and natural appearance. Keep the expression soft and elegant. Preserve the overall fashion vibe and aesthetic, but create a fresh, original identity. Ultra photorealistic, DSLR, 85mm lens, natural skin texture, high detail, realistic pores, soft lighting, 8K.`;
+    } else if (toolType === 'change_bg') {
+      // Tool 4: Change Background
+      const bgDescription = (bgCustom && bgCustom.trim()) ? bgCustom.trim() : (bgPreset || 'a luxurious modern bedroom');
+      promptText = `Edit Image A.
+
+Image A is the original reference and the direct edit target.
+
+Keep the same person exactly as in Image A:
+- same face
+- same hairstyle
+- same makeup
+- same glasses and accessories
+- same skin tone
+- same body proportions
+- same pose
+- same clothing
+- same camera angle
+- same framing
+- same lighting direction
+- same image quality and realism
+
+Replace ONLY the background.
+
+Create a new background: ${bgDescription}.
+
+The new background must blend naturally with the subject using realistic perspective, shadows, reflections, color matching, and depth. Preserve the subject perfectly and do not change any facial features, expression, body shape, clothing details, or pose.
+
+Do not modify the woman in any way. Do not change her identity. Do not add extra people. Do not alter her hands, arms, hair, outfit, or proportions. Only change the environment behind her.
+
+Maintain an ultra-photorealistic DSLR look, natural skin texture, high detail, shallow depth of field, realistic indoor lighting, clean composition, and premium aesthetic. 8K.`
+    } else if (toolType === 'brighten_skin') {
+      // Tool 5: Brighten skin
+      promptText = `Edit ONLY the skin tone of the person.
+
+Increase the skin brightness significantly to achieve a fair, porcelain, Korean-style complexion while keeping it completely natural and realistic.
+
+The skin should appear smooth, luminous, healthy, and evenly toned, with natural highlights and realistic skin texture. Avoid an overexposed, gray, plastic, or AI-generated look.
+
+Do NOT modify anything else.
+
+Keep exactly the same:
+- Face and identity (highest priority)
+- Facial proportions
+- Eyes
+- Nose
+- Lips
+- Eyebrows
+- Hairstyle
+- Hair color
+- Makeup
+- Facial expression
+- Body shape and proportions
+- Pose
+- Hands and fingers
+- Clothing
+- Accessories
+- Background
+- Camera angle
+- Framing
+- Lighting direction
+- Shadows
+- Image composition
+- Fabric texture
+- Colors of all objects
+
+Do not apply beauty filters, face reshaping, skin smoothing, body slimming, or any enhancement other than making the skin tone much fairer.
+
+The final image should look exactly like the original photo, with the only visible difference being significantly fairer, brighter, naturally radiant skin.
+
+Ultra photorealistic.
+Natural skin texture.
+DSLR quality.
+8K.
+Identity preservation is the highest priority.`;
     } else {
-      promptText = `A professional studio photo of the person in input_file_0.png wearing the exact ${clothDesc} from input_file_1.png. The clothing must look exactly identical to the garment in input_file_1.png, preserving every single detail, print, logo, pattern, texture, and color exactly as shown, without any modifications or additions, photorealistic, high quality`;
+      // Tool 1: Virtual Try-On
+      if (!garmentUrl) {
+        return res.status(400).json({ error: 'Missing garmentImage file for tryon tool type' });
+      }
+      refImages.push(garmentUrl);
+      
+      const clothDesc = description ? description.trim() : 'clothing';
+      const shouldPreserve = preserve === 'true' || preserve === true;
+      if (shouldPreserve) {
+        promptText = `A photo of the exact same person from input_file_0.png in the exact same pose, expression, hair and background, but wearing the exact ${clothDesc} from input_file_1.png. The clothing must look exactly identical to the garment in input_file_1.png, preserving every single detail, print, logo, pattern, texture, and color exactly as shown, without any modifications or additions, photorealistic, high quality`;
+      } else {
+        promptText = `A professional studio photo of the person in input_file_0.png wearing the exact ${clothDesc} from input_file_1.png. The clothing must look exactly identical to the garment in input_file_1.png, preserving every single detail, print, logo, pattern, texture, and color exactly as shown, without any modifications or additions, photorealistic, high quality`;
+      }
     }
 
     // Save task to Firestore
@@ -178,18 +272,18 @@ app.post('/api/try-on', upload.fields([
       type: 'image',
       status: 'pending',
       prompt: promptText,
-      aspectRatio: aspectRatio || '1:1',
+      aspectRatio: finalAspectRatio,
       model: model || 'nano_banana_pro',
-      referenceImages: [personUrl, garmentUrl],
+      referenceImages: refImages,
       createdAt: Date.now()
     };
 
     const docRef = await db.collection('tasks').add(taskData);
-    logger.success(`VTON Task successfully created: ${docRef.id}`);
+    logger.success(`Image Tool Task successfully created: ${docRef.id} (${toolType || 'tryon'})`);
 
     res.json({ success: true, taskId: docRef.id, status: 'queued' });
   } catch (err) {
-    logger.error('VTON API failed', err);
+    logger.error('Image Tool API failed', err);
     res.status(500).json({ error: err.message });
   }
 });
