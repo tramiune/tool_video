@@ -649,8 +649,8 @@ function App() {
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Server error');
+        const errorText = await res.text();
+        throw new Error(errorText || `Server returned code ${res.status}`);
       }
 
       const data = await res.json();
