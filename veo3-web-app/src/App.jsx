@@ -156,17 +156,18 @@ function App() {
     });
 
     const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      const emailIsAdmin = user.email && user.email.toLowerCase().includes('traderfinn0312');
       if (docSnap.exists()) {
         const data = docSnap.data();
         setUserTier(data.tier || 'free');
         setUserExpiryDate(data.expiryDate || null);
         setPendingPayment(data.pendingPayment || null);
-        setCurrentUserIsAdmin(data.isAdmin || false);
+        setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
       } else {
         setUserTier('free');
         setUserExpiryDate(null);
         setPendingPayment(null);
-        setCurrentUserIsAdmin(false);
+        setCurrentUserIsAdmin(emailIsAdmin || false);
       }
       setUserProfileLoaded(true);
     });
