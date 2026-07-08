@@ -1516,29 +1516,62 @@ function App() {
         </div>
         
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {/* Dynamic Subscription Badge (Clickable to Upgrade) */}
+          {/* Dynamic Subscription Badge & Upgrade Button */}
           <div 
             onClick={() => setShowPricingModal(true)}
             style={{ 
               cursor: 'pointer', 
-              transition: 'opacity 0.2s',
-              userSelect: 'none'
+              userSelect: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
             }}
-            onMouseOver={(e) => e.currentTarget.style.opacity = 0.8}
-            onMouseOut={(e) => e.currentTarget.style.opacity = 1}
             title="Bấm để nâng cấp / thay đổi gói"
           >
             {userTier === 'premium_169k' && (
-              <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)', color: '#16161a', borderRadius: '4px', fontWeight: 'bold' }}>Premium</span>
+              <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)', color: '#16161a', borderRadius: '6px', fontWeight: 'bold', boxShadow: '0 0 10px rgba(251, 191, 36, 0.3)' }}>Premium</span>
             )}
             {userTier === 'standard_99k' && (
-              <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6', borderRadius: '4px', fontWeight: 'bold' }}>Standard 99k</span>
+              <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', borderRadius: '6px', fontWeight: 'bold', border: '1px solid rgba(139, 92, 246, 0.3)' }}>Standard 99k</span>
             )}
             {userTier === 'basic_69k' && (
-              <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', borderRadius: '4px', fontWeight: 'bold' }}>Basic 69k</span>
+              <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', borderRadius: '6px', fontWeight: 'bold', border: '1px solid rgba(59, 130, 246, 0.3)' }}>Basic 69k</span>
             )}
             {userTier === 'free' && (
-              <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(255,255,255,0.05)', color: '#a1a1aa', borderRadius: '4px' }}>Free (Nâng cấp)</span>
+              <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'rgba(255,255,255,0.06)', color: '#e4e4e7', borderRadius: '6px', fontWeight: '500', border: '1px solid rgba(255,255,255,0.1)' }}>Gói Free</span>
+            )}
+            
+            {/* Highly visible pop-out upgrade button if not Premium */}
+            {userTier !== 'premium_169k' && (
+              <button 
+                type="button"
+                style={{
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  padding: '5px 12px',
+                  fontSize: '0.72rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  boxShadow: '0 0 12px rgba(139, 92, 246, 0.4)',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  animation: 'pulse 2s infinite'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.05)';
+                  e.currentTarget.style.boxShadow = '0 0 18px rgba(139, 92, 246, 0.6)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.boxShadow = '0 0 12px rgba(139, 92, 246, 0.4)';
+                }}
+              >
+                <span style={{ display: 'inline-block', transform: 'scale(1.1)' }}>⚡</span> Nâng cấp
+              </button>
             )}
           </div>
           
