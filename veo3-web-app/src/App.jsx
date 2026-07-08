@@ -122,6 +122,7 @@ function App() {
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [limitError, setLimitError] = useState(null);
   const [selectedTierForPay, setSelectedTierForPay] = useState(null);
+  const [qrLoading, setQrLoading] = useState(true);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
   const [userProfileLoaded, setUserProfileLoaded] = useState(false);
@@ -277,6 +278,14 @@ function App() {
 
   const handleSelectTierForPay = async (tierKey) => {
     if (!user) return;
+    setQrLoading(true);
+    
+    // Nếu đã có giao dịch đang chờ trùng với gói đang chọn thì tái sử dụng, không sinh code mới
+    if (pendingPayment && pendingPayment.tier === tierKey && pendingPayment.code) {
+      setSelectedTierForPay(tierKey);
+      return;
+    }
+    
     // Generate code e.g. VE123456
     const code = `VE${Math.floor(100000 + Math.random() * 900000)}`;
     try {
@@ -2473,11 +2482,17 @@ function App() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'center', justifyContent: 'center' }}>
                 {/* VietQR Code Image */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ padding: '12px', background: '#fff', borderRadius: '16px', boxShadow: '0 8px 30px rgba(0,0,0,0.3)', width: '200px', height: '200px' }}>
+                  <div style={{ padding: '12px', background: '#fff', borderRadius: '16px', boxShadow: '0 8px 30px rgba(0,0,0,0.3)', width: '200px', height: '200px', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {qrLoading && (
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: '16px' }}>
+                        <Loader size={24} className="spin-loader" style={{ color: '#3b82f6' }} />
+                      </div>
+                    )}
                     <img 
                       src={`https://img.vietqr.io/image/OCB-CASS26030609-compact.png?amount=${getUpgradeCost(selectedTierForPay)}&addInfo=${encodeURIComponent(pendingPayment ? pendingPayment.code : 'VE')}&accountName=VAN%20THI%20HANG`} 
                       alt="VietQR Payment Code" 
-                      style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                      onLoad={() => setQrLoading(false)}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: qrLoading ? 0 : 1, transition: 'opacity 0.2s' }} 
                     />
                   </div>
                   <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Mở App Ngân hàng để quét mã VietQR</span>
