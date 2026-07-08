@@ -167,9 +167,9 @@ app.post('/api/try-on', upload.fields([
     
     let promptText;
     if (shouldPreserve) {
-      promptText = `A photo of the exact same person from input_file_0.png in the exact same pose, expression, hair and background, but wearing the exact ${clothDesc} from input_file_1.png, photorealistic, high quality`;
+      promptText = `A photo of the exact same person from input_file_0.png in the exact same pose, expression, hair and background, but wearing the exact ${clothDesc} from input_file_1.png. The clothing must look exactly identical to the garment in input_file_1.png, preserving every single detail, print, logo, pattern, texture, and color exactly as shown, without any modifications or additions, photorealistic, high quality`;
     } else {
-      promptText = `A professional studio photo of the person in input_file_0.png wearing the exact ${clothDesc} from input_file_1.png, photorealistic, high quality`;
+      promptText = `A professional studio photo of the person in input_file_0.png wearing the exact ${clothDesc} from input_file_1.png. The clothing must look exactly identical to the garment in input_file_1.png, preserving every single detail, print, logo, pattern, texture, and color exactly as shown, without any modifications or additions, photorealistic, high quality`;
     }
 
     // Save task to Firestore
