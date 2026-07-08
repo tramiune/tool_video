@@ -103,7 +103,7 @@ function App() {
   const [refFiles, setRefFiles] = useState([]);
   const [selectedRefUrls, setSelectedRefUrls] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showOptions, setShowOptions] = useState(false);
+  const [showOptions, setShowOptions] = useState(true);
   const [startLibraryUrl, setStartLibraryUrl] = useState(null);
   const [endLibraryUrl, setEndLibraryUrl] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
