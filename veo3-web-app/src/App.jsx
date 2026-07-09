@@ -282,6 +282,11 @@ function App() {
     return { videos, images };
   };
 
+  // Đếm tổng số video đã tạo từ trước đến nay (all-time), dùng để giới hạn free tier
+  const getAllTimeVideoCount = () => {
+    return tasks.filter(t => t.type === 'video' && t.status !== 'failed').length;
+  };
+
   const handleUpgradeTier = async (newTier) => {
     if (!user) return;
     try {
@@ -1266,7 +1271,7 @@ function App() {
 
     // Limit checking
     const limits = {
-      free: { videos: 0, images: 0 },
+      free: { videos: 1, images: 0 },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 10, images: 20 },
       standard_99k: { videos: 20, images: 40 },
@@ -1278,9 +1283,18 @@ function App() {
     const currentLimits = limits[activeUserTier] || limits.free;
     const usage = getTodayUsage();
 
-    if (activeTab === 'video' && usage.videos >= currentLimits.videos) {
-      setLimitError({ type: 'video', limit: currentLimits.videos, current: usage.videos });
-      return;
+    if (activeTab === 'video') {
+      // Free tier: chỉ được làm 1 video duy nhất toàn đời (all-time)
+      if (activeUserTier === 'free') {
+        const allTimeVideos = getAllTimeVideoCount();
+        if (allTimeVideos >= 1) {
+          setLimitError({ type: 'video', limit: 1, current: allTimeVideos, isAllTime: true });
+          return;
+        }
+      } else if (usage.videos >= currentLimits.videos) {
+        setLimitError({ type: 'video', limit: currentLimits.videos, current: usage.videos });
+        return;
+      }
     }
 
     if (activeTab === 'image' && usage.images >= currentLimits.images) {
@@ -1647,8 +1661,8 @@ function App() {
 
                 <div style={{ padding: '4px 8px 8px 8px', fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Video hôm nay:</span>
-                    <span>{getTodayUsage().videos}/{userTier === 'free' || userTier === 'hocvien' ? 0 : userTier === 'basic_69k' ? 10 : userTier === 'standard_99k' ? 20 : '∞'}</span>
+                    <span>{userTier === 'free' ? 'Video (trọn đời):' : 'Video hôm nay:'}</span>
+                    <span>{userTier === 'free' ? `${getAllTimeVideoCount()}/1` : `${getTodayUsage().videos}/${userTier === 'hocvien' ? 0 : userTier === 'basic_69k' ? 10 : userTier === 'standard_99k' ? 20 : '∞'}`}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>Ảnh hôm nay:</span>
@@ -2373,7 +2387,10 @@ function App() {
             </div>
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>Hết lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'}</h3>
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-              Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Basic' : userTier === 'standard_99k' ? 'Standard' : 'Premium'}</strong>.
+              {limitError.isAllTime
+                ? <>Gói <strong>Free</strong> chỉ được tạo <strong>1 video duy nhất</strong> (trọn đời). Bạn đã dùng hết lượt thử miễn phí rồi. Nâng cấp để tiếp tục tạo video nhé! 🎬</>
+                : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Basic' : userTier === 'standard_99k' ? 'Standard' : 'Premium'}</strong>.</>
+              }
             </p>
             <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
               <button 
