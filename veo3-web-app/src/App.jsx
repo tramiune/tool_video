@@ -1887,13 +1887,39 @@ function App() {
                 
                 {/* Floating Actions in Top-Right Corner */}
                 <div className="item-actions-overlay">
-                  {/* Add to prompt (Only for Image) */}
+                  {/* Add to prompt / start-end frame (Only for Image) */}
                   {task.type === 'image' && (
                     <button 
                       type="button"
-                      onClick={() => setSelectedRefUrls(prev => [...prev, task.mediaUrl])}
+                      onClick={() => {
+                        if (isTryOnView) {
+                          // If in tryon view, set as model image
+                          setTryonPersonFile(null); // URL support would need setTryonPersonUrl but we only have File, so we can alert or skip.
+                          alert("Vui lòng tải ảnh lên trực tiếp từ máy để sử dụng công cụ AI.");
+                        } else if (activeTab === 'video') {
+                          if (!startFile && !startLibraryUrl) {
+                            setStartLibraryUrl(task.mediaUrl);
+                            setStartFile(null);
+                            alert("Đã đặt ảnh này làm Ảnh bắt đầu (Start Frame) cho video!");
+                          } else if (!endFile && !endLibraryUrl) {
+                            setEndLibraryUrl(task.mediaUrl);
+                            setEndFile(null);
+                            alert("Đã đặt ảnh này làm Ảnh kết thúc (End Frame) cho video!");
+                          } else {
+                            setStartLibraryUrl(task.mediaUrl);
+                            setStartFile(null);
+                            alert("Đã đặt lại ảnh này làm Ảnh bắt đầu (Start Frame) cho video!");
+                          }
+                        } else {
+                          setSelectedRefUrls(prev => {
+                            if (prev.includes(task.mediaUrl)) return prev;
+                            return [...prev, task.mediaUrl];
+                          });
+                          alert("Đã thêm ảnh này vào danh sách ảnh tham khảo!");
+                        }
+                      }}
                       className="action-circle-btn" 
-                      data-tooltip="Thêm vào prompt"
+                      data-tooltip={activeTab === 'video' ? "Sử dụng làm Start/End frame" : "Thêm vào ảnh tham khảo"}
                     >
                       <Plus size={14} />
                     </button>
