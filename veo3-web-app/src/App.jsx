@@ -845,11 +845,11 @@ function App() {
               <h1 style={{ fontSize: '2rem', fontWeight: '800', margin: 0 }}>Công cụ Hình ảnh AI</h1>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>
-              {tryonToolType === 'tryon' && 'Thay trang phục chuyên nghiệp bằng trí tuệ nhân tạo'}
-              {tryonToolType === 'clean_916' && 'Tự động xóa vật thể thừa, logo và mở rộng ảnh sang dọc 9:16'}
-              {tryonToolType === 'swap_face' && 'Thay đổi khuôn mặt của người mẫu sang gương mặt mới'}
-              {tryonToolType === 'change_bg' && 'Thay đổi phông nền phía sau người mẫu, giữ nguyên người'}
-              {tryonToolType === 'brighten_skin' && 'Tự động nâng tone, làm trắng da mịn màng tự nhiên'}
+              {tryonToolType === 'tryon' && <span>Thay trang phục chuyên nghiệp bằng trí tuệ nhân tạo</span>}
+              {tryonToolType === 'clean_916' && <span>Tự động xóa vật thể thừa, logo và mở rộng ảnh sang dọc 9:16</span>}
+              {tryonToolType === 'swap_face' && <span>Thay đổi khuôn mặt của người mẫu sang gương mặt mới</span>}
+              {tryonToolType === 'change_bg' && <span>Thay đổi phông nền phía sau người mẫu, giữ nguyên người</span>}
+              {tryonToolType === 'brighten_skin' && <span>Tự động nâng tone, làm trắng da mịn màng tự nhiên</span>}
             </p>
           </div>
           <button 
@@ -1141,16 +1141,16 @@ function App() {
             {tryonIsSubmitting ? (
               <>
                 <Loader size={16} className="spin-loader" />
-                Đang gửi yêu cầu...
+                <span>Đang gửi yêu cầu...</span>
               </>
             ) : (
               <>
                 <Play size={16} />
-                {tryonToolType === 'tryon' && 'Bắt đầu Thay đồ AI'}
-                {tryonToolType === 'clean_916' && 'Bắt đầu Xóa phần thừa'}
-                {tryonToolType === 'swap_face' && 'Bắt đầu Đổi khuôn mặt'}
-                {tryonToolType === 'change_bg' && 'Bắt đầu Thay nền'}
-                {tryonToolType === 'brighten_skin' && 'Bắt đầu Làm trắng da'}
+                {tryonToolType === 'tryon' && <span>Bắt đầu Thay đồ AI</span>}
+                {tryonToolType === 'clean_916' && <span>Bắt đầu Xóa phần thừa</span>}
+                {tryonToolType === 'swap_face' && <span>Bắt đầu Đổi khuôn mặt</span>}
+                {tryonToolType === 'change_bg' && <span>Bắt đầu Thay nền</span>}
+                {tryonToolType === 'brighten_skin' && <span>Bắt đầu Làm trắng da</span>}
               </>
             )}
           </button>
