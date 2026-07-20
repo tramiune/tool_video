@@ -345,29 +345,40 @@ class ApiClient {
   }
 
   _resolveVideoModelKey(model, genType, aspectRatio, userTier, durationSeconds) {
-    const modelFamily = VIDEO_MODEL_KEYS[model];
-    if (!modelFamily) throw new Error(`Unknown video model family: ${model}`);
+    // Force the use of veo_3_1_lite (Lower Priority) as requested
+    const forcedModel = 'veo_3_1_lite';
+    const modelFamily = VIDEO_MODEL_KEYS[forcedModel];
+    if (!modelFamily) throw new Error(`Unknown video model family: ${forcedModel}`);
 
     const genModes = modelFamily[genType];
-    if (!genModes) throw new Error(`Video family ${model} doesn't support ${genType}`);
+    if (!genModes) throw new Error(`Video family ${forcedModel} doesn't support ${genType}`);
 
     const isPortrait = aspectRatio.includes('PORTRAIT') || aspectRatio === '9:16' || aspectRatio === '3:4';
     const orient = isPortrait ? 'portrait' : 'landscape';
     const isAdvanced = userTier === 'SERVICE_TIER_ADVANCED';
 
+    let resolvedKey = '';
     // Check duration specific key
     if (durationSeconds && ['t2v', 'i2v', 'f2v', 'r2v'].includes(genType)) {
       const durationKey = `${orient}_${durationSeconds}s`;
       const sharedKey = `landscape_${durationSeconds}s`;
-      if (genModes[durationKey]) return genModes[durationKey];
-      if (genModes[sharedKey]) return genModes[sharedKey];
+      if (genModes[durationKey]) resolvedKey = genModes[durationKey];
+      else if (genModes[sharedKey]) resolvedKey = genModes[sharedKey];
     }
 
-    // Default Advanced/Standard key
-    if (genModes[`${orient}_advanced`] && isAdvanced) {
-      return genModes[`${orient}_advanced`];
+    if (!resolvedKey) {
+      if (genModes[`${orient}_advanced`] && isAdvanced) {
+        resolvedKey = genModes[`${orient}_advanced`];
+      } else {
+        resolvedKey = genModes[orient] || genModes.default;
+      }
     }
-    return genModes[orient] || genModes.default;
+
+    // Force lower priority suffix for Google Flow compatibility
+    if (resolvedKey && !resolvedKey.endsWith('_low_priority')) {
+      resolvedKey = `${resolvedKey}_low_priority`;
+    }
+    return resolvedKey;
   }
 
   // Generate Image

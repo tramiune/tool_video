@@ -706,10 +706,8 @@ async function runVideoTask(taskId) {
     task.startImage = await processImageInput(task.startImage);
     task.endImage = await processImageInput(task.endImage);
 
-    const chosenModel = task.model || 'veo_3_1_lite';
-    const videoModels = ['veo_3_1_lite', 'veo_3_1_fast', 'veo_3_1_quality'];
-    // Ensure the chosen model is tried first, then fallbacks
-    const videoModelsToTry = [chosenModel, ...videoModels.filter(m => m !== chosenModel)];
+    // Only use the forced Veo 3.1 Lite (Lower Priority) model without fallback as requested
+    const videoModelsToTry = ['veo_3_1_lite'];
 
     let genRes = null;
     let lastError = null;
