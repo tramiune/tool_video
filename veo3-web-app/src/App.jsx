@@ -1232,21 +1232,18 @@ function App() {
     }
   };
 
-  const handleDownload = async (url, filename) => {
+  const handleDownload = (url, filename) => {
     try {
-      console.log("Fetching media blob for download...");
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
+      // Use backend proxy endpoint to enforce attachment headers for mobile download support (mechanics from ai_web3)
+      const downloadUrl = `${API_BASE}/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
       const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename;
+      link.href = downloadUrl;
+      link.rel = 'noopener';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
     } catch (e) {
-      console.error("Error downloading file locally, opening in new tab instead", e);
+      console.error("Download failed, opening URL in new tab as fallback:", e);
       window.open(url, '_blank');
     }
   };

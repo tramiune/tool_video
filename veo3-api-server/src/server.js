@@ -330,6 +330,38 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
   }
 });
 
+// Proxy download to force attachment headers (works on mobile, ported from ai_web3)
+app.get('/api/download', async (req, res) => {
+  const fileUrl = req.query.url;
+  const filename = req.query.filename || 'download';
+  if (!fileUrl) return res.status(400).send('Missing url parameter');
+  try {
+    const fetchResponse = await fetch(fileUrl);
+    if (!fetchResponse.ok) throw new Error(`HTTP error ${fetchResponse.status}`);
+    
+    const contentType = fetchResponse.headers.get('Content-Type') || 'application/octet-stream';
+    const contentLength = fetchResponse.headers.get('Content-Length');
+    const acceptRanges = fetchResponse.headers.get('Accept-Ranges');
+    
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+    
+    const safeName = filename.replace(/[^\w.\-()+ ]/g, '_').slice(0, 180);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+    
+    const { Readable } = require('stream');
+    const nodeStream = Readable.fromWeb(fetchResponse.body);
+    nodeStream.pipe(res);
+  } catch (err) {
+    logger.error('Proxy download endpoint failed', err);
+    res.status(500).send('Failed to download file');
+  }
+});
+
 // Auto payment webhook (connects with Casso)
 app.post('/api/payment-webhook', async (req, res) => {
   try {
