@@ -914,6 +914,15 @@ startCookieSyncListener().then(() => {
   const TWENTY_MINUTES_MS = 20 * 60 * 1000;
   setInterval(async () => {
     logger.info("[Scheduled Task] Running 20-minute Google Flow session & cookie refresh...");
+    // 1. Notify all connected Chrome extension tabs to reload the Google Flow page
+    try {
+      io.emit('refresh_flow_page');
+      logger.info("[Scheduled Task] Emitted refresh_flow_page to extension clients");
+    } catch (ioErr) {
+      logger.warn("Could not emit refresh_flow_page to extension sockets:", ioErr.message);
+    }
+    
+    // 2. Refresh server browser context session
     try {
       await browserManager.refreshSession();
     } catch (err) {

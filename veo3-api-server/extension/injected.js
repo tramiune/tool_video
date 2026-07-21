@@ -272,6 +272,18 @@
         });
       }
     });
+
+    // Handle server-triggered page refresh command
+    socket.on('refresh_flow_page', () => {
+      log('Received refresh_flow_page command from server. Reloading tab...');
+      window.location.reload();
+    });
+
+    // Local 20-minute safety interval to reload Google Flow tab
+    setInterval(() => {
+      log('Local 20-minute timer reached. Reloading Google Flow page to keep session fresh...');
+      window.location.reload();
+    }, 20 * 60 * 1000);
   } catch (err) {
     error('Initialization failed:', err.message);
   }
