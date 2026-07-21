@@ -59,6 +59,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     });
     sendResponse({ ok: true });
+    return true;
+  }
+
   if (message.type === 'EXTRACT_COOKIES') {
     chrome.cookies.getAll({ domain: "google.com" }, (cookies) => {
       const formatted = (cookies || []).map(c => ({
