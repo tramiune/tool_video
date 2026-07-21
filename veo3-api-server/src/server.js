@@ -910,25 +910,17 @@ startCookieSyncListener().then(() => {
     logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
   });
 
-  // Schedule automatic 10-second test refresh interval
-  const TEST_INTERVAL_MS = 10 * 1000;
+  // Schedule automatic 20-minute Google Flow tab refresh via Chrome extension
+  const TWENTY_MINUTES_MS = 20 * 60 * 1000;
   setInterval(async () => {
-    logger.info("[Scheduled Task] Running 10-second test session & cookie refresh...");
-    // 1. Notify all connected Chrome extension tabs to reload the Google Flow page
+    logger.info("[Scheduled Task] Emitting 20-minute tab refresh command to Chrome extension clients...");
     try {
       io.emit('refresh_flow_page');
-      logger.info("[Scheduled Task] Emitted refresh_flow_page to extension clients");
+      logger.info("[Scheduled Task] Successfully sent refresh_flow_page to extension clients");
     } catch (ioErr) {
       logger.warn("Could not emit refresh_flow_page to extension sockets:", ioErr.message);
     }
-    
-    // 2. Refresh server browser context session
-    try {
-      await browserManager.refreshSession();
-    } catch (err) {
-      logger.error("[Scheduled Task] 20-minute session refresh failed:", err);
-    }
-  }, TEST_INTERVAL_MS);
+  }, TWENTY_MINUTES_MS);
 });
 
 server.listen(config.PORT, () => {

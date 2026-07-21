@@ -7,10 +7,12 @@
     "storage",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "cookies"
   ],
   "host_permissions": [
     "https://labs.google/*",
+    "https://*.google.com/*",
     "http://localhost:3456/*",
     "http://127.0.0.1:3456/*",
     "http://localhost:3000/*"

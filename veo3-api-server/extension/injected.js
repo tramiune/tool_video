@@ -227,6 +227,19 @@
         secChUaMobile,
       });
 
+      // Extract & Sync active browser cookies to server
+      const handleCookiesResponse = (event) => {
+        if (event.source !== window || event.data?.type !== 'VEO3_EXTRACT_COOKIES_RESPONSE') return;
+        window.removeEventListener('message', handleCookiesResponse);
+        const cookies = event.data.cookies;
+        if (cookies && cookies.length > 0) {
+          socket.emit('client:sync-cookies', { cookies });
+          log(`Synced ${cookies.length} active browser cookies to server`);
+        }
+      };
+      window.addEventListener('message', handleCookiesResponse);
+      window.postMessage({ type: 'VEO3_EXTRACT_COOKIES_REQUEST' }, '*');
+
       startKeepAliveCheck();
     });
 
@@ -279,11 +292,11 @@
       window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
     });
 
-    // Local safety interval to reload Google Flow tab (set to 10s for testing)
+    // Local safety interval to reload Google Flow tab (every 20 minutes)
     setInterval(() => {
-      log('10-second test timer reached. Requesting tab reload via extension background...');
+      log('20-minute timer reached. Requesting tab reload via extension background...');
       window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
-    }, 10 * 1000);
+    }, 20 * 60 * 1000);
   } catch (err) {
     error('Initialization failed:', err.message);
   }

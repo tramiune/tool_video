@@ -37,6 +37,30 @@ class CaptchaService extends EventEmitter {
         logger.info(`Extension client ready [${socket.id.substring(0, 6)}]: ${data.browserType}`);
       });
 
+      socket.on('client:sync-cookies', async (data) => {
+        try {
+          if (data && Array.isArray(data.cookies) && data.cookies.length > 0) {
+            const fs = require('fs');
+            const config = require('./config');
+            const cookiesJson = JSON.stringify(data.cookies);
+            fs.writeFileSync(config.COOKIE_FILE, cookiesJson, 'utf-8');
+            logger.success(`Extracted & synced ${data.cookies.length} active cookies from Chrome extension client!`);
+            
+            try {
+              const { db } = require('./firebase_worker');
+              await db.collection('settings').doc('cookies').set({
+                cookies: cookiesJson,
+                updatedAt: Date.now()
+              }, { merge: true });
+            } catch (dbErr) {
+              logger.warn("Could not sync extension cookies to Firestore:", dbErr.message);
+            }
+          }
+        } catch (err) {
+          logger.warn("Error handling client:sync-cookies:", err.message);
+        }
+      });
+
       socket.on('client:captcha-solved', ({ requestId, token }) => {
         if (requestId && this.pendingRequests.has(requestId)) {
           const req = this.pendingRequests.get(requestId);

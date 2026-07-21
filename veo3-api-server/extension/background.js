@@ -59,6 +59,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     });
     sendResponse({ ok: true });
+  if (message.type === 'EXTRACT_COOKIES') {
+    chrome.cookies.getAll({ domain: "google.com" }, (cookies) => {
+      const formatted = (cookies || []).map(c => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain,
+        path: c.path,
+        expires: c.expirationDate || -1,
+        httpOnly: c.httpOnly,
+        secure: c.secure,
+        sameSite: c.sameSite === 'no_restriction' ? 'None' : (c.sameSite === 'lax' ? 'Lax' : 'Strict')
+      }));
+      console.log(`[VEO3-BG] Extracted ${formatted.length} active cookies from Chrome browser`);
+      sendResponse({ cookies: formatted });
+    });
     return true;
   }
 });

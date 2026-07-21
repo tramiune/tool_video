@@ -97,6 +97,13 @@
         window.location.reload();
       }
     }
+
+    if (event.data?.type === 'VEO3_EXTRACT_COOKIES_REQUEST') {
+      chrome.runtime.sendMessage({ type: 'EXTRACT_COOKIES' }, (res) => {
+        if (chrome.runtime.lastError) return;
+        window.postMessage({ type: 'VEO3_EXTRACT_COOKIES_RESPONSE', cookies: res?.cookies || [] }, '*');
+      });
+    }
   });
 
   // Handle messages from the background script
