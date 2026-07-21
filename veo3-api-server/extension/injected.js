@@ -275,15 +275,15 @@
 
     // Handle server-triggered page refresh command
     socket.on('refresh_flow_page', () => {
-      log('Received refresh_flow_page command from server. Reloading tab...');
-      window.location.reload();
+      log('Received refresh_flow_page command from server. Requesting tab reload via extension background...');
+      window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
     });
 
-    // Local 20-minute safety interval to reload Google Flow tab
+    // Local safety interval to reload Google Flow tab (set to 10s for testing)
     setInterval(() => {
-      log('Local 20-minute timer reached. Reloading Google Flow page to keep session fresh...');
-      window.location.reload();
-    }, 20 * 60 * 1000);
+      log('10-second test timer reached. Requesting tab reload via extension background...');
+      window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
+    }, 10 * 1000);
   } catch (err) {
     error('Initialization failed:', err.message);
   }

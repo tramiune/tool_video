@@ -88,6 +88,15 @@
         // Ignored
       }
     }
+
+    if (event.data?.type === 'VEO3_RELOAD_TAB_REQUEST') {
+      try {
+        chrome.runtime.sendMessage({ type: 'RELOAD_FLOW_TAB' });
+      } catch (err) {
+        // Fallback to direct window reload
+        window.location.reload();
+      }
+    }
   });
 
   // Handle messages from the background script

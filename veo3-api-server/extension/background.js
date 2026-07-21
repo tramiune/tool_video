@@ -48,4 +48,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Optional status logging
     return false;
   }
+
+  if (message.type === 'RELOAD_FLOW_TAB') {
+    chrome.tabs.query({ url: "https://labs.google/*" }, (tabs) => {
+      if (tabs && tabs.length > 0) {
+        tabs.forEach((tab) => {
+          console.log('[VEO3-BG] Reloading Google Flow tab:', tab.id, tab.url);
+          chrome.tabs.reload(tab.id);
+        });
+      }
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
 });
