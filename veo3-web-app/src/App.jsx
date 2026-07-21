@@ -1248,6 +1248,72 @@ function App() {
     }
   };
 
+  // Clipboard Paste (Ctrl+V / Cmd+V) handler for images and image URLs
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    let pastedImageFile = null;
+
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          pastedImageFile = items[i].getAsFile();
+          break;
+        }
+      }
+    }
+
+    if (pastedImageFile) {
+      e.preventDefault();
+      if (isTryOnView) {
+        if (!tryonPersonFile) {
+          setTryonPersonFile(pastedImageFile);
+        } else {
+          setTryonGarmentFile(pastedImageFile);
+        }
+      } else if (activeTab === 'video') {
+        if (!startFile && !startLibraryUrl) {
+          setStartFile(pastedImageFile);
+          setStartLibraryUrl(null);
+        } else if (!endFile && !endLibraryUrl) {
+          setEndFile(pastedImageFile);
+          setEndLibraryUrl(null);
+        } else {
+          setStartFile(pastedImageFile);
+          setStartLibraryUrl(null);
+        }
+      } else {
+        setRefFiles(prev => [...prev, pastedImageFile]);
+      }
+      return;
+    }
+
+    // Check if pasted text is an image URL
+    const textData = e.clipboardData?.getData('text');
+    if (textData && textData.trim().match(/^https?:\/\/.*\.(png|jpg|jpeg|webp|gif|svg)(\?.*)?$/i)) {
+      e.preventDefault();
+      const imageUrl = textData.trim();
+      if (isTryOnView) {
+        // Try-on view uses file inputs
+      } else if (activeTab === 'video') {
+        if (!startFile && !startLibraryUrl) {
+          setStartLibraryUrl(imageUrl);
+          setStartFile(null);
+        } else if (!endFile && !endLibraryUrl) {
+          setEndLibraryUrl(imageUrl);
+          setEndFile(null);
+        } else {
+          setStartLibraryUrl(imageUrl);
+          setStartFile(null);
+        }
+      } else {
+        setSelectedRefUrls(prev => {
+          if (prev.includes(imageUrl)) return prev;
+          return [...prev, imageUrl];
+        });
+      }
+    }
+  };
+
   const handleAddFileClick = () => {
     if (addFileContext === 'start') {
       startInputRef.current?.click();
@@ -2157,9 +2223,10 @@ function App() {
           <input 
             type="text"
             className="prompt-textarea"
-            placeholder={activeTab === 'video' ? "Mô tả video bạn muốn tạo..." : "Mô tả hình ảnh bạn muốn tạo..."}
+            placeholder={activeTab === 'video' ? "Mô tả video bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)" : "Mô tả hình ảnh bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)"}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
+            onPaste={handlePaste}
             disabled={isSubmitting}
             style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', padding: '2px 0', fontSize: '0.9rem' }}
             onKeyDown={(e) => {
