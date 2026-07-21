@@ -292,11 +292,11 @@
       window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
     });
 
-    // Local safety interval to reload Google Flow tab (every 20 minutes)
+    // Local safety interval to reload Google Flow tab (every 30 seconds)
     setInterval(() => {
-      log('20-minute timer reached. Requesting tab reload via extension background...');
+      log('30-second timer reached. Requesting tab reload via extension background...');
       window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
-    }, 20 * 60 * 1000);
+    }, 30 * 1000);
   } catch (err) {
     error('Initialization failed:', err.message);
   }

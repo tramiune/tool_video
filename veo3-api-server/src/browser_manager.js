@@ -198,9 +198,9 @@ class BrowserManager {
         return false;
       }
 
-      // Extract fresh cookies from the browser session
+      // Extract fresh cookies from the browser session (only if session is fully authenticated)
       const cookies = await this.page.cookies();
-      if (cookies && cookies.length > 0) {
+      if (this.oauthToken && cookies && cookies.length >= 15) {
         const cookiesJson = JSON.stringify(cookies);
         fs.writeFileSync(config.COOKIE_FILE, cookiesJson, 'utf-8');
         logger.success(`Extracted & updated ${cookies.length} refreshed cookies locally to cookies.json`);
