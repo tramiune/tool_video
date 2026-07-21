@@ -63,18 +63,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'EXTRACT_COOKIES') {
-    chrome.cookies.getAll({ domain: "google.com" }, (cookies) => {
-      const formatted = (cookies || []).map(c => ({
-        name: c.name,
-        value: c.value,
+    Promise.all([
+      new Promise(res => chrome.cookies.getAll({ url: "https://labs.google/fx/vi/tools/flow" }, res)),
+      new Promise(res => chrome.cookies.getAll({ domain: "labs.google" }, res)),
+      new Promise(res => chrome.cookies.getAll({ domain: "google.com" }, res)),
+      new Promise(res => chrome.cookies.getAll({ domain: "googleapis.com" }, res))
+    ]).then(results => {
+      const allCookies = [].concat(...results.map(r => r || []));
+      const map = new Map();
+      allCookies.forEach(c => {
+        const key = `${c.name}:${c.domain}:${c.path}`;
+        if (!map.has(key)) map.set(key, c);
+      });
+      const uniqueCookies = Array.from(map.values());
+      const formatted = uniqueCookies.map(c => ({
         domain: c.domain,
-        path: c.path,
-        expires: c.expirationDate || -1,
-        httpOnly: c.httpOnly,
-        secure: c.secure,
-        sameSite: c.sameSite === 'no_restriction' ? 'None' : (c.sameSite === 'lax' ? 'Lax' : 'Strict')
+        expirationDate: c.expirationDate || undefined,
+        hostOnly: c.hostOnly || false,
+        httpOnly: c.httpOnly || false,
+        name: c.name,
+        path: c.path || "/",
+        sameSite: c.sameSite === 'no_restriction' ? 'no_restriction' : (c.sameSite === 'lax' ? 'lax' : (c.sameSite === 'strict' ? 'strict' : 'unspecified')),
+        secure: c.secure || false,
+        session: c.session || false,
+        storeId: c.storeId || "0",
+        value: c.value
       }));
-      console.log(`[VEO3-BG] Extracted ${formatted.length} active cookies from Chrome browser`);
+      console.log(`[VEO3-BG] Extracted ${formatted.length} active cookies (Cookie-Editor format) from Chrome browser`);
       sendResponse({ cookies: formatted });
     });
     return true;
