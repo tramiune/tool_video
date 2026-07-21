@@ -195,9 +195,32 @@ class BrowserManager {
       if (currentUrl.includes('accounts.google.com')) {
         logger.error('Session expired: Google redirected browser to accounts.google.com! Please update your cookies.');
         this.oauthToken = null;
+        return false;
       }
+
+      // Extract fresh cookies from the browser session
+      const cookies = await this.page.cookies();
+      if (cookies && cookies.length > 0) {
+        const cookiesJson = JSON.stringify(cookies);
+        fs.writeFileSync(config.COOKIE_FILE, cookiesJson, 'utf-8');
+        logger.success(`Extracted & updated ${cookies.length} refreshed cookies locally to cookies.json`);
+
+        // Sync refreshed cookies to Firestore
+        try {
+          const { db } = require('./firebase_worker');
+          await db.collection('settings').doc('cookies').set({
+            cookies: cookiesJson,
+            updatedAt: Date.now()
+          }, { merge: true });
+          logger.success("Synced refreshed cookies to Firestore settings/cookies");
+        } catch (dbErr) {
+          logger.warn("Could not sync refreshed cookies to Firestore:", dbErr.message);
+        }
+      }
+      return true;
     } catch (err) {
       logger.warn(`Navigation finished with warning/timeout (this is normal for heavy Labs page): ${err.message}`);
+      return false;
     }
   }
 

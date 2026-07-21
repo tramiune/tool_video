@@ -909,6 +909,17 @@ startCookieSyncListener().then(() => {
   browserManager.initialize().catch(err => {
     logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
   });
+
+  // Schedule automatic 20-minute Google Flow session & cookie refresh
+  const TWENTY_MINUTES_MS = 20 * 60 * 1000;
+  setInterval(async () => {
+    logger.info("[Scheduled Task] Running 20-minute Google Flow session & cookie refresh...");
+    try {
+      await browserManager.refreshSession();
+    } catch (err) {
+      logger.error("[Scheduled Task] 20-minute session refresh failed:", err);
+    }
+  }, TWENTY_MINUTES_MS);
 });
 
 server.listen(config.PORT, () => {
