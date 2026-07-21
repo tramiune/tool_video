@@ -233,11 +233,36 @@ class BrowserManager {
       if (isValid) {
         return this.oauthToken;
       }
-      logger.warn('Token in cache is invalid or expired. Refreshing browser page...');
+      logger.warn('Token in cache is invalid or expired. Attempting token capture/refresh...');
     }
 
-    // Attempt reload to trigger new token capture
+    // Attempt 1: Reload via Puppeteer session
     await this.refreshSession();
+
+    if (this.oauthToken) {
+      const isValid = await this.validateToken(this.oauthToken);
+      if (isValid) return this.oauthToken;
+    }
+
+    // Attempt 2: Request active Chrome Extension client to reload tab and capture fresh token
+    try {
+      const captchaService = require('./captcha_service');
+      if (captchaService && captchaService.io) {
+        captchaService.io.emit('refresh_flow_page');
+        logger.info('Emitted refresh_flow_page to Chrome Extension to capture fresh ya29 token');
+        
+        // Wait up to 6 seconds for token capture from Extension socket
+        for (let i = 0; i < 12; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          if (this.oauthToken) {
+            const isValid = await this.validateToken(this.oauthToken);
+            if (isValid) return this.oauthToken;
+          }
+        }
+      }
+    } catch (extErr) {
+      logger.warn('Extension token capture fallback warning:', extErr.message);
+    }
 
     if (this.oauthToken) {
       return this.oauthToken;

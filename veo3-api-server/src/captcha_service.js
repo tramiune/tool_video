@@ -55,9 +55,33 @@ class CaptchaService extends EventEmitter {
             } catch (dbErr) {
               logger.warn("Could not sync extension cookies to Firestore:", dbErr.message);
             }
+
+            // Automatically re-inject new cookies into browserManager so background Puppeteer stays fresh
+            try {
+              const browserManager = require('./browser_manager');
+              if (browserManager.browser) {
+                await browserManager.injectCookies();
+                await browserManager.refreshSession();
+              }
+            } catch (bmErr) {
+              logger.warn("Could not re-inject cookies into browserManager:", bmErr.message);
+            }
           }
         } catch (err) {
           logger.warn("Error handling client:sync-cookies:", err.message);
+        }
+      });
+
+      socket.on('client:token-captured', ({ token }) => {
+        if (token && typeof token === 'string' && token.startsWith('ya29.')) {
+          try {
+            const browserManager = require('./browser_manager');
+            if (browserManager.oauthToken !== token) {
+              browserManager.oauthToken = token;
+              browserManager.tokenCapturedAt = Date.now();
+              logger.success(`Captured OAuth token from Extension client (length: ${token.length})`);
+            }
+          } catch (e) {}
         }
       });
 
