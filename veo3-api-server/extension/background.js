@@ -50,12 +50,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'RELOAD_FLOW_TAB') {
+    const FLOW_URL = 'https://labs.google/fx/vi/tools/flow';
     chrome.tabs.query({ url: "https://labs.google/*" }, (tabs) => {
-      if (tabs && tabs.length > 0) {
-        tabs.forEach((tab) => {
-          console.log('[VEO3-BG] Reloading Google Flow tab:', tab.id, tab.url);
-          chrome.tabs.reload(tab.id);
+      // Close all existing labs.google tabs
+      const tabIds = (tabs || []).map(t => t.id);
+      const closeAndOpen = () => {
+        chrome.tabs.create({ url: FLOW_URL, active: false }, (newTab) => {
+          console.log('[VEO3-BG] Opened new Google Flow tab:', newTab.id);
         });
+      };
+      if (tabIds.length > 0) {
+        chrome.tabs.remove(tabIds, () => {
+          console.log('[VEO3-BG] Closed', tabIds.length, 'old Google Flow tab(s). Opening fresh tab...');
+          closeAndOpen();
+        });
+      } else {
+        closeAndOpen();
       }
     });
     sendResponse({ ok: true });
