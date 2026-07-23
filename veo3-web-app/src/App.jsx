@@ -8,6 +8,133 @@ import './index.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
+// ── Before/After Slider Data (module-level constant) ──────────────────
+const BEFORE_AFTER_EXAMPLES = {
+  tryon: [
+    {
+      before: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&q=80',
+      after: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&q=80',
+      label: 'Thay đồ AI'
+    },
+    {
+      before: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&q=80',
+      after: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=600&q=80',
+      label: 'Thay đồ AI'
+    }
+  ],
+  clean_916: [
+    {
+      before: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
+      after: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=450&h=800&fit=crop&q=80',
+      label: 'Đổi 9:16'
+    }
+  ],
+  swap_face: [
+    {
+      before: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&q=80',
+      after: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=600&q=80',
+      label: 'Đổi khuôn mặt'
+    }
+  ],
+  change_bg: [
+    {
+      before: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&q=80',
+      after: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
+      label: 'Thay nền'
+    }
+  ],
+  brighten_skin: [
+    {
+      before: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&q=80',
+      after: 'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=600&q=80',
+      label: 'Làm trắng da'
+    }
+  ]
+};
+
+// ── BeforeAfterSlider Component (module-level) ─────────────────────────
+const BeforeAfterSlider = ({ beforeSrc, afterSrc }) => {
+  const [sliderPos, setSliderPos] = useState(50);
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef(null);
+
+  const calcPos = useCallback((clientX) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    setSliderPos((x / rect.width) * 100);
+  }, []);
+
+  const onMouseDown = (e) => { e.preventDefault(); setIsDragging(true); };
+  const onMouseMove = useCallback((e) => { if (isDragging) calcPos(e.clientX); }, [isDragging, calcPos]);
+  const onMouseUp = useCallback(() => setIsDragging(false), []);
+  const onTouchMove = useCallback((e) => { if (isDragging) calcPos(e.touches[0].clientX); }, [isDragging, calcPos]);
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+      window.addEventListener('touchmove', onTouchMove);
+      window.addEventListener('touchend', onMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onMouseUp);
+    };
+  }, [isDragging, onMouseMove, onMouseUp, onTouchMove]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative', width: '100%', aspectRatio: '3/4',
+        borderRadius: '16px', overflow: 'hidden',
+        cursor: isDragging ? 'grabbing' : 'grab',
+        userSelect: 'none', boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+      }}
+      onMouseDown={onMouseDown}
+      onTouchStart={(e) => { setIsDragging(true); calcPos(e.touches[0].clientX); }}
+    >
+      <img src={afterSrc} alt="after" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
+      <div style={{ position: 'absolute', inset: 0, clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}>
+        <img src={beforeSrc} alt="before" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
+      </div>
+      <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${sliderPos}%`, width: '2px', background: 'rgba(255,255,255,0.9)', transform: 'translateX(-50%)', pointerEvents: 'none', boxShadow: '0 0 8px rgba(255,255,255,0.5)' }} />
+      <div style={{ position: 'absolute', top: '50%', left: `${sliderPos}%`, transform: 'translate(-50%, -50%)', width: '40px', height: '40px', borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 16px rgba(0,0,0,0.4)', pointerEvents: 'none', fontSize: '14px', color: '#1a1a2e', fontWeight: '700' }}>◀▶</div>
+      <div style={{ position: 'absolute', top: '12px', left: '12px', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '20px', letterSpacing: '0.5px', pointerEvents: 'none' }}>TRƯỚC</div>
+      <div style={{ position: 'absolute', top: '12px', right: '12px', background: 'linear-gradient(90deg,#7c3aed,#3b82f6)', color: '#fff', fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '20px', letterSpacing: '0.5px', pointerEvents: 'none' }}>SAU</div>
+    </div>
+  );
+};
+
+// ── BeforeAfterPanel Component (module-level) ──────────────────────────
+const BeforeAfterPanel = ({ toolType, examples }) => {
+  const [exampleIdx, setExampleIdx] = useState(0);
+  const current = examples[exampleIdx] || examples[0];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#f1f5f9' }}>✨ Ví dụ kết quả</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Kéo thanh trắng để so sánh Trước / Sau</div>
+        </div>
+        {examples.length > 1 && (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {examples.map((_, i) => (
+              <button key={i} onClick={() => setExampleIdx(i)} style={{ width: '8px', height: '8px', borderRadius: '50%', border: 'none', cursor: 'pointer', background: i === exampleIdx ? 'linear-gradient(90deg,#7c3aed,#3b82f6)' : 'rgba(255,255,255,0.2)', padding: 0 }} />
+            ))}
+          </div>
+        )}
+      </div>
+      <BeforeAfterSlider key={`${toolType}-${exampleIdx}`} beforeSrc={current.before} afterSrc={current.after} />
+      <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.6 }}>Ảnh ví dụ minh hoạ — kết quả thực tế có thể khác nhau</div>
+    </div>
+  );
+};
+
+
 const playMeowThreeTimes = () => {
   try {
     const audio = new Audio('/meo.mp3');
@@ -817,168 +944,6 @@ function App() {
     }
   };
 
-  // ── Before/After Slider Data ─────────────────────────────────────────
-  const BEFORE_AFTER_EXAMPLES = {
-    tryon: [
-      {
-        before: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&q=80',
-        after: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&q=80',
-        label: 'Thay đồ AI'
-      },
-      {
-        before: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&q=80',
-        after: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=600&q=80',
-        label: 'Thay đồ AI'
-      }
-    ],
-    clean_916: [
-      {
-        before: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
-        after: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=450&h=800&fit=crop&q=80',
-        label: 'Đổi 9:16'
-      }
-    ],
-    swap_face: [
-      {
-        before: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&q=80',
-        after: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=600&q=80',
-        label: 'Đổi khuôn mặt'
-      }
-    ],
-    change_bg: [
-      {
-        before: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&q=80',
-        after: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
-        label: 'Thay nền'
-      }
-    ],
-    brighten_skin: [
-      {
-        before: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&q=80',
-        after: 'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=600&q=80',
-        label: 'Làm trắng da'
-      }
-    ]
-  };
-
-  // ── BeforeAfterSlider Component ───────────────────────────────────────
-  const BeforeAfterSlider = ({ beforeSrc, afterSrc, label }) => {
-    const [sliderPos, setSliderPos] = useState(50);
-    const [isDragging, setIsDragging] = useState(false);
-    const containerRef = useRef(null);
-
-    const calcPos = useCallback((clientX) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-      setSliderPos((x / rect.width) * 100);
-    }, []);
-
-    const onMouseDown = (e) => { e.preventDefault(); setIsDragging(true); };
-    const onMouseMove = useCallback((e) => { if (isDragging) calcPos(e.clientX); }, [isDragging, calcPos]);
-    const onMouseUp = useCallback(() => setIsDragging(false), []);
-    const onTouchMove = useCallback((e) => { if (isDragging) calcPos(e.touches[0].clientX); }, [isDragging, calcPos]);
-
-    useEffect(() => {
-      if (isDragging) {
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
-        window.addEventListener('touchmove', onTouchMove);
-        window.addEventListener('touchend', onMouseUp);
-      }
-      return () => {
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-        window.removeEventListener('touchmove', onTouchMove);
-        window.removeEventListener('touchend', onMouseUp);
-      };
-    }, [isDragging, onMouseMove, onMouseUp, onTouchMove]);
-
-    return (
-      <div
-        ref={containerRef}
-        style={{
-          position: 'relative', width: '100%', aspectRatio: '3/4',
-          borderRadius: '16px', overflow: 'hidden',
-          cursor: isDragging ? 'grabbing' : 'grab',
-          userSelect: 'none', boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
-        }}
-        onMouseDown={onMouseDown}
-        onTouchStart={(e) => { setIsDragging(true); calcPos(e.touches[0].clientX); }}
-      >
-        {/* AFTER image (bottom layer, full width) */}
-        <img src={afterSrc} alt="after" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
-
-        {/* BEFORE image (clipped to left of slider) */}
-        <div style={{ position: 'absolute', inset: 0, clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}>
-          <img src={beforeSrc} alt="before" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
-        </div>
-
-        {/* Divider line */}
-        <div style={{
-          position: 'absolute', top: 0, bottom: 0, left: `${sliderPos}%`,
-          width: '2px', background: 'rgba(255,255,255,0.9)',
-          transform: 'translateX(-50%)', pointerEvents: 'none',
-          boxShadow: '0 0 8px rgba(255,255,255,0.5)'
-        }} />
-
-        {/* Handle circle */}
-        <div style={{
-          position: 'absolute', top: '50%', left: `${sliderPos}%`,
-          transform: 'translate(-50%, -50%)',
-          width: '40px', height: '40px', borderRadius: '50%',
-          background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 2px 16px rgba(0,0,0,0.4)',
-          pointerEvents: 'none', fontSize: '14px', color: '#1a1a2e', fontWeight: '700'
-        }}>◀▶</div>
-
-        {/* Labels */}
-        <div style={{ position: 'absolute', top: '12px', left: '12px', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '20px', letterSpacing: '0.5px', pointerEvents: 'none' }}>TRƯỚC</div>
-        <div style={{ position: 'absolute', top: '12px', right: '12px', background: 'linear-gradient(90deg,#7c3aed,#3b82f6)', color: '#fff', fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '20px', letterSpacing: '0.5px', pointerEvents: 'none' }}>SAU</div>
-      </div>
-    );
-  };
-
-  // ── TryOn Before/After Panel (proper component, no hooks violation) ───
-  const BeforeAfterPanel = ({ toolType, examples, BeforeAfterSlider }) => {
-    const [exampleIdx, setExampleIdx] = useState(0);
-    const current = examples[exampleIdx] || examples[0];
-    return (
-      <div style={{
-        display: 'flex', flexDirection: 'column', gap: '16px',
-        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: '20px', padding: '24px',
-        backdropFilter: 'blur(12px)'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#f1f5f9' }}>✨ Ví dụ kết quả</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Kéo thanh trắng để so sánh Trước / Sau</div>
-          </div>
-          {examples.length > 1 && (
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {examples.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setExampleIdx(i)}
-                  style={{
-                    width: '8px', height: '8px', borderRadius: '50%', border: 'none', cursor: 'pointer',
-                    background: i === exampleIdx ? 'linear-gradient(90deg,#7c3aed,#3b82f6)' : 'rgba(255,255,255,0.2)',
-                    padding: 0
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        <BeforeAfterSlider key={`${toolType}-${exampleIdx}`} beforeSrc={current.before} afterSrc={current.after} label={current.label} />
-        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.6 }}>
-          Ảnh ví dụ minh hoạ — kết quả thực tế có thể khác nhau
-        </div>
-      </div>
-    );
-  };
-
   const renderTryOnView = () => {
     return (
       <div style={{ minHeight: '100vh', color: '#fff', padding: '40px 20px', display: 'flex', gap: '32px', alignItems: 'flex-start', maxWidth: '1400px', margin: '0 auto', boxSizing: 'border-box' }}>
@@ -1331,7 +1296,6 @@ function App() {
           <BeforeAfterPanel
             toolType={tryonToolType}
             examples={BEFORE_AFTER_EXAMPLES[tryonToolType] || BEFORE_AFTER_EXAMPLES['tryon']}
-            BeforeAfterSlider={BeforeAfterSlider}
           />
         </div>
 
