@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc } from 'firebase/firestore';
@@ -7,6 +7,165 @@ import { auth, googleProvider, db, storage } from './lib/firebase';
 import './index.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Before/After example images (one entry per tool tab)
+// Replace these URLs with real photos whenever ready
+// ─────────────────────────────────────────────────────────────────────────────
+const BEFORE_AFTER_EXAMPLES = {
+  tryon: [
+    {
+      before: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&q=80',
+      after:  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&q=80',
+    },
+    {
+      before: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&q=80',
+      after:  'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=600&q=80',
+    },
+  ],
+  clean_916: [{
+    before: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
+    after:  'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=450&h=800&fit=crop&q=80',
+  }],
+  swap_face: [{
+    before: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&q=80',
+    after:  'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=600&q=80',
+  }],
+  change_bg: [{
+    before: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&q=80',
+    after:  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80',
+  }],
+  brighten_skin: [{
+    before: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&q=80',
+    after:  'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=600&q=80',
+  }],
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BeforeAfterSlider — drag handle to reveal before/after
+// Defined at MODULE LEVEL so React never re-creates its identity between renders
+// ─────────────────────────────────────────────────────────────────────────────
+function BeforeAfterSlider({ beforeSrc, afterSrc }) {
+  const [pos, setPos] = useState(50);
+  const [dragging, setDragging] = useState(false);
+  const ref = useRef(null);
+
+  const move = useCallback((clientX) => {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    setPos(Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)));
+  }, []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const mm = (e) => move(e.clientX);
+    const tm = (e) => move(e.touches[0].clientX);
+    const up = () => setDragging(false);
+    window.addEventListener('mousemove', mm);
+    window.addEventListener('mouseup',   up);
+    window.addEventListener('touchmove', tm, { passive: true });
+    window.addEventListener('touchend',  up);
+    return () => {
+      window.removeEventListener('mousemove', mm);
+      window.removeEventListener('mouseup',   up);
+      window.removeEventListener('touchmove', tm);
+      window.removeEventListener('touchend',  up);
+    };
+  }, [dragging, move]);
+
+  return (
+    <div
+      ref={ref}
+      onMouseDown={(e) => { e.preventDefault(); setDragging(true); move(e.clientX); }}
+      onTouchStart={(e) => { setDragging(true); move(e.touches[0].clientX); }}
+      style={{
+        position: 'relative', width: '100%', aspectRatio: '3/4',
+        borderRadius: '14px', overflow: 'hidden',
+        cursor: dragging ? 'grabbing' : 'ew-resize',
+        userSelect: 'none', boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+      }}
+    >
+      {/* AFTER — full background */}
+      <img src={afterSrc} alt="after"
+        style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', objectPosition:'top center' }} />
+
+      {/* BEFORE — clipped to left portion */}
+      <div style={{ position:'absolute', inset:0, clipPath:`inset(0 ${100-pos}% 0 0)` }}>
+        <img src={beforeSrc} alt="before"
+          style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'top center' }} />
+      </div>
+
+      {/* Divider */}
+      <div style={{
+        position:'absolute', top:0, bottom:0, left:`${pos}%`,
+        width:'2px', transform:'translateX(-50%)',
+        background:'rgba(255,255,255,0.95)',
+        boxShadow:'0 0 10px rgba(255,255,255,0.6)', pointerEvents:'none',
+      }} />
+
+      {/* Handle */}
+      <div style={{
+        position:'absolute', top:'50%', left:`${pos}%`,
+        transform:'translate(-50%,-50%)',
+        width:'38px', height:'38px', borderRadius:'50%',
+        background:'white', boxShadow:'0 2px 12px rgba(0,0,0,0.4)',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        fontSize:'13px', color:'#1a1a2e', fontWeight:'800', pointerEvents:'none',
+      }}>◀▶</div>
+
+      {/* Labels */}
+      <span style={{ position:'absolute', top:10, left:10, background:'rgba(0,0,0,0.55)', color:'#fff', fontSize:'10px', fontWeight:700, padding:'3px 9px', borderRadius:'20px', letterSpacing:'0.5px', pointerEvents:'none' }}>TRƯỚC</span>
+      <span style={{ position:'absolute', top:10, right:10, background:'linear-gradient(90deg,#7c3aed,#3b82f6)', color:'#fff', fontSize:'10px', fontWeight:700, padding:'3px 9px', borderRadius:'20px', letterSpacing:'0.5px', pointerEvents:'none' }}>SAU</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BeforeAfterPanel — wraps the slider with header + dot navigation
+// Also MODULE LEVEL
+// ─────────────────────────────────────────────────────────────────────────────
+function BeforeAfterPanel({ toolType }) {
+  const examples = BEFORE_AFTER_EXAMPLES[toolType] || BEFORE_AFTER_EXAMPLES.tryon;
+  const [idx, setIdx] = useState(0);
+  // Reset to first example when tool type changes
+  useEffect(() => { setIdx(0); }, [toolType]);
+  const cur = examples[Math.min(idx, examples.length - 1)];
+
+  return (
+    <div style={{
+      display:'flex', flexDirection:'column', gap:'14px',
+      background:'rgba(255,255,255,0.03)',
+      border:'1px solid rgba(255,255,255,0.08)',
+      borderRadius:'18px', padding:'22px',
+      backdropFilter:'blur(12px)',
+    }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div>
+          <div style={{ fontSize:'0.9rem', fontWeight:700, color:'#f1f5f9' }}>✨ Ví dụ kết quả</div>
+          <div style={{ fontSize:'0.72rem', color:'var(--text-secondary)', marginTop:'3px' }}>Kéo thanh để so sánh Trước / Sau</div>
+        </div>
+        {examples.length > 1 && (
+          <div style={{ display:'flex', gap:'6px' }}>
+            {examples.map((_, i) => (
+              <button key={i} onClick={() => setIdx(i)} style={{
+                width:'8px', height:'8px', borderRadius:'50%', border:'none',
+                cursor:'pointer', padding:0,
+                background: i === idx ? 'linear-gradient(90deg,#7c3aed,#3b82f6)' : 'rgba(255,255,255,0.2)',
+              }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <BeforeAfterSlider key={`${toolType}-${idx}`} beforeSrc={cur.before} afterSrc={cur.after} />
+
+      <div style={{ textAlign:'center', fontSize:'0.7rem', color:'var(--text-secondary)', opacity:0.5 }}>
+        Ảnh minh hoạ — kết quả thực tế có thể khác
+      </div>
+    </div>
+  );
+}
+
 
 const playMeowThreeTimes = () => {
   try {
@@ -819,7 +978,9 @@ function App() {
 
   const renderTryOnView = () => {
     return (
-      <div className="container" style={{ maxWidth: '800px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
+      <div style={{ minHeight:'100vh', color:'#fff', display:'flex', gap:'32px', alignItems:'flex-start', maxWidth:'1400px', margin:'0 auto', padding:'40px 20px', boxSizing:'border-box' }}>
+        {/* ── LEFT: form (always visible) ── */}
+        <div className="container" style={{ flex:'1 1 0', minWidth:0, display:'flex', flexDirection:'column', gap:'28px' }}>
         
         {/* Hidden inputs */}
         <input 
@@ -1155,6 +1316,13 @@ function App() {
             )}
           </button>
 
+        </div>
+
+        </div>{/* end left form */}
+
+        {/* ── RIGHT: before/after panel (desktop ≥ 1100px only, via CSS) ── */}
+        <div className="tryon-ba-panel" style={{ flex:'0 0 370px', position:'sticky', top:'40px', display:'none' }}>
+          <BeforeAfterPanel toolType={tryonToolType} />
         </div>
 
       </div>

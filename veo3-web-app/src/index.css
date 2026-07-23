@@ -848,3 +848,11 @@ body {
   100% { transform: scale(1); }
 }
 
+/* ── Before/After Panel: desktop only ─────────────────────────── */
+@media (min-width: 1100px) {
+  .tryon-ba-panel {
+    display: block !important;
+  }
+}
+
+
