@@ -848,9 +848,3 @@ body {
   100% { transform: scale(1); }
 }
 
-/* ── Before/After Panel: only show on wide desktop ── */
-@media (min-width: 1100px) {
-  .tryon-ba-panel {
-    display: block !important;
-  }
-}
