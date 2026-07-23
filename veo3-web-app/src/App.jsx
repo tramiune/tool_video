@@ -5,7 +5,6 @@ import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc } 
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, googleProvider, db, storage } from './lib/firebase';
 import './index.css';
-import BeforeAfterPanel from './BeforeAfterPanel';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
@@ -1549,16 +1548,7 @@ function App() {
   }
 
   if (isTryOnView) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '32px', maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{ flex: '1 1 0', minWidth: 0 }}>
-          {renderTryOnView()}
-        </div>
-        <div className="tryon-ba-panel" style={{ display: 'none', flex: '0 0 370px', position: 'sticky', top: '40px', paddingTop: '40px' }}>
-          <BeforeAfterPanel toolType={tryonToolType} />
-        </div>
-      </div>
-    );
+    return renderTryOnView();
   }
 
   const RATIOS = [
