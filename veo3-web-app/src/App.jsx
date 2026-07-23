@@ -939,10 +939,9 @@ function App() {
     );
   };
 
-  // ── TryOn Before/After Panel ──────────────────────────────────────────
-  const renderBeforeAfterPanel = () => {
-    const examples = BEFORE_AFTER_EXAMPLES[tryonToolType] || BEFORE_AFTER_EXAMPLES['tryon'];
-    const [exampleIdx, setExampleIdx] = React.useState(0);
+  // ── TryOn Before/After Panel (proper component, no hooks violation) ───
+  const BeforeAfterPanel = ({ toolType, examples, BeforeAfterSlider }) => {
+    const [exampleIdx, setExampleIdx] = useState(0);
     const current = examples[exampleIdx] || examples[0];
     return (
       <div style={{
@@ -972,7 +971,7 @@ function App() {
             </div>
           )}
         </div>
-        <BeforeAfterSlider key={`${tryonToolType}-${exampleIdx}`} beforeSrc={current.before} afterSrc={current.after} label={current.label} />
+        <BeforeAfterSlider key={`${toolType}-${exampleIdx}`} beforeSrc={current.before} afterSrc={current.after} label={current.label} />
         <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.6 }}>
           Ảnh ví dụ minh hoạ — kết quả thực tế có thể khác nhau
         </div>
@@ -1329,7 +1328,11 @@ function App() {
           flex: '0 0 380px', position: 'sticky', top: '40px',
           display: 'none'
         }} className="tryon-ba-panel">
-          {renderBeforeAfterPanel()}
+          <BeforeAfterPanel
+            toolType={tryonToolType}
+            examples={BEFORE_AFTER_EXAMPLES[tryonToolType] || BEFORE_AFTER_EXAMPLES['tryon']}
+            BeforeAfterSlider={BeforeAfterSlider}
+          />
         </div>
 
       </div>
