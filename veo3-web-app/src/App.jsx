@@ -939,6 +939,14 @@ function App() {
               }
             }}
             onPaste={(e) => {
+              const files = e.clipboardData.files;
+              if (files && files.length > 0) {
+                const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+                if (imageFiles.length > 0) {
+                  setTryonPersonFile(imageFiles[0]);
+                  return;
+                }
+              }
               const items = e.clipboardData.items;
               for (let i = 0; i < items.length; i++) {
                 if (items[i].type.indexOf('image') !== -1) {
@@ -1013,6 +1021,17 @@ function App() {
                 }
               }}
               onPaste={(e) => {
+                const files = e.clipboardData.files;
+                if (files && files.length > 0) {
+                  const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+                  if (imageFiles.length > 0) {
+                    setTryonGarmentFile(imageFiles[0]);
+                    if (imageFiles.length > 1) {
+                      console.log(`User pasted ${imageFiles.length} garment files. Prepared for future bulk processing.`);
+                    }
+                    return;
+                  }
+                }
                 const items = e.clipboardData.items;
                 for (let i = 0; i < items.length; i++) {
                   if (items[i].type.indexOf('image') !== -1) {
