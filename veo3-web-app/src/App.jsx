@@ -1371,7 +1371,7 @@ function App() {
         if (!tryonPersonFile) {
           setTryonPersonFile(pastedImageFile);
         } else {
-          setTryonGarmentFile(pastedImageFile);
+          setTryonGarmentFiles(prev => [...prev, pastedImageFile]);
         }
       } else if (activeTab === 'video') {
         if (!startFile && !startLibraryUrl) {
