@@ -7,7 +7,7 @@ const EXAMPLES = {
     {
       input: '/tryon_model.jpg',
       garment: '/tryon_garment.jpg',
-      output: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=500&q=80', // Will replace with user after image later
+      output: '/tryon_output.jpg',
       description: 'Ảnh mẫu gốc + Ảnh trang phục = Kết quả mặc đồ mới hoàn chỉnh'
     }
   ],
