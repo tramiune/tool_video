@@ -141,7 +141,7 @@ function App() {
   
   const [isTryOnView, setIsTryOnView] = useState(false);
   const [tryonPersonFile, setTryonPersonFile] = useState(null);
-  const [tryonGarmentFile, setTryonGarmentFile] = useState(null);
+  const [tryonGarmentFiles, setTryonGarmentFiles] = useState([]); // array for multiple garment files
   const [tryonDescription, setTryonDescription] = useState('');
   const [tryonModel, setTryonModel] = useState('nano_banana_pro');
   const [tryonAspectRatio, setTryonAspectRatio] = useState('9:16');
@@ -751,8 +751,8 @@ function App() {
       alert("Vui lòng chọn ảnh gốc!");
       return;
     }
-    if (tryonToolType === 'tryon' && !tryonGarmentFile) {
-      alert("Vui lòng chọn ảnh trang phục!");
+    if (tryonToolType === 'tryon' && tryonGarmentFiles.length === 0) {
+      alert("Vui lòng chọn ít nhất một ảnh trang phục!");
       return;
     }
     
@@ -776,8 +776,9 @@ function App() {
     try {
       const formData = new FormData();
       formData.append('personImage', tryonPersonFile);
-      if (tryonGarmentFile) {
-        formData.append('garmentImage', tryonGarmentFile);
+      if (tryonGarmentFiles.length > 0) {
+        // Send the first one for current single API compatibility
+        formData.append('garmentImage', tryonGarmentFiles[0]);
       }
       formData.append('userId', user.uid);
       formData.append('description', tryonDescription);
@@ -803,7 +804,7 @@ function App() {
       
       // Reset files & description
       setTryonPersonFile(null);
-      setTryonGarmentFile(null);
+      setTryonGarmentFiles([]);
       setTryonDescription('');
       setTryonCustomBgDescription('');
 
@@ -836,7 +837,7 @@ function App() {
           style={{ display: 'none' }} 
           accept="image/*" 
           multiple
-          onChange={(e) => setTryonGarmentFile(e.target.files[0] || null)}
+          onChange={(e) => setTryonGarmentFiles(prev => [...prev, ...Array.from(e.target.files)])}
         />
 
         {/* Header */}
@@ -1013,11 +1014,7 @@ function App() {
                 const files = e.dataTransfer.files;
                 const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
                 if (imageFiles.length > 0) {
-                  // Currently we support single image at backend, set the first one
-                  setTryonGarmentFile(imageFiles[0]);
-                  if (imageFiles.length > 1) {
-                    console.log(`User uploaded ${imageFiles.length} garment files. Prepared for future bulk processing.`);
-                  }
+                  setTryonGarmentFiles(prev => [...prev, ...imageFiles]);
                 }
               }}
               onPaste={(e) => {
@@ -1025,10 +1022,7 @@ function App() {
                 if (files && files.length > 0) {
                   const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
                   if (imageFiles.length > 0) {
-                    setTryonGarmentFile(imageFiles[0]);
-                    if (imageFiles.length > 1) {
-                      console.log(`User pasted ${imageFiles.length} garment files. Prepared for future bulk processing.`);
-                    }
+                    setTryonGarmentFiles(prev => [...prev, ...imageFiles]);
                     return;
                   }
                 }
@@ -1036,7 +1030,7 @@ function App() {
                 for (let i = 0; i < items.length; i++) {
                   if (items[i].type.indexOf('image') !== -1) {
                     const blob = items[i].getAsFile();
-                    setTryonGarmentFile(blob);
+                    setTryonGarmentFiles(prev => [...prev, blob]);
                     break;
                   }
                 }
@@ -1062,21 +1056,63 @@ function App() {
               onMouseOver={(e) => e.currentTarget.style.borderColor = '#10b981'}
               onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
             >
-              {tryonGarmentFile ? (
-                <>
-                  <img 
-                    src={URL.createObjectURL(tryonGarmentFile)} 
-                    alt="Garment Preview" 
-                    style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, objectFit: 'contain', background: '#09090b' }} 
-                  />
-                  <button 
-                    type="button" 
-                    onClick={(e) => { e.stopPropagation(); setTryonGarmentFile(null); }} 
-                    style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(239, 68, 68, 0.9)', border: 'none', color: '#fff', width: '24px', height: '24px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 'bold', zIndex: 10 }}
-                  >
-                    ×
-                  </button>
-                </>
+              {tryonGarmentFiles.length > 0 ? (
+                <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Thumbnail grid */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))',
+                    gap: '8px',
+                    width: '100%',
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    padding: '4px'
+                  }}>
+                    {tryonGarmentFiles.map((file, idx) => (
+                      <div key={idx} style={{ position: 'relative', aspectRatio: '3/4', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <img 
+                          src={URL.createObjectURL(file)} 
+                          alt={`Garment ${idx}`} 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        />
+                        <button 
+                          type="button" 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            setTryonGarmentFiles(prev => prev.filter((_, i) => i !== idx)); 
+                          }} 
+                          style={{ 
+                            position: 'absolute', 
+                            top: '2px', 
+                            right: '2px', 
+                            background: 'rgba(239, 68, 68, 0.9)', 
+                            border: 'none', 
+                            color: '#fff', 
+                            width: '16px', 
+                            height: '16px', 
+                            borderRadius: '50%', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            fontSize: '10px', 
+                            fontWeight: 'bold', 
+                            zIndex: 10 
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Status footer */}
+                  <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>
+                    Đã tải lên {tryonGarmentFiles.length} ảnh trang phục
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    Bấm để tải thêm ảnh
+                  </div>
+                </div>
               ) : (
                 <>
                   <Upload size={36} style={{ color: 'var(--text-secondary)', marginBottom: '12px' }} />
