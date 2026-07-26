@@ -1554,7 +1554,7 @@ function App() {
         <div style={{ flex: '1 1 0', minWidth: 0 }}>
           {renderTryOnView()}
         </div>
-        <div className="tryon-ba-panel" style={{ display: 'none', flex: '0 0 370px', position: 'sticky', top: '40px', paddingTop: '40px' }}>
+        <div className="tryon-ba-panel" style={{ display: 'none', flex: '0 0 450px', position: 'sticky', top: '40px', paddingTop: '40px' }}>
           <BeforeAfterPanel toolType={tryonToolType} />
         </div>
       </div>

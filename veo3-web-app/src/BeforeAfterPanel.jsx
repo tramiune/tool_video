@@ -93,24 +93,24 @@ export default function BeforeAfterPanel({ toolType }) {
         )}
       </div>
 
-      {/* Comparison Grid (Side-by-side or Stacked depending on layout) */}
+      {/* Comparison Grid (Side-by-side layout for portrait 9:16 aspect ratio) */}
       <div style={{
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'row',
         gap: '16px',
         width: '100%'
       }}>
         {/* Input box */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#8e8ea0', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              📸 Ảnh đầu vào
+            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#8e8ea0', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              📸 Ảnh gốc
             </span>
           </div>
           <div style={{
             position: 'relative',
             width: '100%',
-            aspectRatio: '4/3',
+            aspectRatio: '9/16',
             borderRadius: '12px',
             overflow: 'hidden',
             border: '1px solid rgba(255,255,255,0.05)',
@@ -127,14 +127,14 @@ export default function BeforeAfterPanel({ toolType }) {
         {/* Output box */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               🚀 Kết quả AI
             </span>
           </div>
           <div style={{
             position: 'relative',
             width: '100%',
-            aspectRatio: '4/3',
+            aspectRatio: '9/16',
             borderRadius: '12px',
             overflow: 'hidden',
             border: '1px solid rgba(59, 130, 246, 0.2)',
