@@ -1819,32 +1819,34 @@ function App() {
                   Nâng cấp Gói dịch vụ
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowUserDropdown(false);
-                    window.location.hash = '#tryon';
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    width: '100%',
-                    padding: '8px 10px',
-                    background: 'rgba(59,130,246,0.1)',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: '#3b82f6',
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    marginTop: '4px'
-                  }}
-                >
-                  <ImageIcon size={12} />
-                  Bộ thay đồ AI
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      window.location.hash = '#tryon';
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      width: '100%',
+                      padding: '8px 10px',
+                      background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.25) 0%, rgba(59, 130, 246, 0.25) 100%)',
+                      border: '1px solid rgba(139, 92, 246, 0.4)',
+                      borderRadius: '6px',
+                      color: '#a78bfa',
+                      fontSize: '0.75rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      marginTop: '4px',
+                      boxShadow: '0 0 10px rgba(139, 92, 246, 0.2)',
+                      animation: 'pulse 2s infinite'
+                    }}
+                  >
+                    <span style={{ fontSize: '10px' }}>🎓</span>
+                    Tool cho học viên
+                  </button>
 
                 {currentUserIsAdmin && (
                   <button
