@@ -40,6 +40,7 @@ const EXAMPLES = {
 export default function BeforeAfterPanel({ toolType }) {
   const list = EXAMPLES[toolType] || EXAMPLES.tryon;
   const [idx, setIdx] = useState(0);
+  const [activeZoomUrl, setActiveZoomUrl] = useState(null);
 
   // Reset example index when switching tabs
   useEffect(() => {
@@ -66,7 +67,7 @@ export default function BeforeAfterPanel({ toolType }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f1f5f9' }}>✨ Ví dụ minh họa</h3>
-          <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#8e8ea0' }}>So sánh ảnh gốc và kết quả mẫu</p>
+          <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#8e8ea0' }}>Click vào ảnh để phóng to</p>
         </div>
         
         {list.length > 1 && (
@@ -107,15 +108,21 @@ export default function BeforeAfterPanel({ toolType }) {
               📸 Ảnh gốc
             </span>
           </div>
-          <div style={{
-            position: 'relative',
-            width: '100%',
-            aspectRatio: '9/16',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            border: '1px solid rgba(255,255,255,0.05)',
-            background: 'rgba(0,0,0,0.2)'
-          }}>
+          <div 
+            onClick={() => setActiveZoomUrl(cur.input)}
+            style={{
+              position: 'relative',
+              width: '100%',
+              aspectRatio: '9/16',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              border: '1px solid rgba(255,255,255,0.05)',
+              background: 'rgba(0,0,0,0.2)',
+              cursor: 'zoom-in',
+              transition: 'transform 0.2s ease'
+            }}
+            className="ba-zoom-box"
+          >
             <img 
               src={cur.input} 
               alt="Ảnh đầu vào" 
@@ -131,16 +138,22 @@ export default function BeforeAfterPanel({ toolType }) {
               🚀 Kết quả AI
             </span>
           </div>
-          <div style={{
-            position: 'relative',
-            width: '100%',
-            aspectRatio: '9/16',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            border: '1px solid rgba(59, 130, 246, 0.2)',
-            background: 'rgba(0,0,0,0.2)',
-            boxShadow: '0 0 15px rgba(59, 130, 246, 0.1)'
-          }}>
+          <div 
+            onClick={() => setActiveZoomUrl(cur.output)}
+            style={{
+              position: 'relative',
+              width: '100%',
+              aspectRatio: '9/16',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              background: 'rgba(0,0,0,0.2)',
+              boxShadow: '0 0 15px rgba(59, 130, 246, 0.1)',
+              cursor: 'zoom-in',
+              transition: 'transform 0.2s ease'
+            }}
+            className="ba-zoom-box"
+          >
             <img 
               src={cur.output} 
               alt="Kết quả AI" 
@@ -162,6 +175,60 @@ export default function BeforeAfterPanel({ toolType }) {
           marginTop: '4px'
         }}>
           {cur.description}
+        </div>
+      )}
+
+      {/* Lightbox / Zoom Portal */}
+      {activeZoomUrl && (
+        <div 
+          onClick={() => setActiveZoomUrl(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999999,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'zoom-out'
+          }}
+        >
+          {/* Close button */}
+          <button 
+            onClick={() => setActiveZoomUrl(null)}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: 'none',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              color: '#fff',
+              fontSize: '20px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+            }}
+          >
+            ✕
+          </button>
+          
+          <img 
+            src={activeZoomUrl} 
+            alt="Phóng to ảnh ví dụ" 
+            style={{
+              maxWidth: '90%',
+              maxHeight: '90%',
+              objectFit: 'contain',
+              borderRadius: '8px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.8)'
+            }} 
+          />
         </div>
       )}
     </div>
