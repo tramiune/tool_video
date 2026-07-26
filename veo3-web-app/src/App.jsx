@@ -978,7 +978,7 @@ function App() {
             onMouseOver={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
             onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
           >
-            {tryonPersonFile ? (
+            {tryonPersonFile && tryonPersonFile instanceof File ? (
               <>
                 <img 
                   src={URL.createObjectURL(tryonPersonFile)} 
@@ -1070,11 +1070,13 @@ function App() {
                   }}>
                     {tryonGarmentFiles.map((file, idx) => (
                       <div key={idx} style={{ position: 'relative', aspectRatio: '3/4', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        <img 
-                          src={URL.createObjectURL(file)} 
-                          alt={`Garment ${idx}`} 
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                        />
+                        {file && file instanceof File && (
+                          <img 
+                            src={URL.createObjectURL(file)} 
+                            alt={`Garment ${idx}`} 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                          />
+                        )}
                         <button 
                           type="button" 
                           onClick={(e) => { 
