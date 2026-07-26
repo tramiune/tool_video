@@ -5,14 +5,10 @@ import React, { useState, useEffect } from 'react';
 const EXAMPLES = {
   tryon: [
     {
-      input: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=500&q=80',
-      output: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=500&q=80',
-      description: 'Ảnh mẫu gốc & Ảnh kết quả mặc trang phục mới'
-    },
-    {
-      input: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
-      output: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=500&q=80',
-      description: 'Ví dụ thay trang phục đầm phong cách mới'
+      input: '/tryon_model.jpg',
+      garment: '/tryon_garment.jpg',
+      output: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=500&q=80', // Will replace with user after image later
+      description: 'Ảnh mẫu gốc + Ảnh trang phục = Kết quả mặc đồ mới hoàn chỉnh'
     }
   ],
   clean_916: [{
@@ -94,18 +90,18 @@ export default function BeforeAfterPanel({ toolType }) {
         )}
       </div>
 
-      {/* Comparison Grid (Side-by-side layout for portrait 9:16 aspect ratio) */}
+      {/* Comparison Grid */}
       <div style={{
         display: 'flex',
         flexDirection: 'row',
-        gap: '16px',
+        gap: '12px',
         width: '100%'
       }}>
-        {/* Input box */}
+        {/* Column 1: Model / Original (Tryon and all other tabs) */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#8e8ea0', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              📸 Ảnh gốc
+            <span style={{ fontSize: '0.62rem', fontWeight: 600, color: '#8e8ea0', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {toolType === 'tryon' ? '📸 Người mẫu' : '📸 Ảnh gốc'}
             </span>
           </div>
           <div 
@@ -114,7 +110,7 @@ export default function BeforeAfterPanel({ toolType }) {
               position: 'relative',
               width: '100%',
               aspectRatio: '9/16',
-              borderRadius: '12px',
+              borderRadius: '10px',
               overflow: 'hidden',
               border: '1px solid rgba(255,255,255,0.05)',
               background: 'rgba(0,0,0,0.2)',
@@ -125,16 +121,48 @@ export default function BeforeAfterPanel({ toolType }) {
           >
             <img 
               src={cur.input} 
-              alt="Ảnh đầu vào" 
+              alt="Ảnh gốc" 
               style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center' }} 
             />
           </div>
         </div>
 
-        {/* Output box */}
+        {/* Column 2: Garment (ONLY FOR TRYON TAB) */}
+        {toolType === 'tryon' && cur.garment && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.62rem', fontWeight: 600, color: '#8e8ea0', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                👗 Trang phục
+              </span>
+            </div>
+            <div 
+              onClick={() => setActiveZoomUrl(cur.garment)}
+              style={{
+                position: 'relative',
+                width: '100%',
+                aspectRatio: '9/16',
+                borderRadius: '10px',
+                overflow: 'hidden',
+                border: '1px solid rgba(255,255,255,0.05)',
+                background: 'rgba(0,0,0,0.2)',
+                cursor: 'zoom-in',
+                transition: 'transform 0.2s ease'
+              }}
+              className="ba-zoom-box"
+            >
+              <img 
+                src={cur.garment} 
+                alt="Trang phục" 
+                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center' }} 
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Column 3 / 2: AI Output (Tryon and all other tabs) */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <span style={{ fontSize: '0.62rem', fontWeight: 600, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               🚀 Kết quả AI
             </span>
           </div>
@@ -144,7 +172,7 @@ export default function BeforeAfterPanel({ toolType }) {
               position: 'relative',
               width: '100%',
               aspectRatio: '9/16',
-              borderRadius: '12px',
+              borderRadius: '10px',
               overflow: 'hidden',
               border: '1px solid rgba(59, 130, 246, 0.2)',
               background: 'rgba(0,0,0,0.2)',
