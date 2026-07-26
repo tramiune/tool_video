@@ -26,9 +26,9 @@ const EXAMPLES = {
     description: 'Thay đổi khuôn mặt của người mẫu sang gương mặt hotgirl mới tự nhiên'
   }],
   change_bg: [{
-    input: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=500&q=80',
-    output: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=500&q=80',
-    description: 'Tách nền người mẫu & ghép vào không gian studio/ngoại cảnh'
+    input: '/bg_before.jpg',
+    output: '/bg_after.jpg',
+    description: 'Thay thế phông nền phòng thử đồ cũ bằng không gian phòng ngủ resort sang trọng'
   }],
   brighten_skin: [{
     input: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=500&q=80',
