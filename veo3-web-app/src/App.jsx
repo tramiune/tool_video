@@ -835,6 +835,7 @@ function App() {
           ref={tryonGarmentInputRef} 
           style={{ display: 'none' }} 
           accept="image/*" 
+          multiple
           onChange={(e) => setTryonGarmentFile(e.target.files[0] || null)}
         />
 
@@ -927,6 +928,27 @@ function App() {
           {/* Card 1: Person Image */}
           <div 
             onClick={() => tryonPersonInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = '#3b82f6'; }}
+            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+              const file = e.dataTransfer.files[0];
+              if (file && file.type.startsWith('image/')) {
+                setTryonPersonFile(file);
+              }
+            }}
+            onPaste={(e) => {
+              const items = e.clipboardData.items;
+              for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                  const blob = items[i].getAsFile();
+                  setTryonPersonFile(blob);
+                  break;
+                }
+              }
+            }}
+            tabIndex={0}
             style={{ 
               background: 'rgba(255,255,255,0.02)', 
               border: '2px dashed rgba(255,255,255,0.1)', 
@@ -941,7 +963,8 @@ function App() {
               transition: 'border-color 0.2s',
               textAlign: 'center',
               position: 'relative',
-              overflow: 'hidden'
+              overflow: 'hidden',
+              outline: 'none'
             }}
             onMouseOver={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
             onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
@@ -965,7 +988,7 @@ function App() {
               <>
                 <Upload size={36} style={{ color: 'var(--text-secondary)', marginBottom: '12px' }} />
                 <div style={{ fontSize: '0.95rem', fontWeight: 'bold' }}>1. Tải ảnh người mẫu / model</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>Hỗ trợ JPG, PNG (Nên chọn ảnh rõ mặt và dáng người)</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>Hỗ trợ dán (Ctrl+V), Kéo thả hoặc Click để chọn ảnh</div>
               </>
             )}
           </div>
@@ -974,6 +997,32 @@ function App() {
           {tryonToolType === 'tryon' && (
             <div 
               onClick={() => tryonGarmentInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = '#10b981'; }}
+              onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                const files = e.dataTransfer.files;
+                const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+                if (imageFiles.length > 0) {
+                  // Currently we support single image at backend, set the first one
+                  setTryonGarmentFile(imageFiles[0]);
+                  if (imageFiles.length > 1) {
+                    console.log(`User uploaded ${imageFiles.length} garment files. Prepared for future bulk processing.`);
+                  }
+                }
+              }}
+              onPaste={(e) => {
+                const items = e.clipboardData.items;
+                for (let i = 0; i < items.length; i++) {
+                  if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    setTryonGarmentFile(blob);
+                    break;
+                  }
+                }
+              }}
+              tabIndex={0}
               style={{ 
                 background: 'rgba(255,255,255,0.02)', 
                 border: '2px dashed rgba(255,255,255,0.1)', 
@@ -988,7 +1037,8 @@ function App() {
                 transition: 'border-color 0.2s',
                 textAlign: 'center',
                 position: 'relative',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                outline: 'none'
               }}
               onMouseOver={(e) => e.currentTarget.style.borderColor = '#10b981'}
               onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
@@ -1012,7 +1062,7 @@ function App() {
                 <>
                   <Upload size={36} style={{ color: 'var(--text-secondary)', marginBottom: '12px' }} />
                   <div style={{ fontSize: '0.95rem', fontWeight: 'bold' }}>2. Tải ảnh trang phục / quần áo</div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>Hỗ trợ chụp phẳng hoặc chụp trên nền trơn</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>Hỗ trợ dán (Ctrl+V), Kéo thả nhiều file hoặc Click để chọn</div>
                 </>
               )}
             </div>
