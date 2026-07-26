@@ -16,9 +16,9 @@ const EXAMPLES = {
     }
   ],
   clean_916: [{
-    input: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=500&q=80',
-    output: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=450&h=800&fit=crop&q=80',
-    description: 'Xóa vật thể thừa & tự động mở rộng sang tỷ lệ dọc 9:16'
+    input: '/clean_before.png',
+    output: '/clean_after.jpg',
+    description: 'Xóa giao diện Tiktok, logo thừa và mở rộng sang ảnh dọc 9:16 nghệ thuật'
   }],
   swap_face: [{
     input: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=500&q=80',
