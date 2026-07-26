@@ -21,9 +21,9 @@ const EXAMPLES = {
     description: 'Xóa giao diện Tiktok, logo thừa và mở rộng sang ảnh dọc 9:16 nghệ thuật'
   }],
   swap_face: [{
-    input: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=500&q=80',
-    output: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=500&q=80',
-    description: 'Giữ dáng người và thay đổi khuôn mặt thông minh'
+    input: '/face_before.jpg',
+    output: '/face_after.jpg',
+    description: 'Thay đổi khuôn mặt của người mẫu sang gương mặt hotgirl mới tự nhiên'
   }],
   change_bg: [{
     input: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=500&q=80',
