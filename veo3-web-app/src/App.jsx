@@ -973,7 +973,7 @@ function App() {
             onMouseOver={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
             onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
           >
-            {tryonPersonFile ? (
+            {tryonPersonFile && tryonPersonFile instanceof File ? (
               <>
                 <img 
                   src={URL.createObjectURL(tryonPersonFile)} 
