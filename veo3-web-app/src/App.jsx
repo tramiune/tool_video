@@ -1687,7 +1687,16 @@ function App() {
             e.currentTarget.style.boxShadow = 'none';
           }}
         >
-          <span style={{ fontSize: '1rem' }}>💬</span>
+          <svg 
+            viewBox="0 0 24 24" 
+            style={{ 
+              width: '18px', 
+              height: '18px', 
+              fill: 'currentColor' 
+            }}
+          >
+            <path d="M12 2C6.48 2 2 5.58 2 10c0 2.24 1.12 4.27 2.94 5.67L4 19.5c-.09.28.16.56.45.47l4.03-1.34c1.1.24 2.27.37 3.52.37 5.52 0 10-3.58 10-8s-4.48-8-10-8zm-1.8 11.2h-3.4v-1.13l2.03-2.94H6.88V8H10.2v1.13L8.17 12.07h2.03v1.13z"/>
+          </svg>
         </a>
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
