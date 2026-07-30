@@ -1663,8 +1663,8 @@ function App() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: '32px',
-              height: '32px',
+              width: '24px',
+              height: '24px',
               borderRadius: '50%',
               transition: 'all 0.2s ease',
               cursor: 'pointer',
@@ -1680,7 +1680,7 @@ function App() {
               e.currentTarget.style.filter = 'none';
             }}
           >
-            <img src="/zalo.svg" alt="Zalo" style={{ width: '32px', height: '32px' }} />
+            <img src="/zalo.svg" alt="Zalo" style={{ width: '24px', height: '24px' }} />
           </a>
 
           {/* Dynamic Subscription Badge & Upgrade Button */}
