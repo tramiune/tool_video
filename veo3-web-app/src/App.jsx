@@ -1652,6 +1652,44 @@ function App() {
           <span className="logo-text">meo3</span>
         </div>
         
+        {/* Zalo Group Link (placed middle-right) */}
+        <a
+          href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            background: 'rgba(0, 104, 255, 0.12)',
+            border: '1px solid rgba(0, 104, 255, 0.35)',
+            borderRadius: '8px',
+            color: '#3b82f6',
+            padding: '5px 12px',
+            fontSize: '0.72rem',
+            fontWeight: '600',
+            textDecoration: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer',
+            marginLeft: 'auto',
+            marginRight: '16px'
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.background = '#0068ff';
+            e.currentTarget.style.borderColor = '#0068ff';
+            e.currentTarget.style.color = '#fff';
+            e.currentTarget.style.boxShadow = '0 0 12px rgba(0, 104, 255, 0.4)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.background = 'rgba(0, 104, 255, 0.12)';
+            e.currentTarget.style.borderColor = 'rgba(0, 104, 255, 0.35)';
+            e.currentTarget.style.color = '#3b82f6';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <span style={{ fontSize: '0.85rem' }}>💬</span> Nhóm Zalo
+        </a>
+
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {/* Dynamic Subscription Badge & Upgrade Button */}
           <div 

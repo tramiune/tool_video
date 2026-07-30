@@ -15,7 +15,7 @@ module.exports = {
   // Cookies and Cache filepaths
   COOKIE_FILE: path.join(ROOT_DIR, 'cookies.json'),
   TOKEN_CACHE_FILE: path.join(ROOT_DIR, '.token_cache.json'),
-  USER_DATA_DIR: path.join(os.homedir(), 'Veo3Data', '.api-brave-profile'),
+  USER_DATA_DIR: path.join(os.homedir(), 'Veo3Data', '.api-chrome-profile'),
 
   // Browser path resolution (Mac/Windows default search)
   getBrowserPath: () => {

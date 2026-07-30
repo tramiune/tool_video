@@ -45,12 +45,19 @@ class BrowserManager {
         }
       }
 
-      this.browser = await puppeteer.launch({
-        headless: true, // Run headless since we just capture tokens
+      // Set DISPLAY env variable on Linux so Chrome knows to open on VNC :1
+      if (process.platform === 'linux') {
+        process.env.DISPLAY = process.env.DISPLAY || ':1';
+      }
+
+      const isLinux = process.platform === 'linux';
+      const launchOptions = {
+        headless: isLinux ? false : true, // Run headful on VPS, headless on Mac
         executablePath: browserPath,
-        userDataDir: config.USER_DATA_DIR,
+        ignoreDefaultArgs: ['--disable-extensions'],
         defaultViewport: { width: 1280, height: 900 },
         args: [
+          `--user-data-dir=${config.USER_DATA_DIR}`,
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--no-zygote',
@@ -68,7 +75,52 @@ class BrowserManager {
           '--disable-gpu',
           '--disable-dev-shm-usage'
         ]
-      });
+      };
+
+
+
+      if (isLinux) {
+        logger.info('Spawning Google Chrome process manually via spawn to load extension from profile...');
+        const chromeArgs = [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          `--user-data-dir=${config.USER_DATA_DIR}`,
+          '--remote-debugging-port=9222',
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--disable-popup-blocking',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-session-crashed-bubble',
+          '--disable-blink-features=AutomationControlled',
+          '--allow-insecure-localhost',
+          '--ignore-certificate-errors',
+          '--mute-audio',
+          '--disable-gpu',
+          'about:blank'
+        ];
+        
+        const { spawn } = require('child_process');
+        const chromeProcess = spawn(browserPath, chromeArgs, {
+          env: { ...process.env, DISPLAY: ':1' },
+          detached: true,
+          stdio: 'ignore'
+        });
+        chromeProcess.unref();
+        
+        // Wait a moment for Chrome to open port 9222
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        
+        // Connect Puppeteer to the running instance
+        this.browser = await puppeteer.connect({
+          browserURL: 'http://127.0.0.1:9222',
+          defaultViewport: { width: 1280, height: 900 }
+        });
+      } else {
+        this.browser = await puppeteer.launch(launchOptions);
+      }
 
       this.browser.on('disconnected', () => {
         logger.warn('Browser disconnected unexpectedly!');
@@ -80,6 +132,20 @@ class BrowserManager {
 
       const pages = await this.browser.pages();
       this.page = await this.browser.newPage();
+      
+      // Log all browser console logs with deserialized arguments for debugging
+      this.page.on('console', async (msg) => {
+        const args = [];
+        for (const arg of msg.args()) {
+          try {
+            const val = await arg.jsonValue();
+            args.push(typeof val === 'object' ? JSON.stringify(val) : String(val));
+          } catch (e) {
+            args.push(arg.toString());
+          }
+        }
+        logger.info(`[Browser Console] ${msg.text()} | Args: ${args.join(' | ')}`);
+      });
       
       // Close initial blank pages
       for (const p of pages) {
@@ -105,8 +171,10 @@ class BrowserManager {
         }
       });
 
-      // Inject cookies
-      await this.injectCookies();
+      // Inject cookies (only if not on Linux VPS, to preserve persistent profile session)
+      if (process.platform !== 'linux') {
+        await this.injectCookies();
+      }
 
       // Navigate to Google Labs Flow to trigger OAuth token generation
       await this.refreshSession();
