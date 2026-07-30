@@ -30,11 +30,22 @@ export async function onRequestPost(context) {
     }
 
     const firebaseProjectId = env.FIREBASE_PROJECT_ID || "meo3-e69a5";
-    const googleClientEmail = env.GOOGLE_CLIENT_EMAIL;
-    const googlePrivateKey = env.GOOGLE_PRIVATE_KEY; // Base64 or raw PEM format
+    let googleClientEmail = env.GOOGLE_CLIENT_EMAIL;
+    let googlePrivateKey = env.GOOGLE_PRIVATE_KEY; // Base64 or raw PEM format
+
+    // Support single JSON configuration containing the whole Service Account Key
+    if (env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      try {
+        const sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+        googleClientEmail = sa.client_email;
+        googlePrivateKey = sa.private_key;
+      } catch (e) {
+        console.error("Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON secret:", e);
+      }
+    }
 
     if (!googleClientEmail || !googlePrivateKey) {
-      console.error("Missing Google Service Account credentials in environment variables");
+      console.error("Missing Google Service Account credentials (GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CLIENT_EMAIL/PRIVATE_KEY)");
       return new Response(JSON.stringify({ error: "Server Configuration Error" }), {
         status: 500,
         headers: { "Content-Type": "application/json" }
