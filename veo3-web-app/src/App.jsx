@@ -1652,38 +1652,37 @@ function App() {
           <span className="logo-text">meo3</span>
         </div>
         
-        {/* Zalo Group Link (placed middle-right) */}
-        <a
-          href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Tham gia nhóm Zalo hỗ trợ"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '32px',
-            height: '32px',
-            borderRadius: '50%',
-            transition: 'all 0.2s ease',
-            cursor: 'pointer',
-            marginLeft: 'auto',
-            marginRight: '16px',
-            textDecoration: 'none'
-          }}
-          onMouseOver={(e) => {
-            e.currentTarget.style.transform = 'scale(1.1)';
-            e.currentTarget.style.filter = 'drop-shadow(0 0 6px rgba(0, 104, 255, 0.6))';
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.filter = 'none';
-          }}
-        >
-          <img src="/zalo.svg" alt="Zalo" style={{ width: '32px', height: '32px' }} />
-        </a>
-
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {/* Zalo Group Link (placed middle-right, closer to Premium) */}
+          <a
+            href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Tham gia nhóm Zalo hỗ trợ"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              transition: 'all 0.2s ease',
+              cursor: 'pointer',
+              marginRight: '8px',
+              textDecoration: 'none'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.filter = 'drop-shadow(0 0 6px rgba(0, 104, 255, 0.6))';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.filter = 'none';
+            }}
+          >
+            <img src="/zalo.svg" alt="Zalo" style={{ width: '32px', height: '32px' }} />
+          </a>
+
           {/* Dynamic Subscription Badge & Upgrade Button */}
           <div 
             onClick={() => setShowPricingModal(true)}
