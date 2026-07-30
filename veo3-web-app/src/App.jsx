@@ -1657,22 +1657,22 @@ function App() {
           href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
           target="_blank"
           rel="noopener noreferrer"
+          title="Tham gia nhóm Zalo hỗ trợ"
           style={{
             background: 'rgba(0, 104, 255, 0.12)',
             border: '1px solid rgba(0, 104, 255, 0.35)',
-            borderRadius: '8px',
+            borderRadius: '50%',
             color: '#3b82f6',
-            padding: '5px 12px',
-            fontSize: '0.72rem',
-            fontWeight: '600',
-            textDecoration: 'none',
+            width: '32px',
+            height: '32px',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
+            justifyContent: 'center',
             transition: 'all 0.2s ease',
             cursor: 'pointer',
             marginLeft: 'auto',
-            marginRight: '16px'
+            marginRight: '16px',
+            textDecoration: 'none'
           }}
           onMouseOver={(e) => {
             e.currentTarget.style.background = '#0068ff';
@@ -1687,7 +1687,7 @@ function App() {
             e.currentTarget.style.boxShadow = 'none';
           }}
         >
-          <span style={{ fontSize: '0.85rem' }}>💬</span> Nhóm Zalo
+          <span style={{ fontSize: '1rem' }}>💬</span>
         </a>
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
