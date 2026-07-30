@@ -1659,15 +1659,12 @@ function App() {
           rel="noopener noreferrer"
           title="Tham gia nhóm Zalo hỗ trợ"
           style={{
-            background: 'rgba(0, 104, 255, 0.12)',
-            border: '1px solid rgba(0, 104, 255, 0.35)',
-            borderRadius: '50%',
-            color: '#3b82f6',
-            width: '32px',
-            height: '32px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
             transition: 'all 0.2s ease',
             cursor: 'pointer',
             marginLeft: 'auto',
@@ -1675,28 +1672,15 @@ function App() {
             textDecoration: 'none'
           }}
           onMouseOver={(e) => {
-            e.currentTarget.style.background = '#0068ff';
-            e.currentTarget.style.borderColor = '#0068ff';
-            e.currentTarget.style.color = '#fff';
-            e.currentTarget.style.boxShadow = '0 0 12px rgba(0, 104, 255, 0.4)';
+            e.currentTarget.style.transform = 'scale(1.1)';
+            e.currentTarget.style.filter = 'drop-shadow(0 0 6px rgba(0, 104, 255, 0.6))';
           }}
           onMouseOut={(e) => {
-            e.currentTarget.style.background = 'rgba(0, 104, 255, 0.12)';
-            e.currentTarget.style.borderColor = 'rgba(0, 104, 255, 0.35)';
-            e.currentTarget.style.color = '#3b82f6';
-            e.currentTarget.style.boxShadow = 'none';
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.filter = 'none';
           }}
         >
-          <svg 
-            viewBox="0 0 24 24" 
-            style={{ 
-              width: '18px', 
-              height: '18px', 
-              fill: 'currentColor' 
-            }}
-          >
-            <path d="M12 2C6.48 2 2 5.58 2 10c0 2.24 1.12 4.27 2.94 5.67L4 19.5c-.09.28.16.56.45.47l4.03-1.34c1.1.24 2.27.37 3.52.37 5.52 0 10-3.58 10-8s-4.48-8-10-8zm-1.8 11.2h-3.4v-1.13l2.03-2.94H6.88V8H10.2v1.13L8.17 12.07h2.03v1.13z"/>
-          </svg>
+          <img src="/zalo.svg" alt="Zalo" style={{ width: '32px', height: '32px' }} />
         </a>
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
