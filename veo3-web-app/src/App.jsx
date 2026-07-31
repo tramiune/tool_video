@@ -9,7 +9,7 @@ import BeforeAfterPanel from './BeforeAfterPanel';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
-const APP_VERSION = 'v2.2.2';
+const APP_VERSION = 'v2.3.0';
 
 const playMeowThreeTimes = () => {
   try {
