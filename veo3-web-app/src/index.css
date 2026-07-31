@@ -103,7 +103,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 28px 24px;
   background: var(--bg-darker);
   border-bottom: 1px solid var(--glass-border);
   position: sticky;
@@ -118,7 +118,7 @@ body {
 }
 
 .logo-text {
-  font-size: 1.4rem;
+  font-size: 1.96rem;
   font-weight: 800;
   background: linear-gradient(135deg, #c084fc 0%, #6366f1 50%, #22d3ee 100%);
   -webkit-background-clip: text;
@@ -129,7 +129,7 @@ body {
 }
 
 .logo-image {
-  height: 42px;
+  height: 59px;
   width: auto;
   object-fit: contain;
 }
@@ -630,16 +630,16 @@ body {
 
   /* ---- Header ---- */
   .header-container {
-    padding: 10px 14px;
+    padding: 16px 14px;
     gap: 8px;
   }
 
   .logo-image {
-    height: 30px;
+    height: 42px;
   }
 
   .logo-text {
-    font-size: 1.1rem;
+    font-size: 1.54rem;
   }
 
   /* ---- Gallery ---- */
@@ -746,15 +746,15 @@ body {
 @media (max-width: 480px) {
 
   .header-container {
-    padding: 8px 12px;
+    padding: 12px 12px;
   }
 
   .logo-image {
-    height: 26px;
+    height: 36px;
   }
 
   .logo-text {
-    font-size: 0.95rem;
+    font-size: 1.33rem;
   }
 
   .gallery-layout {
