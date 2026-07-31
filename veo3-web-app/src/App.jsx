@@ -2166,7 +2166,37 @@ function App() {
               </button>
             )}
           </div>
-          
+
+          {/* Zalo Group Link */}
+          <a
+            href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Tham gia nhóm Zalo hỗ trợ"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '20px',
+              height: '20px',
+              borderRadius: '50%',
+              transition: 'all 0.2s ease',
+              cursor: 'pointer',
+              marginRight: '2px',
+              textDecoration: 'none'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.filter = 'drop-shadow(0 0 6px rgba(0, 104, 255, 0.6))';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.filter = 'none';
+            }}
+          >
+            <img src="/zalo.svg" alt="Zalo" style={{ width: '20px', height: '20px' }} />
+          </a>
+
           {/* Avatar Dropdown Container */}
           <div style={{ position: 'relative' }}>
             <div 
@@ -2375,36 +2405,6 @@ function App() {
               </div>
             )}
           </div>
-
-          {/* Zalo Group Link (far right) */}
-          <a
-            href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Tham gia nhóm Zalo hỗ trợ"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '20px',
-              height: '20px',
-              borderRadius: '50%',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              marginRight: '2px',
-              textDecoration: 'none'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'scale(1.1)';
-              e.currentTarget.style.filter = 'drop-shadow(0 0 6px rgba(0, 104, 255, 0.6))';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.filter = 'none';
-            }}
-          >
-            <img src="/zalo.svg" alt="Zalo" style={{ width: '20px', height: '20px' }} />
-          </a>
         </div>
       </header>
 
