@@ -653,7 +653,6 @@ body {
     display: block;
     columns: 3;
     column-gap: 8px;
-    gap: 0;
   }
 
   .gallery-item {
@@ -765,7 +764,6 @@ body {
     display: block;
     columns: 3;
     column-gap: 6px;
-    gap: 0;
   }
 
   .gallery-item {
