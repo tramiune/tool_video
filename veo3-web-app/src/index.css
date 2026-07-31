@@ -31,7 +31,7 @@ body {
     radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%);
   color: var(--text-primary);
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Glass Utility Classes */
@@ -537,7 +537,7 @@ body {
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-size: 0.95rem;
+  font-size: 1rem;
   outline: none;
   resize: none;
   padding: 8px 0;
@@ -708,7 +708,7 @@ body {
   }
 
   .prompt-textarea {
-    font-size: 0.9rem;
+    font-size: 1rem;
   }
 
   .item-prompt {

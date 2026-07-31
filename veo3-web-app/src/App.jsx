@@ -9,7 +9,7 @@ import BeforeAfterPanel from './BeforeAfterPanel';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
-const APP_VERSION = 'v2.1.2';
+const APP_VERSION = 'v2.2.0';
 
 const playMeowThreeTimes = () => {
   try {
@@ -1219,6 +1219,7 @@ function App() {
   const endInputRef = useRef(null);
   const refInputRef = useRef(null);
   const promptTextareaRef = useRef(null);
+  const bottomControlsRef = useRef(null);
 
   // Auto-resize prompt textarea: grow with content, cap at 70vh, then scroll
   const autosizePrompt = () => {
@@ -1236,6 +1237,30 @@ function App() {
   useEffect(() => {
     window.addEventListener('resize', autosizePrompt);
     return () => window.removeEventListener('resize', autosizePrompt);
+  }, []);
+
+  // Mobile keyboard: lift the fixed bottom controls above the on-screen keyboard
+  // using visualViewport (iOS/Android Safari/Chrome). Without this, position:fixed
+  // bottom stays hidden behind the keyboard.
+  useEffect(() => {
+    const wrap = bottomControlsRef.current;
+    const vv = window.visualViewport;
+    if (!wrap || !vv) return;
+
+    const applyOffset = () => {
+      const kbHeight = Math.max(0, window.innerHeight - vv.height);
+      const isMobile = window.innerWidth <= 768;
+      const baseBottom = isMobile ? 10 : 24;
+      wrap.style.bottom = (kbHeight + baseBottom) + 'px';
+    };
+
+    applyOffset();
+    vv.addEventListener('resize', applyOffset);
+    vv.addEventListener('scroll', applyOffset);
+    return () => {
+      vv.removeEventListener('resize', applyOffset);
+      vv.removeEventListener('scroll', applyOffset);
+    };
   }, []);
 
   // Auth Listener
@@ -2184,7 +2209,7 @@ function App() {
       </main>
 
       {/* Floating Bottom Controls Wrapper */}
-      <div className="bottom-controls-wrapper">
+      <div className="bottom-controls-wrapper" ref={bottomControlsRef}>
         
         {/* Floating Options Panel (Conditionally rendered when showOptions is true) */}
         {showOptions && (
@@ -2376,7 +2401,7 @@ function App() {
             }}
             onPaste={handlePaste}
             disabled={isSubmitting}
-            style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', padding: '2px 0', fontSize: '0.9rem', overflowY: 'auto' }}
+            style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', padding: '2px 0', overflowY: 'auto' }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
