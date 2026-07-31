@@ -1980,7 +1980,27 @@ function App() {
                       <X size={32} color="#ef4444" />
                       <div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 'bold' }}>Tạo thất bại</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', maxHeight: '60px', overflowY: 'auto' }}>
-                        {task.error || 'Unknown error'}
+                        {(() => {
+                          const err = task.error;
+                          if (!err) return 'Đã xảy ra sự cố không xác định 🥺';
+                          const errStr = String(err);
+                          if (errStr.includes('PROMINENT_PEOPLE_FILTER_FAILED')) {
+                            return 'Không tạo được do ảnh/nội dung giống khuôn mặt của người nổi tiếng (chính sách bảo mật Google) 🔐';
+                          }
+                          if (errStr.includes('OAuth token') || errStr.includes('capture Google')) {
+                            return 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Cậu bấm tạo lại thử nhé! 🔄';
+                          }
+                          if (errStr.includes('SAFETY') || errStr.includes('safety') || errStr.includes('filter')) {
+                            return 'Nội dung hoặc từ khóa vi phạm bộ lọc an toàn của AI. Cậu thử đổi prompt khác nha! 🛡️';
+                          }
+                          if (errStr.includes('INTERNAL') || errStr.includes('Internal error')) {
+                            return 'Máy chủ Google đang quá tải hoặc gặp sự cố nội bộ. Hãy bấm tạo lại sau giây lát nhé! ⚙️';
+                          }
+                          if (errStr.includes('timeout') || errStr.includes('Timeout')) {
+                            return 'Quá thời gian chờ phản hồi từ máy chủ AI. Cậu thử tạo lại nhé! ⏱️';
+                          }
+                          return err;
+                        })()}
                       </div>
                       <button onClick={() => handleDeleteTask(task.id)} className="tab-btn" style={{ fontSize: '0.7rem', padding: '4px 10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '6px' }}>
                         Xóa
