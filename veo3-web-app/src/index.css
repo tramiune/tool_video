@@ -103,7 +103,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 10px 24px;
   background:
     linear-gradient(135deg, rgba(59, 130, 246, 0.16) 0%, rgba(139, 92, 246, 0.12) 50%, rgba(34, 211, 238, 0.10) 100%),
     var(--bg-darker);
