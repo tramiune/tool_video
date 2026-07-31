@@ -9,6 +9,8 @@ import BeforeAfterPanel from './BeforeAfterPanel';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
+const APP_VERSION = 'v2.1.1';
+
 const playMeowThreeTimes = () => {
   try {
     const audio = new Audio('/meo.mp3');
@@ -1955,6 +1957,17 @@ function App() {
                   <LogOut size={13} />
                   Đăng xuất
                 </button>
+
+                <div style={{
+                  fontSize: '0.62rem',
+                  color: 'rgba(255,255,255,0.28)',
+                  textAlign: 'center',
+                  padding: '4px 0 2px',
+                  borderTop: '1px solid rgba(255,255,255,0.05)',
+                  userSelect: 'none'
+                }}>
+                  {APP_VERSION}
+                </div>
               </div>
             )}
           </div>
