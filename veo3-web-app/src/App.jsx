@@ -135,11 +135,11 @@ function App() {
   const [adminTab, setAdminTab] = useState('users'); // 'users' | 'payments' | 'tasks'
   const [adminTasksList, setAdminTasksList] = useState([]);
   const [adminTaskFilter, setAdminTaskFilter] = useState('all');
-  const [adminTasksLimit, setAdminTasksLimit] = useState(50);
+  const [adminTasksLimit, setAdminTasksLimit] = useState(10);
   const [adminPaymentsList, setAdminPaymentsList] = useState([]);
   const [adminPaymentsStats, setAdminPaymentsStats] = useState(null);
-  const [adminPaymentsLimit, setAdminPaymentsLimit] = useState(30);
-  const [adminUsersLimit, setAdminUsersLimit] = useState(50);
+  const [adminPaymentsLimit, setAdminPaymentsLimit] = useState(10);
+  const [adminUsersLimit, setAdminUsersLimit] = useState(10);
   const [simulateCode, setSimulateCode] = useState('');
   const [simulateAmount, setSimulateAmount] = useState('30000');
   const [simulateLoading, setSimulateLoading] = useState(false);
@@ -791,7 +791,7 @@ function App() {
             {adminUsersList.length >= adminUsersLimit && (
               <div style={{ textAlign: 'center', marginTop: '8px' }}>
                 <button
-                  onClick={() => setAdminUsersLimit(l => l + 50)}
+                  onClick={() => setAdminUsersLimit(l => l + 10)}
                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#ececf1', borderRadius: '10px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}
                 >
                   ⏬ Tải thêm người dùng (đang hiện {adminUsersList.length})
@@ -1043,7 +1043,7 @@ function App() {
             {adminPaymentsList.length >= adminPaymentsLimit && (
               <div style={{ textAlign: 'center', marginTop: '8px' }}>
                 <button
-                  onClick={() => setAdminPaymentsLimit(l => l + 30)}
+                  onClick={() => setAdminPaymentsLimit(l => l + 10)}
                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#ececf1', borderRadius: '10px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}
                 >
                   ⏬ Tải thêm giao dịch (đang hiện {adminPaymentsList.length})
@@ -1159,7 +1159,7 @@ function App() {
             {adminTasksList.length >= adminTasksLimit && (
               <div style={{ textAlign: 'center', marginTop: '8px' }}>
                 <button
-                  onClick={() => setAdminTasksLimit(l => l + 50)}
+                  onClick={() => setAdminTasksLimit(l => l + 10)}
                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#ececf1', borderRadius: '10px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}
                 >
                   ⏬ Tải thêm task (đang hiện {adminTasksList.length})
