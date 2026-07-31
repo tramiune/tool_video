@@ -650,6 +650,7 @@ body {
 
   /* Masonry layout (Pinterest style): preserve each item's aspect ratio, no wasted horizontal space */
   .gallery-grid {
+    display: block;
     columns: 2;
     column-gap: 8px;
     gap: 0;
@@ -761,6 +762,7 @@ body {
   }
 
   .gallery-grid {
+    display: block;
     columns: 2;
     column-gap: 6px;
     gap: 0;
