@@ -104,8 +104,11 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 28px 24px;
-  background: var(--bg-darker);
-  border-bottom: 1px solid var(--glass-border);
+  background:
+    linear-gradient(135deg, rgba(59, 130, 246, 0.16) 0%, rgba(139, 92, 246, 0.12) 50%, rgba(34, 211, 238, 0.10) 100%),
+    var(--bg-darker);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   position: sticky;
   top: 0;
   z-index: 100;
