@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
-import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, googleProvider, db, storage } from './lib/firebase';
 import './index.css';
@@ -135,7 +135,11 @@ function App() {
   const [adminTab, setAdminTab] = useState('users'); // 'users' | 'payments' | 'tasks'
   const [adminTasksList, setAdminTasksList] = useState([]);
   const [adminTaskFilter, setAdminTaskFilter] = useState('all');
+  const [adminTasksLimit, setAdminTasksLimit] = useState(50);
   const [adminPaymentsList, setAdminPaymentsList] = useState([]);
+  const [adminPaymentsStats, setAdminPaymentsStats] = useState(null);
+  const [adminPaymentsLimit, setAdminPaymentsLimit] = useState(30);
+  const [adminUsersLimit, setAdminUsersLimit] = useState(50);
   const [simulateCode, setSimulateCode] = useState('');
   const [simulateAmount, setSimulateAmount] = useState('30000');
   const [simulateLoading, setSimulateLoading] = useState(false);
@@ -243,47 +247,68 @@ function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [user, userProfileLoaded, currentUserIsAdmin]);
 
-  // Fetch all users list in Admin mode
+  // Fetch users list in Admin mode (paginated)
   useEffect(() => {
     if (!isAdminView) return;
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const list = [];
-      snapshot.forEach(docSnap => {
-        list.push({ id: docSnap.id, ...docSnap.data() });
-      });
-      setAdminUsersList(list);
-    });
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(adminUsersLimit)),
+      (snapshot) => {
+        const list = [];
+        snapshot.forEach(docSnap => {
+          list.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        setAdminUsersList(list);
+      },
+      (error) => {
+        console.error("Admin users listener error:", error);
+      }
+    );
     return () => unsubscribe();
-  }, [isAdminView]);
+  }, [isAdminView, adminUsersLimit]);
 
-  // Fetch all tasks in Admin mode
+  // Fetch tasks list in Admin mode (paginated)
   useEffect(() => {
     if (!isAdminView) return;
-    const unsubscribe = onSnapshot(collection(db, 'tasks'), (snapshot) => {
-      const list = [];
-      snapshot.forEach(docSnap => {
-        list.push({ id: docSnap.id, ...docSnap.data() });
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'tasks'), orderBy('createdAt', 'desc'), limit(adminTasksLimit)),
+      (snapshot) => {
+        const list = [];
+        snapshot.forEach(docSnap => {
+          list.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        setAdminTasksList(list);
+      }, (error) => {
+        console.error("Admin tasks listener error:", error);
       });
-      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      setAdminTasksList(list);
-    }, (error) => {
-      console.error("Admin tasks listener error:", error);
-    });
     return () => unsubscribe();
-  }, [isAdminView]);
+  }, [isAdminView, adminTasksLimit]);
 
-  // Fetch all payments in Admin mode
+  // Fetch payments list in Admin mode (paginated)
   useEffect(() => {
     if (!isAdminView) return;
-    const unsubscribe = onSnapshot(collection(db, 'payments'), (snapshot) => {
-      const list = [];
-      snapshot.forEach(docSnap => {
-        list.push({ id: docSnap.id, ...docSnap.data() });
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(adminPaymentsLimit)),
+      (snapshot) => {
+        const list = [];
+        snapshot.forEach(docSnap => {
+          list.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        setAdminPaymentsList(list);
+      }, (error) => {
+        console.error("Admin payments listener error:", error);
       });
-      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      setAdminPaymentsList(list);
+    return () => unsubscribe();
+  }, [isAdminView, adminPaymentsLimit]);
+
+  // Fetch aggregate payment stats in Admin mode (single doc, cheap read)
+  useEffect(() => {
+    if (!isAdminView) return;
+    const unsubscribe = onSnapshot(doc(db, 'stats', 'payments'), (docSnap) => {
+      setAdminPaymentsStats(docSnap.exists ? docSnap.data() : null);
     }, (error) => {
-      console.error("Admin payments listener error:", error);
+      console.error("Admin payments stats listener error:", error);
     });
     return () => unsubscribe();
   }, [isAdminView]);
@@ -763,6 +788,16 @@ function App() {
                 </tbody>
               </table>
             </div>
+            {adminUsersList.length >= adminUsersLimit && (
+              <div style={{ textAlign: 'center', marginTop: '8px' }}>
+                <button
+                  onClick={() => setAdminUsersLimit(l => l + 50)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#ececf1', borderRadius: '10px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  ⏬ Tải thêm người dùng (đang hiện {adminUsersList.length})
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Right Column - Webhook Simulator */}
@@ -869,18 +904,18 @@ function App() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
               <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '14px', padding: '18px' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Tổng giao dịch thành công</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981', marginTop: '4px' }}>{adminPaymentsList.length}</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981', marginTop: '4px' }}>{adminPaymentsStats?.totalCount || 0}</div>
               </div>
               <div style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)', borderRadius: '14px', padding: '18px' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Tổng doanh thu thực nhận</div>
                 <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fbbf24', marginTop: '4px' }}>
-                  {adminPaymentsList.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString('vi-VN')}đ
+                  {(adminPaymentsStats?.totalAmount || 0).toLocaleString('vi-VN')}đ
                 </div>
               </div>
               <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: '14px', padding: '18px' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Nạp hôm nay</div>
                 <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#3b82f6', marginTop: '4px' }}>
-                  {adminPaymentsList.filter(p => p.createdAt && new Date(p.createdAt).toDateString() === new Date().toDateString()).length}
+                  {adminPaymentsStats?.todayCount || 0} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({(adminPaymentsStats?.todayAmount || 0).toLocaleString('vi-VN')}đ)</span>
                 </div>
               </div>
             </div>
@@ -982,7 +1017,7 @@ function App() {
                       </td>
                     </tr>
                   ) : (
-                    adminPaymentsList.slice(0, 100).map(p => (
+                    adminPaymentsList.map(p => (
                       <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                         <td style={{ padding: '10px 8px' }}>
                           <div style={{ fontWeight: '500', color: '#fff' }}>{p.email || '—'}</div>
@@ -1005,9 +1040,19 @@ function App() {
                 </tbody>
               </table>
             </div>
-            {adminPaymentsList.length > 100 && (
+            {adminPaymentsList.length >= adminPaymentsLimit && (
+              <div style={{ textAlign: 'center', marginTop: '8px' }}>
+                <button
+                  onClick={() => setAdminPaymentsLimit(l => l + 30)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#ececf1', borderRadius: '10px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  ⏬ Tải thêm giao dịch (đang hiện {adminPaymentsList.length})
+                </button>
+              </div>
+            )}
+            {adminPaymentsList.length === 0 && (
               <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                Hiển thị 100 giao dịch gần nhất ({adminPaymentsList.length} tổng).
+                Các giao dịch webhook từ giờ sẽ được ghi lại ở đây.
               </div>
             )}
           </div>
@@ -1072,7 +1117,6 @@ function App() {
                         if (adminTaskFilter === 'failed') return t.status === 'failed';
                         return true;
                       })
-                      .slice(0, 100)
                       .map(task => {
                         const statusColor = task.status === 'completed' ? '#10b981' : task.status === 'failed' ? '#ef4444' : task.status === 'pending' ? '#fbbf24' : '#3b82f6';
                         return (
@@ -1112,9 +1156,14 @@ function App() {
                 </tbody>
               </table>
             </div>
-            {adminTasksList.length > 100 && (
-              <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                Hiển thị 100 task mới nhất ({adminTasksList.length} tổng). 
+            {adminTasksList.length >= adminTasksLimit && (
+              <div style={{ textAlign: 'center', marginTop: '8px' }}>
+                <button
+                  onClick={() => setAdminTasksLimit(l => l + 50)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#ececf1', borderRadius: '10px', padding: '10px 24px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  ⏬ Tải thêm task (đang hiện {adminTasksList.length})
+                </button>
               </div>
             )}
           </div>
