@@ -137,6 +137,7 @@ function App() {
   const [adminTaskFilter, setAdminTaskFilter] = useState('all');
   const [adminTasksLimit, setAdminTasksLimit] = useState(10);
   const [adminPaymentsList, setAdminPaymentsList] = useState([]);
+  const [adminPaymentFilter, setAdminPaymentFilter] = useState('all');
   const [adminPaymentsStats, setAdminPaymentsStats] = useState(null);
   const [adminPaymentsLimit, setAdminPaymentsLimit] = useState(10);
   const [adminUsersLimit, setAdminUsersLimit] = useState(10);
@@ -950,7 +951,29 @@ function App() {
               </table>
             </div>
 
-            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: '16px 0 0' }}>✅ Lịch sử nạp thành công</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: '16px 0 0' }}>✅ Lịch sử nạp thành công</h3>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '16px' }}>
+                {[
+                  { key: 'all', label: `Tất cả (${adminPaymentsList.length})` },
+                  { key: 'webhook', label: `Webhook (${adminPaymentsList.filter(p => p.source === 'webhook').length})` },
+                  { key: 'admin', label: `Thủ công (${adminPaymentsList.filter(p => p.source === 'admin').length})` }
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setAdminPaymentFilter(f.key)}
+                    style={{
+                      padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.72rem',
+                      fontWeight: 'bold', border: '1px solid rgba(255,255,255,0.08)',
+                      background: adminPaymentFilter === f.key ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.03)',
+                      color: adminPaymentFilter === f.key ? '#10b981' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="admin-table-wrap" style={{ overflowX: 'auto' }}>
               <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
@@ -972,7 +995,9 @@ function App() {
                       </td>
                     </tr>
                   ) : (
-                    adminPaymentsList.map(p => (
+                    adminPaymentsList
+                      .filter(p => adminPaymentFilter === 'all' || p.source === adminPaymentFilter)
+                      .map(p => (
                       <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                         <td data-label="User" style={{ padding: '10px 8px' }}>
                           <div style={{ fontWeight: '500', color: '#fff' }}>{p.email || '—'}</div>
