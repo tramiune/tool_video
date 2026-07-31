@@ -196,7 +196,7 @@ function App() {
     const userDocRef = doc(db, 'users', user.uid);
     
     // Auto-create user doc if missing
-    setDoc(userDocRef, { email: user.email }, { merge: true }).catch(err => {
+    setDoc(userDocRef, { email: user.email, createdAt: Date.now() }, { merge: true }).catch(err => {
       console.error("Auto-create user document failed:", err);
     });
 
