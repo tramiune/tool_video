@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -9,7 +9,7 @@ import BeforeAfterPanel from './BeforeAfterPanel';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
-const APP_VERSION = 'v2.4.0';
+const APP_VERSION = 'v2.5.0';
 
 let meowPlayedOnce = false;
 
@@ -132,6 +132,9 @@ function App() {
   const [isAdminView, setIsAdminView] = useState(false);
   const [adminUsersList, setAdminUsersList] = useState([]);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [adminTab, setAdminTab] = useState('users'); // 'users' | 'payments' | 'tasks'
+  const [adminTasksList, setAdminTasksList] = useState([]);
+  const [adminTaskFilter, setAdminTaskFilter] = useState('all');
   const [simulateCode, setSimulateCode] = useState('');
   const [simulateAmount, setSimulateAmount] = useState('30000');
   const [simulateLoading, setSimulateLoading] = useState(false);
@@ -248,6 +251,22 @@ function App() {
         list.push({ id: docSnap.id, ...docSnap.data() });
       });
       setAdminUsersList(list);
+    });
+    return () => unsubscribe();
+  }, [isAdminView]);
+
+  // Fetch all tasks in Admin mode
+  useEffect(() => {
+    if (!isAdminView) return;
+    const unsubscribe = onSnapshot(collection(db, 'tasks'), (snapshot) => {
+      const list = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setAdminTasksList(list);
+    }, (error) => {
+      console.error("Admin tasks listener error:", error);
     });
     return () => unsubscribe();
   }, [isAdminView]);
@@ -429,9 +448,48 @@ function App() {
     }
   };
 
+  const handleAdminConfirmPayment = async (userId, payment) => {
+    if (!payment || !payment.code) return alert("Không có mã giao dịch chờ!");
+    setSimulateLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/payment-webhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gateway: 'OCB',
+          amount: Number(payment.amount),
+          content: `Admin confirm matching code ${payment.code}`
+        })
+      });
+      const data = await res.json();
+      setSimulateLoading(false);
+      if (data.success && data.processed > 0) {
+        alert(`✅ Đã xác nhận nạp tiền cho ${userId} (${payment.amount?.toLocaleString('vi-VN')}đ) thành công!`);
+      } else {
+        alert(`Xác nhận thất bại: ${data.message || 'Không tìm thấy user đang chờ mã này'}`);
+      }
+    } catch (err) {
+      setSimulateLoading(false);
+      console.error(err);
+      alert(`Lỗi kết nối API: ${err.message}`);
+    }
+  };
+
+  const handleAdminCancelPayment = async (userId) => {
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      await setDoc(userDocRef, { pendingPayment: null }, { merge: true });
+      alert("Đã hủy giao dịch chờ thành công!");
+    } catch (err) {
+      console.error(err);
+      alert("Lỗi hủy giao dịch: " + err.message);
+    }
+  };
+
   const renderAdminView = () => {
     const totalUsers = adminUsersList.length;
     const activePaidUsers = adminUsersList.filter(u => u.tier !== 'free' && u.expiryDate && u.expiryDate > Date.now()).length;
+    const pendingPaymentsCount = adminUsersList.filter(u => u.pendingPayment && u.pendingPayment.code).length;
     const estimatedRev = adminUsersList.reduce((sum, u) => {
       if (u.tier === 'free' || (u.expiryDate && u.expiryDate < Date.now())) return sum;
       const prices = { basic_69k: 69000, standard_99k: 99000, premium_169k: 169000 };
@@ -470,7 +528,42 @@ function App() {
           </button>
         </div>
 
+        {/* Admin Tabs */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {[
+            { key: 'users', label: '👥 Người dùng', icon: Users },
+            { key: 'payments', label: '💰 Nạp tiền', icon: DollarSign },
+            { key: 'tasks', label: '🖼️ Tasks', icon: ImageIcon }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = adminTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setAdminTab(tab.key)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '10px 18px', borderRadius: '10px', cursor: 'pointer',
+                  fontSize: '0.85rem', fontWeight: 'bold',
+                  background: isActive ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: isActive ? '#fff' : 'var(--text-secondary)'
+                }}
+              >
+                <Icon size={16} />
+                {tab.label}
+                {tab.key === 'payments' && pendingPaymentsCount > 0 && (
+                  <span style={{ background: '#ef4444', color: '#fff', borderRadius: '999px', fontSize: '0.65rem', padding: '2px 7px' }}>
+                    {pendingPaymentsCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Stats Row */}
+        {adminTab === 'users' && (<>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
           
           {/* Stat 1 */}
@@ -742,6 +835,198 @@ function App() {
           </div>
 
         </div>
+        </>)}
+
+        {/* Payments Tab */}
+        {adminTab === 'payments' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Quản lý Nạp tiền</h2>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                {pendingPaymentsCount} giao dịch đang chờ xác nhận
+              </span>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: '1.4', margin: 0 }}>
+              Danh sách user đang có mã giao dịch chờ thanh toán. Khi user chuyển khoản xong, hệ thống tự nhận webhook từ ngân hàng — nếu chưa nhận, bạn có thể bấm <b>Xác nhận</b> để duyệt thủ công, hoặc <b>Hủy</b> nếu giao dịch không hợp lệ.
+            </p>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '12px 8px' }}>User</th>
+                    <th style={{ padding: '12px 8px' }}>Mã giao dịch</th>
+                    <th style={{ padding: '12px 8px' }}>Gói nâng cấp</th>
+                    <th style={{ padding: '12px 8px' }}>Số tiền</th>
+                    <th style={{ padding: '12px 8px' }}>Thời gian chờ</th>
+                    <th style={{ padding: '12px 8px', textAlign: 'right' }}>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingPaymentsCount === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ padding: '40px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        Không có giao dịch nào đang chờ. 🎉
+                      </td>
+                    </tr>
+                  ) : (
+                    adminUsersList
+                      .filter(u => u.pendingPayment && u.pendingPayment.code)
+                      .map(usr => {
+                        const pp = usr.pendingPayment;
+                        const waitMs = Date.now() - (pp.createdAt || Date.now());
+                        const waitLabel = waitMs > 0 ? `${Math.floor(waitMs / 60000)}p ${Math.floor(waitMs % 60000 / 1000)}s` : 'Vừa mới';
+                        return (
+                          <tr key={usr.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                            <td style={{ padding: '14px 8px' }}>
+                              <div style={{ fontWeight: '500', color: '#fff' }}>{usr.email || usr.id}</div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{usr.id}</div>
+                            </td>
+                            <td style={{ padding: '14px 8px', fontFamily: 'monospace', fontWeight: 'bold', color: '#fbbf24' }}>{pp.code}</td>
+                            <td style={{ padding: '14px 8px' }}>{pp.tier}</td>
+                            <td style={{ padding: '14px 8px', fontWeight: 'bold' }}>{Number(pp.amount || 0).toLocaleString('vi-VN')}đ</td>
+                            <td style={{ padding: '14px 8px', color: waitMs > 3600000 ? '#ef4444' : 'var(--text-secondary)' }}>{waitLabel}</td>
+                            <td style={{ padding: '14px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              <button
+                                onClick={() => handleAdminConfirmPayment(usr.id, pp)}
+                                disabled={simulateLoading}
+                                style={{
+                                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                  border: 'none', borderRadius: '6px', padding: '6px 12px',
+                                  fontSize: '0.72rem', fontWeight: 'bold', color: '#fff',
+                                  cursor: 'pointer', marginRight: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px'
+                                }}
+                              >
+                                {simulateLoading ? <Loader size={10} className="spin-loader" /> : <Check size={10} />}
+                                Xác nhận
+                              </button>
+                              <button
+                                onClick={() => handleAdminCancelPayment(usr.id)}
+                                style={{
+                                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                                  borderRadius: '6px', padding: '6px 12px', fontSize: '0.72rem',
+                                  fontWeight: 'bold', color: '#ef4444', cursor: 'pointer'
+                                }}
+                              >
+                                Hủy
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tasks Tab */}
+        {adminTab === 'tasks' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Quản lý Tasks</h2>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { key: 'all', label: `Tất cả (${adminTasksList.length})` },
+                  { key: 'pending', label: `Chờ (${adminTasksList.filter(t => t.status === 'pending').length})` },
+                  { key: 'processing', label: `Đang xử lý (${adminTasksList.filter(t => t.status === 'generating' || t.status === 'processing').length})` },
+                  { key: 'completed', label: `Thành công (${adminTasksList.filter(t => t.status === 'completed').length})` },
+                  { key: 'failed', label: `Thất bại (${adminTasksList.filter(t => t.status === 'failed').length})` }
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setAdminTaskFilter(f.key)}
+                    style={{
+                      padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.72rem',
+                      fontWeight: 'bold', border: '1px solid rgba(255,255,255,0.08)',
+                      background: adminTaskFilter === f.key ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.03)',
+                      color: adminTaskFilter === f.key ? '#3b82f6' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '10px 8px' }}>Loại</th>
+                    <th style={{ padding: '10px 8px' }}>ID</th>
+                    <th style={{ padding: '10px 8px' }}>User</th>
+                    <th style={{ padding: '10px 8px' }}>Prompt</th>
+                    <th style={{ padding: '10px 8px' }}>Trạng thái</th>
+                    <th style={{ padding: '10px 8px' }}>Thời gian</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'right' }}>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminTasksList.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" style={{ padding: '40px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        Chưa có task nào.
+                      </td>
+                    </tr>
+                  ) : (
+                    adminTasksList
+                      .filter(t => {
+                        if (adminTaskFilter === 'all') return true;
+                        if (adminTaskFilter === 'pending') return t.status === 'pending';
+                        if (adminTaskFilter === 'processing') return t.status === 'generating' || t.status === 'processing';
+                        if (adminTaskFilter === 'completed') return t.status === 'completed';
+                        if (adminTaskFilter === 'failed') return t.status === 'failed';
+                        return true;
+                      })
+                      .slice(0, 100)
+                      .map(task => {
+                        const statusColor = task.status === 'completed' ? '#10b981' : task.status === 'failed' ? '#ef4444' : task.status === 'pending' ? '#fbbf24' : '#3b82f6';
+                        return (
+                          <tr key={task.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                            <td style={{ padding: '10px 8px' }}>{task.type === 'video' ? '🎬' : '🖼️'}</td>
+                            <td style={{ padding: '10px 8px', fontFamily: 'monospace', fontSize: '0.72rem' }}>{task.id}</td>
+                            <td style={{ padding: '10px 8px', fontSize: '0.72rem' }}>{task.userId || '-'}</td>
+                            <td style={{ padding: '10px 8px', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                              {(task.prompt || '').slice(0, 60)}
+                            </td>
+                            <td style={{ padding: '10px 8px' }}>
+                              <span style={{ background: `${statusColor}1a`, color: statusColor, padding: '2px 8px', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 'bold' }}>
+                                {task.status}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                              {task.createdAt ? new Date(task.createdAt).toLocaleString('vi-VN') : '-'}
+                            </td>
+                            <td style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              {task.error && task.status === 'failed' && (
+                                <span title={task.error} style={{ cursor: 'help', color: '#ef4444', fontSize: '0.7rem', marginRight: '8px' }}>⚠️</span>
+                              )}
+                              <button
+                                onClick={() => handleDeleteTask(task.id)}
+                                style={{
+                                  background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '6px',
+                                  padding: '5px 10px', fontSize: '0.7rem', fontWeight: 'bold', color: '#ef4444', cursor: 'pointer'
+                                }}
+                              >
+                                Xóa
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {adminTasksList.length > 100 && (
+              <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Hiển thị 100 task mới nhất ({adminTasksList.length} tổng). 
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     );
