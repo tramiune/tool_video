@@ -851,28 +851,10 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Quản lý Nạp tiền</h2>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                {pendingPaymentsCount} giao dịch đang chờ xác nhận
-              </span>
-            </div>
-
-            {/* Payment Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-              <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '14px', padding: '18px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Tổng giao dịch thành công</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981', marginTop: '4px' }}>{adminPaymentsStats?.totalCount || 0}</div>
-              </div>
-              <div style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)', borderRadius: '14px', padding: '18px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Tổng doanh thu thực nhận</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fbbf24', marginTop: '4px' }}>
-                  {(adminPaymentsStats?.totalAmount || 0).toLocaleString('vi-VN')}đ
-                </div>
-              </div>
-              <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: '14px', padding: '18px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Nạp hôm nay</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#3b82f6', marginTop: '4px' }}>
-                  {adminPaymentsStats?.todayCount || 0} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({(adminPaymentsStats?.todayAmount || 0).toLocaleString('vi-VN')}đ)</span>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  {pendingPaymentsCount} giao dịch đang chờ xác nhận
+                </span>
               </div>
             </div>
 
