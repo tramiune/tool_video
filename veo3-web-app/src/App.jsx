@@ -1218,12 +1218,13 @@ function App() {
   const refInputRef = useRef(null);
   const promptTextareaRef = useRef(null);
 
-  // Auto-resize prompt textarea: grow with content, cap at 50vh, then scroll
+  // Auto-resize prompt textarea: grow with content, cap at 70vh, then scroll
   const autosizePrompt = () => {
     const el = promptTextareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.5) + 'px';
+    el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.7) + 'px';
+    el.scrollTop = 0;
   };
 
   useEffect(() => {
