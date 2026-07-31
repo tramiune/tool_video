@@ -545,7 +545,7 @@ function App() {
     });
 
     return (
-      <div className="container" style={{ maxWidth: '1200px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '32px', minHeight: '100vh', color: '#fff' }}>
+      <div className="container admin-view" style={{ maxWidth: '1200px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '32px', minHeight: '100vh', color: '#fff' }}>
         
         {/* Header */}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
@@ -572,7 +572,7 @@ function App() {
         </div>
 
         {/* Admin Tabs */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="admin-tabs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {[
             { key: 'users', label: '👥 Người dùng', icon: Users },
             { key: 'payments', label: '💰 Nạp tiền', icon: DollarSign },
@@ -672,8 +672,8 @@ function App() {
             </div>
 
             {/* Users Table */}
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+            <div className="admin-table-wrap" style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '12px 8px' }}>Email</th>
@@ -695,7 +695,7 @@ function App() {
                       const isUserExpired = usr.tier !== 'free' && usr.expiryDate && usr.expiryDate < Date.now();
                       return (
                         <tr key={usr.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                          <td style={{ padding: '14px 8px', fontWeight: '500', color: usr.id === user.uid ? '#3b82f6' : '#fff' }}>
+                          <td data-label="Email" style={{ padding: '14px 8px', fontWeight: '500', color: usr.id === user.uid ? '#3b82f6' : '#fff' }}>
                             {usr.email}
                             {usr.id === user.uid && <span style={{ fontSize: '0.65rem', marginLeft: '6px', color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '2px 4px', borderRadius: '4px' }}>Tôi</span>}
                             {usr.pendingPayment && (
@@ -704,7 +704,7 @@ function App() {
                               </div>
                             )}
                           </td>
-                          <td style={{ padding: '14px 8px' }}>
+                          <td data-label="Quyền" style={{ padding: '14px 8px' }}>
                             <button
                               onClick={() => handleAdminToggleAdmin(usr.id, usr.isAdmin)}
                               style={{
@@ -728,7 +728,7 @@ function App() {
                               )}
                             </button>
                           </td>
-                          <td style={{ padding: '14px 8px' }}>
+                          <td data-label="Gói cước" style={{ padding: '14px 8px' }}>
                             <select
                               value={usr.tier || 'free'}
                               onChange={(e) => handleAdminChangeTier(usr.id, e.target.value)}
@@ -749,7 +749,7 @@ function App() {
                               <option value="premium_169k">Premium (169k)</option>
                             </select>
                           </td>
-                          <td style={{ padding: '14px 8px', color: isUserExpired ? '#ef4444' : 'var(--text-secondary)' }}>
+                          <td data-label="Hạn dùng" style={{ padding: '14px 8px', color: isUserExpired ? '#ef4444' : 'var(--text-secondary)' }}>
                             {usr.tier === 'free' ? 'N/A' : (
                               usr.expiryDate ? (
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -759,7 +759,7 @@ function App() {
                               ) : 'Không giới hạn'
                             )}
                           </td>
-                          <td style={{ padding: '14px 8px', textAlign: 'right' }}>
+                          <td data-label="Thao tác" data-actions style={{ padding: '14px 8px', textAlign: 'right' }}>
                             {usr.tier !== 'free' && (
                               <button
                                 onClick={() => handleAdminExtendExpiry(usr.id)}
@@ -926,8 +926,8 @@ function App() {
 
             <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: '8px 0 0' }}>⏳ Đang chờ thanh toán</h3>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+            <div className="admin-table-wrap" style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '12px 8px' }}>User</th>
@@ -954,15 +954,15 @@ function App() {
                         const waitLabel = waitMs > 0 ? `${Math.floor(waitMs / 60000)}p ${Math.floor(waitMs % 60000 / 1000)}s` : 'Vừa mới';
                         return (
                           <tr key={usr.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                            <td style={{ padding: '14px 8px' }}>
+                            <td data-label="User" style={{ padding: '14px 8px' }}>
                               <div style={{ fontWeight: '500', color: '#fff' }}>{usr.email || usr.id}</div>
                               <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{usr.id}</div>
                             </td>
-                            <td style={{ padding: '14px 8px', fontFamily: 'monospace', fontWeight: 'bold', color: '#fbbf24' }}>{pp.code}</td>
-                            <td style={{ padding: '14px 8px' }}>{pp.tier}</td>
-                            <td style={{ padding: '14px 8px', fontWeight: 'bold' }}>{Number(pp.amount || 0).toLocaleString('vi-VN')}đ</td>
-                            <td style={{ padding: '14px 8px', color: waitMs > 3600000 ? '#ef4444' : 'var(--text-secondary)' }}>{waitLabel}</td>
-                            <td style={{ padding: '14px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <td data-label="Mã GD" style={{ padding: '14px 8px', fontFamily: 'monospace', fontWeight: 'bold', color: '#fbbf24' }}>{pp.code}</td>
+                            <td data-label="Gói" style={{ padding: '14px 8px' }}>{pp.tier}</td>
+                            <td data-label="Số tiền" style={{ padding: '14px 8px', fontWeight: 'bold' }}>{Number(pp.amount || 0).toLocaleString('vi-VN')}đ</td>
+                            <td data-label="Chờ" style={{ padding: '14px 8px', color: waitMs > 3600000 ? '#ef4444' : 'var(--text-secondary)' }}>{waitLabel}</td>
+                            <td data-label="Thao tác" data-actions style={{ padding: '14px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                               <button
                                 onClick={() => handleAdminConfirmPayment(usr.id, pp)}
                                 disabled={simulateLoading}
@@ -997,8 +997,8 @@ function App() {
 
             <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: '16px 0 0' }}>✅ Lịch sử nạp thành công</h3>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
+            <div className="admin-table-wrap" style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '10px 8px' }}>User</th>
@@ -1019,19 +1019,19 @@ function App() {
                   ) : (
                     adminPaymentsList.map(p => (
                       <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                        <td style={{ padding: '10px 8px' }}>
+                        <td data-label="User" style={{ padding: '10px 8px' }}>
                           <div style={{ fontWeight: '500', color: '#fff' }}>{p.email || '—'}</div>
                           <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{p.userId}</div>
                         </td>
-                        <td style={{ padding: '10px 8px', fontFamily: 'monospace', fontWeight: 'bold', color: '#10b981' }}>{p.code}</td>
-                        <td style={{ padding: '10px 8px' }}>{p.tier}</td>
-                        <td style={{ padding: '10px 8px', fontWeight: 'bold' }}>{Number(p.amount || 0).toLocaleString('vi-VN')}đ</td>
-                        <td style={{ padding: '10px 8px' }}>
+                        <td data-label="Mã GD" style={{ padding: '10px 8px', fontFamily: 'monospace', fontWeight: 'bold', color: '#10b981' }}>{p.code}</td>
+                        <td data-label="Gói" style={{ padding: '10px 8px' }}>{p.tier}</td>
+                        <td data-label="Số tiền" style={{ padding: '10px 8px', fontWeight: 'bold' }}>{Number(p.amount || 0).toLocaleString('vi-VN')}đ</td>
+                        <td data-label="Nguồn" style={{ padding: '10px 8px' }}>
                           <span style={{ background: p.source === 'admin' ? 'rgba(59,130,246,0.1)' : 'rgba(16,185,129,0.1)', color: p.source === 'admin' ? '#3b82f6' : '#10b981', padding: '2px 8px', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 'bold' }}>
                             {p.source === 'admin' ? 'Thủ công' : 'Webhook'}
                           </span>
                         </td>
-                        <td style={{ padding: '10px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                        <td data-label="Thời gian" style={{ padding: '10px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
                           {p.createdAt ? new Date(p.createdAt).toLocaleString('vi-VN') : '-'}
                         </td>
                       </tr>
@@ -1087,8 +1087,8 @@ function App() {
               </div>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
+            <div className="admin-table-wrap" style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '10px 8px' }}>Loại</th>
@@ -1121,21 +1121,21 @@ function App() {
                         const statusColor = task.status === 'completed' ? '#10b981' : task.status === 'failed' ? '#ef4444' : task.status === 'pending' ? '#fbbf24' : '#3b82f6';
                         return (
                           <tr key={task.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                            <td style={{ padding: '10px 8px' }}>{task.type === 'video' ? '🎬' : '🖼️'}</td>
-                            <td style={{ padding: '10px 8px', fontFamily: 'monospace', fontSize: '0.72rem' }}>{task.id}</td>
-                            <td style={{ padding: '10px 8px', fontSize: '0.72rem' }}>{task.userId || '-'}</td>
-                            <td style={{ padding: '10px 8px', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                            <td data-label="Loại" style={{ padding: '10px 8px' }}>{task.type === 'video' ? '🎬' : '🖼️'}</td>
+                            <td data-label="ID" style={{ padding: '10px 8px', fontFamily: 'monospace', fontSize: '0.72rem' }}>{task.id}</td>
+                            <td data-label="User" style={{ padding: '10px 8px', fontSize: '0.72rem' }}>{task.userId || '-'}</td>
+                            <td data-label="Prompt" data-full style={{ padding: '10px 8px', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
                               {(task.prompt || '').slice(0, 60)}
                             </td>
-                            <td style={{ padding: '10px 8px' }}>
+                            <td data-label="Trạng thái" style={{ padding: '10px 8px' }}>
                               <span style={{ background: `${statusColor}1a`, color: statusColor, padding: '2px 8px', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 'bold' }}>
                                 {task.status}
                               </span>
                             </td>
-                            <td style={{ padding: '10px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                            <td data-label="Thời gian" style={{ padding: '10px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
                               {task.createdAt ? new Date(task.createdAt).toLocaleString('vi-VN') : '-'}
                             </td>
-                            <td style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <td data-label="Thao tác" data-actions style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                               {task.error && task.status === 'failed' && (
                                 <span title={task.error} style={{ cursor: 'help', color: '#ef4444', fontSize: '0.7rem', marginRight: '8px' }}>⚠️</span>
                               )}
