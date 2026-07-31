@@ -532,7 +532,8 @@ body {
 }
 
 .prompt-textarea {
-  flex: 1;
+  width: 100%;
+  flex: none;
   background: transparent;
   border: none;
   color: var(--text-primary);
