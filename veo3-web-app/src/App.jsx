@@ -9,7 +9,7 @@ import BeforeAfterPanel from './BeforeAfterPanel';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
-const APP_VERSION = 'v2.5.0';
+const APP_VERSION = 'v2.5.1';
 
 let meowPlayedOnce = false;
 
@@ -135,6 +135,7 @@ function App() {
   const [adminTab, setAdminTab] = useState('users'); // 'users' | 'payments' | 'tasks'
   const [adminTasksList, setAdminTasksList] = useState([]);
   const [adminTaskFilter, setAdminTaskFilter] = useState('all');
+  const [adminPaymentsList, setAdminPaymentsList] = useState([]);
   const [simulateCode, setSimulateCode] = useState('');
   const [simulateAmount, setSimulateAmount] = useState('30000');
   const [simulateLoading, setSimulateLoading] = useState(false);
@@ -267,6 +268,22 @@ function App() {
       setAdminTasksList(list);
     }, (error) => {
       console.error("Admin tasks listener error:", error);
+    });
+    return () => unsubscribe();
+  }, [isAdminView]);
+
+  // Fetch all payments in Admin mode
+  useEffect(() => {
+    if (!isAdminView) return;
+    const unsubscribe = onSnapshot(collection(db, 'payments'), (snapshot) => {
+      const list = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setAdminPaymentsList(list);
+    }, (error) => {
+      console.error("Admin payments listener error:", error);
     });
     return () => unsubscribe();
   }, [isAdminView]);
@@ -458,6 +475,7 @@ function App() {
         body: JSON.stringify({
           gateway: 'OCB',
           amount: Number(payment.amount),
+          source: 'admin',
           content: `Admin confirm matching code ${payment.code}`
         })
       });
@@ -846,9 +864,32 @@ function App() {
                 {pendingPaymentsCount} giao dịch đang chờ xác nhận
               </span>
             </div>
+
+            {/* Payment Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '14px', padding: '18px' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Tổng giao dịch thành công</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981', marginTop: '4px' }}>{adminPaymentsList.length}</div>
+              </div>
+              <div style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)', borderRadius: '14px', padding: '18px' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Tổng doanh thu thực nhận</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fbbf24', marginTop: '4px' }}>
+                  {adminPaymentsList.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString('vi-VN')}đ
+                </div>
+              </div>
+              <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: '14px', padding: '18px' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Nạp hôm nay</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#3b82f6', marginTop: '4px' }}>
+                  {adminPaymentsList.filter(p => p.createdAt && new Date(p.createdAt).toDateString() === new Date().toDateString()).length}
+                </div>
+              </div>
+            </div>
+
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: '1.4', margin: 0 }}>
               Danh sách user đang có mã giao dịch chờ thanh toán. Khi user chuyển khoản xong, hệ thống tự nhận webhook từ ngân hàng — nếu chưa nhận, bạn có thể bấm <b>Xác nhận</b> để duyệt thủ công, hoặc <b>Hủy</b> nếu giao dịch không hợp lệ.
             </p>
+
+            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: '8px 0 0' }}>⏳ Đang chờ thanh toán</h3>
 
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
@@ -865,7 +906,7 @@ function App() {
                 <tbody>
                   {pendingPaymentsCount === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ padding: '40px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <td colSpan="6" style={{ padding: '20px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                         Không có giao dịch nào đang chờ. 🎉
                       </td>
                     </tr>
@@ -918,6 +959,57 @@ function App() {
                 </tbody>
               </table>
             </div>
+
+            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: '16px 0 0' }}>✅ Lịch sử nạp thành công</h3>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '10px 8px' }}>User</th>
+                    <th style={{ padding: '10px 8px' }}>Mã giao dịch</th>
+                    <th style={{ padding: '10px 8px' }}>Gói</th>
+                    <th style={{ padding: '10px 8px' }}>Số tiền</th>
+                    <th style={{ padding: '10px 8px' }}>Nguồn</th>
+                    <th style={{ padding: '10px 8px' }}>Thời gian</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminPaymentsList.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ padding: '30px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        Chưa có giao dịch thành công nào. Các giao dịch webhook từ giờ sẽ được ghi lại ở đây.
+                      </td>
+                    </tr>
+                  ) : (
+                    adminPaymentsList.slice(0, 100).map(p => (
+                      <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '10px 8px' }}>
+                          <div style={{ fontWeight: '500', color: '#fff' }}>{p.email || '—'}</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{p.userId}</div>
+                        </td>
+                        <td style={{ padding: '10px 8px', fontFamily: 'monospace', fontWeight: 'bold', color: '#10b981' }}>{p.code}</td>
+                        <td style={{ padding: '10px 8px' }}>{p.tier}</td>
+                        <td style={{ padding: '10px 8px', fontWeight: 'bold' }}>{Number(p.amount || 0).toLocaleString('vi-VN')}đ</td>
+                        <td style={{ padding: '10px 8px' }}>
+                          <span style={{ background: p.source === 'admin' ? 'rgba(59,130,246,0.1)' : 'rgba(16,185,129,0.1)', color: p.source === 'admin' ? '#3b82f6' : '#10b981', padding: '2px 8px', borderRadius: '999px', fontSize: '0.68rem', fontWeight: 'bold' }}>
+                            {p.source === 'admin' ? 'Thủ công' : 'Webhook'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                          {p.createdAt ? new Date(p.createdAt).toLocaleString('vi-VN') : '-'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {adminPaymentsList.length > 100 && (
+              <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Hiển thị 100 giao dịch gần nhất ({adminPaymentsList.length} tổng).
+              </div>
+            )}
           </div>
         )}
 
