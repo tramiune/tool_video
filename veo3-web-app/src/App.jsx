@@ -9,9 +9,13 @@ import BeforeAfterPanel from './BeforeAfterPanel';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
-const APP_VERSION = 'v2.3.0';
+const APP_VERSION = 'v2.3.1';
 
-const playMeowThreeTimes = () => {
+let meowPlayedOnce = false;
+
+const playMeowOnce = () => {
+  if (meowPlayedOnce) return;
+  meowPlayedOnce = true;
   try {
     const audio = new Audio('/meo.mp3');
     audio.play().catch(e => console.log("Audio play blocked by browser:", e));
@@ -153,13 +157,12 @@ function App() {
   const [tryonSelectedBgPreset, setTryonSelectedBgPreset] = useState(BG_PRESETS[0].prompt);
   const [tryonCustomBgDescription, setTryonCustomBgDescription] = useState('');
 
-  // Play cat meow sound 3 times on initial load or user interaction
+  // Play cat meow sound once, only on the login screen (when not logged in)
   useEffect(() => {
-    // Try to play immediately
-    playMeowThreeTimes();
+    if (user) return;
 
     const handleFirstInteraction = () => {
-      playMeowThreeTimes();
+      playMeowOnce();
       window.removeEventListener('click', handleFirstInteraction);
       window.removeEventListener('touchstart', handleFirstInteraction);
     };
@@ -171,7 +174,7 @@ function App() {
       window.removeEventListener('click', handleFirstInteraction);
       window.removeEventListener('touchstart', handleFirstInteraction);
     };
-  }, []);
+  }, [user]);
 
   // User Document / Subscription Listener
   useEffect(() => {
