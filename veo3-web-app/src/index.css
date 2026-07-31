@@ -658,6 +658,7 @@ body {
   .gallery-item {
     width: 100%;
     height: auto;
+    min-height: 150px;
     margin-bottom: 8px;
     break-inside: avoid;
     -webkit-column-break-inside: avoid;
@@ -768,6 +769,7 @@ body {
 
   .gallery-item {
     height: auto;
+    min-height: 130px;
     margin-bottom: 6px;
     break-inside: avoid;
     -webkit-column-break-inside: avoid;
