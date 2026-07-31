@@ -530,14 +530,7 @@ function App() {
   };
 
   const renderAdminView = () => {
-    const totalUsers = adminUsersList.length;
-    const activePaidUsers = adminUsersList.filter(u => u.tier !== 'free' && u.expiryDate && u.expiryDate > Date.now()).length;
     const pendingPaymentsCount = adminUsersList.filter(u => u.pendingPayment && u.pendingPayment.code).length;
-    const estimatedRev = adminUsersList.reduce((sum, u) => {
-      if (u.tier === 'free' || (u.expiryDate && u.expiryDate < Date.now())) return sum;
-      const prices = { basic_69k: 69000, standard_99k: 99000, premium_169k: 169000 };
-      return sum + (prices[u.tier] || 0);
-    }, 0);
 
     const filteredUsers = adminUsersList.filter(u => {
       const email = u.email || '';
@@ -572,7 +565,7 @@ function App() {
         </div>
 
         {/* Admin Tabs */}
-        <div className="admin-tabs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="admin-tabs" style={{ display: 'flex', gap: '8px' }}>
           {[
             { key: 'users', label: '👥 Người dùng', icon: Users },
             { key: 'payments', label: '💰 Nạp tiền', icon: DollarSign },
@@ -585,12 +578,14 @@ function App() {
                 key={tab.key}
                 onClick={() => setAdminTab(tab.key)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1,
+                  gap: '8px',
                   padding: '10px 18px', borderRadius: '10px', cursor: 'pointer',
                   fontSize: '0.85rem', fontWeight: 'bold',
                   background: isActive ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : 'rgba(255,255,255,0.04)',
                   border: '1px solid rgba(255,255,255,0.08)',
-                  color: isActive ? '#fff' : 'var(--text-secondary)'
+                  color: isActive ? '#fff' : 'var(--text-secondary)',
+                  whiteSpace: 'nowrap'
                 }}
               >
                 <Icon size={16} />
@@ -605,48 +600,8 @@ function App() {
           })}
         </div>
 
-        {/* Stats Row */}
-        {adminTab === 'users' && (<>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-          
-          {/* Stat 1 */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6', borderRadius: '12px', padding: '12px' }}>
-              <Users size={24} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tổng người dùng</div>
-              <div style={{ fontSize: '1.75rem', fontWeight: 'bold', marginTop: '4px' }}>{totalUsers}</div>
-            </div>
-          </div>
-
-          {/* Stat 2 */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981', borderRadius: '12px', padding: '12px' }}>
-              <ShieldCheck size={24} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Gói trả phí active</div>
-              <div style={{ fontSize: '1.75rem', fontWeight: 'bold', marginTop: '4px' }}>{activePaidUsers}</div>
-            </div>
-          </div>
-
-          {/* Stat 3 */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ background: 'rgba(251,191,36,0.1)', color: '#fbbf24', borderRadius: '12px', padding: '12px' }}>
-              <DollarSign size={24} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Ước tính doanh thu</div>
-              <div style={{ fontSize: '1.75rem', fontWeight: 'bold', marginTop: '4px', color: '#fbbf24' }}>
-                {estimatedRev.toLocaleString('vi-VN')}đ
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Dashboard Grid */}
+        {/* Users Tab */}
+        {adminTab === 'users' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '32px', alignItems: 'start' }}>
           
           {/* Left Column - Users Management */}
@@ -888,7 +843,7 @@ function App() {
           </div>
 
         </div>
-        </>)}
+        )}
 
         {/* Payments Tab */}
         {adminTab === 'payments' && (
