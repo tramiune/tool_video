@@ -180,8 +180,18 @@ body {
 
 .gallery-grid {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.gallery-grid::-webkit-scrollbar {
+  display: none;
 }
 
 .gallery-item {
@@ -197,6 +207,7 @@ body {
   height: 320px; /* Uniform height for all items in a row */
   flex-grow: 0;
   flex-shrink: 0;
+  scroll-snap-align: start;
 }
 
 /* Aspect ratios that dynamically determine width for the fixed height */
@@ -651,37 +662,43 @@ body {
     max-height: calc(100vh - 56px);
   }
 
-  /* Masonry layout (Pinterest style): preserve each item's aspect ratio, no wasted horizontal space */
+  /* Horizontal scroll gallery: single row */
   .gallery-grid {
-    display: block;
-    columns: 3;
-    column-gap: 8px;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .gallery-grid::-webkit-scrollbar {
+    display: none;
   }
 
   .gallery-item {
-    width: 100%;
-    height: auto;
-    min-height: 150px;
-    margin-bottom: 8px;
-    break-inside: avoid;
-    -webkit-column-break-inside: avoid;
-    page-break-inside: avoid;
+    width: 200px;
+    height: 320px;
+    flex-shrink: 0;
+    margin-bottom: 0;
   }
 
   .gallery-item.ratio-16-9 {
-    aspect-ratio: 16/9;
+    aspect-ratio: auto;
   }
   .gallery-item.ratio-9-16 {
-    aspect-ratio: 9/16;
+    aspect-ratio: auto;
   }
   .gallery-item.ratio-1-1 {
-    aspect-ratio: 1/1;
+    aspect-ratio: auto;
   }
   .gallery-item.ratio-4-3 {
-    aspect-ratio: 4/3;
+    aspect-ratio: auto;
   }
   .gallery-item.ratio-3-4 {
-    aspect-ratio: 3/4;
+    aspect-ratio: auto;
   }
 
   /* Suppress hover lift on touch */
@@ -765,18 +782,25 @@ body {
   }
 
   .gallery-grid {
-    display: block;
-    columns: 3;
-    column-gap: 6px;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .gallery-grid::-webkit-scrollbar {
+    display: none;
   }
 
   .gallery-item {
-    height: auto;
-    min-height: 130px;
-    margin-bottom: 6px;
-    break-inside: avoid;
-    -webkit-column-break-inside: avoid;
-    page-break-inside: avoid;
+    width: 170px;
+    height: 300px;
+    flex-shrink: 0;
+    margin-bottom: 0;
   }
 
   .action-circle-btn {
