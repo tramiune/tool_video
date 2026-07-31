@@ -132,6 +132,8 @@ function App() {
   const [isAdminView, setIsAdminView] = useState(false);
   const [adminUsersList, setAdminUsersList] = useState([]);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [adminTaskSearchQuery, setAdminTaskSearchQuery] = useState('');
+  const [adminPaymentSearchQuery, setAdminPaymentSearchQuery] = useState('');
   const [adminTab, setAdminTab] = useState('users'); // 'users' | 'payments' | 'tasks'
   const [adminTasksList, setAdminTasksList] = useState([]);
   const [adminTaskFilter, setAdminTaskFilter] = useState('all');
@@ -249,11 +251,14 @@ function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [user, userProfileLoaded, currentUserIsAdmin]);
 
-  // Fetch users list in Admin mode (paginated)
+  // Fetch users list in Admin mode (paginated, or full when searching)
   useEffect(() => {
     if (!isAdminView) return;
+    const q = adminSearchQuery.trim()
+      ? query(collection(db, 'users'), orderBy('createdAt', 'desc'))
+      : query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(adminUsersLimit));
     const unsubscribe = onSnapshot(
-      query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(adminUsersLimit)),
+      q,
       (snapshot) => {
         const list = [];
         snapshot.forEach(docSnap => {
@@ -266,13 +271,16 @@ function App() {
       }
     );
     return () => unsubscribe();
-  }, [isAdminView, adminUsersLimit]);
+  }, [isAdminView, adminUsersLimit, adminSearchQuery]);
 
-  // Fetch tasks list in Admin mode (paginated)
+  // Fetch tasks list in Admin mode (paginated, or full when searching)
   useEffect(() => {
     if (!isAdminView) return;
+    const q = adminTaskSearchQuery.trim()
+      ? query(collection(db, 'tasks'), orderBy('createdAt', 'desc'))
+      : query(collection(db, 'tasks'), orderBy('createdAt', 'desc'), limit(adminTasksLimit));
     const unsubscribe = onSnapshot(
-      query(collection(db, 'tasks'), orderBy('createdAt', 'desc'), limit(adminTasksLimit)),
+      q,
       (snapshot) => {
         const list = [];
         snapshot.forEach(docSnap => {
@@ -284,13 +292,16 @@ function App() {
         console.error("Admin tasks listener error:", error);
       });
     return () => unsubscribe();
-  }, [isAdminView, adminTasksLimit]);
+  }, [isAdminView, adminTasksLimit, adminTaskSearchQuery]);
 
-  // Fetch payments list in Admin mode (paginated)
+  // Fetch payments list in Admin mode (paginated, or full when searching)
   useEffect(() => {
     if (!isAdminView) return;
+    const q = adminPaymentSearchQuery.trim()
+      ? query(collection(db, 'payments'), orderBy('createdAt', 'desc'))
+      : query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(adminPaymentsLimit));
     const unsubscribe = onSnapshot(
-      query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(adminPaymentsLimit)),
+      q,
       (snapshot) => {
         const list = [];
         snapshot.forEach(docSnap => {
@@ -302,7 +313,7 @@ function App() {
         console.error("Admin payments listener error:", error);
       });
     return () => unsubscribe();
-  }, [isAdminView, adminPaymentsLimit]);
+  }, [isAdminView, adminPaymentsLimit, adminPaymentSearchQuery]);
 
   // Fetch aggregate payment stats in Admin mode (single doc, cheap read)
   useEffect(() => {
@@ -535,8 +546,30 @@ function App() {
     const pendingPaymentsCount = adminUsersList.filter(u => u.pendingPayment && u.pendingPayment.code).length;
 
     const filteredUsers = adminUsersList.filter(u => {
-      const email = u.email || '';
-      return email.toLowerCase().includes(adminSearchQuery.toLowerCase());
+      const q = adminSearchQuery.trim().toLowerCase();
+      if (!q) return true;
+      const email = (u.email || '').toLowerCase();
+      const id = (u.id || '').toLowerCase();
+      return email.includes(q) || id.includes(q);
+    });
+
+    const filteredTasks = adminTasksList.filter(t => {
+      const q = adminTaskSearchQuery.trim().toLowerCase();
+      if (!q) return true;
+      const id = (t.id || '').toLowerCase();
+      const uid = (t.userId || '').toLowerCase();
+      const prompt = (t.prompt || '').toLowerCase();
+      return id.includes(q) || uid.includes(q) || prompt.includes(q) || (t.status || '').toLowerCase().includes(q);
+    });
+
+    const filteredPayments = adminPaymentsList.filter(p => {
+      const q = adminPaymentSearchQuery.trim().toLowerCase();
+      if (!q) return true;
+      const email = (p.email || '').toLowerCase();
+      const code = (p.code || '').toLowerCase();
+      const uid = (p.userId || '').toLowerCase();
+      const tier = (p.tier || '').toLowerCase();
+      return email.includes(q) || code.includes(q) || uid.includes(q) || tier.includes(q);
     });
 
     return (
@@ -745,7 +778,7 @@ function App() {
                 </tbody>
               </table>
             </div>
-            {adminUsersList.length >= adminUsersLimit && (
+            {!adminSearchQuery.trim() && adminUsersList.length >= adminUsersLimit && (
               <div style={{ textAlign: 'center', marginTop: '8px' }}>
                 <button
                   onClick={() => setAdminUsersLimit(l => l + 10)}
@@ -852,6 +885,22 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Quản lý Nạp tiền</h2>
+              <input
+                type="text"
+                placeholder="🔍 Tìm email / mã GD / user / gói..."
+                value={adminPaymentSearchQuery}
+                onChange={(e) => setAdminPaymentSearchQuery(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  color: '#fff',
+                  fontSize: '0.8rem',
+                  outline: 'none',
+                  minWidth: '220px'
+                }}
+              />
             </div>
 
             {/* Sub-tabs: Pending / Success */}
@@ -960,9 +1009,9 @@ function App() {
               <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>✅ Lịch sử nạp thành công</h3>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 {[
-                  { key: 'all', label: `Tất cả (${adminPaymentsList.length})` },
-                  { key: 'webhook', label: `Webhook (${adminPaymentsList.filter(p => p.source === 'webhook').length})` },
-                  { key: 'admin', label: `Thủ công (${adminPaymentsList.filter(p => p.source === 'admin').length})` }
+                  { key: 'all', label: `Tất cả (${filteredPayments.length})` },
+                  { key: 'webhook', label: `Webhook (${filteredPayments.filter(p => p.source === 'webhook').length})` },
+                  { key: 'admin', label: `Thủ công (${filteredPayments.filter(p => p.source === 'admin').length})` }
                 ].map(f => (
                   <button
                     key={f.key}
@@ -993,14 +1042,14 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {adminPaymentsList.length === 0 ? (
+                  {filteredPayments.length === 0 ? (
                     <tr>
                       <td colSpan="6" style={{ padding: '30px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        Chưa có giao dịch thành công nào. Các giao dịch webhook từ giờ sẽ được ghi lại ở đây.
+                        {adminPaymentsList.length === 0 ? 'Chưa có giao dịch thành công nào. Các giao dịch webhook từ giờ sẽ được ghi lại ở đây.' : 'Không tìm thấy giao dịch phù hợp.'}
                       </td>
                     </tr>
                   ) : (
-                    adminPaymentsList
+                    filteredPayments
                       .filter(p => adminPaymentFilter === 'all' || p.source === adminPaymentFilter)
                       .map(p => (
                       <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
@@ -1025,7 +1074,7 @@ function App() {
                 </tbody>
               </table>
             </div>
-            {adminPaymentsList.length >= adminPaymentsLimit && (
+            {!adminPaymentSearchQuery.trim() && adminPaymentsList.length >= adminPaymentsLimit && (
               <div style={{ textAlign: 'center', marginTop: '8px' }}>
                 <button
                   onClick={() => setAdminPaymentsLimit(l => l + 10)}
@@ -1049,13 +1098,31 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Quản lý Tasks</h2>
+              <input
+                type="text"
+                placeholder="🔍 Tìm ID / user / prompt / trạng thái..."
+                value={adminTaskSearchQuery}
+                onChange={(e) => setAdminTaskSearchQuery(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  color: '#fff',
+                  fontSize: '0.8rem',
+                  outline: 'none',
+                  minWidth: '220px'
+                }}
+              />
+            </div>
+
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 {[
-                  { key: 'all', label: `Tất cả (${adminTasksList.length})` },
-                  { key: 'pending', label: `Chờ (${adminTasksList.filter(t => t.status === 'pending').length})` },
-                  { key: 'processing', label: `Đang xử lý (${adminTasksList.filter(t => t.status === 'generating' || t.status === 'processing').length})` },
-                  { key: 'completed', label: `Thành công (${adminTasksList.filter(t => t.status === 'completed').length})` },
-                  { key: 'failed', label: `Thất bại (${adminTasksList.filter(t => t.status === 'failed').length})` }
+                  { key: 'all', label: `Tất cả (${filteredTasks.length})` },
+                  { key: 'pending', label: `Chờ (${filteredTasks.filter(t => t.status === 'pending').length})` },
+                  { key: 'processing', label: `Đang xử lý (${filteredTasks.filter(t => t.status === 'generating' || t.status === 'processing').length})` },
+                  { key: 'completed', label: `Thành công (${filteredTasks.filter(t => t.status === 'completed').length})` },
+                  { key: 'failed', label: `Thất bại (${filteredTasks.filter(t => t.status === 'failed').length})` }
                 ].map(f => (
                   <button
                     key={f.key}
@@ -1071,7 +1138,6 @@ function App() {
                   </button>
                 ))}
               </div>
-            </div>
 
             <div className="admin-table-wrap" style={{ overflowX: 'auto' }}>
               <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
@@ -1087,14 +1153,14 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {adminTasksList.length === 0 ? (
+                  {filteredTasks.length === 0 ? (
                     <tr>
                       <td colSpan="7" style={{ padding: '40px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        Chưa có task nào.
+                        {adminTasksList.length === 0 ? 'Chưa có task nào.' : 'Không tìm thấy task phù hợp.'}
                       </td>
                     </tr>
                   ) : (
-                    adminTasksList
+                    filteredTasks
                       .filter(t => {
                         if (adminTaskFilter === 'all') return true;
                         if (adminTaskFilter === 'pending') return t.status === 'pending';
@@ -1142,7 +1208,7 @@ function App() {
                 </tbody>
               </table>
             </div>
-            {adminTasksList.length >= adminTasksLimit && (
+            {!adminTaskSearchQuery.trim() && adminTasksList.length >= adminTasksLimit && (
               <div style={{ textAlign: 'center', marginTop: '8px' }}>
                 <button
                   onClick={() => setAdminTasksLimit(l => l + 10)}
