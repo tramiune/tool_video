@@ -1216,6 +1216,24 @@ function App() {
   const startInputRef = useRef(null);
   const endInputRef = useRef(null);
   const refInputRef = useRef(null);
+  const promptTextareaRef = useRef(null);
+
+  // Auto-resize prompt textarea: grow with content, cap at 50vh, then scroll
+  const autosizePrompt = () => {
+    const el = promptTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.5) + 'px';
+  };
+
+  useEffect(() => {
+    autosizePrompt();
+  }, [prompt]);
+
+  useEffect(() => {
+    window.addEventListener('resize', autosizePrompt);
+    return () => window.removeEventListener('resize', autosizePrompt);
+  }, []);
 
   // Auth Listener
   useEffect(() => {
@@ -2332,15 +2350,19 @@ function App() {
           )}
 
           {/* Row 2: Prompt Text Input (Full Width) */}
-          <input 
-            type="text"
+          <textarea 
+            ref={promptTextareaRef}
+            rows={1}
             className="prompt-textarea"
             placeholder={activeTab === 'video' ? "Mô tả video bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)" : "Mô tả hình ảnh bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)"}
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              autosizePrompt();
+            }}
             onPaste={handlePaste}
             disabled={isSubmitting}
-            style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', padding: '2px 0', fontSize: '0.9rem' }}
+            style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', padding: '2px 0', fontSize: '0.9rem', overflowY: 'auto' }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

@@ -666,38 +666,12 @@ class ApiClient {
 
   // Resolve the signed download URL for media
   async getMediaUrl(mediaId, type = 'MEDIA_URL_TYPE_THUMBNAIL', { projectId, workflowId } = {}) {
-    // For video type: use iframe+CDP capture to get actual GCS storage URL
-    if (type === 'MEDIA_URL_TYPE_VIDEO' && projectId && workflowId) {
-      try {
-        const gcsUrl = await this.getVideoGcsUrl(mediaId, projectId, workflowId);
-        if (gcsUrl) return gcsUrl;
-      } catch (err) {
-        logger.warn(`iframe+CDP GCS capture failed: ${err.message}. Falling back to redirect method.`);
-      }
-    }
-
-    // For thumbnail/image, or fallback: use redirect URL
-    try {
-      const params = new URLSearchParams({ name: mediaId, mediaUrlType: type });
-      const res = await this._labsRequest('GET', `/fx/api/trpc/media.getMediaUrlRedirect?${params.toString()}`);
-      
-      if (res.redirectUrl && res.redirectUrl.startsWith('http')) {
-        return res.redirectUrl;
-      }
-      
-      const body = res.body;
-      const url = body?.result?.data?.json?.url || body?.url;
-      if (url) return url;
-    } catch (err) {
-      logger.warn(`Failed to resolve media URL directly: ${err.message}`);
-    }
-
-    // Fallback: fetch via Puppeteer page evaluation context
+    // Resolve via browser context first (avoids "Request Header Or Cookie Too Large" 400 errors).
+    // Chrome handles cookies per-domain automatically instead of dumping all cookies into one header.
     if (browserManager.page) {
       try {
-        const params = new URLSearchParams({ name: mediaId, mediaUrlType: 'MEDIA_URL_TYPE_THUMBNAIL' }).toString();
+        const params = new URLSearchParams({ name: mediaId, mediaUrlType: type }).toString();
         const url = `${LABS_BASE}/fx/api/trpc/media.getMediaUrlRedirect?${params}`;
-        
         const finalUrl = await browserManager.page.evaluate(async (targetUrl) => {
           try {
             const res = await fetch(targetUrl, {
@@ -706,14 +680,39 @@ class ApiClient {
               redirect: 'follow',
               headers: { Accept: 'application/json, */*' }
             });
-            return res.ok ? res.url : null;
+            if (!res.ok) return null;
+            // If the request got redirected to the actual file URL, use it directly
+            if (res.url && res.url !== targetUrl && !res.url.includes('getMediaUrlRedirect')) {
+              return res.url;
+            }
+            // Otherwise parse the JSON body (trpc shape: result.data.json.url or body.url)
+            try {
+              const body = await res.json();
+              const fileUrl = body?.result?.data?.json?.url || body?.url || body?.redirectUrl;
+              return (typeof fileUrl === 'string' && fileUrl.startsWith('http')) ? fileUrl : null;
+            } catch (e) {
+              return null;
+            }
           } catch (e) {
             return null;
           }
         }, url);
-        if (finalUrl && finalUrl !== url) return finalUrl;
+        if (finalUrl && finalUrl.startsWith('http')) {
+          logger.success(`Resolved ${type} via browser context: ${finalUrl.substring(0, 60)}...`);
+          return finalUrl;
+        }
       } catch (err) {
-        logger.error('Puppeteer fallback failed for getMediaUrl', err);
+        logger.warn(`Browser context resolve failed: ${err.message}`);
+      }
+    }
+
+    // For video type: use iframe+CDP capture to get actual GCS storage URL (last resort)
+    if (type === 'MEDIA_URL_TYPE_VIDEO' && projectId && workflowId) {
+      try {
+        const gcsUrl = await this.getVideoGcsUrl(mediaId, projectId, workflowId);
+        if (gcsUrl) return gcsUrl;
+      } catch (err) {
+        logger.warn(`iframe+CDP GCS capture failed: ${err.message}.`);
       }
     }
 

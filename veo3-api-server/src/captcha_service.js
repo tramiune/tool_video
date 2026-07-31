@@ -127,14 +127,44 @@ class CaptchaService extends EventEmitter {
     this.isSolving = true;
   }
 
+  // SAFE TEST fallback: solve captcha directly via CDP evaluate in the Puppeteer page
+  async _solveViaCdp(action, timeoutMs) {
+    logger.info(`[TEST] Thử solve captcha trực tiếp qua CDP (action: ${action})...`);
+    const browserManager = require('./browser_manager');
+    if (!browserManager.page) throw new Error('No Puppeteer page available for CDP captcha solve');
+    const SITE_KEY = '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV';
+    const token = await browserManager.page.evaluate(({ siteKey, action }) => {
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('grecaptcha timeout in page')), 20000);
+        const wait = () => {
+          if (window.grecaptcha?.enterprise?.execute) {
+            clearTimeout(timeout);
+            window.grecaptcha.enterprise.execute(siteKey, { action })
+              .then(resolve)
+              .catch((e) => reject(e));
+          } else {
+            setTimeout(wait, 300);
+          }
+        };
+        wait();
+      });
+    }, { siteKey: SITE_KEY, action });
+    if (token && typeof token === 'string' && token.length > 50) {
+      logger.success(`[TEST] Captcha solved via CDP (token length: ${token.length})`);
+      return token;
+    }
+    throw new Error('CDP captcha token invalid/too short');
+  }
+
   // Request captcha solving via Chrome extension
   async solveCaptcha(action = 'IMAGE_GENERATION', timeoutMs = 45000) {
     await this._acquireLock();
 
     try {
-      const client = this._pickClient();
+      let client = this._pickClient();
       if (!client) {
-        throw new Error('No Chrome extension clients connected. Open a Chrome tab at labs.google/fx/vi/tools/flow with the extension installed.');
+        // CDP fallback: solve captcha directly in the Puppeteer page (no extension required)
+        return await this._solveViaCdp(action, timeoutMs);
       }
 
       const requestId = `req_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;

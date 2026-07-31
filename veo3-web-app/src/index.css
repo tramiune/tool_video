@@ -541,7 +541,9 @@ body {
   resize: none;
   padding: 8px 0;
   font-family: inherit;
-  max-height: 80px;
+  line-height: 1.45;
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 .prompt-textarea::placeholder {
