@@ -251,7 +251,7 @@ function App() {
   useEffect(() => {
     if (selectedTierForPay && userTier === selectedTierForPay) {
       setSelectedTierForPay(null);
-      alert("Thanh toán tự động thành công! Tài khoản của bạn đã được nâng cấp.");
+      alert("✨ Chúc mừng bạn! Giao dịch thanh toán đã hoàn tất và tài khoản của bạn đã được nâng cấp thành công. Bắt đầu sáng tạo thôi nào! 🎉");
     }
   }, [userTier]);
 
@@ -308,7 +308,7 @@ function App() {
       setShowPricingModal(false);
     } catch (e) {
       console.error("Upgrade failed:", e);
-      alert("Nâng cấp thất bại. Vui lòng thử lại!");
+      alert("Không thể hoàn tất nâng cấp lúc này. Bạn vui lòng thử lại hoặc liên hệ nhóm hỗ trợ Zalo nhé! 🥺");
     }
   };
 
@@ -337,7 +337,7 @@ function App() {
       setSelectedTierForPay(tierKey);
     } catch (e) {
       console.error("Failed to generate payment intent:", e);
-      alert("Không thể khởi tạo giao dịch: " + e.message);
+      alert("Hệ thống chưa thể khởi tạo mã giao dịch lúc này: " + e.message + ". Bạn vui lòng bấm thử lại nhé! 🥺");
     }
   };
 
@@ -748,11 +748,11 @@ function App() {
   const handleTryOnSubmit = async (e) => {
     if (e) e.preventDefault();
     if (!tryonPersonFile) {
-      alert("Vui lòng chọn ảnh gốc!");
+      alert("Bạn ơi, vui lòng chọn Ảnh gốc (người mẫu) trước nhé! 😊");
       return;
     }
     if (tryonToolType === 'tryon' && !tryonGarmentFile) {
-      alert("Vui lòng chọn ảnh trang phục!");
+      alert("Bạn ơi, vui lòng chọn Ảnh trang phục/quần áo muốn thay đổi nhé! 😊");
       return;
     }
     
@@ -812,7 +812,7 @@ function App() {
       setIsTryOnView(false);
     } catch (err) {
       console.error(err);
-      alert(`Không thể bắt đầu thay đồ: ${err.message}`);
+      alert(`Rất tiếc, hệ thống chưa thể bắt đầu thay đồ lúc này: ${err.message}. Cậu thử lại sau nhé! 🥺`);
     } finally {
       setTryonIsSubmitting(false);
     }
@@ -1267,7 +1267,7 @@ function App() {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
       console.error("Login failed:", error);
-      alert("Đăng nhập thất bại. Vui lòng thử lại.");
+      alert("Đăng nhập chưa thành công. Cậu vui lòng kiểm tra lại kết nối và thử lại nhé! 🔐");
     }
   };
 
@@ -1491,7 +1491,7 @@ function App() {
       setShowOptions(false);
     } catch (error) {
       console.error("Error adding task: ", error);
-      alert("Có lỗi xảy ra khi tạo yêu cầu. Chi tiết lỗi: " + error.message);
+      alert("Rất tiếc, hệ thống gặp một chút sự cố khi gửi yêu cầu tạo: " + error.message + ". Cậu thử lại sau giây lát nhé! 🥺");
     } finally {
       setIsSubmitting(false);
     }
@@ -2050,27 +2050,27 @@ function App() {
                         if (isTryOnView) {
                           // If in tryon view, set as model image
                           setTryonPersonFile(null); // URL support would need setTryonPersonUrl but we only have File, so we can alert or skip.
-                          alert("Vui lòng tải ảnh lên trực tiếp từ máy để sử dụng công cụ AI.");
+                          alert("Cậu hãy tải ảnh trực tiếp từ máy/điện thoại lên để sử dụng công cụ AI nhé! 😉");
                         } else if (activeTab === 'video') {
                           if (!startFile && !startLibraryUrl) {
                             setStartLibraryUrl(task.mediaUrl);
                             setStartFile(null);
-                            alert("Đã đặt ảnh này làm Ảnh bắt đầu (Start Frame) cho video!");
+                            alert("Đã đặt ảnh này làm Ảnh bắt đầu (Start Frame) cho video thành công! 🎬");
                           } else if (!endFile && !endLibraryUrl) {
                             setEndLibraryUrl(task.mediaUrl);
                             setEndFile(null);
-                            alert("Đã đặt ảnh này làm Ảnh kết thúc (End Frame) cho video!");
+                            alert("Đã đặt ảnh này làm Ảnh kết thúc (End Frame) cho video thành công! 🎬");
                           } else {
                             setStartLibraryUrl(task.mediaUrl);
                             setStartFile(null);
-                            alert("Đã đặt lại ảnh này làm Ảnh bắt đầu (Start Frame) cho video!");
+                            alert("Đã đặt lại ảnh này làm Ảnh bắt đầu (Start Frame) cho video thành công! 🎬");
                           }
                         } else {
                           setSelectedRefUrls(prev => {
                             if (prev.includes(task.mediaUrl)) return prev;
                             return [...prev, task.mediaUrl];
                           });
-                          alert("Đã thêm ảnh này vào danh sách ảnh tham khảo!");
+                          alert("Đã thêm ảnh này vào danh sách ảnh tham khảo thành công! 📸");
                         }
                       }}
                       className="action-circle-btn" 
@@ -2989,7 +2989,7 @@ function App() {
                 <button 
                   onClick={() => {
                     handleCopyText(activeLightboxMedia.prompt);
-                    alert("Đã sao chép prompt thành công!");
+                    alert("Đã sao chép mô tả (Prompt) vào khay nhớ tạm thành công! 📋");
                   }}
                   style={{ background: 'rgba(59, 130, 246, 0.15)', border: 'none', borderRadius: '6px', color: '#3b82f6', fontSize: '0.72rem', fontWeight: 'bold', padding: '4px 8px', cursor: 'pointer' }}
                 >
