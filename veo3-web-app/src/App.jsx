@@ -137,6 +137,7 @@ function App() {
   const [adminTaskFilter, setAdminTaskFilter] = useState('all');
   const [adminTasksLimit, setAdminTasksLimit] = useState(10);
   const [adminPaymentsList, setAdminPaymentsList] = useState([]);
+  const [adminPaymentTab, setAdminPaymentTab] = useState('pending');
   const [adminPaymentFilter, setAdminPaymentFilter] = useState('all');
   const [adminPaymentsStats, setAdminPaymentsStats] = useState(null);
   const [adminPaymentsLimit, setAdminPaymentsLimit] = useState(10);
@@ -851,13 +852,33 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Quản lý Nạp tiền</h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  {pendingPaymentsCount} giao dịch đang chờ xác nhận
-                </span>
-              </div>
             </div>
 
+            {/* Sub-tabs: Pending / Success */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {[
+                { key: 'pending', label: `⏳ Đang chờ (${pendingPaymentsCount})` },
+                { key: 'success', label: `✅ Thành công (${adminPaymentsList.length})` }
+              ].map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setAdminPaymentTab(t.key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1,
+                    padding: '10px 18px', borderRadius: '10px', cursor: 'pointer',
+                    fontSize: '0.85rem', fontWeight: 'bold',
+                    background: adminPaymentTab === t.key ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    color: adminPaymentTab === t.key ? '#fff' : 'var(--text-secondary)',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {adminPaymentTab === 'pending' && (<>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: '1.4', margin: 0 }}>
               Danh sách user đang có mã giao dịch chờ thanh toán. Khi user chuyển khoản xong, hệ thống tự nhận webhook từ ngân hàng — nếu chưa nhận, bạn có thể bấm <b>Xác nhận</b> để duyệt thủ công, hoặc <b>Hủy</b> nếu giao dịch không hợp lệ.
             </p>
@@ -932,10 +953,12 @@ function App() {
                 </tbody>
               </table>
             </div>
+            </>)}
 
+            {adminPaymentTab === 'success' && (<>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: '16px 0 0' }}>✅ Lịch sử nạp thành công</h3>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '16px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>✅ Lịch sử nạp thành công</h3>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 {[
                   { key: 'all', label: `Tất cả (${adminPaymentsList.length})` },
                   { key: 'webhook', label: `Webhook (${adminPaymentsList.filter(p => p.source === 'webhook').length})` },
@@ -1017,6 +1040,7 @@ function App() {
                 Các giao dịch webhook từ giờ sẽ được ghi lại ở đây.
               </div>
             )}
+            </>)}
           </div>
         )}
 
