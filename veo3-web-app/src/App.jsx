@@ -2633,27 +2633,26 @@ function App() {
               </div>
             );
           })}
-
-          {/* Empty State */}
-          {tasks.length === 0 && (
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              width: '100%', 
-              minHeight: '50vh', 
-              padding: '40px 20px', 
-              textAlign: 'center', 
-              color: 'var(--text-secondary)' 
-            }}>
-              <ImageIcon size={48} style={{ opacity: 0.2, marginBottom: '16px' }} />
-              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff' }}>Thư viện trống</h3>
-              <p style={{ fontSize: '0.9rem', marginTop: '8px', opacity: 0.7 }}>Hãy nhập prompt ở dưới để tạo tác phẩm đầu tiên của bạn!</p>
-            </div>
-          )}
-
         </div>
+
+        {/* Empty State (outside masonry grid so it centers full-width) */}
+        {tasks.length === 0 && (
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            width: '100%', 
+            minHeight: '50vh', 
+            padding: '40px 20px', 
+            textAlign: 'center', 
+            color: 'var(--text-secondary)' 
+          }}>
+            <ImageIcon size={48} style={{ opacity: 0.2, marginBottom: '16px' }} />
+            <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff' }}>Thư viện trống</h3>
+            <p style={{ fontSize: '0.9rem', marginTop: '8px', opacity: 0.7 }}>Hãy nhập prompt ở dưới để tạo tác phẩm đầu tiên của bạn!</p>
+          </div>
+        )}
       </main>
 
       {/* Floating Bottom Controls Wrapper */}
