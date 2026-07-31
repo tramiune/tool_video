@@ -219,6 +219,7 @@ export default function BeforeAfterPanel({ toolType }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            overflowY: 'auto',
             cursor: 'zoom-out'
           }}
         >

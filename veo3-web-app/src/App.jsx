@@ -3026,6 +3026,7 @@ function App() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          overflowY: 'auto',
           zIndex: 10000,
           padding: '20px'
         }}>
@@ -3035,6 +3036,7 @@ function App() {
             borderRadius: '16px',
             width: '100%',
             maxWidth: '400px',
+            margin: 'auto',
             padding: '24px',
             textAlign: 'center',
             boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
@@ -3088,6 +3090,7 @@ function App() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          overflowY: 'auto',
           zIndex: 9999,
           padding: '20px'
         }}>
@@ -3097,7 +3100,8 @@ function App() {
             borderRadius: '20px',
             width: '100%',
             maxWidth: '800px',
-            maxHeight: '90vh',
+            maxHeight: 'calc(100vh - 40px)',
+            margin: 'auto',
             display: 'flex',
             flexDirection: 'column',
             boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7)'
@@ -3272,6 +3276,7 @@ function App() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          overflowY: 'auto',
           zIndex: 10005,
           padding: '20px'
         }}>
@@ -3281,6 +3286,8 @@ function App() {
             borderRadius: '20px',
             width: '100%',
             maxWidth: '580px',
+            maxHeight: 'calc(100vh - 40px)',
+            margin: 'auto',
             boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7)',
             display: 'flex',
             flexDirection: 'column',
@@ -3299,7 +3306,7 @@ function App() {
             </div>
 
             {/* Body */}
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'center', justifyContent: 'center' }}>
                 {/* VietQR Code Image */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
@@ -3387,6 +3394,7 @@ function App() {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
+            overflowY: 'auto',
             zIndex: 20000,
             padding: '16px'
           }}
