@@ -1428,7 +1428,7 @@ function App() {
     const remaining = Math.max(0, (audioUsage.limit ?? 1) - (audioUsage.used ?? 0));
 
     return (
-      <div className="container" style={{ maxWidth: '760px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '100vh', color: '#fff' }}>
+      <div className="container" style={{ maxWidth: '760px', margin: '0 auto', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '100vh', color: '#fff' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
