@@ -2208,15 +2208,6 @@ function App() {
             {userTier === 'premium_169k' && (
               <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)', color: '#16161a', borderRadius: '6px', fontWeight: 'bold', boxShadow: '0 0 10px rgba(251, 191, 36, 0.3)' }}>Premium</span>
             )}
-            {userTier === 'standard_99k' && (
-              <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', borderRadius: '6px', fontWeight: 'bold', border: '1px solid rgba(139, 92, 246, 0.3)' }}>Standard 99k</span>
-            )}
-            {userTier === 'basic_69k' && (
-              <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', borderRadius: '6px', fontWeight: 'bold', border: '1px solid rgba(59, 130, 246, 0.3)' }}>Basic 69k</span>
-            )}
-            {userTier === 'free' && (
-              <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'rgba(255,255,255,0.06)', color: '#e4e4e7', borderRadius: '6px', fontWeight: '500', border: '1px solid rgba(255,255,255,0.1)' }}>Gói Free</span>
-            )}
             
             {/* Highly visible pop-out upgrade button if not Premium */}
             {userTier !== 'premium_169k' && (
