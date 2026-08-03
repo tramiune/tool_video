@@ -3039,7 +3039,7 @@ function App() {
                 }}
               >
                 <div className="ratio-box" style={{ width: `${RATIOS.find(r => r.value === aspectRatio)?.width || 14}px`, height: `${RATIOS.find(r => r.value === aspectRatio)?.height || 14}px` }} />
-                Tỷ lệ
+                {aspectRatio}
                 <ChevronDown size={12} style={{ opacity: 0.6 }} />
               </button>
 
