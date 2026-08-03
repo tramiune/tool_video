@@ -2839,8 +2839,8 @@ function App() {
           />
 
           {/* Row 3: Action Toolbar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px', overflowX: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
               <div style={{ position: 'relative' }}>
               <button 
                 type="button" 
@@ -3010,22 +3010,22 @@ function App() {
                 className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
                 onClick={() => setActiveTab('video')}
                 disabled={isSubmitting}
-                style={{ padding: '5px 12px', fontSize: '0.78rem' }}
+                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
               >
-                <Video size={13} /> Video
+                <Video size={12} /> Video
               </button>
               <button 
                 type="button"
                 className={`tab-btn ${activeTab === 'image' ? 'active' : ''}`}
                 onClick={() => setActiveTab('image')}
                 disabled={isSubmitting}
-                style={{ padding: '5px 12px', fontSize: '0.78rem' }}
+                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
               >
-                <ImageIcon size={13} /> Ảnh
+                <ImageIcon size={12} /> Ảnh
               </button>
             </div>
 
-            <div className="aspect-ratios-container" style={{ flexWrap: 'wrap' }}>
+            <div className="aspect-ratios-container" style={{ flexShrink: 0 }}>
               {RATIOS.map(r => (
                 <button
                   key={r.value}
@@ -3033,10 +3033,10 @@ function App() {
                   className={`ratio-chip ${aspectRatio === r.value ? 'active' : ''}`}
                   onClick={() => setAspectRatio(r.value)}
                   disabled={isSubmitting}
-                  style={{ padding: '4px 10px', flexDirection: 'row', gap: '5px' }}
+                  title={r.label}
+                  style={{ padding: '4px', width: '28px', height: '28px' }}
                 >
                   <div className="ratio-box" style={{ width: `${r.width}px`, height: `${r.height}px` }} />
-                  <span>{r.label}</span>
                 </button>
               ))}
             </div>
