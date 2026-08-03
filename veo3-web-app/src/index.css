@@ -538,6 +538,20 @@ body {
   color: var(--text-secondary);
 }
 
+/* Zalo contact icon: only visible on mobile, inside the prompt bar */
+.zalo-icon-mobile {
+  display: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0, 104, 255, 0.12);
+  margin-bottom: 6px;
+  transition: background 0.2s;
+}
+.zalo-icon-mobile:active {
+  background: rgba(0, 104, 255, 0.25);
+}
+
 .submit-arrow-btn {
   background: #ececf1;
   color: #0f0f13;
@@ -708,6 +722,10 @@ body {
 
   .prompt-textarea {
     font-size: 1rem;
+  }
+
+  .zalo-icon-mobile {
+    display: flex;
   }
 
   .item-prompt {

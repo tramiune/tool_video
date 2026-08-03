@@ -2831,26 +2831,39 @@ function App() {
           )}
 
           {/* Row 2: Prompt Text Input (Full Width) */}
-          <textarea 
-            ref={promptTextareaRef}
-            rows={1}
-            className="prompt-textarea"
-            placeholder={activeTab === 'video' ? "Mô tả video bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)" : "Mô tả hình ảnh bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)"}
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              autosizePrompt();
-            }}
-            onPaste={handlePaste}
-            disabled={isSubmitting}
-            style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', padding: '2px 0', overflowY: 'auto' }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-          />
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+            <textarea 
+              ref={promptTextareaRef}
+              rows={1}
+              className="prompt-textarea"
+              placeholder={activeTab === 'video' ? "Mô tả video bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)" : "Mô tả hình ảnh bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)"}
+              value={prompt}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                autosizePrompt();
+              }}
+              onPaste={handlePaste}
+              disabled={isSubmitting}
+              style={{ width: '100%', flexShrink: 1, background: 'transparent', border: 'none', outline: 'none', padding: '2px 0', overflowY: 'auto' }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+            />
+            <a
+              href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="zalo-icon-mobile"
+              aria-label="Liên hệ Zalo"
+              style={{ flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}
+              title="Tham gia nhóm Zalo hỗ trợ"
+            >
+              <img src="/zalo.svg" alt="Zalo" style={{ width: '18px', height: '18px' }} />
+            </a>
+          </div>
 
           {/* Row 3: Action Toolbar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px' }}>

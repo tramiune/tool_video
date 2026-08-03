@@ -42,7 +42,7 @@ const videoQueue = [];   // sequential video tasks
 const IMAGE_CONCURRENCY = parseInt(process.env.IMAGE_CONCURRENCY || '3', 10);
 let activeImageWorkers = 0;
 
-const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '6', 10);
+const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '5', 10);
 let activeVideoWorkers = 0;
 
 app.use(cors());
@@ -597,9 +597,6 @@ function startFirestoreListener() {
               ...taskData
             };
 
-            // Update Firestore to processing
-            doc.ref.update({ status: 'processing' });
-
             if (taskData.type === 'video') {
               videoQueue.push(taskId);
               logger.info(`Task queued from Firestore: ${taskId} (type: video, prompt: "${taskData.prompt.substring(0, 20)}...")`);
@@ -652,6 +649,7 @@ async function runImageTask(taskId) {
   const task = tasks[taskId];
   if (!task) return;
 
+  await task.docRef.update({ status: 'processing' });
   task.status = 'generating';
   logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
 
@@ -763,8 +761,8 @@ async function runImageTask(taskId) {
     }).catch(e => logger.error('Telegram notifyTaskFailed (image) failed:', e.message));
   }
 
-  // Anti-spam Cooldown: Sleep for 5 to 10 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
-  const cooldown = 5000 + Math.floor(Math.random() * 5000);
+  // Anti-spam Cooldown: Sleep for 10 to 15 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
+  const cooldown = 10000 + Math.floor(Math.random() * 5000);
   logger.info(`[Image] Cooldown active. Waiting ${Math.round(cooldown/1000)}s before worker takes next task...`);
   await sleep(cooldown);
 }
@@ -786,6 +784,7 @@ async function runVideoTask(taskId) {
   const task = tasks[taskId];
   if (!task) return;
 
+  await task.docRef.update({ status: 'processing' });
   task.status = 'generating';
   logger.info(`[Video] Starting task execution: ${taskId} (active workers: ${activeVideoWorkers})`);
 
@@ -926,8 +925,8 @@ async function runVideoTask(taskId) {
     }).catch(e => logger.error('Telegram notifyTaskFailed (video) failed:', e.message));
   }
 
-  // Anti-spam Cooldown: Sleep for 5 to 10 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
-  const cooldown = 5000 + Math.floor(Math.random() * 5000);
+  // Anti-spam Cooldown: Sleep for 10 to 15 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
+  const cooldown = 10000 + Math.floor(Math.random() * 5000);
   logger.info(`[Video] Cooldown active. Waiting ${Math.round(cooldown/1000)}s before worker takes next task...`);
   await sleep(cooldown);
 }
@@ -996,6 +995,25 @@ async function cleanupOldTasks() {
   }
 }
 
+function scheduleDailyCleanup(hour = 23, minute = 50) {
+  const now = new Date();
+  const nextRun = new Date(now);
+  nextRun.setHours(hour, minute, 0, 0);
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+
+  const delay = nextRun.getTime() - now.getTime();
+  logger.info(`Scheduled cleanup at ${nextRun.toString()} (in ${Math.round(delay / 60000)} minutes)`);
+
+  setTimeout(() => {
+    cleanupOldTasks().catch(err => logger.error('Scheduled cleanup failed', err));
+    setInterval(() => {
+      cleanupOldTasks().catch(err => logger.error('Scheduled cleanup failed', err));
+    }, 24 * 60 * 60 * 1000);
+  }, delay);
+}
+
 // Start HTTP + Socket.io Server
 captchaService.attach(io);
 
@@ -1005,11 +1023,10 @@ startCookieSyncListener().then(() => {
   rehydrateTasks().then(() => {
     // Start Firestore Listener
     startFirestoreListener();
-
-    // Start periodic cleanup on startup and then every hour
-    cleanupOldTasks();
   });
-  setInterval(cleanupOldTasks, 60 * 60 * 1000);
+
+  // Run cleanup once per day at 23:50 server time
+  scheduleDailyCleanup(23, 50);
 
   // Initialize Browser Manager on start so it is warmed up
   browserManager.initialize().catch(err => {
