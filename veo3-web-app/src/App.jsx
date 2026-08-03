@@ -2648,22 +2648,18 @@ function App() {
                           if (!startFile && !startLibraryUrl) {
                             setStartLibraryUrl(task.mediaUrl);
                             setStartFile(null);
-                            alert("Đã đặt ảnh này làm Ảnh bắt đầu (Start Frame) cho video thành công! 🎬");
                           } else if (!endFile && !endLibraryUrl) {
                             setEndLibraryUrl(task.mediaUrl);
                             setEndFile(null);
-                            alert("Đã đặt ảnh này làm Ảnh kết thúc (End Frame) cho video thành công! 🎬");
                           } else {
                             setStartLibraryUrl(task.mediaUrl);
                             setStartFile(null);
-                            alert("Đã đặt lại ảnh này làm Ảnh bắt đầu (Start Frame) cho video thành công! 🎬");
                           }
                         } else {
                           setSelectedRefUrls(prev => {
                             if (prev.includes(task.mediaUrl)) return prev;
                             return [...prev, task.mediaUrl];
                           });
-                          alert("Đã thêm ảnh này vào danh sách ảnh tham khảo thành công! 📸");
                         }
                       }}
                       className="action-circle-btn" 
