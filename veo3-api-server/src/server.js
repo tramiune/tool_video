@@ -15,6 +15,7 @@ const apiClient = require('./api_client');
 const { db } = require('./firebase_worker');
 const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
 const telegram = require('./telegram');
+const audioClient = require('./audio_client');
 
 const app = express();
 const server = http.createServer(app);
@@ -473,6 +474,173 @@ app.post('/api/payment-webhook', async (req, res) => {
     logger.error('Error processing payment webhook', err);
     telegram.notifyError('Payment webhook error', err).catch(() => {});
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── AUDIO (AI DANCING VOICE CLONE) API ────────────────────────────────────
+// Daily usage quotas per tier (server-side enforcement)
+const AUDIO_LIMITS = {
+  free: 1,
+  hocvien: 5,
+  basic_69k: 5,
+  standard_99k: 5,
+  premium_169k: 20
+};
+
+function audioLimitFor(tier) {
+  return AUDIO_LIMITS[tier] ?? AUDIO_LIMITS.free;
+}
+
+// Count audio jobs created by a user today (successful or in-progress)
+async function getAudioUsageToday(userId) {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const snap = await db.collection('audio_tasks')
+    .where('userId', '==', userId)
+    .get();
+  return snap.docs
+    .filter(d => (d.data().status || '') !== 'failed' && (d.data().createdAt || 0) >= startOfDay.getTime())
+    .length;
+}
+
+// List preset voices (cached by audioClient)
+app.get('/api/audio/voices', async (req, res) => {
+  try {
+    const voices = await audioClient.getVoices();
+    res.json({ voices, lang: 'vi', total: voices.length });
+  } catch (err) {
+    logger.error('Audio voices endpoint failed', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create + start an audio clone job. Enforces per-tier daily quota server-side.
+app.post('/api/audio/generate', async (req, res) => {
+  try {
+    const { userId, userEmail, text, voiceIndex } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    if (!text || !String(text).trim()) return res.status(400).json({ error: 'Missing text' });
+    if (voiceIndex === undefined || voiceIndex === null) return res.status(400).json({ error: 'Missing voiceIndex' });
+
+    const userRef = db.collection('users').doc(userId);
+    const userSnap = await userRef.get();
+    const userData = userSnap.exists ? userSnap.data() : {};
+    let tier = userData.tier || 'free';
+    if (tier !== 'free' && userData.expiryDate && userData.expiryDate < Date.now()) {
+      tier = 'free';
+    }
+
+    const used = await getAudioUsageToday(userId);
+    const limit = audioLimitFor(tier);
+    if (used >= limit) {
+      return res.status(429).json({
+        error: `Bạn đã dùng hết ${limit} lượt tạo âm thanh hôm nay của gói hiện tại.`,
+        limit,
+        used,
+        tier
+      });
+    }
+
+    const jobUid = await audioClient.createJob(String(text).trim(), 'vi', Number(voiceIndex));
+    await audioClient.startJob(jobUid);
+
+    const docRef = await db.collection('audio_tasks').add({
+      userId,
+      userEmail: userEmail || null,
+      text: String(text).trim().substring(0, 500),
+      voiceIndex: Number(voiceIndex),
+      jobUid,
+      status: 'PROCESSING',
+      outputUrl: null,
+      error: null,
+      tier,
+      createdAt: Date.now()
+    });
+
+    logger.info(`[Audio] Created job ${jobUid} for user ${userId} (${used + 1}/${limit})`);
+    res.json({ jobId: docRef.id, jobUid, used: used + 1, limit, tier });
+  } catch (err) {
+    logger.error('Audio generate endpoint failed', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List user's audio tasks, refreshing any in-progress jobs from the upstream session
+app.get('/api/audio/jobs', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+
+    const snap = await db.collection('audio_tasks')
+      .where('userId', '==', userId)
+      .get();
+    const docs = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, 50);
+
+    let upstream = [];
+    const activeDocs = docs.filter(d => {
+      const s = d.status;
+      return s === 'PROCESSING' || s === 'PENDING';
+    });
+    if (activeDocs.length > 0) {
+      try {
+        upstream = await audioClient.listJobs();
+      } catch (e) {
+        logger.warn(`[Audio] listJobs failed: ${e.message}`);
+      }
+    }
+
+    const jobs = await Promise.all(docs.map(async (d) => {
+      const data = d;
+      let status = data.status;
+      let outputUrl = data.outputUrl;
+
+      if ((status === 'PROCESSING' || status === 'PENDING') && upstream.length > 0) {
+        const match = upstream.find(j => j.jobUid === data.jobUid);
+        if (match) {
+          status = match.status;
+          if (match.outputUrl) {
+            outputUrl = match.outputUrl.startsWith('http')
+              ? match.outputUrl
+              : `${audioClient.BASE_URL}${match.outputUrl}`;
+          }
+          if (status !== data.status || outputUrl !== data.outputUrl) {
+            try {
+              await db.collection('audio_tasks').doc(d.id).update({ status, outputUrl, updatedAt: Date.now() });
+            } catch (e) {}
+          }
+        }
+      }
+
+      return {
+        id: d.id,
+        jobUid: data.jobUid,
+        text: data.text,
+        voiceIndex: data.voiceIndex,
+        status,
+        outputUrl,
+        error: data.error,
+        tier: data.tier,
+        createdAt: data.createdAt
+      };
+    }));
+
+    const used = await getAudioUsageToday(userId);
+
+    let tier = 'free';
+    try {
+      const u = await db.collection('users').doc(userId).get();
+      const ud = u.exists ? u.data() : {};
+      tier = ud.tier || 'free';
+      if (tier !== 'free' && ud.expiryDate && ud.expiryDate < Date.now()) tier = 'free';
+    } catch (e) {}
+
+    res.json({ jobs, used, limit: audioLimitFor(tier), tier });
+  } catch (err) {
+    logger.error('Audio jobs endpoint failed', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

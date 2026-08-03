@@ -517,11 +517,13 @@ class ApiClient {
           cropCoordinates: { top: 0, left: 0, bottom: 1, right: 1 }
         };
       }
-      if (hasEnd) {
+      if (genType === 'f2v' && hasEnd) {
         req.endImage = {
           mediaId: options.endImage,
           cropCoordinates: { top: 0, left: 0, bottom: 1, right: 1 }
         };
+      } else if (hasEnd) {
+        logger.warn(`endImage provided but ${genType} endpoint doesn't support it; ignoring end frame`);
       }
       if (hasRefs) {
         req.referenceImages = options.referenceImages.map(ref => 

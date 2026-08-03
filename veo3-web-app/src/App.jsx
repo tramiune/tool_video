@@ -150,6 +150,15 @@ function App() {
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [limitError, setLimitError] = useState(null);
   const [selectedTierForPay, setSelectedTierForPay] = useState(null);
+  const [isAudioView, setIsAudioView] = useState(false);
+  const [audioVoices, setAudioVoices] = useState([]);
+  const [audioSelectedVoice, setAudioSelectedVoice] = useState(null);
+  const [audioText, setAudioText] = useState('');
+  const [audioJobs, setAudioJobs] = useState([]);
+  const [audioUsage, setAudioUsage] = useState({ used: 0, limit: 1, tier: 'free' });
+  const [audioGenerating, setAudioGenerating] = useState(false);
+  const [audioLoadingVoices, setAudioLoadingVoices] = useState(false);
+  const [audioMsg, setAudioMsg] = useState(null);
   const [qrLoading, setQrLoading] = useState(true);
   const [videoDuration, setVideoDuration] = useState(8);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
@@ -229,6 +238,7 @@ function App() {
       const hash = window.location.hash;
       const isHashAdmin = hash === '#admin';
       const isHashTryOn = hash === '#tryon';
+      const isHashAudio = hash === '#audio';
       
       if (isHashAdmin) {
         if (!user) {
@@ -245,6 +255,7 @@ function App() {
       }
       setIsAdminView(isHashAdmin);
       setIsTryOnView(isHashTryOn);
+      setIsAudioView(isHashAudio);
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
@@ -374,6 +385,18 @@ function App() {
     const videos = todayTasks.filter(t => t.type === 'video').length;
     const images = todayTasks.filter(t => t.type === 'image').length;
     return { videos, images };
+  };
+
+  const audioTierLabel = (tier) => {
+    return tier === 'premium_169k' ? 'Premium' :
+           tier === 'basic_69k' ? 'Basic' :
+           tier === 'hocvien' ? 'Học viên' : 'Free';
+  };
+
+  const audioJobStatusLabel = (status) => {
+    return status === 'COMPLETED' ? 'Hoàn tất' :
+           status === 'FAILED' ? 'Thất bại' :
+           'Đang xử lý';
   };
 
   // Đếm tổng số video đã tạo từ trước đến nay (all-time), dùng để giới hạn free tier
@@ -1312,6 +1335,252 @@ function App() {
     }
   };
 
+  // ─── AUDIO (VOICE CLONE) TOOL ────────────────────────────────────────────
+  const loadAudioVoices = async () => {
+    setAudioLoadingVoices(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/audio/voices`);
+      const data = await res.json();
+      if (data.voices) {
+        setAudioVoices(data.voices);
+        if (data.voices.length > 0) {
+          setAudioSelectedVoice(prev => prev ?? data.voices[0].voiceIndex);
+        }
+      }
+    } catch (e) {
+      console.error('loadAudioVoices failed', e);
+    } finally {
+      setAudioLoadingVoices(false);
+    }
+  };
+
+  const loadAudioJobs = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/audio/jobs?userId=${encodeURIComponent(user.uid)}`);
+      const data = await res.json();
+      if (data.jobs) setAudioJobs(data.jobs);
+      if (data.used !== undefined) {
+        setAudioUsage(prev => ({ ...prev, used: data.used, limit: data.limit ?? prev.limit, tier: data.tier ?? prev.tier }));
+      }
+    } catch (e) {
+      console.error('loadAudioJobs failed', e);
+    }
+  };
+
+  const generateAudio = async () => {
+    if (!user) return;
+    if (!audioText.trim()) {
+      setAudioMsg({ type: 'error', text: 'Vui lòng nhập nội dung cần đọc.' });
+      return;
+    }
+    if (audioSelectedVoice === null || audioSelectedVoice === undefined) {
+      setAudioMsg({ type: 'error', text: 'Vui lòng chọn một giọng đọc.' });
+      return;
+    }
+    setAudioMsg(null);
+    setAudioGenerating(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/audio/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.uid,
+          userEmail: user.email,
+          text: audioText,
+          voiceIndex: audioSelectedVoice
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 429) {
+          setAudioMsg({ type: 'error', text: data.error });
+          setAudioUsage(prev => ({ ...prev, used: data.used ?? prev.used, limit: data.limit ?? prev.limit, tier: data.tier ?? prev.tier }));
+        } else {
+          setAudioMsg({ type: 'error', text: data.error || 'Tạo âm thanh thất bại. Vui lòng thử lại.' });
+        }
+        return;
+      }
+      if (data.jobUid) {
+        setAudioUsage(prev => ({ ...prev, used: data.used }));
+        setAudioText('');
+        await loadAudioJobs();
+      }
+    } catch (e) {
+      console.error('generateAudio failed', e);
+      setAudioMsg({ type: 'error', text: 'Không thể kết nối máy chủ. Vui lòng thử lại.' });
+    } finally {
+      setAudioGenerating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAudioView) {
+      loadAudioVoices();
+      loadAudioJobs();
+      const iv = setInterval(loadAudioJobs, 5000);
+      return () => clearInterval(iv);
+    }
+  }, [isAudioView, user]);
+
+  const renderAudioView = () => {
+    const audioActiveTier = audioUsage.tier || 'free';
+    const remaining = Math.max(0, (audioUsage.limit ?? 1) - (audioUsage.used ?? 0));
+
+    return (
+      <div className="container" style={{ maxWidth: '860px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.6rem' }}>🎙️</span>
+              <h1 style={{ fontSize: '2rem', fontWeight: '800', margin: 0 }}>Công cụ tạo giọng nói AI</h1>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>
+              Nhập nội dung, chọn một trong {audioVoices.length || 51} giọng đọc tiếng Việt — AI sẽ đọc lại tự nhiên.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              window.location.hash = '';
+              setIsAudioView(false);
+            }}
+            className="glass-button"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontSize: '0.85rem' }}
+          >
+            <ArrowLeft size={16} /> Quay lại
+          </button>
+        </div>
+
+        {/* Quota card */}
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 220px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '14px 16px' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Lượt dùng hôm nay</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: '800', color: remaining > 0 ? '#10b981' : '#ef4444', marginTop: '2px' }}>
+              {remaining}<span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '500' }}>/{audioUsage.limit} còn lại</span>
+            </div>
+          </div>
+          <div style={{ flex: '1 1 220px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '14px 16px' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Gói tài khoản</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: '700', marginTop: '2px', color: '#3b82f6' }}>
+              {audioTierLabel(audioActiveTier)}
+            </div>
+          </div>
+          <button
+            onClick={() => setShowPricingModal(true)}
+            className="glass-button"
+            style={{ padding: '10px 18px', fontSize: '0.8rem', background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', color: '#fff', border: 'none' }}
+          >
+            ⚡ Nâng cấp để dùng nhiều hơn
+          </button>
+        </div>
+
+        {/* Text + voice form */}
+        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '20px' }}>
+          <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>Nội dung cần đọc</label>
+          <textarea
+            value={audioText}
+            onChange={(e) => setAudioText(e.target.value)}
+            maxLength={2000}
+            rows={6}
+            placeholder="Nhập đoạn văn, kịch bản lồng tiếng… (tối đa 2000 ký tự)"
+            style={{ width: '100%', background: '#16161a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', padding: '12px', fontSize: '0.9rem', resize: 'vertical', outline: 'none' }}
+          />
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '6px', textAlign: 'right' }}>{audioText.length} / 2000</div>
+
+          <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', margin: '16px 0 8px' }}>Chọn giọng đọc ({audioLoadingVoices ? 'đang tải…' : `${audioVoices.length} giọng tiếng Việt`})</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+            {audioVoices.map(v => (
+              <button
+                key={v.voiceIndex}
+                type="button"
+                onClick={() => setAudioSelectedVoice(v.voiceIndex)}
+                onDoubleClick={() => { if (v.url) window.open(v.url, '_blank'); }}
+                title={v.url ? 'Nhấn đúp để nghe thử giọng' : ''}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 12px',
+                  background: audioSelectedVoice === v.voiceIndex ? 'rgba(16, 185, 129, 0.18)' : 'rgba(255,255,255,0.03)',
+                  border: audioSelectedVoice === v.voiceIndex ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '8px',
+                  color: audioSelectedVoice === v.voiceIndex ? '#10b981' : 'var(--text-secondary)',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <span style={{ fontSize: '0.8rem' }}>{audioSelectedVoice === v.voiceIndex ? '●' : '○'}</span>
+                {v.name}
+              </button>
+            ))}
+            {audioLoadingVoices && <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', padding: '8px' }}>Đang tải danh sách giọng…</div>}
+          </div>
+
+          {audioMsg && (
+            <div style={{ marginTop: '16px', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', background: audioMsg.type === 'error' ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', color: audioMsg.type === 'error' ? '#f87171' : '#34d399', border: `1px solid ${audioMsg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}` }}>
+              {audioMsg.text}
+            </div>
+          )}
+
+          <button
+            onClick={generateAudio}
+            disabled={audioGenerating || remaining <= 0}
+            style={{
+              marginTop: '16px',
+              width: '100%',
+              padding: '14px',
+              background: (audioGenerating || remaining <= 0) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              border: 'none',
+              borderRadius: '10px',
+              color: (audioGenerating || remaining <= 0) ? 'var(--text-secondary)' : '#fff',
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              cursor: (audioGenerating || remaining <= 0) ? 'default' : 'pointer'
+            }}
+          >
+            {audioGenerating ? '⏳ Đang tạo…' : remaining === 0 ? 'Bạn đã dùng hết lượt hôm nay' : `🎙️ Tạo giọng nói (còn ${remaining} lượt)`}
+          </button>
+        </div>
+
+        {/* Results */}
+        <div>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '12px' }}>Audio của bạn ({audioJobs.length})</h2>
+          {audioJobs.length === 0 && (
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '20px', textAlign: 'center' }}>
+              Chưa có bản ghi nào. Hãy tạo âm thanh đầu tiên của bạn!
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {audioJobs.map(j => (
+              <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 16px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.text}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    {new Date(j.createdAt).toLocaleString('vi-VN')} · {audioJobStatusLabel(j.status)}
+                  </div>
+                </div>
+                {j.status === 'COMPLETED' && j.outputUrl ? (
+                  <>
+                    <audio controls src={j.outputUrl} style={{ height: '38px', maxWidth: '220px' }} />
+                    <a href={j.outputUrl} target="_blank" rel="noopener noreferrer" download style={{ color: '#10b981', fontSize: '0.75rem', whiteSpace: 'nowrap', textDecoration: 'none' }}>⬇ Tải về</a>
+                  </>
+                ) : j.status === 'FAILED' ? (
+                  <span style={{ color: '#f87171', fontSize: '0.75rem' }}>Thất bại</span>
+                ) : (
+                  <span className="badge proc" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem' }}>
+                    <span className="spin" /> Đang xử lý…
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderTryOnView = () => {
     return (
       <div className="container" style={{ maxWidth: '800px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
@@ -2151,6 +2420,10 @@ function App() {
     );
   }
 
+  if (isAudioView) {
+    return renderAudioView();
+  }
+
   const RATIOS = [
     { value: '16:9', label: '16:9', width: 14, height: 8 },
     { value: '4:3', label: '4:3', width: 14, height: 10.5 },
@@ -2272,6 +2545,38 @@ function App() {
           >
             <img src="/zalo.svg" alt="Zalo" style={{ width: '20px', height: '20px' }} />
           </a>
+
+          {/* Audio Tool Button */}
+          <button
+            type="button"
+            onClick={() => {
+              window.location.hash = '#audio';
+              setIsAudioView(true);
+            }}
+            title="Công cụ tạo giọng nói AI (Voice Cloning)"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '5px',
+              width: 'auto',
+              height: '30px',
+              padding: '0 10px',
+              background: isAudioView ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(255,255,255,0.06)',
+              border: isAudioView ? 'none' : '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '8px',
+              color: isAudioView ? '#fff' : 'var(--text-secondary)',
+              fontSize: '0.72rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.borderColor = '#10b981'; e.currentTarget.style.color = '#10b981'; }}
+            onMouseOut={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = isAudioView ? 'transparent' : 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = isAudioView ? '#fff' : 'var(--text-secondary)'; }}
+          >
+            <span style={{ fontSize: '0.95rem', lineHeight: 1 }}>🎙️</span>
+            <span>Giọng nói</span>
+          </button>
 
           {/* Avatar Dropdown Container */}
           <div style={{ position: 'relative' }} ref={userDropdownRef}>
