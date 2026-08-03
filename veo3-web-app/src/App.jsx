@@ -2558,24 +2558,20 @@ function App() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '5px',
-              width: 'auto',
+              width: '30px',
               height: '30px',
-              padding: '0 10px',
+              padding: '0',
               background: isAudioView ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(255,255,255,0.06)',
               border: isAudioView ? 'none' : '1px solid rgba(255,255,255,0.12)',
-              borderRadius: '8px',
+              borderRadius: '50%',
               color: isAudioView ? '#fff' : 'var(--text-secondary)',
-              fontSize: '0.72rem',
-              fontWeight: '600',
               cursor: 'pointer',
               transition: 'all 0.2s ease'
             }}
             onMouseOver={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.borderColor = '#10b981'; e.currentTarget.style.color = '#10b981'; }}
             onMouseOut={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = isAudioView ? 'transparent' : 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = isAudioView ? '#fff' : 'var(--text-secondary)'; }}
           >
-            <span style={{ fontSize: '0.95rem', lineHeight: 1 }}>🎙️</span>
-            <span>Giọng nói</span>
+            <span style={{ fontSize: '0.85rem', lineHeight: 1 }}>🎙️</span>
           </button>
 
           {/* Avatar Dropdown Container */}
