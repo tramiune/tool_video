@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check } from 'lucide-react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, ChevronDown } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -3032,10 +3032,15 @@ function App() {
                 className={`ratio-chip ${showRatioMenu ? 'active' : ''}`}
                 onClick={() => setShowRatioMenu(prev => !prev)}
                 disabled={isSubmitting}
-                title="Tỷ lệ"
-                style={{ width: '28px', height: '28px', padding: '4px' }}
+                title="Chọn tỷ lệ"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px',
+                  height: '28px', padding: '4px 8px', fontSize: '0.72rem', fontWeight: '600'
+                }}
               >
                 <div className="ratio-box" style={{ width: `${RATIOS.find(r => r.value === aspectRatio)?.width || 14}px`, height: `${RATIOS.find(r => r.value === aspectRatio)?.height || 14}px` }} />
+                Tỷ lệ
+                <ChevronDown size={12} style={{ opacity: 0.6 }} />
               </button>
 
               {showRatioMenu && (
