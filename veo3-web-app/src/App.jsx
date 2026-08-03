@@ -122,6 +122,7 @@ function App() {
   const [startLibraryUrl, setStartLibraryUrl] = useState(null);
   const [endLibraryUrl, setEndLibraryUrl] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [showRatioMenu, setShowRatioMenu] = useState(false);
   const [addFileContext, setAddFileContext] = useState('ref'); // 'start' | 'end' | 'ref'
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [userTier, setUserTier] = useState('free');
@@ -2839,7 +2840,7 @@ function App() {
           />
 
           {/* Row 3: Action Toolbar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
               <div style={{ position: 'relative' }}>
               <button 
@@ -3025,20 +3026,55 @@ function App() {
               </button>
             </div>
 
-            <div className="aspect-ratios-container" style={{ flexShrink: 0 }}>
-              {RATIOS.map(r => (
-                <button
-                  key={r.value}
-                  type="button"
-                  className={`ratio-chip ${aspectRatio === r.value ? 'active' : ''}`}
-                  onClick={() => setAspectRatio(r.value)}
-                  disabled={isSubmitting}
-                  title={r.label}
-                  style={{ padding: '4px', width: '28px', height: '28px' }}
-                >
-                  <div className="ratio-box" style={{ width: `${r.width}px`, height: `${r.height}px` }} />
-                </button>
-              ))}
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <button
+                type="button"
+                className={`ratio-chip ${showRatioMenu ? 'active' : ''}`}
+                onClick={() => setShowRatioMenu(prev => !prev)}
+                disabled={isSubmitting}
+                title="Tỷ lệ"
+                style={{ width: '28px', height: '28px', padding: '4px' }}
+              >
+                <div className="ratio-box" style={{ width: `${RATIOS.find(r => r.value === aspectRatio)?.width || 14}px`, height: `${RATIOS.find(r => r.value === aspectRatio)?.height || 14}px` }} />
+              </button>
+
+              {showRatioMenu && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '36px',
+                  left: '0',
+                  background: 'rgba(20, 20, 25, 0.96)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '12px',
+                  padding: '8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                  zIndex: 100
+                }}>
+                  {RATIOS.map(r => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => { setAspectRatio(r.value); setShowRatioMenu(false); }}
+                      disabled={isSubmitting}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        background: aspectRatio === r.value ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                        border: 'none', borderRadius: '8px', padding: '6px 10px',
+                        color: aspectRatio === r.value ? '#3b82f6' : 'var(--text-secondary)',
+                        fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer',
+                        textAlign: 'left', whiteSpace: 'nowrap'
+                      }}
+                    >
+                      <div className="ratio-box" style={{ width: `${r.width}px`, height: `${r.height}px` }} />
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             </div>
 
