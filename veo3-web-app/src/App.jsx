@@ -159,6 +159,7 @@ function App() {
   const [audioGenerating, setAudioGenerating] = useState(false);
   const [audioLoadingVoices, setAudioLoadingVoices] = useState(false);
   const [audioMsg, setAudioMsg] = useState(null);
+  const [audioPreviewVoice, setAudioPreviewVoice] = useState(null);
   const [qrLoading, setQrLoading] = useState(true);
   const [videoDuration, setVideoDuration] = useState(8);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
@@ -1424,21 +1425,15 @@ function App() {
   }, [isAudioView, user]);
 
   const renderAudioView = () => {
-    const audioActiveTier = audioUsage.tier || 'free';
     const remaining = Math.max(0, (audioUsage.limit ?? 1) - (audioUsage.used ?? 0));
 
     return (
-      <div className="container" style={{ maxWidth: '860px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
+      <div className="container" style={{ maxWidth: '760px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '100vh', color: '#fff' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '1.6rem' }}>🎙️</span>
-              <h1 style={{ fontSize: '2rem', fontWeight: '800', margin: 0 }}>Công cụ tạo giọng nói AI</h1>
-            </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>
-              Nhập nội dung, chọn một trong {audioVoices.length || 51} giọng đọc tiếng Việt — AI sẽ đọc lại tự nhiên.
-            </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.6rem' }}>🎙️</span>
+            <h1 style={{ fontSize: '1.6rem', fontWeight: '800', margin: 0 }}>Tạo giọng nói AI</h1>
           </div>
           <button
             onClick={() => {
@@ -1446,32 +1441,9 @@ function App() {
               setIsAudioView(false);
             }}
             className="glass-button"
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontSize: '0.85rem' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.8rem' }}
           >
             <ArrowLeft size={16} /> Quay lại
-          </button>
-        </div>
-
-        {/* Quota card */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 220px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '14px 16px' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Lượt dùng hôm nay</div>
-            <div style={{ fontSize: '1.6rem', fontWeight: '800', color: remaining > 0 ? '#10b981' : '#ef4444', marginTop: '2px' }}>
-              {remaining}<span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '500' }}>/{audioUsage.limit} còn lại</span>
-            </div>
-          </div>
-          <div style={{ flex: '1 1 220px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '14px 16px' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Gói tài khoản</div>
-            <div style={{ fontSize: '1.1rem', fontWeight: '700', marginTop: '2px', color: '#3b82f6' }}>
-              {audioTierLabel(audioActiveTier)}
-            </div>
-          </div>
-          <button
-            onClick={() => setShowPricingModal(true)}
-            className="glass-button"
-            style={{ padding: '10px 18px', fontSize: '0.8rem', background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', color: '#fff', border: 'none' }}
-          >
-            ⚡ Nâng cấp để dùng nhiều hơn
           </button>
         </div>
 
@@ -1482,44 +1454,91 @@ function App() {
             value={audioText}
             onChange={(e) => setAudioText(e.target.value)}
             maxLength={2000}
-            rows={6}
-            placeholder="Nhập đoạn văn, kịch bản lồng tiếng… (tối đa 2000 ký tự)"
+            rows={4}
+            placeholder="Nhập đoạn văn cần lồng tiếng…"
             style={{ width: '100%', background: '#16161a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', padding: '12px', fontSize: '0.9rem', resize: 'vertical', outline: 'none' }}
           />
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '6px', textAlign: 'right' }}>{audioText.length} / 2000</div>
 
-          <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', margin: '16px 0 8px' }}>Chọn giọng đọc ({audioLoadingVoices ? 'đang tải…' : `${audioVoices.length} giọng tiếng Việt`})</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+          <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', margin: '16px 0 8px' }}>Chọn giọng đọc ({audioLoadingVoices ? 'đang tải…' : `${audioVoices.length} giọng`})</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
             {audioVoices.map(v => (
-              <button
+              <div
                 key={v.voiceIndex}
-                type="button"
                 onClick={() => setAudioSelectedVoice(v.voiceIndex)}
-                onDoubleClick={() => { if (v.url) window.open(v.url, '_blank'); }}
-                title={v.url ? 'Nhấn đúp để nghe thử giọng' : ''}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
+                  gap: '10px',
                   padding: '8px 12px',
-                  background: audioSelectedVoice === v.voiceIndex ? 'rgba(16, 185, 129, 0.18)' : 'rgba(255,255,255,0.03)',
+                  background: audioSelectedVoice === v.voiceIndex ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.03)',
                   border: audioSelectedVoice === v.voiceIndex ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.08)',
                   borderRadius: '8px',
                   color: audioSelectedVoice === v.voiceIndex ? '#10b981' : 'var(--text-secondary)',
-                  fontSize: '0.78rem',
+                  fontSize: '0.82rem',
                   cursor: 'pointer',
                   transition: 'all 0.15s'
                 }}
               >
-                <span style={{ fontSize: '0.8rem' }}>{audioSelectedVoice === v.voiceIndex ? '●' : '○'}</span>
-                {v.name}
-              </button>
+                <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>{audioSelectedVoice === v.voiceIndex ? '●' : '○'}</span>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.name}</span>
+                {v.url && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setAudioPreviewVoice(audioPreviewVoice === v.voiceIndex ? null : v.voiceIndex); }}
+                    title="Nghe thử giọng"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 10px',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: '6px',
+                      color: '#10b981',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      transition: 'all 0.15s',
+                      minWidth: '54px',
+                      justifyContent: 'center'
+                    }}
+                    onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(16,185,129,0.15)'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                  >
+                    {audioPreviewVoice === v.voiceIndex ? (
+                      <>
+                        <span className="spin" style={{ width: '10px', height: '10px', borderTopColor: '#10b981' }} /> Đang phát
+                      </>
+                    ) : (
+                      <>▶ Nghe demo</>
+                    )}
+                  </button>
+                )}
+              </div>
             ))}
             {audioLoadingVoices && <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', padding: '8px' }}>Đang tải danh sách giọng…</div>}
           </div>
 
+          {audioPreviewVoice !== null && (() => {
+            const pv = audioVoices.find(v => v.voiceIndex === audioPreviewVoice);
+            if (!pv || !pv.url) return null;
+            return (
+              <audio
+                key={pv.voiceIndex}
+                src={pv.url}
+                autoPlay
+                controls
+                onEnded={() => setAudioPreviewVoice(null)}
+                onPause={() => setAudioPreviewVoice(null)}
+                onError={() => setAudioPreviewVoice(null)}
+                style={{ width: '100%', marginTop: '10px', height: '36px' }}
+              />
+            );
+          })()}
+
           {audioMsg && (
-            <div style={{ marginTop: '16px', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', background: audioMsg.type === 'error' ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', color: audioMsg.type === 'error' ? '#f87171' : '#34d399', border: `1px solid ${audioMsg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}` }}>
+            <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', background: audioMsg.type === 'error' ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', color: audioMsg.type === 'error' ? '#f87171' : '#34d399', border: `1px solid ${audioMsg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}` }}>
               {audioMsg.text}
             </div>
           )}
@@ -1530,7 +1549,7 @@ function App() {
             style={{
               marginTop: '16px',
               width: '100%',
-              padding: '14px',
+              padding: '13px',
               background: (audioGenerating || remaining <= 0) ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
               border: 'none',
               borderRadius: '10px',
@@ -1540,7 +1559,7 @@ function App() {
               cursor: (audioGenerating || remaining <= 0) ? 'default' : 'pointer'
             }}
           >
-            {audioGenerating ? '⏳ Đang tạo…' : remaining === 0 ? 'Bạn đã dùng hết lượt hôm nay' : `🎙️ Tạo giọng nói (còn ${remaining} lượt)`}
+            {audioGenerating ? '⏳ Đang tạo…' : remaining === 0 ? 'Bạn đã dùng hết lượt hôm nay' : `Tạo giọng nói${remaining !== 0 ? ` (còn ${remaining} lượt)` : ''}`}
           </button>
         </div>
 
