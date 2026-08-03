@@ -1441,9 +1441,10 @@ function App() {
               setIsAudioView(false);
             }}
             className="glass-button"
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.8rem' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', padding: '0', fontSize: '0.8rem', borderRadius: '50%' }}
+            title="Quay lại"
           >
-            <ArrowLeft size={16} /> Quay lại
+            <ArrowLeft size={18} />
           </button>
         </div>
 
