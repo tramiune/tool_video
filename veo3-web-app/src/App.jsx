@@ -119,7 +119,6 @@ function App() {
   const [refFiles, setRefFiles] = useState([]);
   const [selectedRefUrls, setSelectedRefUrls] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showOptions, setShowOptions] = useState(true);
   const [startLibraryUrl, setStartLibraryUrl] = useState(null);
   const [endLibraryUrl, setEndLibraryUrl] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -2015,7 +2014,6 @@ function App() {
       setEndLibraryUrl(null);
       setRefFiles([]);
       setSelectedRefUrls([]);
-      setShowOptions(false);
     } catch (error) {
       console.error("Error adding task: ", error);
       alert("Rất tiếc, hệ thống gặp một chút sự cố khi gửi yêu cầu tạo: " + error.message + ". Cậu thử lại sau giây lát nhé! 🥺");
@@ -2710,75 +2708,6 @@ function App() {
       {/* Floating Bottom Controls Wrapper */}
       <div className="bottom-controls-wrapper" ref={bottomControlsRef}>
         
-        {/* Floating Options Panel (Conditionally rendered when showOptions is true) */}
-        {showOptions && (
-          <div className="options-floating-panel">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              {/* Tab Selector */}
-              <div className="tab-selector">
-                <button 
-                  type="button"
-                  className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('video')}
-                  disabled={isSubmitting}
-                >
-                  <Video size={14} /> Video
-                </button>
-                <button 
-                  type="button"
-                  className={`tab-btn ${activeTab === 'image' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('image')}
-                  disabled={isSubmitting}
-                >
-                  <ImageIcon size={14} /> Ảnh
-                </button>
-              </div>
-
-              {/* Credits and Close button display */}
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <div className="credits-badge" style={{ margin: 0 }}>
-                  Model: <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>meo3</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowOptions(false)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '4px',
-                    borderRadius: '50%',
-                    transition: 'all 0.2s',
-                  }}
-                  title="Đóng bảng cài đặt"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-
-            {/* Aspect Ratios Container */}
-            <div className="aspect-ratios-container">
-              {RATIOS.map(r => (
-                <button
-                  key={r.value}
-                  type="button"
-                  className={`ratio-chip ${aspectRatio === r.value ? 'active' : ''}`}
-                  onClick={() => setAspectRatio(r.value)}
-                  disabled={isSubmitting}
-                >
-                  <div className="ratio-box" style={{ width: `${r.width}px`, height: `${r.height}px` }} />
-                  <span>{r.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Input Bar Pill */}
         <form 
           onSubmit={handleSubmit} 
@@ -2910,8 +2839,9 @@ function App() {
           />
 
           {/* Row 3: Action Toolbar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px' }}>
-            <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative' }}>
               <button 
                 type="button" 
                 className="add-file-btn" 
@@ -3074,40 +3004,52 @@ function App() {
               )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {/* Mode indicator/selector button */}
-              <button
-                type="button"
-                onClick={() => setShowOptions(prev => !prev)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: showOptions ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                  border: showOptions ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '16px',
-                  padding: '6px 12px',
-                  color: showOptions ? '#3b82f6' : 'var(--text-secondary)',
-                  fontSize: '0.8rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  textTransform: 'capitalize',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {activeTab === 'video' ? <Video size={12} /> : <ImageIcon size={12} />}
-                <span>{activeTab === 'video' ? 'Video' : 'Ảnh'}</span>
-              </button>
-
+            <div className="tab-selector" style={{ flexShrink: 0 }}>
               <button 
-                type="submit" 
-                className="submit-arrow-btn"
-                disabled={!prompt.trim() || isSubmitting}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', background: prompt.trim() ? '#3b82f6' : 'rgba(255,255,255,0.04)', border: 'none', color: prompt.trim() ? '#fff' : 'rgba(255,255,255,0.2)', cursor: prompt.trim() ? 'pointer' : 'default', transition: 'all 0.2s', padding: 0 }}
+                type="button"
+                className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
+                onClick={() => setActiveTab('video')}
+                disabled={isSubmitting}
+                style={{ padding: '5px 12px', fontSize: '0.78rem' }}
               >
-                <ArrowRight size={16} />
+                <Video size={13} /> Video
+              </button>
+              <button 
+                type="button"
+                className={`tab-btn ${activeTab === 'image' ? 'active' : ''}`}
+                onClick={() => setActiveTab('image')}
+                disabled={isSubmitting}
+                style={{ padding: '5px 12px', fontSize: '0.78rem' }}
+              >
+                <ImageIcon size={13} /> Ảnh
               </button>
             </div>
+
+            <div className="aspect-ratios-container" style={{ flexWrap: 'wrap' }}>
+              {RATIOS.map(r => (
+                <button
+                  key={r.value}
+                  type="button"
+                  className={`ratio-chip ${aspectRatio === r.value ? 'active' : ''}`}
+                  onClick={() => setAspectRatio(r.value)}
+                  disabled={isSubmitting}
+                  style={{ padding: '4px 10px', flexDirection: 'row', gap: '5px' }}
+                >
+                  <div className="ratio-box" style={{ width: `${r.width}px`, height: `${r.height}px` }} />
+                  <span>{r.label}</span>
+                </button>
+              ))}
+            </div>
+            </div>
+
+            <button 
+              type="submit" 
+              className="submit-arrow-btn"
+              disabled={!prompt.trim() || isSubmitting}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', background: prompt.trim() ? '#3b82f6' : 'rgba(255,255,255,0.04)', border: 'none', color: prompt.trim() ? '#fff' : 'rgba(255,255,255,0.2)', cursor: prompt.trim() ? 'pointer' : 'default', transition: 'all 0.2s', padding: 0, flexShrink: 0 }}
+            >
+              <ArrowRight size={16} />
+            </button>
           </div>
         </form>
 

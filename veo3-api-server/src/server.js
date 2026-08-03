@@ -744,14 +744,6 @@ async function runImageTask(taskId) {
     if (successfulUrl) {
       await task.docRef.update({ status: 'completed', mediaUrl: successfulUrl });
       logger.success(`[Image] Task ${taskId} completed and saved to Firestore! URL: ${successfulUrl}`);
-
-      // Send Telegram notification
-      telegram.notifyTaskComplete({
-        taskId,
-        userId: task.userId,
-        prompt: task.prompt,
-        url: successfulUrl
-      }).catch(e => logger.error('Telegram notifyTaskComplete (image) failed:', e.message));
     } else {
       throw new Error("No successful media generated");
     }
@@ -915,14 +907,6 @@ async function runVideoTask(taskId) {
     if (successfulUrl) {
       await task.docRef.update({ status: 'completed', mediaUrl: successfulUrl });
       logger.success(`[Video] Task ${taskId} completed and saved to Firestore! URL: ${successfulUrl}`);
-
-      // Send Telegram notification
-      telegram.notifyTaskComplete({
-        taskId,
-        userId: task.userId,
-        prompt: task.prompt,
-        url: successfulUrl
-      }).catch(e => logger.error('Telegram notifyTaskComplete (video) failed:', e.message));
     } else {
       throw new Error("No successful video generated");
     }
