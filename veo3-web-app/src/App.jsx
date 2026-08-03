@@ -334,6 +334,20 @@ function App() {
     }
   }, [userTier]);
 
+  // Close all dropdowns/popups when clicking outside them
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (ratioMenuRef.current && ratioMenuRef.current.contains(e.target)) return;
+      if (addMenuRef.current && addMenuRef.current.contains(e.target)) return;
+      if (userDropdownRef.current && userDropdownRef.current.contains(e.target)) return;
+      setShowRatioMenu(false);
+      setShowAddMenu(false);
+      setShowUserDropdown(false);
+    };
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
+  }, []);
+
   const getUpgradeCost = (targetTier) => {
     const prices = {
       free: 0,
@@ -1701,6 +1715,9 @@ function App() {
   const refInputRef = useRef(null);
   const promptTextareaRef = useRef(null);
   const bottomControlsRef = useRef(null);
+  const ratioMenuRef = useRef(null);
+  const addMenuRef = useRef(null);
+  const userDropdownRef = useRef(null);
 
   // Auto-resize prompt textarea: grow with content, cap at 70vh, then scroll
   const autosizePrompt = () => {
@@ -2269,7 +2286,7 @@ function App() {
           </a>
 
           {/* Avatar Dropdown Container */}
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative' }} ref={userDropdownRef}>
             <div 
               className="avatar-circle" 
               onClick={() => setShowUserDropdown(prev => !prev)}
@@ -2842,7 +2859,7 @@ function App() {
           {/* Row 3: Action Toolbar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative' }} ref={addMenuRef}>
               <button 
                 type="button" 
                 className="add-file-btn" 
@@ -3026,7 +3043,7 @@ function App() {
               </button>
             </div>
 
-            <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{ position: 'relative', flexShrink: 0 }} ref={ratioMenuRef}>
               <button
                 type="button"
                 className={`ratio-chip ${showRatioMenu ? 'active' : ''}`}
