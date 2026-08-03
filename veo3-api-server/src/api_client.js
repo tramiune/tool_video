@@ -150,6 +150,33 @@ const VIDEO_MODEL_KEYS = {
   }
 };
 
+// Download concurrency limiter: the GCS capture path opens a fresh Chrome page
+// per video. Running too many at once overloads the browser and makes the
+// CDP URL capture time out. Cap concurrent page-based downloads.
+const DOWNLOAD_CONCURRENCY = parseInt(process.env.DOWNLOAD_CONCURRENCY || '2', 10);
+let activeDownloads = 0;
+const downloadQueue = [];
+
+function acquireDownloadSlot() {
+  return new Promise((resolve) => {
+    if (activeDownloads < DOWNLOAD_CONCURRENCY) {
+      activeDownloads++;
+      resolve();
+    } else {
+      downloadQueue.push(resolve);
+    }
+  });
+}
+
+function releaseDownloadSlot() {
+  activeDownloads--;
+  if (downloadQueue.length > 0) {
+    const next = downloadQueue.shift();
+    activeDownloads++;
+    next();
+  }
+}
+
 class ApiClient {
   constructor() {
     this.projectId = null;
@@ -549,11 +576,32 @@ class ApiClient {
     const timeoutMs = options.timeoutMs || 500000; // 500s timeout
     const onProgress = options.onProgress;
     const startTime = Date.now();
+    let lastNonEmpty = null;
+    let emptyStreak = 0;
 
     while (true) {
       const res = await this.checkVideoStatus(mediaItems);
       const media = res.media || [];
       let allFinished = true;
+
+      if (media.length === 0) {
+        // Google's batch check returns an empty media array once all items have
+        // finished, dropping the completed items. Keep the last non-empty result
+        // so we can still resolve/download the generated videos.
+        emptyStreak++;
+        if (lastNonEmpty && emptyStreak <= 3) {
+          if (onProgress) {
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            onProgress(res, elapsed);
+          }
+          await new Promise(resolve => setTimeout(resolve, intervalMs));
+          continue;
+        }
+        return lastNonEmpty || res;
+      }
+
+      emptyStreak = 0;
+      lastNonEmpty = res;
 
       for (const item of media) {
         const genStatus = item.mediaMetadata?.mediaStatus?.mediaGenerationStatus || 
@@ -590,6 +638,15 @@ class ApiClient {
   // Capture real GCS video URL by opening an isolated page and
   // intercepting the network response containing storage.googleapis.com video URL via CDP.
   async getVideoGcsUrl(mediaId, projectId, workflowId) {
+    await acquireDownloadSlot();
+    try {
+      return await this._getVideoGcsUrlInner(mediaId, projectId, workflowId);
+    } finally {
+      releaseDownloadSlot();
+    }
+  }
+
+  async _getVideoGcsUrlInner(mediaId, projectId, workflowId) {
     const browser = browserManager.browser;
     if (!browser) throw new Error('No browser context available');
 
@@ -603,56 +660,80 @@ class ApiClient {
 
     logger.info(`Opening isolated page to capture GCS URL for ${mediaId.substring(0, 8)}...`);
 
-    let page = null;
-    let cdp = null;
     let capturedUrl = null;
 
-    try {
-      page = await browser.newPage();
-      
-      // Inherit cookies from the main page
-      if (browserManager.page) {
-        const cookies = await browserManager.page.cookies();
-        await page.setCookie(...cookies);
-      }
+    for (let attempt = 1; attempt <= 3 && !capturedUrl; attempt++) {
+      if (attempt > 1) logger.info(`Retrying GCS URL capture (attempt ${attempt}/3)...`);
+      let page = null;
+      let cdp = null;
 
-      cdp = await page.target().createCDPSession();
-      await cdp.send('Network.enable');
-
-      const onResponse = (event) => {
-        const url = event.response?.url || '';
-        const ct = (event.response?.headers?.['content-type'] || event.response?.headers?.['Content-Type'] || '').toLowerCase();
-        const isVideoOrGcs = (ct.startsWith('video/') || ct.includes('mp4') || ct.includes('webm')) ||
-                             (url.includes('storage.googleapis.com') && url.includes('ai-sandbox-videofx'));
-        if (isVideoOrGcs && !capturedUrl && !url.includes('gstatic.com')) {
-          capturedUrl = url;
+      try {
+        page = await browser.newPage();
+        
+        // Inherit cookies from the main page
+        if (browserManager.page) {
+          const cookies = await browserManager.page.cookies();
+          await page.setCookie(...cookies);
         }
-      };
 
-      cdp.on('Network.responseReceived', onResponse);
+        cdp = await page.target().createCDPSession();
+        await cdp.send('Network.enable');
 
-      // Navigate to base domain to ensure first-party cookie context, then inject iframe
-      await page.goto(`${LABS_BASE}/fx/vi/tools/flow`, { waitUntil: 'domcontentloaded' });
-      await page.evaluate((src) => {
-        const iframe = document.createElement('iframe');
-        iframe.src = src;
-        document.body.appendChild(iframe);
-      }, editUrl);
+        const onResponse = (event) => {
+          const url = event.response?.url || '';
+          const ct = (event.response?.headers?.['content-type'] || event.response?.headers?.['Content-Type'] || '').toLowerCase();
+          const isVideoOrGcs = (ct.startsWith('video/') || ct.includes('mp4') || ct.includes('webm')) ||
+                               (url.includes('storage.googleapis.com') && url.includes('ai-sandbox-videofx'));
+          if (isVideoOrGcs && !capturedUrl && !url.includes('gstatic.com')) {
+            capturedUrl = url;
+          }
+        };
 
-      // Wait up to 20s for CDP to intercept the video URL
-      let waited = 0;
-      while (!capturedUrl && waited < 20000) {
-        await new Promise(r => setTimeout(r, 500));
-        waited += 500;
-      }
-    } catch (err) {
-      logger.warn(`Isolated page GCS capture error: ${err.message}`);
-    } finally {
-      if (cdp) {
-        try { await cdp.detach(); } catch(e){}
-      }
-      if (page) {
-        try { await page.close(); } catch(e){}
+        cdp.on('Network.responseReceived', onResponse);
+
+        // Navigate to base domain to ensure first-party cookie context, then inject iframe
+        await page.goto(`${LABS_BASE}/fx/vi/tools/flow`, { waitUntil: 'domcontentloaded' });
+        await page.evaluate((src) => {
+          const iframe = document.createElement('iframe');
+          iframe.src = src;
+          document.body.appendChild(iframe);
+        }, editUrl);
+
+        // Wait up to 45s for CDP to intercept the video URL
+        let waited = 0;
+        while (!capturedUrl && waited < 45000) {
+          await new Promise(r => setTimeout(r, 500));
+          waited += 500;
+        }
+
+        // If the iframe did not fetch the video, force a reload of the iframe once mid-attempt
+        if (!capturedUrl && waited > 10000) {
+          try {
+            await page.evaluate((src) => {
+              const existing = document.querySelector('iframe');
+              if (existing) existing.remove();
+              const iframe = document.createElement('iframe');
+              iframe.src = src;
+              document.body.appendChild(iframe);
+            }, editUrl);
+            // Keep waiting a bit more after the reload
+            const extraWaitStart = Date.now();
+            while (!capturedUrl && (Date.now() - extraWaitStart) < 25000) {
+              await new Promise(r => setTimeout(r, 500));
+            }
+          } catch (reloadErr) {
+            logger.warn(`Iframe reload error during GCS capture: ${reloadErr.message}`);
+          }
+        }
+      } catch (err) {
+        logger.warn(`Isolated page GCS capture error: ${err.message}`);
+      } finally {
+        if (cdp) {
+          try { await cdp.detach(); } catch(e){}
+        }
+        if (page) {
+          try { await page.close(); } catch(e){}
+        }
       }
     }
 

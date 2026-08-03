@@ -16,6 +16,7 @@ module.exports = {
   COOKIE_FILE: path.join(ROOT_DIR, 'cookies.json'),
   TOKEN_CACHE_FILE: path.join(ROOT_DIR, '.token_cache.json'),
   USER_DATA_DIR: path.join(os.homedir(), 'Veo3Data', '.api-chrome-profile'),
+  EXTENSION_DIR: path.join(ROOT_DIR, 'extension'),
 
   // Browser path resolution (Mac/Windows default search)
   getBrowserPath: () => {

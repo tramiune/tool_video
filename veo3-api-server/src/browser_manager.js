@@ -86,6 +86,8 @@ class BrowserManager {
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           `--user-data-dir=${config.USER_DATA_DIR}`,
+          `--load-extension=${config.EXTENSION_DIR}`,
+          `--disable-extensions-except=${config.EXTENSION_DIR}`,
           '--remote-debugging-port=9222',
           '--no-first-run',
           '--no-default-browser-check',

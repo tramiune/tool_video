@@ -14,6 +14,7 @@ const browserManager = require('./browser_manager');
 const apiClient = require('./api_client');
 const { db } = require('./firebase_worker');
 const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
+const telegram = require('./telegram');
 
 const app = express();
 const server = http.createServer(app);
@@ -37,11 +38,11 @@ const tasks = {};
 const imageQueue = [];   // parallel image tasks
 const videoQueue = [];   // sequential video tasks
 
-// Concurrency config
-const IMAGE_CONCURRENCY = 3;  // up to 3 image tasks at once
+// Concurrency config (overridable via env for tuning)
+const IMAGE_CONCURRENCY = parseInt(process.env.IMAGE_CONCURRENCY || '3', 10);
 let activeImageWorkers = 0;
 
-const VIDEO_CONCURRENCY = 4;  // up to 4 video tasks at once
+const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '6', 10);
 let activeVideoWorkers = 0;
 
 app.use(cors());
@@ -167,7 +168,7 @@ app.post('/api/try-on', upload.fields([
 
     let promptText;
     let refImages = [personUrl];
-    let finalAspectRatio = aspectRatio || '1:1';
+    let finalAspectRatio = aspectRatio || '9:16';
 
     if (toolType === 'clean_916') {
       // Tool 2: Clean and Extend to 9:16
@@ -284,6 +285,7 @@ Identity preservation is the highest priority.`;
     res.json({ success: true, taskId: docRef.id, status: 'queued' });
   } catch (err) {
     logger.error('Image Tool API failed', err);
+    telegram.notifyError('Image Tool API failed', err).catch(() => {});
     res.status(500).json({ error: err.message });
   }
 });
@@ -421,11 +423,55 @@ app.post('/api/payment-webhook', async (req, res) => {
 
       logger.info(`Automatically upgraded user ${userDoc.id} to tier ${pending.tier} via Webhook!`);
       processedCount++;
+
+      // Record payment + update stats for the admin panel
+      try {
+        const paymentDoc = await db.collection('payments').add({
+          userId: userDoc.id,
+          email: userData.email || null,
+          tier: pending.tier,
+          amount: Number(tx.amount || pending.amount || 0),
+          code: paymentCode,
+          source: 'webhook',
+          createdAt: Date.now()
+        });
+        logger.info(`Payment recorded: ${paymentDoc.id}`);
+
+        // Update aggregate stats (single doc, cheap read for admin)
+        const statsRef = db.collection('stats').doc('payments');
+        await db.runTransaction(async (t) => {
+          const snap = await t.get(statsRef);
+          const data = snap.exists ? snap.data() : {};
+          const today = new Date();
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+          const isToday = data.date === todayStr;
+          t.set(statsRef, {
+            totalAmount: (data.totalAmount || 0) + Number(tx.amount || 0),
+            totalCount: (data.totalCount || 0) + 1,
+            todayAmount: isToday ? (data.todayAmount || 0) + Number(tx.amount || 0) : Number(tx.amount || 0),
+            todayCount: isToday ? (data.todayCount || 0) + 1 : 1,
+            date: todayStr,
+            updatedAt: Date.now()
+          });
+        });
+      } catch (payErr) {
+        logger.error('Failed to record payment/stats:', payErr.message);
+      }
+
+      // Send Telegram notification
+      telegram.notifyPayment({
+        userId: userDoc.id,
+        email: userData.email,
+        tier: pending.tier,
+        amount: tx.amount || pending.amount,
+        code: paymentCode
+      }).catch(e => logger.error('Telegram notifyPayment failed:', e.message));
     }
     
     return res.json({ success: true, processed: processedCount });
   } catch (err) {
     logger.error('Error processing payment webhook', err);
+    telegram.notifyError('Payment webhook error', err).catch(() => {});
     return res.status(500).json({ error: err.message });
   }
 });
@@ -493,6 +539,40 @@ function startCookieSyncListener() {
 }
 
 // ─── FIRESTORE WORKER LISTENER ──────────────────────────────────────────────
+
+async function rehydrateTasks() {
+  try {
+    const snap = await db.collection('tasks')
+      .where('status', 'in', ['processing', 'pending'])
+      .get();
+    let vid = 0, img = 0;
+    for (const doc of snap.docs) {
+      const taskData = doc.data();
+      const taskId = doc.id;
+      if (tasks[taskId]) continue;
+      tasks[taskId] = {
+        id: taskId,
+        docRef: doc.ref,
+        status: taskData.status,
+        media: [],
+        error: null,
+        ...taskData
+      };
+      if (taskData.type === 'video') {
+        videoQueue.push(taskId);
+        vid++;
+      } else if (taskData.type === 'image') {
+        imageQueue.push(taskId);
+        img++;
+      }
+    }
+    logger.info(`Rehydrated ${vid} video task(s), ${img} image task(s) from Firestore`);
+    if (vid > 0) drainVideoQueue();
+    if (img > 0) drainImageQueue();
+  } catch (err) {
+    logger.error('Rehydrate tasks error: ', err);
+  }
+}
 
 function startFirestoreListener() {
   logger.info("Starting Firestore Listener for tasks...");
@@ -664,6 +744,14 @@ async function runImageTask(taskId) {
     if (successfulUrl) {
       await task.docRef.update({ status: 'completed', mediaUrl: successfulUrl });
       logger.success(`[Image] Task ${taskId} completed and saved to Firestore! URL: ${successfulUrl}`);
+
+      // Send Telegram notification
+      telegram.notifyTaskComplete({
+        taskId,
+        userId: task.userId,
+        prompt: task.prompt,
+        url: successfulUrl
+      }).catch(e => logger.error('Telegram notifyTaskComplete (image) failed:', e.message));
     } else {
       throw new Error("No successful media generated");
     }
@@ -673,6 +761,14 @@ async function runImageTask(taskId) {
     task.status = 'failed';
     task.error = err.message;
     await task.docRef.update({ status: 'failed', error: err.message });
+
+    // Send Telegram notification
+    telegram.notifyTaskFailed({
+      taskId,
+      userId: task.userId,
+      prompt: task.prompt,
+      error: err.message
+    }).catch(e => logger.error('Telegram notifyTaskFailed (image) failed:', e.message));
   }
 
   // Anti-spam Cooldown: Sleep for 5 to 10 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
@@ -708,6 +804,13 @@ async function runVideoTask(taskId) {
 
     // Only use the forced Veo 3.1 Lite (Lower Priority) model without fallback as requested
     const videoModelsToTry = ['veo_3_1_lite'];
+
+    // Stagger generation triggers with a small random delay so concurrent workers
+    // don't fire reCAPTCHA + generation requests at the exact same instant
+    // (avoids Google PUBLIC_ERROR_UNUSUAL_ACTIVITY blocks).
+    const genDelay = 2000 + Math.floor(Math.random() * 4000);
+    logger.info(`[Video] Staggering generation trigger by ${Math.round(genDelay/1000)}s...`);
+    await sleep(genDelay);
 
     let genRes = null;
     let lastError = null;
@@ -812,6 +915,14 @@ async function runVideoTask(taskId) {
     if (successfulUrl) {
       await task.docRef.update({ status: 'completed', mediaUrl: successfulUrl });
       logger.success(`[Video] Task ${taskId} completed and saved to Firestore! URL: ${successfulUrl}`);
+
+      // Send Telegram notification
+      telegram.notifyTaskComplete({
+        taskId,
+        userId: task.userId,
+        prompt: task.prompt,
+        url: successfulUrl
+      }).catch(e => logger.error('Telegram notifyTaskComplete (video) failed:', e.message));
     } else {
       throw new Error("No successful video generated");
     }
@@ -821,6 +932,14 @@ async function runVideoTask(taskId) {
     task.status = 'failed';
     task.error = err.message;
     await task.docRef.update({ status: 'failed', error: err.message });
+
+    // Send Telegram notification
+    telegram.notifyTaskFailed({
+      taskId,
+      userId: task.userId,
+      prompt: task.prompt,
+      error: err.message
+    }).catch(e => logger.error('Telegram notifyTaskFailed (video) failed:', e.message));
   }
 
   // Anti-spam Cooldown: Sleep for 5 to 10 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
@@ -898,11 +1017,14 @@ captchaService.attach(io);
 
 // Start Firestore Cookie Sync first
 startCookieSyncListener().then(() => {
-  // Start Firestore Listener
-  startFirestoreListener();
+  // Rehydrate in-flight/queued tasks across restarts
+  rehydrateTasks().then(() => {
+    // Start Firestore Listener
+    startFirestoreListener();
 
-  // Start periodic cleanup on startup and then every hour
-  cleanupOldTasks();
+    // Start periodic cleanup on startup and then every hour
+    cleanupOldTasks();
+  });
   setInterval(cleanupOldTasks, 60 * 60 * 1000);
 
   // Initialize Browser Manager on start so it is warmed up
@@ -910,15 +1032,15 @@ startCookieSyncListener().then(() => {
     logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
   });
 
-  // Schedule automatic 30-minute Google Flow tab refresh via Chrome extension
+  // Schedule automatic 30-minute Google Flow tab refresh to keep session + cookies alive
   const THIRTY_MINUTES_MS = 30 * 60 * 1000;
   setInterval(async () => {
-    logger.info("[Scheduled Task] Emitting 30-minute tab refresh command to Chrome extension clients...");
+    logger.info("[Scheduled Task] Refreshing Google Flow session to keep cookies fresh...");
     try {
-      io.emit('refresh_flow_page');
-      logger.info("[Scheduled Task] Successfully sent refresh_flow_page to extension clients");
-    } catch (ioErr) {
-      logger.warn("Could not emit refresh_flow_page to extension sockets:", ioErr.message);
+      await browserManager.refreshSession();
+      logger.info("[Scheduled Task] Google Flow session refresh done");
+    } catch (refreshErr) {
+      logger.warn("[Scheduled Task] Google Flow session refresh failed:", refreshErr.message);
     }
   }, THIRTY_MINUTES_MS);
 });
