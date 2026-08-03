@@ -121,7 +121,6 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [startLibraryUrl, setStartLibraryUrl] = useState(null);
   const [endLibraryUrl, setEndLibraryUrl] = useState(null);
-  const [showAddMenu, setShowAddMenu] = useState(false);
   const [showRatioMenu, setShowRatioMenu] = useState(false);
   const [addFileContext, setAddFileContext] = useState('ref'); // 'start' | 'end' | 'ref'
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -338,10 +337,8 @@ function App() {
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (ratioMenuRef.current && ratioMenuRef.current.contains(e.target)) return;
-      if (addMenuRef.current && addMenuRef.current.contains(e.target)) return;
       if (userDropdownRef.current && userDropdownRef.current.contains(e.target)) return;
       setShowRatioMenu(false);
-      setShowAddMenu(false);
       setShowUserDropdown(false);
     };
     document.addEventListener('pointerdown', handleClickOutside);
@@ -1716,7 +1713,6 @@ function App() {
   const promptTextareaRef = useRef(null);
   const bottomControlsRef = useRef(null);
   const ratioMenuRef = useRef(null);
-  const addMenuRef = useRef(null);
   const userDropdownRef = useRef(null);
 
   // Auto-resize prompt textarea: grow with content, cap at 70vh, then scroll
@@ -2746,7 +2742,7 @@ function App() {
                 onClick={() => {
                   if (!startFile && !startLibraryUrl) {
                     setAddFileContext('start');
-                    setShowAddMenu(true);
+                    handleAddFileClick();
                   }
                 }}
                 style={{ 
@@ -2783,7 +2779,7 @@ function App() {
                 onClick={() => {
                   if (!endFile && !endLibraryUrl) {
                     setAddFileContext('end');
-                    setShowAddMenu(true);
+                    handleAddFileClick();
                   }
                 }}
                 style={{ 
@@ -2859,7 +2855,6 @@ function App() {
           {/* Row 3: Action Toolbar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-              <div style={{ position: 'relative' }} ref={addMenuRef}>
               <button 
                 type="button" 
                 className="add-file-btn" 
@@ -2873,7 +2868,7 @@ function App() {
                   } else {
                     setAddFileContext('ref');
                   }
-                  setShowAddMenu(prev => !prev);
+                  handleAddFileClick();
                 }}
                 disabled={isSubmitting}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
@@ -2881,145 +2876,6 @@ function App() {
               >
                 <Plus size={16} />
               </button>
-
-              {showAddMenu && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: '44px',
-                  left: '0',
-                  background: 'rgba(20, 20, 25, 0.96)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '16px',
-                  padding: '16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-                  zIndex: 100,
-                  width: '280px',
-                  maxHeight: '360px'
-                }}>
-                  {/* Header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: '600', color: '#fff' }}>Thêm tệp đính kèm</span>
-                    <button 
-                      type="button" 
-                      onClick={() => setShowAddMenu(false)}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1rem', padding: 0 }}
-                    >
-                      ×
-                    </button>
-                  </div>
-
-                  {/* Device Upload Button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddMenu(false);
-                      handleAddFileClick();
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      width: '100%',
-                      padding: '10px 12px',
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: '10px',
-                      color: '#fff',
-                      fontSize: '0.8rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'background 0.2s'
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                    onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                  >
-                    <Upload size={14} />
-                    Tải lên từ thiết bị
-                  </button>
-
-                  {/* Divider */}
-                  <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
-
-                  {/* Library Section */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: 0 }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-secondary)' }}>Chọn ảnh đã tạo gần đây:</span>
-                    
-                    <div style={{ 
-                      display: 'grid', 
-                      gridTemplateColumns: 'repeat(3, 1fr)', 
-                      gap: '8px', 
-                      overflowY: 'auto', 
-                      flex: 1,
-                      paddingRight: '2px'
-                    }}>
-                      {tasks.filter(t => t.status === 'completed' && t.type === 'image' && t.mediaUrl).length === 0 ? (
-                        <div style={{ gridColumn: 'span 3', color: 'var(--text-secondary)', textAlign: 'center', padding: '20px 0', fontSize: '0.75rem' }}>
-                          Chưa có ảnh nào trong thư viện
-                        </div>
-                      ) : (
-                        tasks.filter(t => t.status === 'completed' && t.type === 'image' && t.mediaUrl).map((taskTask, idx) => (
-                          <div 
-                            key={`pop-lib-${idx}`}
-                            style={{
-                              position: 'relative',
-                              aspectRatio: '1/1',
-                              borderRadius: '8px',
-                              overflow: 'hidden',
-                              cursor: 'pointer',
-                              border: '1.5px solid rgba(255, 255, 255, 0.05)',
-                              transition: 'border-color 0.2s'
-                            }}
-                            onMouseOver={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
-                            onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)'}
-                          >
-                            <img src={taskTask.mediaUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            
-                          <div 
-                            onClick={() => {
-                              if (addFileContext === 'start') {
-                                setStartLibraryUrl(taskTask.mediaUrl);
-                                setStartFile(null);
-                              } else if (addFileContext === 'end') {
-                                setEndLibraryUrl(taskTask.mediaUrl);
-                                setEndFile(null);
-                              } else {
-                                setSelectedRefUrls(prev => [...prev, taskTask.mediaUrl]);
-                              }
-                              setShowAddMenu(false);
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              background: 'rgba(0,0,0,0.5)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              opacity: 0,
-                              transition: 'opacity 0.2s',
-                              color: '#fff',
-                              fontSize: '0.65rem',
-                              fontWeight: '600'
-                            }}
-                            onMouseOver={(e) => e.currentTarget.style.opacity = 1}
-                            onMouseOut={(e) => e.currentTarget.style.opacity = 0}
-                          >
-                            Chọn
-                          </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="tab-selector" style={{ flexShrink: 0 }}>
@@ -3092,7 +2948,6 @@ function App() {
                   ))}
                 </div>
               )}
-            </div>
             </div>
 
             <button 
