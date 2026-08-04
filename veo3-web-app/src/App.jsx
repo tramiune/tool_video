@@ -224,6 +224,7 @@ function App() {
   const [autoToolJob, setAutoToolJob] = useState(null);
   const [autoToolError, setAutoToolError] = useState(null);
   const autoToolCharactersRef = useRef(autoToolCharacters);
+  const previousPendingPaymentRef = useRef(undefined);
 
   const releaseAutoToolPreviews = () => {
     autoToolCharactersRef.current.forEach(character => {
@@ -278,8 +279,10 @@ function App() {
       setUserExpiryDate(null);
       setPendingPayment(null);
       setUserProfileLoaded(false);
+      previousPendingPaymentRef.current = undefined;
       return;
     }
+    previousPendingPaymentRef.current = undefined;
     const userDocRef = doc(db, 'users', user.uid);
     
     // Auto-create user doc if missing
@@ -291,11 +294,35 @@ function App() {
       const emailIsAdmin = user.email && user.email.toLowerCase().includes('traderfinn0312');
       if (docSnap.exists()) {
         const data = docSnap.data();
+        const nextPendingPayment = data.pendingPayment || null;
+        const previousPendingPayment = previousPendingPaymentRef.current;
+
+        if (
+          previousPendingPayment &&
+          !nextPendingPayment &&
+          data.tier === previousPendingPayment.tier &&
+          Number(data.updatedAt || 0) >= Number(previousPendingPayment.createdAt || 0)
+        ) {
+          const transactionId = previousPendingPayment.code;
+          const storageKey = `meta_purchase_${transactionId}`;
+          if (transactionId && !localStorage.getItem(storageKey)) {
+            window.fbq?.('track', 'Purchase', {
+              value: Number(previousPendingPayment.amount || 0),
+              currency: 'VND',
+              content_name: previousPendingPayment.tier,
+              order_id: transactionId
+            });
+            localStorage.setItem(storageKey, '1');
+          }
+        }
+
+        previousPendingPaymentRef.current = nextPendingPayment;
         setUserTier(data.tier || 'free');
         setUserExpiryDate(data.expiryDate || null);
-        setPendingPayment(data.pendingPayment || null);
+        setPendingPayment(nextPendingPayment);
         setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
       } else {
+        previousPendingPaymentRef.current = null;
         setUserTier('free');
         setUserExpiryDate(null);
         setPendingPayment(null);
