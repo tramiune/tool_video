@@ -178,6 +178,13 @@ function App() {
   const [tryonToolType, setTryonToolType] = useState('tryon'); // 'tryon' | 'clean_916' | 'swap_face' | 'change_bg' | 'brighten_skin'
   const [tryonSelectedBgPreset, setTryonSelectedBgPreset] = useState(BG_PRESETS[0].prompt);
   const [tryonCustomBgDescription, setTryonCustomBgDescription] = useState('');
+  const [isAutoToolView, setIsAutoToolView] = useState(false);
+  const [autoToolTopic, setAutoToolTopic] = useState('');
+  const [autoToolImages, setAutoToolImages] = useState([]);
+  const [autoToolSubmitting, setAutoToolSubmitting] = useState(false);
+  const [autoToolJobId, setAutoToolJobId] = useState(null);
+  const [autoToolJob, setAutoToolJob] = useState(null);
+  const [autoToolError, setAutoToolError] = useState(null);
 
   // Play cat meow sound once, only on the login screen (when not logged in)
   useEffect(() => {
@@ -233,28 +240,32 @@ function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // Listen to hash change for Admin & TryOn mode with security guard
+  // Listen to hash changes and guard admin-only views.
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
       const isHashAdmin = hash === '#admin';
+      const isHashAutoTool = hash === '#autotool';
       const isHashTryOn = hash === '#tryon';
       const isHashAudio = hash === '#audio';
       
-      if (isHashAdmin) {
+      if (isHashAdmin || isHashAutoTool) {
         if (!user) {
           window.location.hash = '';
           setIsAdminView(false);
+          setIsAutoToolView(false);
           return;
         }
         if (userProfileLoaded && !currentUserIsAdmin) {
           window.location.hash = '';
           setIsAdminView(false);
+          setIsAutoToolView(false);
           alert("Bạn không có quyền truy cập trang quản trị!");
           return;
         }
       }
       setIsAdminView(isHashAdmin);
+      setIsAutoToolView(isHashAutoTool);
       setIsTryOnView(isHashTryOn);
       setIsAudioView(isHashAudio);
     };
@@ -262,6 +273,41 @@ function App() {
     handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [user, userProfileLoaded, currentUserIsAdmin]);
+
+  useEffect(() => {
+    if (!autoToolJobId || !user) return;
+    let cancelled = false;
+    let interval = null;
+
+    const fetchJob = async () => {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`${API_BASE}/api/autotool/jobs/${autoToolJobId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
+        if (!cancelled) {
+          setAutoToolJob(data);
+          setAutoToolError(null);
+          if ((data.status === 'completed' || data.status === 'failed') && interval) {
+            clearInterval(interval);
+            interval = null;
+          }
+        }
+      } catch (error) {
+        console.error('AutoTool job listener failed:', error);
+        if (!cancelled) setAutoToolError(error.message || 'Không thể theo dõi tiến trình công việc.');
+      }
+    };
+
+    fetchJob();
+    interval = setInterval(fetchJob, 3000);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [autoToolJobId, user]);
 
   // Fetch users list in Admin mode (paginated, or full when searching)
   useEffect(() => {
@@ -1256,6 +1302,227 @@ function App() {
           </div>
         )}
 
+      </div>
+    );
+  };
+
+  const handleAutoToolImageSelect = (event) => {
+    const availableSlots = 3 - autoToolImages.length;
+    const files = Array.from(event.target.files || [])
+      .filter(file => file.type.startsWith('image/'))
+      .slice(0, availableSlots);
+
+    if (files.length > 0) {
+      setAutoToolImages(current => [
+        ...current,
+        ...files.map(file => ({ file, previewUrl: URL.createObjectURL(file) }))
+      ]);
+    }
+    event.target.value = '';
+  };
+
+  const removeAutoToolImage = (index) => {
+    setAutoToolImages(current => {
+      const image = current[index];
+      if (image) URL.revokeObjectURL(image.previewUrl);
+      return current.filter((_, imageIndex) => imageIndex !== index);
+    });
+  };
+
+  const handleAutoToolSubmit = async (event) => {
+    event.preventDefault();
+    if (!user || !currentUserIsAdmin || !autoToolTopic.trim() || autoToolSubmitting) return;
+
+    setAutoToolSubmitting(true);
+    setAutoToolError(null);
+    setAutoToolJobId(null);
+    setAutoToolJob(null);
+
+    try {
+      const token = await user.getIdToken();
+      const formData = new FormData();
+      formData.append('topic', autoToolTopic.trim());
+      autoToolImages.forEach(({ file }) => formData.append('characterImages', file));
+
+      const response = await fetch(`${API_BASE}/api/autotool/jobs`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+      const responseText = await response.text();
+      let data = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || responseText || `Server returned code ${response.status}`);
+      }
+      if (!data.jobId) {
+        throw new Error('Máy chủ không trả về mã công việc.');
+      }
+
+      setAutoToolJobId(data.jobId);
+    } catch (error) {
+      console.error('AutoTool job creation failed:', error);
+      setAutoToolError(error.message || 'Không thể tạo video. Vui lòng thử lại.');
+    } finally {
+      setAutoToolSubmitting(false);
+    }
+  };
+
+  const renderAutoToolView = () => {
+    const progress = autoToolJob?.progress;
+    const numericProgress = typeof progress === 'number'
+      ? Math.max(0, Math.min(100, progress <= 1 ? progress * 100 : progress))
+      : null;
+    const scenes = Array.isArray(autoToolJob?.scenes) ? autoToolJob.scenes : [];
+    const jobError = autoToolJob?.error;
+    const errorText = typeof jobError === 'string'
+      ? jobError
+      : jobError ? JSON.stringify(jobError) : autoToolError;
+
+    return (
+      <div className="container" style={{ maxWidth: '920px', margin: '0 auto', padding: '40px 20px', gap: '24px', color: '#fff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Video size={28} style={{ color: '#a78bfa' }} />
+              <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2rem)', fontWeight: '800', margin: 0 }}>AutoTool</h1>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>Tạo video hoàn chỉnh từ chủ đề và hình ảnh nhân vật.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = ''; }}
+            className="glass-button"
+            style={{ width: '40px', height: '40px', padding: 0, borderRadius: '50%', flexShrink: 0 }}
+            title="Quay lại Workspace"
+          >
+            <ArrowLeft size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleAutoToolSubmit} className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          <div>
+            <label htmlFor="autotool-topic" style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '9px' }}>Chủ đề video</label>
+            <textarea
+              id="autotool-topic"
+              value={autoToolTopic}
+              onChange={(event) => setAutoToolTopic(event.target.value)}
+              rows={6}
+              placeholder="Mô tả chủ đề, câu chuyện hoặc nội dung video..."
+              className="glass-input"
+              style={{ resize: 'vertical', minHeight: '140px', fontFamily: 'inherit', lineHeight: 1.6 }}
+              required
+            />
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: '700' }}>Hình ảnh nhân vật</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{autoToolImages.length}/3</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px' }}>
+              {autoToolImages.map((image, index) => (
+                <div key={image.previewUrl} style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', background: '#121214' }}>
+                  <img src={image.previewUrl} alt={`Nhân vật ${index + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <button
+                    type="button"
+                    onClick={() => removeAutoToolImage(index)}
+                    aria-label={`Xóa ảnh nhân vật ${index + 1}`}
+                    style={{ position: 'absolute', top: '8px', right: '8px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.72)', color: '#fff', cursor: 'pointer' }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              {autoToolImages.length < 3 && (
+                <label
+                  style={{ aspectRatio: '1 / 1', minHeight: '130px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', border: '1px dashed rgba(167,139,250,0.5)', borderRadius: '12px', background: 'rgba(139,92,246,0.07)', color: '#a78bfa', cursor: 'pointer', textAlign: 'center', padding: '16px' }}
+                >
+                  <Upload size={24} />
+                  <span style={{ fontSize: '0.78rem', fontWeight: '700' }}>Thêm ảnh nhân vật</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleAutoToolImageSelect}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+
+          <button type="submit" className="glass-button" disabled={autoToolSubmitting || !autoToolTopic.trim()} style={{ width: '100%', padding: '14px 20px', background: autoToolSubmitting ? undefined : 'linear-gradient(135deg, #7c3aed 0%, #2563eb 100%)' }}>
+            {autoToolSubmitting ? <Loader size={18} className="spin-loader" /> : <Video size={18} />}
+            {autoToolSubmitting ? 'Đang tạo công việc...' : 'Create video'}
+          </button>
+        </form>
+
+        {(autoToolJobId || errorText) && (
+          <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '4px' }}>TRẠNG THÁI</div>
+                <div style={{ fontWeight: '700' }}>
+                  {autoToolJob?.status || (autoToolJobId ? 'Đang khởi tạo' : 'Lỗi')}
+                  {progress !== undefined && progress !== null && ` · ${numericProgress !== null ? `${Math.round(numericProgress)}%` : progress}`}
+                </div>
+              </div>
+              {autoToolJobId && <code style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>{autoToolJobId}</code>}
+            </div>
+
+            {numericProgress !== null && (
+              <div style={{ height: '7px', overflow: 'hidden', borderRadius: '999px', background: 'rgba(255,255,255,0.08)' }}>
+                <div style={{ width: `${numericProgress}%`, height: '100%', borderRadius: 'inherit', background: 'linear-gradient(90deg, #7c3aed, #3b82f6)', transition: 'width 0.3s ease' }} />
+              </div>
+            )}
+
+            {errorText && (
+              <div style={{ display: 'flex', gap: '9px', padding: '12px', borderRadius: '10px', border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.08)', color: '#fca5a5', fontSize: '0.82rem', lineHeight: 1.5 }}>
+                <AlertCircle size={17} style={{ flexShrink: 0, marginTop: '1px' }} />
+                <span>{errorText}</span>
+              </div>
+            )}
+
+            {scenes.length > 0 && (
+              <div>
+                <h2 style={{ fontSize: '1rem', marginBottom: '10px' }}>Các cảnh đã tạo</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {scenes.map((scene, index) => (
+                    <div key={scene.id || index} style={{ padding: '12px 14px', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', background: 'rgba(255,255,255,0.025)' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: '700', marginBottom: '5px' }}>{scene.title || `Cảnh ${index + 1}`}</div>
+                      {(scene.prompt || scene.imagePrompt) && (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                          {scene.imagePrompt && <strong style={{ color: '#c4b5fd' }}>Ảnh: </strong>}
+                          {scene.prompt || scene.imagePrompt}
+                        </p>
+                      )}
+                      {scene.videoPrompt && (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.55, whiteSpace: 'pre-wrap', marginTop: '6px' }}>
+                          <strong style={{ color: '#93c5fd' }}>Video: </strong>{scene.videoPrompt}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {autoToolJob?.finalUrl && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <video src={autoToolJob.finalUrl} controls playsInline style={{ width: '100%', maxHeight: '560px', borderRadius: '12px', background: '#000' }} />
+                <button type="button" className="glass-button" onClick={() => handleDownload(autoToolJob.finalUrl, `autotool_${autoToolJobId}.mp4`)}>
+                  <Download size={17} /> Tải video
+                </button>
+              </div>
+            )}
+          </section>
+        )}
       </div>
     );
   };
@@ -2427,6 +2694,11 @@ function App() {
     return renderAdminView();
   }
 
+  if (isAutoToolView) {
+    if (userProfileLoaded && currentUserIsAdmin) return renderAutoToolView();
+    return <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'var(--text-secondary)' }}>Đang xác thực quyền quản trị...</div>;
+  }
+
   if (isTryOnView) {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '32px', maxWidth: '1400px', margin: '0 auto' }}>
@@ -2694,32 +2966,60 @@ function App() {
                   </button>
 
                 {currentUserIsAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUserDropdown(false);
-                      window.location.hash = '#admin';
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      width: '100%',
-                      padding: '8px 10px',
-                      background: 'rgba(16,185,129,0.1)',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: '#10b981',
-                      fontSize: '0.75rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      marginTop: '4px'
-                    }}
-                  >
-                    <ShieldCheck size={12} />
-                    Trang quản trị (Admin)
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        window.location.hash = '#autotool';
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        width: '100%',
+                        padding: '8px 10px',
+                        background: 'rgba(139,92,246,0.12)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#a78bfa',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <Video size={12} />
+                      AutoTool
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        window.location.hash = '#admin';
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        width: '100%',
+                        padding: '8px 10px',
+                        background: 'rgba(16,185,129,0.1)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#10b981',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <ShieldCheck size={12} />
+                      Trang quản trị (Admin)
+                    </button>
+                  </>
                 )}
 
                 <button
@@ -2817,29 +3117,41 @@ function App() {
                           } catch {
                             /* không phải JSON, giữ nguyên chuỗi gốc */
                           }
-                          if (errStr.includes('PROMINENT_PEOPLE_FILTER_FAILED')) {
-                            return 'Không tạo được do ảnh/nội dung giống khuôn mặt của người nổi tiếng (chính sách bảo mật Google) 🔐';
+                          if (errStr.includes('AUDIO_FILTER')) {
+                            return 'Âm thanh bị bộ lọc từ chối. Hãy chỉnh prompt rồi thử lại.';
+                          }
+                          if (errStr.includes('IP_INPUT_IMAGE') || errStr.includes('IP_PROHIBITED')) {
+                            return 'Ảnh đầu vào có thể chứa nội dung được bảo hộ. Hãy đổi ảnh khác.';
+                          }
+                          if (errStr.includes('PROMINENT')) {
+                            return 'Ảnh có thể giống người nổi tiếng. Hãy đổi ảnh khác.';
+                          }
+                          if (errStr.includes('UNSAFE_GENERATION') || errStr.includes('INAPPROPRIATE_PHOTOREALISTIC_PERSON')) {
+                            return 'Video bị bộ lọc an toàn từ chối. Hãy đổi ảnh hoặc nội dung.';
+                          }
+                          if (errStr.includes('VIDEO_GENERATION_TIMED_OUT')) {
+                            return 'Tạo video quá thời gian. Hãy thử lại.';
                           }
                           if (errStr.includes('reCAPTCHA') || errStr.includes('PERMISSION_DENIED') || errStr.includes('PUBLIC_ERROR_UNUSUAL_ACTIVITY')) {
-                            return 'Google tạm thời chặn do nhận diện hoạt động bất thường. Cậu chờ ~30 giây rồi bấm tạo lại nhé! 🛡️';
+                            return 'Hệ thống tạm thời bị chặn do hoạt động bất thường. Cậu chờ ~30 giây rồi thử lại nhé! 🛡️';
                           }
-                          if (errStr.includes('OAuth token') || errStr.includes('capture Google')) {
-                            return 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Cậu bấm tạo lại thử nhé! 🔄';
+                          if (errStr.includes('OAuth token') || errStr.includes('capture token')) {
+                            return 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Cậu thử lại sau nhé! 🔄';
                           }
                           if (errStr.includes('SAFETY') || errStr.includes('safety') || errStr.includes('filter')) {
-                            return 'Nội dung hoặc từ khóa vi phạm bộ lọc an toàn của AI. Cậu thử đổi prompt khác nha! 🛡️';
+                            return 'Prompt hoặc ảnh đầu vào có thể vi phạm bộ lọc an toàn. Cậu thử đổi nội dung khác nha! 🛡️';
                           }
                           if (errStr.includes('Requested entity was not found') || errStr.includes('not found')) {
-                            return 'Model AI đang bảo trì hoặc không khả dụng, máy chủ sẽ chuyển model dự phòng. Cậu thử lại sau nhé! 🛠️';
+                            return 'Mẫu AI tạm thời không khả dụng. Cậu thử lại sau nhé! 🛠️';
                           }
                           if (errStr.includes('INTERNAL') || errStr.includes('Internal error') || errStr.includes('INTERNAL_ERROR')) {
-                            return 'Máy chủ Google đang quá tải hoặc gặp sự cố nội bộ. Hãy bấm tạo lại sau giây lát nhé! ⚙️';
+                            return 'Hệ thống đang quá tải hoặc gặp sự cố nội bộ. Cậu thử lại sau giây lát nhé! ⚙️';
                           }
                           if (errStr.includes('timeout') || errStr.includes('Timeout')) {
-                            return 'Quá thời gian chờ phản hồi từ máy chủ AI. Cậu thử tạo lại nhé! ⏱️';
+                            return 'Quá thời gian chờ phản hồi. Cậu thử lại nhé! ⏱️';
                           }
                           if (errStr.includes('Invalid JSON') || errStr.includes('Cannot find field') || errStr.includes('Invalid Argument')) {
-                            return 'Yêu cầu bị lỗi do dữ liệu không hợp lệ. Cậu thử tạo lại nhé! 🔧';
+                            return 'Prompt hoặc ảnh đầu vào chưa hợp lệ. Cậu kiểm tra lại nội dung rồi thử lại nhé! 🔧';
                           }
                           if (errStr.includes('{') && errStr.includes('"')) {
                             return 'Máy chủ gặp sự cố không xác định. Cậu thử lại sau giây lát nhé! 🥺';
