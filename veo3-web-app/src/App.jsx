@@ -11,6 +11,39 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
 const APP_VERSION = 'v2.5.1';
 
+const createEmptyAutoToolCharacter = () => ({
+  name: '',
+  age: '',
+  description: '',
+  imageUrl: '',
+  file: null,
+  previewUrl: ''
+});
+
+const normalizeAutoToolProfile = (profile) => {
+  if (!profile) return null;
+  const profileCharacters = Array.isArray(profile.characters) ? profile.characters : [];
+  const imageUrls = Array.isArray(profile.characterImageUrls) ? profile.characterImageUrls : [];
+  const sourceCharacters = profileCharacters.length > 0
+    ? profileCharacters
+    : imageUrls.map(imageUrl => ({ imageUrl }));
+
+  return {
+    ...profile,
+    channelTopic: profile.channelTopic || '',
+    mode: profile.mode === 'standalone' ? 'standalone' : 'series',
+    episodeCount: Number(profile.episodeCount) || 0,
+    characters: sourceCharacters.slice(0, 3).map((character, index) => ({
+      name: character.name || '',
+      age: character.age ?? '',
+      description: character.description || '',
+      imageUrl: character.imageUrl || imageUrls[index] || '',
+      file: null,
+      previewUrl: ''
+    }))
+  };
+};
+
 let meowPlayedOnce = false;
 
 const playMeowOnce = () => {
@@ -179,12 +212,45 @@ function App() {
   const [tryonSelectedBgPreset, setTryonSelectedBgPreset] = useState(BG_PRESETS[0].prompt);
   const [tryonCustomBgDescription, setTryonCustomBgDescription] = useState('');
   const [isAutoToolView, setIsAutoToolView] = useState(false);
+  const [autoToolProfile, setAutoToolProfile] = useState(null);
+  const [autoToolProfileLoading, setAutoToolProfileLoading] = useState(false);
+  const [autoToolEditing, setAutoToolEditing] = useState(false);
   const [autoToolTopic, setAutoToolTopic] = useState('');
-  const [autoToolImages, setAutoToolImages] = useState([]);
-  const [autoToolSubmitting, setAutoToolSubmitting] = useState(false);
+  const [autoToolMode, setAutoToolMode] = useState('series');
+  const [autoToolCharacters, setAutoToolCharacters] = useState([createEmptyAutoToolCharacter()]);
+  const [autoToolSaving, setAutoToolSaving] = useState(false);
+  const [autoToolCreating, setAutoToolCreating] = useState(false);
   const [autoToolJobId, setAutoToolJobId] = useState(null);
   const [autoToolJob, setAutoToolJob] = useState(null);
   const [autoToolError, setAutoToolError] = useState(null);
+  const autoToolCharactersRef = useRef(autoToolCharacters);
+
+  const releaseAutoToolPreviews = () => {
+    autoToolCharactersRef.current.forEach(character => {
+      if (character.previewUrl) URL.revokeObjectURL(character.previewUrl);
+    });
+  };
+
+  const setAutoToolDraftFromProfile = (profile) => {
+    releaseAutoToolPreviews();
+    const characters = profile?.characters?.length
+      ? profile.characters.map(character => ({ ...character, file: null, previewUrl: '' }))
+      : [createEmptyAutoToolCharacter()];
+    autoToolCharactersRef.current = characters;
+    setAutoToolTopic(profile?.channelTopic || '');
+    setAutoToolMode(profile?.mode || 'series');
+    setAutoToolCharacters(characters);
+  };
+
+  useEffect(() => {
+    autoToolCharactersRef.current = autoToolCharacters;
+  }, [autoToolCharacters]);
+
+  useEffect(() => () => {
+    autoToolCharactersRef.current.forEach(character => {
+      if (character.previewUrl) URL.revokeObjectURL(character.previewUrl);
+    });
+  }, []);
 
   // Play cat meow sound once, only on the login screen (when not logged in)
   useEffect(() => {
@@ -273,6 +339,42 @@ function App() {
     handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [user, userProfileLoaded, currentUserIsAdmin]);
+
+  useEffect(() => {
+    if (!isAutoToolView || !user || !userProfileLoaded || !currentUserIsAdmin) return;
+    let cancelled = false;
+
+    const fetchProfile = async () => {
+      setAutoToolProfileLoading(true);
+      setAutoToolError(null);
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`${API_BASE}/api/autotool/profile`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+        if (cancelled) return;
+
+        const profile = normalizeAutoToolProfile(data.profile);
+        setAutoToolProfile(profile);
+        setAutoToolDraftFromProfile(profile);
+        setAutoToolEditing(!profile);
+      } catch (error) {
+        console.error('AutoTool profile loading failed:', error);
+        if (!cancelled) {
+          setAutoToolProfile(null);
+          setAutoToolEditing(true);
+          setAutoToolError(error.message || 'Không thể tải cấu hình AutoTool.');
+        }
+      } finally {
+        if (!cancelled) setAutoToolProfileLoading(false);
+      }
+    };
+
+    fetchProfile();
+    return () => { cancelled = true; };
+  }, [isAutoToolView, user, userProfileLoaded, currentUserIsAdmin]);
 
   useEffect(() => {
     if (!autoToolJobId || !user) return;
@@ -1306,70 +1408,133 @@ function App() {
     );
   };
 
-  const handleAutoToolImageSelect = (event) => {
-    const availableSlots = 3 - autoToolImages.length;
-    const files = Array.from(event.target.files || [])
-      .filter(file => file.type.startsWith('image/'))
-      .slice(0, availableSlots);
+  const updateAutoToolCharacter = (index, field, value) => {
+    setAutoToolCharacters(current => current.map((character, characterIndex) => (
+      characterIndex === index ? { ...character, [field]: value } : character
+    )));
+  };
 
-    if (files.length > 0) {
-      setAutoToolImages(current => [
-        ...current,
-        ...files.map(file => ({ file, previewUrl: URL.createObjectURL(file) }))
-      ]);
+  const handleAutoToolImageSelect = (index, event) => {
+    const file = Array.from(event.target.files || []).find(selectedFile => selectedFile.type.startsWith('image/'));
+    if (file) {
+      setAutoToolCharacters(current => current.map((character, characterIndex) => {
+        if (characterIndex !== index) return character;
+        if (character.previewUrl) URL.revokeObjectURL(character.previewUrl);
+        return { ...character, file, previewUrl: URL.createObjectURL(file) };
+      }));
     }
     event.target.value = '';
   };
 
-  const removeAutoToolImage = (index) => {
-    setAutoToolImages(current => {
-      const image = current[index];
-      if (image) URL.revokeObjectURL(image.previewUrl);
-      return current.filter((_, imageIndex) => imageIndex !== index);
+  const addAutoToolCharacter = () => {
+    if (autoToolCharacters.length < 3) {
+      setAutoToolCharacters(current => [...current, createEmptyAutoToolCharacter()]);
+    }
+  };
+
+  const removeAutoToolCharacter = (index) => {
+    if (autoToolCharacters.length <= 1) return;
+    setAutoToolCharacters(current => {
+      const character = current[index];
+      if (character?.previewUrl) URL.revokeObjectURL(character.previewUrl);
+      return current.filter((_, characterIndex) => characterIndex !== index);
     });
   };
 
-  const handleAutoToolSubmit = async (event) => {
-    event.preventDefault();
-    if (!user || !currentUserIsAdmin || !autoToolTopic.trim() || autoToolSubmitting) return;
-
-    setAutoToolSubmitting(true);
+  const handleAutoToolCancelEdit = () => {
+    if (!autoToolProfile || autoToolSaving || autoToolCreating) return;
+    setAutoToolDraftFromProfile(autoToolProfile);
+    setAutoToolEditing(false);
     setAutoToolError(null);
-    setAutoToolJobId(null);
-    setAutoToolJob(null);
+  };
 
+  const handleAutoToolProfileSave = async (event) => {
+    event.preventDefault();
+    if (!user || !currentUserIsAdmin || autoToolSaving || autoToolCreating) return;
+
+    const channelTopic = autoToolTopic.trim();
+    const charactersAreValid = autoToolCharacters.length >= 1 && autoToolCharacters.length <= 3 && autoToolCharacters.every(character => (
+      character.name.trim() && (character.file || character.imageUrl)
+    ));
+    if (!channelTopic || !charactersAreValid) {
+      setAutoToolError('Vui lòng nhập chủ đề, tên và chọn một ảnh cho mỗi nhân vật.');
+      return;
+    }
+
+    setAutoToolSaving(true);
+    setAutoToolError(null);
     try {
       const token = await user.getIdToken();
       const formData = new FormData();
-      formData.append('topic', autoToolTopic.trim());
-      autoToolImages.forEach(({ file }) => formData.append('characterImages', file));
+      const characters = autoToolCharacters.map(character => ({
+        name: character.name.trim(),
+        age: String(character.age || '').trim(),
+        description: character.description.trim(),
+        imageUrl: character.imageUrl || ''
+      }));
+      const imageIndexes = [];
 
-      const response = await fetch(`${API_BASE}/api/autotool/jobs`, {
-        method: 'POST',
+      formData.append('channelTopic', channelTopic);
+      formData.append('mode', autoToolMode);
+      formData.append('characters', JSON.stringify(characters));
+      autoToolCharacters.forEach((character, index) => {
+        if (!character.file) return;
+        imageIndexes.push(index);
+        formData.append('characterImages', character.file);
+      });
+      formData.append('imageIndexes', JSON.stringify(imageIndexes));
+
+      const response = await fetch(`${API_BASE}/api/autotool/profile`, {
+        method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
         body: formData
       });
-      const responseText = await response.text();
-      let data = {};
-      try {
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch {
-        data = {};
-      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      if (!data.success || !data.profile) throw new Error('Máy chủ không trả về cấu hình đã lưu.');
 
-      if (!response.ok) {
-        throw new Error(data.error || data.message || responseText || `Server returned code ${response.status}`);
-      }
-      if (!data.jobId) {
-        throw new Error('Máy chủ không trả về mã công việc.');
-      }
+      const profile = normalizeAutoToolProfile(data.profile);
+      setAutoToolProfile(profile);
+      setAutoToolDraftFromProfile(profile);
+      setAutoToolEditing(false);
+    } catch (error) {
+      console.error('AutoTool profile saving failed:', error);
+      setAutoToolError(error.message || 'Không thể lưu cấu hình AutoTool.');
+    } finally {
+      setAutoToolSaving(false);
+    }
+  };
+
+  const handleAutoToolCreateJob = async () => {
+    if (!user || !currentUserIsAdmin || !autoToolProfile || autoToolSaving || autoToolCreating) return;
+
+    setAutoToolCreating(true);
+    setAutoToolError(null);
+    setAutoToolJobId(null);
+    setAutoToolJob(null);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/autotool/jobs`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      if (!data.jobId) throw new Error('Máy chủ không trả về mã công việc.');
 
       setAutoToolJobId(data.jobId);
+      setAutoToolJob({ status: data.status || 'Đang khởi tạo', episodeNumber: data.episodeNumber });
+      if (data.episodeNumber) {
+        setAutoToolProfile(current => current ? {
+          ...current,
+          episodeCount: Math.max(current.episodeCount || 0, Number(data.episodeNumber) || 0)
+        } : current);
+      }
     } catch (error) {
       console.error('AutoTool job creation failed:', error);
-      setAutoToolError(error.message || 'Không thể tạo video. Vui lòng thử lại.');
+      setAutoToolError(error.message || 'Không thể tạo tập mới. Vui lòng thử lại.');
     } finally {
-      setAutoToolSubmitting(false);
+      setAutoToolCreating(false);
     }
   };
 
@@ -1405,66 +1570,121 @@ function App() {
           </button>
         </div>
 
-        <form onSubmit={handleAutoToolSubmit} className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>
-          <div>
-            <label htmlFor="autotool-topic" style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '9px' }}>Chủ đề video</label>
-            <textarea
-              id="autotool-topic"
-              value={autoToolTopic}
-              onChange={(event) => setAutoToolTopic(event.target.value)}
-              rows={6}
-              placeholder="Mô tả chủ đề, câu chuyện hoặc nội dung video..."
-              className="glass-input"
-              style={{ resize: 'vertical', minHeight: '140px', fontFamily: 'inherit', lineHeight: 1.6 }}
-              required
-            />
+        {autoToolProfileLoading ? (
+          <div className="glass-panel" style={{ minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: 'var(--text-secondary)' }}>
+            <Loader size={20} className="spin-loader" /> Đang tải cấu hình...
           </div>
-
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: '700' }}>Hình ảnh nhân vật</span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{autoToolImages.length}/3</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px' }}>
-              {autoToolImages.map((image, index) => (
-                <div key={image.previewUrl} style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', background: '#121214' }}>
-                  <img src={image.previewUrl} alt={`Nhân vật ${index + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <button
-                    type="button"
-                    onClick={() => removeAutoToolImage(index)}
-                    aria-label={`Xóa ảnh nhân vật ${index + 1}`}
-                    style={{ position: 'absolute', top: '8px', right: '8px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.72)', color: '#fff', cursor: 'pointer' }}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
-              {autoToolImages.length < 3 && (
-                <label
-                  style={{ aspectRatio: '1 / 1', minHeight: '130px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', border: '1px dashed rgba(167,139,250,0.5)', borderRadius: '12px', background: 'rgba(139,92,246,0.07)', color: '#a78bfa', cursor: 'pointer', textAlign: 'center', padding: '16px' }}
-                >
-                  <Upload size={24} />
-                  <span style={{ fontSize: '0.78rem', fontWeight: '700' }}>Thêm ảnh nhân vật</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleAutoToolImageSelect}
-                    style={{ display: 'none' }}
-                  />
-                </label>
+        ) : autoToolEditing || !autoToolProfile ? (
+          <form onSubmit={handleAutoToolProfileSave} className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <h2 style={{ fontSize: '1.08rem', margin: 0 }}>{autoToolProfile ? 'Chỉnh sửa cấu hình' : 'Thiết lập AutoTool'}</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '5px 0 0' }}>Cấu hình này được lưu và dùng lại cho các tập tiếp theo.</p>
+              </div>
+              {autoToolProfile && (
+                <button type="button" className="glass-button" onClick={handleAutoToolCancelEdit} disabled={autoToolSaving || autoToolCreating} style={{ padding: '8px 14px', fontSize: '0.78rem' }}>Hủy</button>
               )}
             </div>
-          </div>
 
-          <button type="submit" className="glass-button" disabled={autoToolSubmitting || !autoToolTopic.trim()} style={{ width: '100%', padding: '14px 20px', background: autoToolSubmitting ? undefined : 'linear-gradient(135deg, #7c3aed 0%, #2563eb 100%)' }}>
-            {autoToolSubmitting ? <Loader size={18} className="spin-loader" /> : <Video size={18} />}
-            {autoToolSubmitting ? 'Đang tạo công việc...' : 'Create video'}
-          </button>
-        </form>
+            <div>
+              <label htmlFor="autotool-topic" style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '9px' }}>Chủ đề kênh</label>
+              <textarea id="autotool-topic" value={autoToolTopic} onChange={(event) => setAutoToolTopic(event.target.value)} rows={4} placeholder="Mô tả chủ đề xuyên suốt của kênh..." className="glass-input" style={{ resize: 'vertical', minHeight: '105px', fontFamily: 'inherit', lineHeight: 1.6 }} disabled={autoToolSaving || autoToolCreating} required />
+            </div>
+
+            <div>
+              <div style={{ fontSize: '0.82rem', fontWeight: '700', marginBottom: '9px' }}>Chế độ nội dung</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+                {[
+                  { value: 'series', label: 'Series', description: 'Các tập nối tiếp cùng mạch nội dung.' },
+                  { value: 'standalone', label: 'Tập độc lập', description: 'Mỗi tập là một câu chuyện riêng.' }
+                ].map(option => {
+                  const selected = autoToolMode === option.value;
+                  return (
+                    <button key={option.value} type="button" onClick={() => setAutoToolMode(option.value)} disabled={autoToolSaving || autoToolCreating} style={{ padding: '12px', textAlign: 'left', borderRadius: '10px', cursor: autoToolSaving || autoToolCreating ? 'default' : 'pointer', background: selected ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.025)', border: selected ? '1px solid rgba(167,139,250,0.7)' : '1px solid rgba(255,255,255,0.09)', color: '#fff' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.84rem', fontWeight: '700' }}>{selected && <Check size={15} style={{ color: '#a78bfa' }} />}{option.label}</span>
+                      <span style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.7rem', lineHeight: 1.45, marginTop: '5px' }}>{option.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', margin: '8px 0 0' }}>Thay đổi chế độ chỉ có hiệu lực sau khi bấm Lưu cấu hình.</p>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: '700' }}>Nhân vật ({autoToolCharacters.length}/3)</span>
+                {autoToolCharacters.length < 3 && <button type="button" className="glass-button" onClick={addAutoToolCharacter} disabled={autoToolSaving || autoToolCreating} style={{ padding: '7px 11px', fontSize: '0.74rem' }}><Plus size={14} /> Thêm nhân vật</button>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {autoToolCharacters.map((character, index) => {
+                  const imageSource = character.previewUrl || character.imageUrl;
+                  return (
+                    <div key={index} style={{ padding: '14px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', background: 'rgba(255,255,255,0.02)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <strong style={{ fontSize: '0.82rem' }}>Nhân vật {index + 1}</strong>
+                        {autoToolCharacters.length > 1 && <button type="button" onClick={() => removeAutoToolCharacter(index)} disabled={autoToolSaving || autoToolCreating} aria-label={`Xóa nhân vật ${index + 1}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', border: 0, background: 'transparent', color: '#f87171', cursor: 'pointer', fontSize: '0.72rem' }}><Trash2 size={14} /> Xóa</button>}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 170px) minmax(0, 1fr)', gap: '14px' }}>
+                        <label style={{ minHeight: '150px', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '7px', overflow: 'hidden', border: '1px dashed rgba(167,139,250,0.5)', borderRadius: '10px', background: 'rgba(139,92,246,0.06)', color: '#a78bfa', cursor: autoToolSaving || autoToolCreating ? 'default' : 'pointer', textAlign: 'center' }}>
+                          {imageSource ? <img src={imageSource} alt={`Ảnh ${character.name || `nhân vật ${index + 1}`}`} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, objectFit: 'cover' }} /> : <><Upload size={22} /><span style={{ fontSize: '0.72rem', fontWeight: '700' }}>Chọn ảnh bắt buộc</span></>}
+                          {imageSource && <span style={{ position: 'absolute', left: '8px', right: '8px', bottom: '8px', padding: '6px', borderRadius: '7px', background: 'rgba(0,0,0,0.72)', color: '#fff', fontSize: '0.68rem', fontWeight: '700' }}>Thay ảnh</span>}
+                          <input type="file" accept="image/*" onChange={(event) => handleAutoToolImageSelect(index, event)} disabled={autoToolSaving || autoToolCreating} style={{ display: 'none' }} />
+                        </label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <input type="text" value={character.name} onChange={(event) => updateAutoToolCharacter(index, 'name', event.target.value)} placeholder="Tên nhân vật *" className="glass-input" disabled={autoToolSaving || autoToolCreating} required />
+                          <input type="text" value={character.age} onChange={(event) => updateAutoToolCharacter(index, 'age', event.target.value)} placeholder="Tuổi (không bắt buộc)" className="glass-input" disabled={autoToolSaving || autoToolCreating} />
+                          <textarea value={character.description} onChange={(event) => updateAutoToolCharacter(index, 'description', event.target.value)} rows={3} placeholder="Mô tả ngoại hình, tính cách (không bắt buộc)" className="glass-input" disabled={autoToolSaving || autoToolCreating} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button type="submit" className="glass-button" disabled={autoToolSaving || autoToolCreating} style={{ width: '100%', padding: '14px 20px', background: autoToolSaving ? undefined : 'linear-gradient(135deg, #7c3aed 0%, #2563eb 100%)' }}>
+              {autoToolSaving ? <Loader size={18} className="spin-loader" /> : <Check size={18} />}{autoToolSaving ? 'Đang lưu cấu hình...' : 'Lưu cấu hình'}
+            </button>
+          </form>
+        ) : (
+          <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '14px', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={18} style={{ color: '#10b981' }} /><h2 style={{ fontSize: '1.08rem', margin: 0 }}>Cấu hình đã lưu</h2></div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.76rem', margin: '6px 0 0' }}>Đã tạo {autoToolProfile.episodeCount || 0} tập</p>
+              </div>
+              <button type="button" className="glass-button" onClick={() => setAutoToolEditing(true)} disabled={autoToolSaving || autoToolCreating} style={{ padding: '8px 14px', fontSize: '0.78rem' }}>Chỉnh sửa cấu hình</button>
+            </div>
+            <div style={{ padding: '13px', borderRadius: '10px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', marginBottom: '5px' }}>CHỦ ĐỀ KÊNH</div>
+              <div style={{ fontSize: '0.86rem', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{autoToolProfile.channelTopic}</div>
+            </div>
+            <div style={{ display: 'flex', gap: '9px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ padding: '5px 9px', borderRadius: '999px', background: 'rgba(124,58,237,0.16)', color: '#c4b5fd', fontSize: '0.72rem', fontWeight: '700' }}>{autoToolProfile.mode === 'series' ? 'Series' : 'Tập độc lập'}</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>{autoToolProfile.mode === 'series' ? 'Các tập nối tiếp cùng mạch nội dung.' : 'Mỗi tập là một câu chuyện riêng.'}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
+              {autoToolProfile.characters.map((character, index) => (
+                <div key={`${character.name}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, padding: '9px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <img src={character.imageUrl} alt={character.name} style={{ width: '48px', height: '48px', borderRadius: '9px', objectFit: 'cover', background: '#121214', flexShrink: 0 }} />
+                  <div style={{ minWidth: 0 }}><div style={{ fontSize: '0.8rem', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{character.name}</div>{character.age && <div style={{ color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: '3px' }}>{character.age} tuổi</div>}</div>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="glass-button" onClick={handleAutoToolCreateJob} disabled={autoToolSaving || autoToolCreating} style={{ width: '100%', padding: '14px 20px', background: autoToolCreating ? undefined : 'linear-gradient(135deg, #7c3aed 0%, #2563eb 100%)' }}>
+              {autoToolCreating ? <Loader size={18} className="spin-loader" /> : <Video size={18} />}{autoToolCreating ? 'Đang tạo công việc...' : 'Tạo tập tiếp theo'}
+            </button>
+          </section>
+        )}
 
         {(autoToolJobId || errorText) && (
           <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            {(autoToolJob?.episodeTitle || autoToolJob?.episodeNumber) && (
+              <div>
+                {autoToolJob.episodeNumber && <div style={{ color: '#a78bfa', fontSize: '0.72rem', fontWeight: '700', marginBottom: '5px' }}>TẬP {autoToolJob.episodeNumber}</div>}
+                {autoToolJob.episodeTitle && <h2 style={{ fontSize: '1.12rem', lineHeight: 1.4, margin: 0 }}>{autoToolJob.episodeTitle}</h2>}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '4px' }}>TRẠNG THÁI</div>
