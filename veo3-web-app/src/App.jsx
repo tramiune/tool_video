@@ -4077,7 +4077,7 @@ function App() {
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 10 Video / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 20 Ảnh / ngày</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Chất lượng cao HD</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 5 lượt tạo giọng nói / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ chọn ảnh thư viện</li>
                 </ul>
                 <button
@@ -4122,7 +4122,7 @@ function App() {
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '600' }}>✓ Không giới hạn Video</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '600' }}>✓ Không giới hạn Ảnh</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Tốc độ xử lý siêu tốc VIP</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 50 lượt tạo giọng nói / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ kỹ thuật 24/7</li>
                 </ul>
                 <button
