@@ -584,6 +584,11 @@ function App() {
     // Nếu đã có giao dịch đang chờ trùng với gói đang chọn thì tái sử dụng, không sinh code mới
     if (pendingPayment && pendingPayment.tier === tierKey && pendingPayment.code) {
       setSelectedTierForPay(tierKey);
+      window.fbq?.('track', 'InitiateCheckout', {
+        value: getUpgradeCost(tierKey),
+        currency: 'VND',
+        content_name: tierKey
+      });
       return;
     }
     
@@ -600,6 +605,11 @@ function App() {
         }
       }, { merge: true });
       setSelectedTierForPay(tierKey);
+      window.fbq?.('track', 'InitiateCheckout', {
+        value: getUpgradeCost(tierKey),
+        currency: 'VND',
+        content_name: tierKey
+      });
     } catch (e) {
       console.error("Failed to generate payment intent:", e);
       alert("Hệ thống chưa thể khởi tạo mã giao dịch lúc này: " + e.message + ". Bạn vui lòng bấm thử lại nhé! 🥺");
