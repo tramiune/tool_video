@@ -17,6 +17,7 @@ const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
 const telegram = require('./telegram');
 const audioClient = require('./audio_client');
 const { processAutoToolJob, resumeAutoToolJobs } = require('./autotool');
+const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
 
 const app = express();
 const server = http.createServer(app);
@@ -97,15 +98,25 @@ function validateAutoToolCharacters(value) {
 // Task state store
 const tasks = {};
 const imageQueue = [];   // parallel image tasks
-const videoQueue = [];   // sequential video tasks
 
 // Concurrency config (overridable via env for tuning)
 const IMAGE_CONCURRENCY = parseInt(process.env.IMAGE_CONCURRENCY || '3', 10);
 let activeImageWorkers = 0;
 
 const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '5', 10);
-let activeVideoWorkers = 0;
 const TASK_RETRY_LIMIT = 3;
+const userVideoLimits = new UserVideoLimitProvider({
+  db,
+  ttlMs: Number(process.env.USER_TIER_CACHE_TTL_MS || 2 * 60 * 1000),
+  logger
+});
+const videoScheduler = new PerUserVideoScheduler({
+  globalLimit: VIDEO_CONCURRENCY,
+  getUserId: taskId => tasks[taskId]?.userId || 'anonymous',
+  getUserLimit: userId => userVideoLimits.getLimit(userId),
+  runTask: taskId => runVideoTask(taskId),
+  onError: (error, taskId) => logger.error(`[Video] Scheduler error${taskId ? ` for ${taskId}` : ''}`, error)
+});
 
 function getTaskFailureText(error) {
   return [error?.code, error?.message, error].filter(Boolean).map(String).join(' | ');
@@ -770,6 +781,8 @@ app.post('/api/payment-webhook', async (req, res) => {
         pendingPayment: null,
         updatedAt: Date.now()
       });
+      userVideoLimits.invalidate(userDoc.id);
+      videoScheduler.scheduleDrain();
 
       logger.info(`Automatically upgraded user ${userDoc.id} to tier ${pending.tier} via Webhook!`);
       processedCount++;
@@ -1076,7 +1089,7 @@ async function rehydrateTasks() {
         ...taskData
       };
       if (taskData.type === 'video') {
-        videoQueue.push(taskId);
+        videoScheduler.enqueue(taskId);
         vid++;
       } else if (taskData.type === 'image') {
         imageQueue.push(taskId);
@@ -1084,7 +1097,6 @@ async function rehydrateTasks() {
       }
     }
     logger.info(`Rehydrated ${vid} video task(s), ${img} image task(s) from Firestore`);
-    if (vid > 0) drainVideoQueue();
     if (img > 0) drainImageQueue();
   } catch (err) {
     logger.error('Rehydrate tasks error: ', err);
@@ -1115,9 +1127,8 @@ function startFirestoreListener() {
             };
 
             if (taskData.type === 'video') {
-              videoQueue.push(taskId);
+              videoScheduler.enqueue(taskId);
               logger.info(`Task queued from Firestore: ${taskId} (type: video, prompt: "${taskData.prompt.substring(0, 20)}...")`);
-              drainVideoQueue();
             } else {
               imageQueue.push(taskId);
               logger.info(`Task queued from Firestore: ${taskId} (type: image, prompt: "${taskData.prompt.substring(0, 20)}...")`);
@@ -1306,18 +1317,7 @@ async function runImageTask(taskId) {
   await sleep(cooldown);
 }
 
-// ─── VIDEO WORKER (concurrent) ───────────────────────────────────────────────
-
-function drainVideoQueue() {
-  while (activeVideoWorkers < VIDEO_CONCURRENCY && videoQueue.length > 0) {
-    const taskId = videoQueue.shift();
-    activeVideoWorkers++;
-    runVideoTask(taskId).finally(() => {
-      activeVideoWorkers--;
-      drainVideoQueue();
-    });
-  }
-}
+// ─── VIDEO WORKER (concurrent, with per-user tier limits) ────────────────────
 
 function getVideoFailure(item) {
   const mediaStatus = item.mediaMetadata?.mediaStatus || {};
@@ -1339,7 +1339,7 @@ async function runVideoTask(taskId) {
   try {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
-    logger.info(`[Video] Starting task execution: ${taskId} (active workers: ${activeVideoWorkers})`);
+    logger.info(`[Video] Starting task execution: ${taskId} (active workers: ${videoScheduler.activeCount}, user workers: ${videoScheduler.activeForUser(task.userId || 'anonymous')})`);
 
     // 1. Upload start/end images if they are filepaths or URLs
     task.startImage = await processImageInput(task.startImage);
