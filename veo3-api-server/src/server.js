@@ -103,6 +103,37 @@ const imageQueue = [];   // parallel image tasks
 const IMAGE_CONCURRENCY = parseInt(process.env.IMAGE_CONCURRENCY || '3', 10);
 let activeImageWorkers = 0;
 
+// ─── SESSION CACHE (anti-account-sharing) ────────────────────────────────────
+const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const sessionCache = new Map(); // userId -> { sessionId, expiresAt }
+
+function getSessionId(userId) {
+  const cached = sessionCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) return cached.sessionId;
+  return null;
+}
+
+function setSessionId(userId, sessionId) {
+  sessionCache.set(userId, { sessionId, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
+}
+
+async function validateSession(userId, sessionId) {
+  if (!userId || !sessionId) return false;
+  const cached = sessionCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) return cached.sessionId === sessionId;
+  // Cache miss → fetch from Firestore
+  try {
+    const userSnap = await db.collection('users').doc(userId).get();
+    const data = userSnap.exists ? userSnap.data() : {};
+    const storedSessionId = data.sessionId || null;
+    sessionCache.set(userId, { sessionId: storedSessionId, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
+    return storedSessionId === sessionId;
+  } catch (err) {
+    logger.warn(`[Session] Failed to validate session for ${userId}: ${err.message}`);
+    return false;
+  }
+}
+
 const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '5', 10);
 const TASK_RETRY_LIMIT = 3;
 const userVideoLimits = new UserVideoLimitProvider({
@@ -444,11 +475,39 @@ async function requireUser(req, res, next) {
     if (!match) return res.status(401).json({ error: 'Missing Firebase ID token' });
     const decoded = await auth.verifyIdToken(match[1]);
     req.authUser = { uid: decoded.uid, email: decoded.email || null };
+
+    // Session validation (anti-account-sharing)
+    const sessionToken = req.headers['x-session-token'];
+    if (sessionToken) {
+      const valid = await validateSession(decoded.uid, sessionToken);
+      if (!valid) {
+        return res.status(401).json({ error: 'SESSION_EXPIRED', message: 'Tài khoản đang được đăng nhập ở thiết bị khác.' });
+      }
+    }
+
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Invalid Firebase ID token' });
   }
 }
+
+// ─── SESSION INIT (anti-account-sharing) ─────────────────────────────────────
+app.post('/api/session/init', requireUser, async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId || typeof sessionId !== 'string') {
+      return res.status(400).json({ error: 'Missing sessionId' });
+    }
+    const userId = req.authUser.uid;
+    await db.collection('users').doc(userId).set({ sessionId }, { merge: true });
+    setSessionId(userId, sessionId);
+    logger.info(`[Session] Initialized session for user ${userId}`);
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('[Session] Init error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.post('/api/tasks/:id/retry', requireUser, async (req, res) => {
   try {
