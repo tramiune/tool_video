@@ -1843,7 +1843,7 @@ function App() {
     const limits = {
       free: { videos: 0, images: 0 },
       hocvien: { videos: 0, images: 30 },
-      basic_69k: { videos: 10, images: 20 },
+      basic_69k: { videos: 5, images: 10 },
       standard_99k: { videos: 20, images: 40 },
       premium_169k: { videos: Infinity, images: Infinity }
     };
@@ -2800,7 +2800,7 @@ function App() {
     const limits = {
       free: { videos: 1, images: 0 },
       hocvien: { videos: 0, images: 30 },
-      basic_69k: { videos: 10, images: 20 },
+      basic_69k: { videos: 5, images: 10 },
       standard_99k: { videos: 20, images: 40 },
       premium_169k: { videos: Infinity, images: Infinity }
     };
@@ -4096,8 +4096,8 @@ function App() {
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 10 Video / ngày</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 20 Ảnh / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 5 Video / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 10 Ảnh / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 5 lượt tạo giọng nói / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ chọn ảnh thư viện</li>
                 </ul>
