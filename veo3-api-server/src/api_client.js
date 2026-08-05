@@ -288,6 +288,22 @@ class ApiClient {
     return response.body;
   }
 
+  _isCaptchaRelatedError(err) {
+    const msg = String(err?.message || err || '');
+    return /reCAPTCHA|UNUSUAL_ACTIVITY|PERMISSION_DENIED|PUBLIC_ERROR_UNUSUAL_ACTIVITY/i.test(msg);
+  }
+
+  _applyCaptchaContext(baseContext, token) {
+    if (!token) return baseContext;
+    return {
+      ...baseContext,
+      recaptchaContext: {
+        token,
+        applicationType: 'RECAPTCHA_APPLICATION_TYPE_WEB'
+      }
+    };
+  }
+
   // Ensure VEO3 project exists in Google Labs Flow
   async ensureProject() {
     if (this.projectId) return this.projectId;
@@ -411,9 +427,7 @@ class ApiClient {
   // Generate Image
   async generateImage(prompt, options = {}) {
     const projectId = await this.ensureProject();
-    
-    // Solve Captcha
-    const recaptchaToken = await captchaService.solveCaptcha('IMAGE_GENERATION');
+    const reactiveCaptcha = process.env.REACTIVE_CAPTCHA_MODE === '1';
 
     const modelName = IMAGE_MODELS[options.model || 'nano_banana_2'] || 'NARWHAL';
     const ratioName = IMAGE_ASPECT_RATIOS[options.aspectRatio || '16:9'] || 'IMAGE_ASPECT_RATIO_LANDSCAPE';
@@ -431,18 +445,13 @@ class ApiClient {
       });
     }
 
-    const clientContext = {
-      recaptchaContext: {
-        token: recaptchaToken,
-        applicationType: 'RECAPTCHA_APPLICATION_TYPE_WEB'
-      },
+    const baseClientContext = {
       projectId,
       tool: config.TOOL_NAME,
       sessionId: this.sessionId
     };
 
     const requests = Array.from({ length: count }, (_, i) => ({
-      clientContext,
       imageModelName: modelName,
       imageAspectRatio: ratioName,
       structuredPrompt: { parts: [{ text: prompt }] },
@@ -450,25 +459,37 @@ class ApiClient {
       imageInputs
     }));
 
-    const payload = {
-      clientContext,
-      mediaGenerationContext: { batchId },
-      useNewMedia: true,
-      requests
+    const buildPayload = (recaptchaToken = null) => {
+      const clientContext = this._applyCaptchaContext(baseClientContext, recaptchaToken);
+      return {
+        clientContext,
+        mediaGenerationContext: { batchId },
+        useNewMedia: true,
+        requests
+      };
     };
 
     const url = `/v1/projects/${projectId}/flowMedia:batchGenerateImages`;
     logger.info(`Sending image generation request for: "${prompt.substring(0, 30)}..."`);
-    const res = await this._apiRequest('POST', url, payload);
-    return res;
+    if (!reactiveCaptcha) {
+      const recaptchaToken = await captchaService.solveCaptcha('IMAGE_GENERATION');
+      return await this._apiRequest('POST', url, buildPayload(recaptchaToken));
+    }
+
+    try {
+      return await this._apiRequest('POST', url, buildPayload());
+    } catch (err) {
+      if (!this._isCaptchaRelatedError(err)) throw err;
+      logger.info('[Image] Captcha requested by Google, solving and retrying once...');
+      const recaptchaToken = await captchaService.solveCaptcha('IMAGE_GENERATION');
+      return await this._apiRequest('POST', url, buildPayload(recaptchaToken));
+    }
   }
 
   // Generate Video (returns tasks to poll)
   async generateVideo(prompt, options = {}) {
     const projectId = await this.ensureProject();
-
-    // Solve Captcha
-    const recaptchaToken = await captchaService.solveCaptcha('VIDEO_GENERATION');
+    const reactiveCaptcha = process.env.REACTIVE_CAPTCHA_MODE === '1';
 
     const ratioName = VIDEO_ASPECT_RATIOS[options.aspectRatio || '16:9'] || 'VIDEO_ASPECT_RATIO_LANDSCAPE';
     const count = Math.max(1, Math.min(options.count || 2, 2)); // Google usually supports up to 2
@@ -487,11 +508,7 @@ class ApiClient {
     const modelName = options.model || 'veo_3_1_fast';
     const modelKey = this._resolveVideoModelKey(modelName, genType, ratioName, this.userTier, options.durationSeconds);
 
-    const clientContext = {
-      recaptchaContext: {
-        token: recaptchaToken,
-        applicationType: 'RECAPTCHA_APPLICATION_TYPE_WEB'
-      },
+    const baseClientContext = {
       projectId,
       tool: config.TOOL_NAME,
       sessionId: this.sessionId,
@@ -539,11 +556,14 @@ class ApiClient {
       return req;
     });
 
-    const payload = {
-      mediaGenerationContext: { batchId },
-      clientContext,
-      requests,
-      useV2ModelConfig: true
+    const buildPayload = (recaptchaToken = null) => {
+      const clientContext = this._applyCaptchaContext(baseClientContext, recaptchaToken);
+      return {
+        mediaGenerationContext: { batchId },
+        clientContext,
+        requests,
+        useV2ModelConfig: true
+      };
     };
 
     const endpoints = {
@@ -555,8 +575,19 @@ class ApiClient {
 
     const url = endpoints[genType];
     logger.info(`Sending video generation request (${genType}, model: ${modelKey}) for: "${prompt.substring(0, 30)}..."`);
-    const res = await this._apiRequest('POST', url, payload);
-    return res;
+    if (!reactiveCaptcha) {
+      const recaptchaToken = await captchaService.solveCaptcha('VIDEO_GENERATION');
+      return await this._apiRequest('POST', url, buildPayload(recaptchaToken));
+    }
+
+    try {
+      return await this._apiRequest('POST', url, buildPayload());
+    } catch (err) {
+      if (!this._isCaptchaRelatedError(err)) throw err;
+      logger.info('[Video] Captcha requested by Google, solving and retrying once...');
+      const recaptchaToken = await captchaService.solveCaptcha('VIDEO_GENERATION');
+      return await this._apiRequest('POST', url, buildPayload(recaptchaToken));
+    }
   }
 
   // Poll status of generated media items

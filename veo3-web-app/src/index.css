@@ -34,6 +34,191 @@ body {
   overflow-x: clip;
 }
 
+.browser-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: max(20px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  overflow: auto;
+  isolation: isolate;
+  background:
+    linear-gradient(145deg, rgba(5, 8, 20, 0.98), rgba(10, 7, 18, 0.99)),
+    #07070a;
+}
+
+.browser-gate__glow {
+  position: fixed;
+  z-index: -1;
+  width: min(520px, 80vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+}
+
+.browser-gate__glow--blue {
+  top: -28%;
+  left: -15%;
+  background: rgba(37, 99, 235, 0.2);
+}
+
+.browser-gate__glow--violet {
+  right: -18%;
+  bottom: -32%;
+  background: rgba(124, 58, 237, 0.22);
+}
+
+.browser-gate__card {
+  width: min(100%, 460px);
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 26px;
+  background: linear-gradient(155deg, rgba(25, 28, 43, 0.94), rgba(13, 13, 20, 0.96));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  text-align: center;
+}
+
+.browser-gate__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.browser-gate__brand img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.browser-gate__browser-mark {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 20px;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.16));
+  box-shadow: 0 14px 35px rgba(37, 99, 235, 0.16);
+}
+
+.browser-gate__browser-mark span {
+  width: 27px;
+  height: 27px;
+  border: 3px solid #93c5fd;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 5px rgba(147, 197, 253, 0.12);
+}
+
+.browser-gate__eyebrow {
+  margin-bottom: 10px;
+  color: #60a5fa;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+
+.browser-gate h1 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(1.55rem, 6vw, 2rem);
+  line-height: 1.18;
+  letter-spacing: -0.035em;
+}
+
+.browser-gate__description {
+  margin: 14px auto 0;
+  color: #a8a8b8;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.browser-gate__url-note {
+  margin: 18px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(96, 165, 250, 0.14);
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.07);
+  color: #bfdbfe;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.browser-gate__actions {
+  display: grid;
+  gap: 9px;
+}
+
+.browser-gate__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 16px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.browser-gate__primary {
+  border: 0;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: white;
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.24);
+}
+
+.browser-gate__copy {
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(255, 255, 255, 0.045);
+  color: #e2e8f0;
+}
+
+.browser-gate__actions button:focus-visible {
+  outline: 3px solid rgba(147, 197, 253, 0.7);
+  outline-offset: 3px;
+}
+
+.browser-gate__help {
+  margin: 16px 0 0;
+  color: #737386;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .browser-gate {
+    place-items: end center;
+    padding: 12px 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .browser-gate__card {
+    padding: 24px 20px 22px;
+    border-radius: 24px;
+  }
+
+  .browser-gate__brand {
+    margin-bottom: 18px;
+  }
+
+  .browser-gate__browser-mark {
+    width: 58px;
+    height: 58px;
+    margin-bottom: 16px;
+    border-radius: 19px;
+  }
+}
+
 /* Glass Utility Classes */
 .glass-panel {
   background: var(--glass-bg);
@@ -933,6 +1118,5 @@ body {
   .admin-view [style*="minmax(280px"] { grid-template-columns: 1fr !important; gap: 12px !important; }
   .admin-view [style*="minmax(200px"] { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
 }
-
 
 

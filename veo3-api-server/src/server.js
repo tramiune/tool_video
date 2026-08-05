@@ -12,10 +12,11 @@ const { logger, sleep } = require('./utils');
 const captchaService = require('./captcha_service');
 const browserManager = require('./browser_manager');
 const apiClient = require('./api_client');
-const { db } = require('./firebase_worker');
+const { db, auth } = require('./firebase_worker');
 const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
 const telegram = require('./telegram');
 const audioClient = require('./audio_client');
+const { processAutoToolJob, resumeAutoToolJobs } = require('./autotool');
 
 const app = express();
 const server = http.createServer(app);
@@ -33,6 +34,65 @@ logger.onLog((logData) => {
 
 // Configure file uploads
 const upload = multer({ dest: path.join(__dirname, '../uploads/') });
+const autoToolUpload = multer({
+  dest: path.join(__dirname, '../uploads/'),
+  limits: { files: 3, fileSize: 10 * 1024 * 1024 }
+}).fields([{ name: 'characterImages', maxCount: 3 }]);
+
+function parseAutoToolUpload(req, res, next) {
+  autoToolUpload(req, res, error => {
+    if (!error) return next();
+    const files = Object.values(req.files || {}).flat();
+    Promise.all(files.map(file => fs.promises.unlink(file.path).catch(() => {}))).finally(() => {
+      res.status(400).json({ error: error.message });
+    });
+  });
+}
+
+function parseAutoToolJsonField(value, fieldName) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed)) throw new Error();
+    return parsed;
+  } catch (error) {
+    throw new Error(`${fieldName} must be a valid JSON array`);
+  }
+}
+
+function validateAutoToolCharacters(value) {
+  const characters = parseAutoToolJsonField(value, 'characters');
+  if (characters.length < 1) throw new Error('At least 1 character is required');
+  if (characters.length > 3) throw new Error('A maximum of 3 characters is allowed');
+
+  return characters.map((character, index) => {
+    if (!character || typeof character !== 'object' || Array.isArray(character)) {
+      throw new Error(`Character ${index + 1} must be an object`);
+    }
+    if (typeof character.name !== 'string' || !character.name.trim()) {
+      throw new Error(`Character ${index + 1} name is required`);
+    }
+    if (character.name.trim().length > 120) throw new Error(`Character ${index + 1} name is too long`);
+    if (typeof character.age !== 'string' || character.age.trim().length > 100) {
+      throw new Error(`Character ${index + 1} age must be a string of at most 100 characters`);
+    }
+    if (typeof character.description !== 'string' || character.description.trim().length > 2000) {
+      throw new Error(`Character ${index + 1} description must be a string of at most 2000 characters`);
+    }
+    if (typeof character.imageUrl !== 'string') {
+      throw new Error(`Character ${index + 1} imageUrl must be a string`);
+    }
+    const imageUrl = character.imageUrl.trim();
+    if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
+      throw new Error(`Character ${index + 1} imageUrl must be an HTTP URL`);
+    }
+    return {
+      name: character.name.trim(),
+      age: character.age.trim(),
+      description: character.description.trim(),
+      imageUrl
+    };
+  });
+}
 
 // Task state store
 const tasks = {};
@@ -43,8 +103,70 @@ const videoQueue = [];   // sequential video tasks
 const IMAGE_CONCURRENCY = parseInt(process.env.IMAGE_CONCURRENCY || '3', 10);
 let activeImageWorkers = 0;
 
-const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '6', 10);
+const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '5', 10);
 let activeVideoWorkers = 0;
+const TASK_RETRY_LIMIT = 3;
+
+function getTaskFailureText(error) {
+  return [error?.code, error?.message, error].filter(Boolean).map(String).join(' | ');
+}
+
+function getFriendlyTaskFailure(error, type = 'video') {
+  const rawCode = getTaskFailureText(error) || 'TASK_FAILED';
+
+  if (/CHILD_DANGER|PUBLIC_ERROR_MINOR/i.test(rawCode)) {
+    return { code: rawCode, message: 'Nội dung có yếu tố người chưa thành niên không phù hợp. Hãy đổi ảnh hoặc nội dung.' };
+  }
+  if (/AUDIO_FILTER|AUDIO_GENERATION_FILTERED/i.test(rawCode)) {
+    return { code: rawCode, message: 'Âm thanh bị bộ lọc từ chối. Hãy chỉnh prompt rồi thử lại.' };
+  }
+  if (/IP_INPUT_IMAGE|IP_PROHIBITED/i.test(rawCode)) {
+    return { code: rawCode, message: 'Ảnh đầu vào có thể chứa nội dung được bảo hộ. Hãy đổi ảnh khác.' };
+  }
+  if (/PROMINENT/i.test(rawCode)) {
+    return { code: rawCode, message: 'Ảnh có thể giống người nổi tiếng. Hãy đổi ảnh khác.' };
+  }
+  if (/PUBLIC_ERROR_SEXUAL/i.test(rawCode)) {
+    return { code: rawCode, message: 'Nội dung có yếu tố nhạy cảm và bị bộ lọc từ chối. Hãy đổi ảnh hoặc prompt.' };
+  }
+  if (/DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(rawCode)) {
+    return { code: rawCode, message: `${type === 'video' ? 'Video' : 'Ảnh'} bị bộ lọc an toàn từ chối. Hãy đổi ảnh hoặc nội dung.` };
+  }
+  if (/VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Could not capture URL|Upload R2 failed|No successful media generated/i.test(rawCode)) {
+    return { code: rawCode, message: 'Tác phẩm đã xử lý nhưng máy chủ không lưu được kết quả. Hãy bấm Thử lại.' };
+  }
+  if (/TIMED_OUT|TIMEOUT|timeout/i.test(rawCode)) {
+    return { code: rawCode, message: 'Hệ thống xử lý quá thời gian. Hãy bấm Thử lại.' };
+  }
+  if (/Generation job finished with state: FAILED/i.test(rawCode)) {
+    return { code: rawCode, message: 'Tiến trình tạo bị gián đoạn trên máy chủ. Hãy bấm Thử lại.' };
+  }
+  if (/UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED/i.test(rawCode)) {
+    return { code: rawCode, message: 'Hệ thống tạm thời bị Google giới hạn. Hãy chờ khoảng 30 giây rồi thử lại.' };
+  }
+  if (/OAuth token|capture token|UNAUTHENTICATED|\b401\b/i.test(rawCode)) {
+    return { code: rawCode, message: 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Hãy thử lại sau.' };
+  }
+  if (/QUOTA|RESOURCE_EXHAUSTED|\b429\b/i.test(rawCode)) {
+    return { code: rawCode, message: 'Hạn mức của hệ thống đang tạm hết. Hãy thử lại sau.' };
+  }
+  if (/Requested entity was not found|\bNOT_FOUND\b|\b404\b/i.test(rawCode)) {
+    return { code: rawCode, message: 'Mẫu AI tạm thời không khả dụng. Hãy thử lại sau.' };
+  }
+  if (/\bINTERNAL\b|Internal error|INTERNAL_ERROR/i.test(rawCode)) {
+    return { code: rawCode, message: 'Hệ thống đang quá tải hoặc gặp sự cố nội bộ. Hãy bấm Thử lại.' };
+  }
+  return { code: rawCode, message: error?.message || String(error || 'Không tạo được tác phẩm. Hãy thử lại.') };
+}
+
+function isRetryableTaskFailure(task) {
+  const rawCode = [task?.errorCode, task?.error].filter(Boolean).map(String).join(' | ');
+  if (!rawCode) return false;
+  if (/CHILD_DANGER|PUBLIC_ERROR_MINOR|AUDIO_FILTER|AUDIO_GENERATION_FILTERED|IP_INPUT_IMAGE|IP_PROHIBITED|PROMINENT|PUBLIC_ERROR_SEXUAL|DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(rawCode)) {
+    return false;
+  }
+  return /INTERNAL|TIMED_OUT|TIMEOUT|timeout|VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Generation job finished with state: FAILED|UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED|OAuth token|capture token|UNAUTHENTICATED|\b401\b|QUOTA|RESOURCE_EXHAUSTED|\b429\b|Requested entity was not found|\bNOT_FOUND\b|\b404\b|Could not capture URL|Upload R2 failed|No successful media generated/i.test(rawCode);
+}
 
 app.use(cors());
 app.use(express.json());
@@ -302,6 +424,233 @@ app.get('/api/tasks/:id', async (req, res) => {
     res.json({ id: docSnap.id, ...docSnap.data() });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+async function requireUser(req, res, next) {
+  try {
+    const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
+    if (!match) return res.status(401).json({ error: 'Missing Firebase ID token' });
+    const decoded = await auth.verifyIdToken(match[1]);
+    req.authUser = { uid: decoded.uid, email: decoded.email || null };
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid Firebase ID token' });
+  }
+}
+
+app.post('/api/tasks/:id/retry', requireUser, async (req, res) => {
+  try {
+    const taskRef = db.collection('tasks').doc(req.params.id);
+    let retriedTask;
+    await db.runTransaction(async transaction => {
+      const snapshot = await transaction.get(taskRef);
+      if (!snapshot.exists) throw Object.assign(new Error('Task not found'), { statusCode: 404 });
+
+      const task = snapshot.data();
+      if (task.userId !== req.authUser.uid) {
+        throw Object.assign(new Error('You cannot retry this task'), { statusCode: 403 });
+      }
+      if (task.status !== 'failed') {
+        throw Object.assign(new Error('Only failed tasks can be retried'), { statusCode: 409 });
+      }
+      if (!isRetryableTaskFailure(task)) {
+        throw Object.assign(new Error('Lỗi này cần đổi ảnh hoặc nội dung và không thể thử lại tự động.'), { statusCode: 400 });
+      }
+
+      const retryCount = Number(task.retryCount) || 0;
+      if (retryCount >= TASK_RETRY_LIMIT) {
+        throw Object.assign(new Error(`Task đã đạt giới hạn ${TASK_RETRY_LIMIT} lần thử lại.`), { statusCode: 429 });
+      }
+
+      const updates = {
+        status: 'pending',
+        mediaUrl: null,
+        error: null,
+        errorCode: null,
+        retryCount: retryCount + 1,
+        retriedAt: Date.now()
+      };
+      transaction.update(taskRef, updates);
+      retriedTask = { ...task, ...updates };
+    });
+
+    logger.info(`Task ${taskRef.id} queued for retry (${retriedTask.retryCount}/${TASK_RETRY_LIMIT})`);
+    return res.json({ success: true, taskId: taskRef.id, status: 'pending', retryCount: retriedTask.retryCount });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+async function requireAdmin(req, res, next) {
+  try {
+    const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
+    if (!match) return res.status(401).json({ error: 'Missing Firebase ID token' });
+    const decoded = await auth.verifyIdToken(match[1]);
+    const userSnapshot = await db.collection('users').doc(decoded.uid).get();
+    const userData = userSnapshot.exists ? userSnapshot.data() : {};
+    const email = String(decoded.email || userData.email || '').toLowerCase();
+    if (userData.isAdmin !== true && !email.includes('traderfinn0312')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    req.authUser = { uid: decoded.uid, email: decoded.email || userData.email || null };
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid Firebase ID token' });
+  }
+}
+
+app.get('/api/autotool/profile', requireAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection('autotool_profiles').doc(req.authUser.uid).get();
+    if (!snapshot.exists) return res.json({ profile: null });
+    return res.json({ profile: { ...snapshot.data(), id: snapshot.id } });
+  } catch (error) {
+    logger.error('AutoTool profile lookup failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/autotool/profile', requireAdmin, parseAutoToolUpload, async (req, res) => {
+  const files = req.files?.characterImages || [];
+  try {
+    const channelTopic = String(req.body?.channelTopic || '').trim();
+    if (!channelTopic) return res.status(400).json({ error: 'channelTopic is required' });
+    if (channelTopic.length > 5000) return res.status(400).json({ error: 'channelTopic is too long' });
+
+    const mode = req.body?.mode;
+    if (mode !== 'series' && mode !== 'standalone') {
+      return res.status(400).json({ error: 'mode must be series or standalone' });
+    }
+
+    let characters;
+    let imageIndexes;
+    try {
+      characters = validateAutoToolCharacters(req.body?.characters);
+      imageIndexes = parseAutoToolJsonField(req.body?.imageIndexes ?? '[]', 'imageIndexes');
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+    if (imageIndexes.length !== files.length) {
+      return res.status(400).json({ error: 'imageIndexes must match the uploaded characterImages files' });
+    }
+    if (files.some(file => !String(file.mimetype || '').startsWith('image/'))) {
+      return res.status(400).json({ error: 'characterImages must contain only image files' });
+    }
+    if (imageIndexes.some(index => !Number.isInteger(index) || index < 0 || index >= characters.length)) {
+      return res.status(400).json({ error: 'Each imageIndexes value must identify an existing character' });
+    }
+    if (new Set(imageIndexes).size !== imageIndexes.length) {
+      return res.status(400).json({ error: 'Each character may receive at most one uploaded image' });
+    }
+    const uploadedCharacterIndexes = new Set(imageIndexes);
+    if (characters.some((character, index) => !character.imageUrl && !uploadedCharacterIndexes.has(index))) {
+      return res.status(400).json({ error: 'Every character must have an image' });
+    }
+
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+      const file = files[fileIndex];
+      const extension = path.extname(file.originalname) || '.jpg';
+      const key = `meo3/autotool/characters/${req.authUser.uid}/${uuidv4()}${extension}`;
+      const buffer = await fs.promises.readFile(file.path);
+      characters[imageIndexes[fileIndex]].imageUrl = await uploadToR2(buffer, key, file.mimetype || 'image/jpeg');
+    }
+    if (characters.some(character => !character.imageUrl)) {
+      return res.status(400).json({ error: 'Every character must have an image' });
+    }
+
+    const profileRef = db.collection('autotool_profiles').doc(req.authUser.uid);
+    const profile = await db.runTransaction(async transaction => {
+      const snapshot = await transaction.get(profileRef);
+      const existing = snapshot.exists ? snapshot.data() : {};
+      const now = Date.now();
+      const data = {
+        userId: req.authUser.uid,
+        userEmail: req.authUser.email,
+        channelTopic,
+        mode,
+        characters,
+        characterImageUrls: characters.map(character => character.imageUrl),
+        episodeCount: Number.isInteger(existing.episodeCount) ? existing.episodeCount : 0,
+        createdAt: existing.createdAt ?? now,
+        updatedAt: now
+      };
+      transaction.set(profileRef, data);
+      return data;
+    });
+    return res.json({ success: true, profile: { ...profile, id: profileRef.id } });
+  } catch (error) {
+    logger.error('AutoTool profile update failed', error);
+    return res.status(500).json({ error: error.message });
+  } finally {
+    await Promise.all(files.map(file => fs.promises.unlink(file.path).catch(() => {})));
+  }
+});
+
+app.get('/api/autotool/jobs/:id', requireAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection('autotool_jobs').doc(req.params.id).get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'AutoTool job not found' });
+    return res.json({ id: snapshot.id, ...snapshot.data() });
+  } catch (error) {
+    logger.error('AutoTool job lookup failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/autotool/jobs', requireAdmin, async (req, res) => {
+  try {
+    const profileRef = db.collection('autotool_profiles').doc(req.authUser.uid);
+    const jobRef = db.collection('autotool_jobs').doc();
+    let episodeNumber;
+    await db.runTransaction(async transaction => {
+      const snapshot = await transaction.get(profileRef);
+      if (!snapshot.exists) throw Object.assign(new Error('Create an AutoTool profile before generating an episode'), { statusCode: 400 });
+      const profile = snapshot.data();
+      const channelTopic = typeof profile.channelTopic === 'string' ? profile.channelTopic.trim() : '';
+      let characters;
+      try {
+        characters = validateAutoToolCharacters(profile.characters);
+      } catch (error) {
+        throw Object.assign(new Error('AutoTool profile is incomplete'), { statusCode: 400 });
+      }
+      const characterImageUrls = Array.isArray(profile.characterImageUrls) ? profile.characterImageUrls : [];
+      const imagesMatchCharacters = characterImageUrls.length === characters.length
+        && characterImageUrls.every((url, index) => url === characters[index].imageUrl && /^https?:\/\//i.test(url));
+      if (!channelTopic || channelTopic.length > 5000 || !['series', 'standalone'].includes(profile.mode)
+        || !imagesMatchCharacters) {
+        throw Object.assign(new Error('AutoTool profile is incomplete'), { statusCode: 400 });
+      }
+
+      episodeNumber = (Number.isInteger(profile.episodeCount) ? profile.episodeCount : 0) + 1;
+      const now = Date.now();
+      transaction.update(profileRef, { episodeCount: episodeNumber, updatedAt: now });
+      transaction.set(jobRef, {
+        userId: req.authUser.uid,
+        userEmail: req.authUser.email,
+        profileId: profileRef.id,
+        channelTopic,
+        topic: channelTopic,
+        mode: profile.mode,
+        characters,
+        characterImageUrls,
+        episodeNumber,
+        episodeTitle: null,
+        scenes: [],
+        status: 'queued',
+        progress: 0,
+        currentScene: null,
+        finalUrl: null,
+        error: null,
+        createdAt: now,
+        updatedAt: now
+      });
+    });
+    processAutoToolJob(jobRef.id);
+    return res.status(202).json({ success: true, jobId: jobRef.id, status: 'queued', episodeNumber });
+  } catch (error) {
+    logger.error('AutoTool job creation failed', error);
+    return res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -754,7 +1103,7 @@ function startFirestoreListener() {
           const taskData = doc.data();
           const taskId = doc.id;
           
-          if (!tasks[taskId]) {
+          if (!tasks[taskId] || tasks[taskId].status === 'failed') {
             // Register local task
             tasks[taskId] = {
               id: taskId,
@@ -764,9 +1113,6 @@ function startFirestoreListener() {
               error: null,
               ...taskData
             };
-
-            // Update Firestore to processing
-            doc.ref.update({ status: 'processing' });
 
             if (taskData.type === 'video') {
               videoQueue.push(taskId);
@@ -820,10 +1166,11 @@ async function runImageTask(taskId) {
   const task = tasks[taskId];
   if (!task) return;
 
-  task.status = 'generating';
-  logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
-
   try {
+    await task.docRef.update({ status: 'processing' });
+    task.status = 'generating';
+    logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
+
     // Upload reference images if any (supports array task.referenceImages)
     if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
       const mediaIds = [];
@@ -880,7 +1227,16 @@ async function runImageTask(taskId) {
         try {
           targetUrl = await apiClient.getMediaUrl(name);
         } catch (e) {
-          finalMedia.push({ mediaId: name, status: 'failed', error: 'Could not capture URL' });
+          const mediaStatus = item.mediaMetadata?.mediaStatus || {};
+          const failureCode = [
+            mediaStatus.error?.message,
+            mediaStatus.mediaGenerationFailureReason,
+            ...(mediaStatus.failureReasons || []),
+            mediaStatus.mediaGenerationStatus,
+            `IMAGE_URL_CAPTURE_FAILED: ${e.message}`
+          ].filter(Boolean).join(', ');
+          const failure = getFriendlyTaskFailure({ code: failureCode, message: failureCode }, 'image');
+          finalMedia.push({ mediaId: name, status: 'failed', error: failure.message, errorCode: failure.code });
           continue;
         }
       }
@@ -901,7 +1257,11 @@ async function runImageTask(taskId) {
         
         finalMedia.push({ mediaId: name, status: 'success', url: r2Url });
       } catch (e) {
-        finalMedia.push({ mediaId: name, status: 'failed', error: `Upload R2 failed: ${e.message}` });
+        const failure = getFriendlyTaskFailure({
+          code: `IMAGE_UPLOAD_R2_FAILED: ${e.message}`,
+          message: `IMAGE_UPLOAD_R2_FAILED: ${e.message}`
+        }, 'image');
+        finalMedia.push({ mediaId: name, status: 'failed', error: failure.message, errorCode: failure.code });
       }
     }
 
@@ -913,26 +1273,35 @@ async function runImageTask(taskId) {
       await task.docRef.update({ status: 'completed', mediaUrl: successfulUrl });
       logger.success(`[Image] Task ${taskId} completed and saved to Firestore! URL: ${successfulUrl}`);
     } else {
-      throw new Error("No successful media generated");
+      const failedItems = finalMedia.filter(media => media.status !== 'success');
+      const priorityFailure = failedItems.find(media => !isRetryableTaskFailure(media)) || failedItems[0];
+      const failureError = new Error(priorityFailure?.error || 'Không tạo được ảnh. Hãy thử lại.');
+      failureError.code = [...new Set(failedItems.map(media => media.errorCode).filter(Boolean))].join(' | ')
+        || 'NO_SUCCESSFUL_IMAGE';
+      throw failureError;
     }
 
   } catch (err) {
     logger.error(`[Image] Task ${taskId} failed`, err);
+    const failure = getFriendlyTaskFailure(err, 'image');
     task.status = 'failed';
-    task.error = err.message;
-    await task.docRef.update({ status: 'failed', error: err.message });
+    task.error = failure.message;
+    task.errorCode = failure.code;
+    await task.docRef.update({ status: 'failed', error: failure.message, errorCode: failure.code });
 
     // Send Telegram notification
     telegram.notifyTaskFailed({
       taskId,
+      type: 'image',
       userId: task.userId,
       prompt: task.prompt,
-      error: err.message
+      error: failure.message,
+      errorCode: failure.code
     }).catch(e => logger.error('Telegram notifyTaskFailed (image) failed:', e.message));
   }
 
-  // Anti-spam Cooldown: Sleep for 5 to 10 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
-  const cooldown = 5000 + Math.floor(Math.random() * 5000);
+  // Anti-spam Cooldown: Sleep for 10 to 15 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
+  const cooldown = 10000 + Math.floor(Math.random() * 5000);
   logger.info(`[Image] Cooldown active. Waiting ${Math.round(cooldown/1000)}s before worker takes next task...`);
   await sleep(cooldown);
 }
@@ -950,14 +1319,28 @@ function drainVideoQueue() {
   }
 }
 
+function getVideoFailure(item) {
+  const mediaStatus = item.mediaMetadata?.mediaStatus || {};
+  const codes = [
+    mediaStatus.error?.message,
+    mediaStatus.mediaGenerationFailureReason,
+    ...(mediaStatus.failureReasons || []),
+    ...(mediaStatus.audioGenerationFailures || []),
+    mediaStatus.mediaGenerationStatus
+  ].filter(Boolean);
+  const rawCode = codes.join(', ') || 'VIDEO_GENERATION_FAILED';
+  return getFriendlyTaskFailure({ code: rawCode, message: rawCode }, 'video');
+}
+
 async function runVideoTask(taskId) {
   const task = tasks[taskId];
   if (!task) return;
 
-  task.status = 'generating';
-  logger.info(`[Video] Starting task execution: ${taskId} (active workers: ${activeVideoWorkers})`);
-
   try {
+    await task.docRef.update({ status: 'processing' });
+    task.status = 'generating';
+    logger.info(`[Video] Starting task execution: ${taskId} (active workers: ${activeVideoWorkers})`);
+
     // 1. Upload start/end images if they are filepaths or URLs
     task.startImage = await processImageInput(task.startImage);
     task.endImage = await processImageInput(task.endImage);
@@ -1056,14 +1439,17 @@ async function runVideoTask(taskId) {
           finalMedia.push({
             mediaId: item.name,
             status: 'url_failed',
-            error: dlErr.message
+            error: 'Video đã tạo nhưng tải xuống thất bại. Hãy thử lại.',
+            errorCode: `VIDEO_DOWNLOAD_FAILED: ${dlErr.message}`
           });
         }
       } else {
+        const failure = getVideoFailure(item);
         finalMedia.push({
           mediaId: item.name,
           status: 'failed',
-          error: item.mediaMetadata?.mediaStatus?.mediaGenerationFailureReason || 'Safety block or Google error'
+          error: failure.message,
+          errorCode: failure.code
         });
       }
     }
@@ -1076,26 +1462,36 @@ async function runVideoTask(taskId) {
       await task.docRef.update({ status: 'completed', mediaUrl: successfulUrl });
       logger.success(`[Video] Task ${taskId} completed and saved to Firestore! URL: ${successfulUrl}`);
     } else {
-      throw new Error("No successful video generated");
+      const failedItems = finalMedia.filter(media => media.status !== 'success');
+      const priorityFailure = failedItems.find(media => media.errorCode?.includes('PROMINENT'))
+        || failedItems.find(media => media.errorCode?.includes('IP_'))
+        || failedItems[0];
+      const failureError = new Error(priorityFailure?.error || 'Không tạo được video. Hãy thử lại.');
+      failureError.code = [...new Set(failedItems.map(media => media.errorCode).filter(Boolean))].join(' | ');
+      throw failureError;
     }
 
   } catch (err) {
     logger.error(`[Video] Task ${taskId} failed`, err);
+    const failure = getFriendlyTaskFailure(err, 'video');
     task.status = 'failed';
-    task.error = err.message;
-    await task.docRef.update({ status: 'failed', error: err.message });
+    task.error = failure.message;
+    task.errorCode = failure.code;
+    await task.docRef.update({ status: 'failed', error: failure.message, errorCode: failure.code });
 
     // Send Telegram notification
     telegram.notifyTaskFailed({
       taskId,
+      type: 'video',
       userId: task.userId,
       prompt: task.prompt,
-      error: err.message
+      error: failure.message,
+      errorCode: failure.code
     }).catch(e => logger.error('Telegram notifyTaskFailed (video) failed:', e.message));
   }
 
-  // Anti-spam Cooldown: Sleep for 5 to 10 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
-  const cooldown = 5000 + Math.floor(Math.random() * 5000);
+  // Anti-spam Cooldown: Sleep for 10 to 15 seconds to avoid triggering Google's UNUSUAL_ACTIVITY
+  const cooldown = 10000 + Math.floor(Math.random() * 5000);
   logger.info(`[Video] Cooldown active. Waiting ${Math.round(cooldown/1000)}s before worker takes next task...`);
   await sleep(cooldown);
 }
@@ -1164,6 +1560,25 @@ async function cleanupOldTasks() {
   }
 }
 
+function scheduleDailyCleanup(hour = 23, minute = 50) {
+  const now = new Date();
+  const nextRun = new Date(now);
+  nextRun.setHours(hour, minute, 0, 0);
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+
+  const delay = nextRun.getTime() - now.getTime();
+  logger.info(`Scheduled cleanup at ${nextRun.toString()} (in ${Math.round(delay / 60000)} minutes)`);
+
+  setTimeout(() => {
+    cleanupOldTasks().catch(err => logger.error('Scheduled cleanup failed', err));
+    setInterval(() => {
+      cleanupOldTasks().catch(err => logger.error('Scheduled cleanup failed', err));
+    }, 24 * 60 * 60 * 1000);
+  }, delay);
+}
+
 // Start HTTP + Socket.io Server
 captchaService.attach(io);
 
@@ -1173,11 +1588,11 @@ startCookieSyncListener().then(() => {
   rehydrateTasks().then(() => {
     // Start Firestore Listener
     startFirestoreListener();
-
-    // Start periodic cleanup on startup and then every hour
-    cleanupOldTasks();
+    resumeAutoToolJobs().catch(err => logger.error('[AutoTool] Resume failed', err));
   });
-  setInterval(cleanupOldTasks, 60 * 60 * 1000);
+
+  // Run cleanup once per day at 23:50 server time
+  scheduleDailyCleanup(23, 50);
 
   // Initialize Browser Manager on start so it is warmed up
   browserManager.initialize().catch(err => {

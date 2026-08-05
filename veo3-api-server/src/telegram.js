@@ -84,8 +84,9 @@ async function notifyTaskFailed(task) {
     `👤 User: <code>${esc(task.userId)}</code>`,
     `📧 Email: <code>${esc(task.email || '-')}</code>`,
     `📝 Prompt: <i>${esc((task.prompt || '').slice(0, 120))}</i>`,
-    `❌ Error: <code>${esc((task.error || '').slice(0, 250))}</code>`
+    `❌ Lỗi: <b>${esc((task.error || '').slice(0, 250))}</b>`
   ];
+  if (task.errorCode) lines.push(`🔎 Mã: <code>${esc(String(task.errorCode).slice(0, 500))}</code>`);
   await sendMessage(lines.join('\n'));
 }
 

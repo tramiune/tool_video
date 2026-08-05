@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check } from 'lucide-react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -10,6 +10,34 @@ import BeforeAfterPanel from './BeforeAfterPanel';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
 const APP_VERSION = 'v2.5.1';
+const TASK_RETRY_LIMIT = 3;
+
+const getTaskErrorText = (task) => {
+  const raw = [task?.errorCode, task?.error].filter(Boolean).map(String).join(' | ');
+  if (!raw) return 'Đã xảy ra sự cố không xác định.';
+  if (/CHILD_DANGER|PUBLIC_ERROR_MINOR/i.test(raw)) return 'Nội dung có yếu tố người chưa thành niên không phù hợp. Hãy đổi ảnh hoặc nội dung.';
+  if (/AUDIO_FILTER|AUDIO_GENERATION_FILTERED/i.test(raw)) return 'Âm thanh bị bộ lọc từ chối. Hãy chỉnh prompt rồi thử lại.';
+  if (/IP_INPUT_IMAGE|IP_PROHIBITED/i.test(raw)) return 'Ảnh đầu vào có thể chứa nội dung được bảo hộ. Hãy đổi ảnh khác.';
+  if (/PROMINENT/i.test(raw)) return 'Ảnh có thể giống người nổi tiếng. Hãy đổi ảnh khác.';
+  if (/PUBLIC_ERROR_SEXUAL/i.test(raw)) return 'Nội dung có yếu tố nhạy cảm và bị bộ lọc từ chối. Hãy đổi ảnh hoặc prompt.';
+  if (/DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(raw)) return 'Nội dung bị bộ lọc an toàn từ chối. Hãy đổi ảnh hoặc prompt.';
+  if (/VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Could not capture URL|Upload R2 failed|No successful media generated/i.test(raw)) return 'Tác phẩm đã xử lý nhưng máy chủ không lưu được kết quả. Hãy bấm Thử lại.';
+  if (/TIMED_OUT|TIMEOUT|timeout/i.test(raw)) return 'Hệ thống xử lý quá thời gian. Hãy bấm Thử lại.';
+  if (/Generation job finished with state: FAILED/i.test(raw)) return 'Tiến trình tạo bị gián đoạn trên máy chủ. Hãy bấm Thử lại.';
+  if (/UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED/i.test(raw)) return 'Hệ thống tạm thời bị Google giới hạn. Hãy chờ khoảng 30 giây rồi thử lại.';
+  if (/OAuth token|capture token|UNAUTHENTICATED|\b401\b/i.test(raw)) return 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Hãy thử lại sau.';
+  if (/QUOTA|RESOURCE_EXHAUSTED|\b429\b/i.test(raw)) return 'Hạn mức của hệ thống đang tạm hết. Hãy thử lại sau.';
+  if (/Requested entity was not found|\bNOT_FOUND\b|\b404\b/i.test(raw)) return 'Mẫu AI tạm thời không khả dụng. Hãy thử lại sau.';
+  if (/\bINTERNAL\b|Internal error|INTERNAL_ERROR/i.test(raw)) return 'Hệ thống đang quá tải hoặc gặp sự cố nội bộ. Hãy bấm Thử lại.';
+  return String(task.error || raw);
+};
+
+const canRetryTask = (task) => {
+  if (task?.status !== 'failed' || (Number(task.retryCount) || 0) >= TASK_RETRY_LIMIT) return false;
+  const raw = [task.errorCode, task.error].filter(Boolean).map(String).join(' | ');
+  if (/CHILD_DANGER|PUBLIC_ERROR_MINOR|AUDIO_FILTER|AUDIO_GENERATION_FILTERED|IP_INPUT_IMAGE|IP_PROHIBITED|PROMINENT|PUBLIC_ERROR_SEXUAL|DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(raw)) return false;
+  return /INTERNAL|TIMED_OUT|TIMEOUT|timeout|VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Generation job finished with state: FAILED|UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED|OAuth token|capture token|UNAUTHENTICATED|\b401\b|QUOTA|RESOURCE_EXHAUSTED|\b429\b|Requested entity was not found|\bNOT_FOUND\b|\b404\b|Could not capture URL|Upload R2 failed|No successful media generated/i.test(raw);
+};
 
 const createEmptyAutoToolCharacter = () => ({
   name: '',
@@ -152,6 +180,7 @@ function App() {
   const [refFiles, setRefFiles] = useState([]);
   const [selectedRefUrls, setSelectedRefUrls] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [retryingTaskId, setRetryingTaskId] = useState(null);
   const [startLibraryUrl, setStartLibraryUrl] = useState(null);
   const [endLibraryUrl, setEndLibraryUrl] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -1411,15 +1440,26 @@ function App() {
                               {task.error && task.status === 'failed' && (
                                 <span title={task.error} style={{ cursor: 'help', color: '#ef4444', fontSize: '0.7rem', marginRight: '8px' }}>⚠️</span>
                               )}
-                              <button
-                                onClick={() => handleDeleteTask(task.id)}
-                                style={{
-                                  background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '6px',
-                                  padding: '5px 10px', fontSize: '0.7rem', fontWeight: 'bold', color: '#ef4444', cursor: 'pointer'
-                                }}
-                              >
-                                Xóa
-                              </button>
+                              <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '5px' }}>
+                                <button
+                                  onClick={() => handleDeleteTask(task.id)}
+                                  style={{
+                                    background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '6px',
+                                    padding: '5px 10px', fontSize: '0.7rem', fontWeight: 'bold', color: '#ef4444', cursor: 'pointer'
+                                  }}
+                                >
+                                  Xóa
+                                </button>
+                                {canRetryTask(task) && task.userId === user.uid && (
+                                  <button
+                                    onClick={() => handleRetryTask(task.id)}
+                                    disabled={retryingTaskId === task.id}
+                                    style={{ background: 'rgba(59,130,246,0.12)', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.7rem', fontWeight: 'bold', color: '#60a5fa', cursor: retryingTaskId === task.id ? 'wait' : 'pointer' }}
+                                  >
+                                    {retryingTaskId === task.id ? 'Đang thử...' : 'Thử lại'}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -2637,6 +2677,25 @@ function App() {
     }
   };
 
+  const handleRetryTask = async (taskId) => {
+    if (!user || retryingTaskId) return;
+    setRetryingTaskId(taskId);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/tasks/${taskId}/retry`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
+    } catch (error) {
+      console.error('Retry task failed:', error);
+      alert(error.message || 'Không thể thử lại task lúc này.');
+    } finally {
+      setRetryingTaskId(null);
+    }
+  };
+
   const handleDownload = (url, filename) => {
     try {
       // Use backend proxy endpoint to enforce attachment headers for mobile download support (mechanics from ai_web3)
@@ -3363,62 +3422,24 @@ function App() {
                       <X size={32} color="#ef4444" />
                       <div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 'bold' }}>Tạo thất bại</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', maxHeight: '60px', overflowY: 'auto' }}>
-                        {(() => {
-                          const err = task.error;
-                          if (!err) return 'Đã xảy ra sự cố không xác định 🥺';
-                          let errStr = String(err);
-                          try {
-                            const parsed = JSON.parse(errStr);
-                            const inner = parsed?.error?.message || parsed?.message || parsed?.reason;
-                            if (inner) errStr = String(inner);
-                          } catch {
-                            /* không phải JSON, giữ nguyên chuỗi gốc */
-                          }
-                          if (errStr.includes('AUDIO_FILTER')) {
-                            return 'Âm thanh bị bộ lọc từ chối. Hãy chỉnh prompt rồi thử lại.';
-                          }
-                          if (errStr.includes('IP_INPUT_IMAGE') || errStr.includes('IP_PROHIBITED')) {
-                            return 'Ảnh đầu vào có thể chứa nội dung được bảo hộ. Hãy đổi ảnh khác.';
-                          }
-                          if (errStr.includes('PROMINENT')) {
-                            return 'Ảnh có thể giống người nổi tiếng. Hãy đổi ảnh khác.';
-                          }
-                          if (errStr.includes('UNSAFE_GENERATION') || errStr.includes('INAPPROPRIATE_PHOTOREALISTIC_PERSON')) {
-                            return 'Video bị bộ lọc an toàn từ chối. Hãy đổi ảnh hoặc nội dung.';
-                          }
-                          if (errStr.includes('VIDEO_GENERATION_TIMED_OUT')) {
-                            return 'Tạo video quá thời gian. Hãy thử lại.';
-                          }
-                          if (errStr.includes('reCAPTCHA') || errStr.includes('PERMISSION_DENIED') || errStr.includes('PUBLIC_ERROR_UNUSUAL_ACTIVITY')) {
-                            return 'Hệ thống tạm thời bị chặn do hoạt động bất thường. Cậu chờ ~30 giây rồi thử lại nhé! 🛡️';
-                          }
-                          if (errStr.includes('OAuth token') || errStr.includes('capture token')) {
-                            return 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Cậu thử lại sau nhé! 🔄';
-                          }
-                          if (errStr.includes('SAFETY') || errStr.includes('safety') || errStr.includes('filter')) {
-                            return 'Prompt hoặc ảnh đầu vào có thể vi phạm bộ lọc an toàn. Cậu thử đổi nội dung khác nha! 🛡️';
-                          }
-                          if (errStr.includes('Requested entity was not found') || errStr.includes('not found')) {
-                            return 'Mẫu AI tạm thời không khả dụng. Cậu thử lại sau nhé! 🛠️';
-                          }
-                          if (errStr.includes('INTERNAL') || errStr.includes('Internal error') || errStr.includes('INTERNAL_ERROR')) {
-                            return 'Hệ thống đang quá tải hoặc gặp sự cố nội bộ. Cậu thử lại sau giây lát nhé! ⚙️';
-                          }
-                          if (errStr.includes('timeout') || errStr.includes('Timeout')) {
-                            return 'Quá thời gian chờ phản hồi. Cậu thử lại nhé! ⏱️';
-                          }
-                          if (errStr.includes('Invalid JSON') || errStr.includes('Cannot find field') || errStr.includes('Invalid Argument')) {
-                            return 'Prompt hoặc ảnh đầu vào chưa hợp lệ. Cậu kiểm tra lại nội dung rồi thử lại nhé! 🔧';
-                          }
-                          if (errStr.includes('{') && errStr.includes('"')) {
-                            return 'Máy chủ gặp sự cố không xác định. Cậu thử lại sau giây lát nhé! 🥺';
-                          }
-                          return errStr;
-                        })()}
+                        {getTaskErrorText(task)}
                       </div>
-                      <button onClick={() => handleDeleteTask(task.id)} className="tab-btn" style={{ fontSize: '0.7rem', padding: '4px 10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '6px' }}>
-                        Xóa
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center' }}>
+                        <button onClick={() => handleDeleteTask(task.id)} className="tab-btn" style={{ fontSize: '0.7rem', padding: '4px 10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '6px' }}>
+                          Xóa
+                        </button>
+                        {canRetryTask(task) && (
+                          <button
+                            onClick={() => handleRetryTask(task.id)}
+                            disabled={retryingTaskId === task.id}
+                            className="tab-btn"
+                            style={{ fontSize: '0.7rem', padding: '5px 10px', background: 'rgba(59,130,246,0.12)', color: '#60a5fa', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '5px', cursor: retryingTaskId === task.id ? 'wait' : 'pointer' }}
+                          >
+                            {retryingTaskId === task.id ? <Loader size={12} className="spin" /> : <RotateCcw size={12} />}
+                            {retryingTaskId === task.id ? 'Đang thử...' : `Thử lại (${Number(task.retryCount) || 0}/${TASK_RETRY_LIMIT})`}
+                          </button>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <>
