@@ -36,6 +36,19 @@ class BrowserManager {
 
       logger.info(`Launching browser at: ${browserPath}`);
       
+      // On Mac/Linux, first try to connect to an already-running Chrome on port 9222
+      if (process.platform === 'darwin' || process.platform === 'linux') {
+        try {
+          this.browser = await puppeteer.connect({
+            browserURL: 'http://127.0.0.1:9222',
+            defaultViewport: { width: 1280, height: 900 }
+          });
+          logger.info('Connected to already-running Chrome on port 9222 (preserving manual login)');
+        } catch (connErr) {
+          logger.info('No existing Chrome on 9222, spawning a new one...');
+        }
+      }
+
       // Cleanup locks
       const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
       for (const file of lockFiles) {
@@ -52,7 +65,7 @@ class BrowserManager {
 
       const isLinux = process.platform === 'linux';
       const launchOptions = {
-        headless: isLinux ? false : true, // Run headful on VPS, headless on Mac
+        headless: false,
         executablePath: browserPath,
         ignoreDefaultArgs: ['--disable-extensions'],
         defaultViewport: { width: 1280, height: 900 },
@@ -79,7 +92,7 @@ class BrowserManager {
 
 
 
-      if (isLinux) {
+      if (!this.browser && (isLinux || process.platform === 'darwin')) {
         logger.info('Spawning Google Chrome process manually via spawn to load extension from profile...');
         const chromeArgs = [
           '--no-sandbox',
@@ -105,8 +118,12 @@ class BrowserManager {
         ];
         
         const { spawn } = require('child_process');
+        const spawnEnv = { ...process.env };
+        if (process.platform === 'linux') {
+          spawnEnv.DISPLAY = ':1';
+        }
         const chromeProcess = spawn(browserPath, chromeArgs, {
-          env: { ...process.env, DISPLAY: ':1' },
+          env: spawnEnv,
           detached: true,
           stdio: 'ignore'
         });
@@ -120,7 +137,7 @@ class BrowserManager {
           browserURL: 'http://127.0.0.1:9222',
           defaultViewport: { width: 1280, height: 900 }
         });
-      } else {
+      } else if (!this.browser) {
         this.browser = await puppeteer.launch(launchOptions);
       }
 
@@ -173,8 +190,8 @@ class BrowserManager {
         }
       });
 
-      // Inject cookies (only if not on Linux VPS, to preserve persistent profile session)
-      if (process.platform !== 'linux') {
+      // Inject cookies (only if not on Linux VPS / Mac, to preserve persistent profile session)
+      if (process.platform !== 'linux' && process.platform !== 'darwin') {
         await this.injectCookies();
       }
 

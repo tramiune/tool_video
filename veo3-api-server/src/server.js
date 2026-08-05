@@ -455,6 +455,96 @@ Identity preservation is the highest priority.`;
   }
 });
 
+// ─── LEGACY WEB UI COMPAT ROUTES ────────────────────────────────────────────
+// These mirror the old meo3 web server API so the legacy public/index.html
+// (VEO3 Flow Studio) can create tasks that the Firestore worker processes.
+
+app.post('/api/generate-video', upload.fields([{ name: 'startImage', maxCount: 1 }, { name: 'endImage', maxCount: 1 }]), async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
+
+    const startImage = req.files?.startImage?.[0]?.path || null;
+    const endImage = req.files?.endImage?.[0]?.path || null;
+
+    const taskData = {
+      userId: 'anonymous',
+      type: 'video',
+      status: 'pending',
+      prompt,
+      aspectRatio: String(req.body.aspectRatio || '16:9'),
+      model: String(req.body.model || 'veo_3_1_lite'),
+      count: parseInt(req.body.count, 10) || 1,
+      durationSeconds: parseInt(req.body.durationSeconds, 10) || 8,
+      startImage,
+      endImage,
+      createdAt: Date.now()
+    };
+
+    const docRef = await db.collection('tasks').add(taskData);
+    logger.success(`Legacy video task created: ${docRef.id} ("${prompt.substring(0, 20)}...")`);
+    res.json({ success: true, taskId: docRef.id, status: 'queued' });
+  } catch (err) {
+    logger.error('Legacy generate-video failed', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/generate-image', upload.single('referenceImage'), async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
+
+    const referenceImage = req.file?.path || null;
+
+    const taskData = {
+      userId: 'anonymous',
+      type: 'image',
+      status: 'pending',
+      prompt,
+      aspectRatio: String(req.body.aspectRatio || '1:1'),
+      model: String(req.body.model || 'nano_banana_pro'),
+      count: parseInt(req.body.count, 10) || 1,
+      referenceImages: referenceImage ? [referenceImage] : [],
+      createdAt: Date.now()
+    };
+
+    const docRef = await db.collection('tasks').add(taskData);
+    logger.success(`Legacy image task created: ${docRef.id} ("${prompt.substring(0, 20)}...")`);
+    res.json({ success: true, taskId: docRef.id, status: 'queued' });
+  } catch (err) {
+    logger.error('Legacy generate-image failed', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Legacy task status endpoint (maps Firestore statuses to legacy UI statuses)
+app.get('/api/status/:taskId', async (req, res) => {
+  try {
+    const docRef = db.collection('tasks').doc(req.params.taskId);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    const task = docSnap.data();
+    const statusMap = { pending: 'queued', processing: 'generating' };
+    res.json({
+      id: docSnap.id,
+      type: task.type || 'image',
+      prompt: task.prompt || '',
+      aspectRatio: task.aspectRatio || '1:1',
+      model: task.model || '',
+      status: statusMap[task.status] || task.status,
+      progress: task.progress || null,
+      error: task.error || null,
+      media: task.media || (task.mediaUrl ? [{ mediaId: docSnap.id, status: 'success', url: task.mediaUrl }] : []),
+      createdAt: task.createdAt || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Retrieve task status and output details
 app.get('/api/tasks/:id', async (req, res) => {
   try {
