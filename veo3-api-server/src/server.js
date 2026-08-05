@@ -1311,25 +1311,38 @@ async function runImageTask(taskId) {
         }
       }
 
-      // Tải và Upload R2 thông qua Puppeteer để tránh 403 Forbidden
-      try {
-        logger.info(`Downloading image via browser context...`);
-        const bufferArray = await browserManager.page.evaluate(async (url) => {
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-          const buffer = await res.arrayBuffer();
-          return Array.from(new Uint8Array(buffer));
-        }, targetUrl);
-        
-        const buffer = Buffer.from(bufferArray);
-        const fileName = `meo3/images/${taskId}_${Date.now()}.jpg`;
-        const r2Url = await uploadToR2(buffer, fileName, 'image/jpeg');
-        
-        finalMedia.push({ mediaId: name, status: 'success', url: r2Url });
-      } catch (e) {
+      // Tải và Upload R2 thông qua Puppeteer để tránh 403 Forbidden (with retry)
+      let lastImgErr = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          if (attempt > 1) logger.info(`[Image] Download retry ${attempt}/3 for ${taskId}...`);
+
+          logger.info(`Downloading image via browser context (attempt ${attempt}/3)...`);
+          const bufferArray = await browserManager.page.evaluate(async (url) => {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const buffer = await res.arrayBuffer();
+            return Array.from(new Uint8Array(buffer));
+          }, targetUrl);
+          
+          const buffer = Buffer.from(bufferArray);
+          const fileName = `meo3/images/${taskId}_${Date.now()}.jpg`;
+          const r2Url = await uploadToR2(buffer, fileName, 'image/jpeg');
+          
+          finalMedia.push({ mediaId: name, status: 'success', url: r2Url });
+          lastImgErr = null;
+          break;
+        } catch (e) {
+          lastImgErr = e;
+          logger.warn(`[Image] Download attempt ${attempt}/3 failed: ${e.message}`);
+          if (attempt < 3) await sleep(2000 * attempt);
+        }
+      }
+
+      if (lastImgErr) {
         const failure = getFriendlyTaskFailure({
-          code: `IMAGE_UPLOAD_R2_FAILED: ${e.message}`,
-          message: `IMAGE_UPLOAD_R2_FAILED: ${e.message}`
+          code: `IMAGE_UPLOAD_R2_FAILED: ${lastImgErr.message}`,
+          message: `IMAGE_UPLOAD_R2_FAILED: ${lastImgErr.message}`
         }, 'image');
         finalMedia.push({ mediaId: name, status: 'failed', error: failure.message, errorCode: failure.code });
       }
@@ -1470,36 +1483,49 @@ async function runVideoTask(taskId) {
                         item.mediaMetadata?.generationStatus || 
                         item.status?.state;
       if (genStatus === 'MEDIA_GENERATION_STATUS_SUCCESSFUL' || genStatus === 'GENERATION_STATUS_SUCCESSFUL' || genStatus === 'SUCCESSFUL') {
-        try {
-          const projectId = item.projectId;
-          const workflowId = item.workflowId;
-          const downloadUrl = await apiClient.getMediaUrl(item.name, 'MEDIA_URL_TYPE_VIDEO', { projectId, workflowId });
-          
-          // Download buffer using browser context to avoid 403 Google blocks
-          logger.info(`Downloading video via browser context...`);
-          const bufferArray = await browserManager.page.evaluate(async (url) => {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-            const buffer = await res.arrayBuffer();
-            return Array.from(new Uint8Array(buffer));
-          }, downloadUrl);
+        const projectId = item.projectId;
+        const workflowId = item.workflowId;
+        const downloadUrl = await apiClient.getMediaUrl(item.name, 'MEDIA_URL_TYPE_VIDEO', { projectId, workflowId });
 
-          const buffer = Buffer.from(bufferArray);
-          const fileName = `meo3/videos/${taskId}_${Date.now()}.mp4`;
-          logger.info(`Uploading video to R2 as ${fileName} (Size: ${buffer.length} bytes)...`);
-          const r2Url = await uploadToR2(buffer, fileName, 'video/mp4');
+        // Download with retry (up to 3 attempts)
+        let lastDlErr = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            if (attempt > 1) logger.info(`[Video] Download retry ${attempt}/3 for ${taskId}...`);
 
-          finalMedia.push({
-            mediaId: item.name,
-            status: 'success',
-            url: r2Url
-          });
-        } catch (dlErr) {
+            logger.info(`Downloading video via browser context (attempt ${attempt}/3)...`);
+            const bufferArray = await browserManager.page.evaluate(async (url) => {
+              const res = await fetch(url);
+              if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+              const buffer = await res.arrayBuffer();
+              return Array.from(new Uint8Array(buffer));
+            }, downloadUrl);
+
+            const buffer = Buffer.from(bufferArray);
+            const fileName = `meo3/videos/${taskId}_${Date.now()}.mp4`;
+            logger.info(`Uploading video to R2 as ${fileName} (Size: ${buffer.length} bytes)...`);
+            const r2Url = await uploadToR2(buffer, fileName, 'video/mp4');
+
+            finalMedia.push({
+              mediaId: item.name,
+              status: 'success',
+              url: r2Url
+            });
+            lastDlErr = null;
+            break;
+          } catch (dlErr) {
+            lastDlErr = dlErr;
+            logger.warn(`[Video] Download attempt ${attempt}/3 failed: ${dlErr.message}`);
+            if (attempt < 3) await sleep(3000 * attempt);
+          }
+        }
+
+        if (lastDlErr) {
           finalMedia.push({
             mediaId: item.name,
             status: 'url_failed',
             error: 'Video đã tạo nhưng tải xuống thất bại. Hãy thử lại.',
-            errorCode: `VIDEO_DOWNLOAD_FAILED: ${dlErr.message}`
+            errorCode: `VIDEO_DOWNLOAD_FAILED: ${lastDlErr.message}`
           });
         }
       } else {
