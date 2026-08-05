@@ -12,6 +12,70 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 const APP_VERSION = 'v2.5.1';
 const TASK_RETRY_LIMIT = 3;
 
+const SESSION_STORAGE_KEY = 'meo3_session_id';
+
+function generateSessionId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getLocalSessionId() {
+  let id = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!id) {
+    id = generateSessionId();
+    localStorage.setItem(SESSION_STORAGE_KEY, id);
+  }
+  return id;
+}
+
+function clearLocalSessionId() {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+async function initSessionOnServer(user) {
+  try {
+    const sessionId = getLocalSessionId();
+    const token = await user.getIdToken();
+    await fetch(`${API_BASE}/api/session/init`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ sessionId })
+    });
+  } catch (err) {
+    console.warn('Session init failed:', err);
+  }
+}
+
+function authHeaders(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    'X-Session-Token': getLocalSessionId()
+  };
+}
+
+async function authFetch(user, url, options = {}) {
+  const token = await user.getIdToken();
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...authHeaders(token)
+    }
+  });
+  if (res.status === 401) {
+    const body = await res.json().catch(() => ({}));
+    if (body.error === 'SESSION_EXPIRED') {
+      clearLocalSessionId();
+      signOut(auth);
+      window.location.reload();
+      throw new Error('Tài khoản đang được đăng nhập ở thiết bị khác. Bạn đã bị đăng xuất.');
+    }
+  }
+  return res;
+}
+
 const getTaskErrorText = (task) => {
   const raw = [task?.errorCode, task?.error].filter(Boolean).map(String).join(' | ');
   if (!raw) return 'Đã xảy ra sự cố không xác định.';
@@ -406,7 +470,7 @@ function App() {
       try {
         const token = await user.getIdToken();
         const response = await fetch(`${API_BASE}/api/autotool/profile`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: authHeaders(token)
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
@@ -441,7 +505,7 @@ function App() {
       try {
         const token = await user.getIdToken();
         const response = await fetch(`${API_BASE}/api/autotool/jobs/${autoToolJobId}`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: authHeaders(token)
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
@@ -1563,7 +1627,7 @@ function App() {
 
       const response = await fetch(`${API_BASE}/api/autotool/profile`, {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeaders(token),
         body: formData
       });
       const data = await response.json();
@@ -1593,7 +1657,7 @@ function App() {
       const token = await user.getIdToken();
       const response = await fetch(`${API_BASE}/api/autotool/jobs`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: authHeaders(token)
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
@@ -2658,7 +2722,11 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      // Init session on server (anti-account-sharing)
+      if (result?.user) {
+        initSessionOnServer(result.user);
+      }
     } catch (error) {
       console.error("Login failed:", error);
       alert("Đăng nhập chưa thành công. Cậu vui lòng kiểm tra lại kết nối và thử lại nhé! 🔐");
@@ -2681,10 +2749,8 @@ function App() {
     if (!user || retryingTaskId) return;
     setRetryingTaskId(taskId);
     try {
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE}/api/tasks/${taskId}/retry`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await authFetch(user, `${API_BASE}/api/tasks/${taskId}/retry`, {
+        method: 'POST'
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
