@@ -2799,10 +2799,10 @@ function App() {
     // Limit checking
     const limits = {
       free: { videos: 1, images: 0 },
-      hocvien: { videos: 0, images: 30 },
-      basic_69k: { videos: 5, images: 10 },
-      standard_99k: { videos: 20, images: 40 },
-      premium_169k: { videos: Infinity, images: Infinity }
+      hocvien: { videos: 1, images: 30 },
+      basic_69k: { videos: 1, images: 10 },
+      standard_99k: { videos: 2, images: 40 },
+      premium_169k: { videos: 4, images: Infinity }
     };
 
     const isExpired = userTier !== 'free' && userExpiryDate && userExpiryDate < Date.now();
