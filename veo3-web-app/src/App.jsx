@@ -4057,10 +4057,11 @@ function App() {
             margin: 'auto',
             display: 'flex',
             flexDirection: 'column',
+            overflow: 'hidden',
             boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7)'
           }}>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold', color: '#fff' }}>Bảng Giá Dịch Vụ meo3</h3>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Nâng cấp ngay để mở khóa toàn bộ sức mạnh sáng tạo</span>
@@ -4075,7 +4076,7 @@ function App() {
             </div>
 
             {/* Pricing Grid */}
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', alignContent: 'start' }}>
               
               {/* Basic Plan */}
               <div style={{
