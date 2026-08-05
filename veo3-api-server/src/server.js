@@ -1423,7 +1423,7 @@ async function runVideoTask(taskId) {
     // Stagger generation triggers with a small random delay so concurrent workers
     // don't fire reCAPTCHA + generation requests at the exact same instant
     // (avoids Google PUBLIC_ERROR_UNUSUAL_ACTIVITY blocks).
-    const genDelay = 2000 + Math.floor(Math.random() * 4000);
+    const genDelay = 5000 + Math.floor(Math.random() * 5000);
     logger.info(`[Video] Staggering generation trigger by ${Math.round(genDelay/1000)}s...`);
     await sleep(genDelay);
 
