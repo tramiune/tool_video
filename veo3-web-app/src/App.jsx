@@ -242,11 +242,19 @@ function App() {
   const [startFile, setStartFile] = useState(null);
   const [endFile, setEndFile] = useState(null);
   const [refFiles, setRefFiles] = useState([]);
+  const refFilesRef = useRef([]);
+  useEffect(() => { refFilesRef.current = refFiles; }, [refFiles]);
   const [selectedRefUrls, setSelectedRefUrls] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [retryingTaskId, setRetryingTaskId] = useState(null);
   const [startLibraryUrl, setStartLibraryUrl] = useState(null);
   const [endLibraryUrl, setEndLibraryUrl] = useState(null);
+  const [startUploadState, setStartUploadState] = useState(null); // null | 'uploading' | { url }
+  const [endUploadState, setEndUploadState] = useState(null);
+  const [refUploadStates, setRefUploadStates] = useState([]); // aligned with refFiles: null | 'uploading' | { url }
+  const startUploadPromiseRef = useRef(null);
+  const endUploadPromiseRef = useRef(null);
+  const refUploadPromisesRef = useRef(new Map()); // file -> Promise<url>
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showRatioMenu, setShowRatioMenu] = useState(false);
   const [addFileContext, setAddFileContext] = useState('ref'); // 'start' | 'end' | 'ref'
@@ -2779,6 +2787,77 @@ function App() {
     }
   };
 
+  // Upload files locally to the backend (bypasses Firebase Storage upload issues)
+  const uploadFilesLocally = async (files) => {
+    if (!files || files.length === 0) return [];
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+
+    console.log("Uploading files locally to backend...");
+    const res = await fetch(`${API_BASE}/api/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok) throw new Error('Local upload failed: ' + res.statusText);
+    const data = await res.json();
+    console.log("Local upload success. Paths:", data.filePaths);
+    return data.filePaths;
+  };
+
+  const uploadSingleFileToBackend = async (file) => {
+    const paths = await uploadFilesLocally([file]);
+    return paths[0] || null;
+  };
+
+  const handleStartFileSelect = (file) => {
+    setStartFile(file);
+    setStartLibraryUrl(null);
+    if (!file) {
+      setStartUploadState(null);
+      startUploadPromiseRef.current = null;
+      return;
+    }
+    setStartUploadState('uploading');
+    startUploadPromiseRef.current = uploadSingleFileToBackend(file)
+      .then(url => { setStartUploadState(url ? { url } : null); return url; })
+      .catch(() => { setStartUploadState(null); return null; });
+  };
+
+  const handleEndFileSelect = (file) => {
+    setEndFile(file);
+    setEndLibraryUrl(null);
+    if (!file) {
+      setEndUploadState(null);
+      endUploadPromiseRef.current = null;
+      return;
+    }
+    setEndUploadState('uploading');
+    endUploadPromiseRef.current = uploadSingleFileToBackend(file)
+      .then(url => { setEndUploadState(url ? { url } : null); return url; })
+      .catch(() => { setEndUploadState(null); return null; });
+  };
+
+  const addRefFiles = (newFiles) => {
+    if (!newFiles || newFiles.length === 0) return;
+    const startIdx = refFilesRef.current.length;
+    setRefFiles(prev => [...prev, ...newFiles]);
+    setRefUploadStates(prev => [...prev, ...newFiles.map(() => 'uploading')]);
+    newFiles.forEach((file, offset) => {
+      const idx = startIdx + offset;
+      const p = uploadSingleFileToBackend(file).catch(() => null);
+      refUploadPromisesRef.current.set(file, p);
+      p.then(url => {
+        if (!url) return;
+        setRefUploadStates(prev => {
+          if (refFilesRef.current[idx] !== file || prev[idx] !== 'uploading') return prev;
+          const next = [...prev];
+          next[idx] = { url };
+          return next;
+        });
+      });
+    });
+  };
+
   // Clipboard Paste (Ctrl+V / Cmd+V) handler for images and image URLs
   const handlePaste = (e) => {
     const items = e.clipboardData?.items;
@@ -2803,17 +2882,14 @@ function App() {
         }
       } else if (activeTab === 'video') {
         if (!startFile && !startLibraryUrl) {
-          setStartFile(pastedImageFile);
-          setStartLibraryUrl(null);
+          handleStartFileSelect(pastedImageFile);
         } else if (!endFile && !endLibraryUrl) {
-          setEndFile(pastedImageFile);
-          setEndLibraryUrl(null);
+          handleEndFileSelect(pastedImageFile);
         } else {
-          setStartFile(pastedImageFile);
-          setStartLibraryUrl(null);
+          handleStartFileSelect(pastedImageFile);
         }
       } else {
-        setRefFiles(prev => [...prev, pastedImageFile]);
+        addRefFiles([pastedImageFile]);
       }
       return;
     }
@@ -2857,6 +2933,7 @@ function App() {
 
   const handleRemoveRefFile = (index) => {
     setRefFiles(prev => prev.filter((_, i) => i !== index));
+    setRefUploadStates(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e) => {
@@ -2899,46 +2976,54 @@ function App() {
     setIsSubmitting(true);
     const currentPrompt = prompt;
     try {
-      let startFrameUrl = startLibraryUrl || null;
-      let endFrameUrl = endLibraryUrl || null;
+      let startFrameUrl = startLibraryUrl || (startUploadState && startUploadState.url) || null;
+      let endFrameUrl = endLibraryUrl || (endUploadState && endUploadState.url) || null;
       let referenceImagesUrls = [];
- 
-      // Helper function to upload files locally to the backend (bypasses Firebase Storage upload issues)
-      const uploadFilesLocally = async (files) => {
-        if (!files || files.length === 0) return [];
-        const formData = new FormData();
-        files.forEach(f => formData.append('files', f));
-        
-        console.log("Uploading files locally to backend...");
-        const res = await fetch(`${API_BASE}/api/upload`, {
-          method: 'POST',
-          body: formData
-        });
-        if (!res.ok) throw new Error('Local upload failed: ' + res.statusText);
-        const data = await res.json();
-        console.log("Local upload success. Paths:", data.filePaths);
-        return data.filePaths;
-      };
 
       console.log("Submitting task. ActiveTab:", activeTab);
 
-      // 1. Upload start file locally (video tab)
+      // 1. Upload/await start file locally (video tab)
       if (startFile && activeTab === 'video') {
-        const paths = await uploadFilesLocally([startFile]);
-        startFrameUrl = paths[0] || null;
+        if (!startFrameUrl) {
+          if (startUploadPromiseRef.current) {
+            startFrameUrl = await startUploadPromiseRef.current;
+          }
+          if (!startFrameUrl) {
+            const paths = await uploadFilesLocally([startFile]);
+            startFrameUrl = paths[0] || null;
+          }
+        }
       }
 
-      // 2. Upload end file locally (video tab)
+      // 2. Upload/await end file locally (video tab)
       if (endFile && activeTab === 'video') {
-        const paths = await uploadFilesLocally([endFile]);
-        endFrameUrl = paths[0] || null;
+        if (!endFrameUrl) {
+          if (endUploadPromiseRef.current) {
+            endFrameUrl = await endUploadPromiseRef.current;
+          }
+          if (!endFrameUrl) {
+            const paths = await uploadFilesLocally([endFile]);
+            endFrameUrl = paths[0] || null;
+          }
+        }
       }
 
-      // 3. Upload reference images locally (image tab)
+      // 3. Upload/await reference images locally (image tab)
       referenceImagesUrls = [...selectedRefUrls];
       if (refFiles.length > 0 && activeTab === 'image') {
-        const uploaded = await uploadFilesLocally(refFiles);
-        referenceImagesUrls = [...referenceImagesUrls, ...uploaded];
+        for (let i = 0; i < refFiles.length; i++) {
+          const file = refFiles[i];
+          let url = refUploadStates[i] && refUploadStates[i].url ? refUploadStates[i].url : null;
+          if (!url) {
+            const p = refUploadPromisesRef.current.get(file);
+            if (p) url = await p;
+            if (!url) {
+              const paths = await uploadFilesLocally([file]);
+              url = paths[0] || null;
+            }
+          }
+          if (url) referenceImagesUrls.push(url);
+        }
       }
 
       console.log("Writing task to Firestore...");
@@ -2966,7 +3051,11 @@ function App() {
       setEndFile(null);
       setStartLibraryUrl(null);
       setEndLibraryUrl(null);
+      setStartUploadState(null);
+      setEndUploadState(null);
       setRefFiles([]);
+      setRefUploadStates([]);
+      refUploadPromisesRef.current = new Map();
       setSelectedRefUrls([]);
     } catch (error) {
       console.error("Error adding task: ", error);
@@ -3115,14 +3204,20 @@ function App() {
         ref={startInputRef} 
         style={{ display: 'none' }} 
         accept="image/*" 
-        onChange={(e) => setStartFile(e.target.files[0] || null)}
+        onChange={(e) => {
+          handleStartFileSelect(e.target.files[0] || null);
+          e.target.value = '';
+        }}
       />
       <input 
         type="file" 
         ref={endInputRef} 
         style={{ display: 'none' }} 
         accept="image/*" 
-        onChange={(e) => setEndFile(e.target.files[0] || null)}
+        onChange={(e) => {
+          handleEndFileSelect(e.target.files[0] || null);
+          e.target.value = '';
+        }}
       />
       <input 
         type="file" 
@@ -3130,7 +3225,10 @@ function App() {
         style={{ display: 'none' }} 
         multiple 
         accept="image/*" 
-        onChange={(e) => setRefFiles(prev => [...prev, ...Array.from(e.target.files)])}
+        onChange={(e) => {
+          addRefFiles(Array.from(e.target.files));
+          e.target.value = '';
+        }}
       />
 
       {/* Top Header Bar */}
@@ -3692,8 +3790,14 @@ function App() {
                 {(startFile || startLibraryUrl) ? (
                   <>
                     <img src={startFile ? URL.createObjectURL(startFile) : startLibraryUrl} alt="Start Frame" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px' }} />
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setStartFile(null); setStartLibraryUrl(null); }} className="remove-preview-btn">×</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setStartFile(null); setStartLibraryUrl(null); setStartUploadState(null); startUploadPromiseRef.current = null; }} className="remove-preview-btn">×</button>
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '7px', textAlign: 'center', padding: '1px 0', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>Start</div>
+                    {startUploadState === 'uploading' && (
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '6px', zIndex: 2 }}>
+                        <Loader size={10} className="spin-loader" style={{ color: '#fff' }} />
+                        <span style={{ fontSize: '6px', color: '#fff', fontWeight: '700' }}>đang tải</span>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -3729,8 +3833,14 @@ function App() {
                 {(endFile || endLibraryUrl) ? (
                   <>
                     <img src={endFile ? URL.createObjectURL(endFile) : endLibraryUrl} alt="End Frame" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px' }} />
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setEndFile(null); setEndLibraryUrl(null); }} className="remove-preview-btn">×</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setEndFile(null); setEndLibraryUrl(null); setEndUploadState(null); endUploadPromiseRef.current = null; }} className="remove-preview-btn">×</button>
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '7px', textAlign: 'center', padding: '1px 0', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>End</div>
+                    {endUploadState === 'uploading' && (
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '6px', zIndex: 2 }}>
+                        <Loader size={10} className="spin-loader" style={{ color: '#fff' }} />
+                        <span style={{ fontSize: '6px', color: '#fff', fontWeight: '700' }}>đang tải</span>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -3753,6 +3863,12 @@ function App() {
                   <div key={idx} className="preview-thumbnail" style={{ width: '42px', height: '42px', borderRadius: '8px' }}>
                     <img src={URL.createObjectURL(file)} alt="Ref File" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     <button type="button" onClick={() => handleRemoveRefFile(idx)} className="remove-preview-btn">×</button>
+                    {refUploadStates[idx] === 'uploading' && (
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '8px', zIndex: 2 }}>
+                        <Loader size={12} className="spin-loader" style={{ color: '#fff' }} />
+                        <span style={{ fontSize: '7px', color: '#fff', fontWeight: '700' }}>đang tải</span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -4026,7 +4142,7 @@ function App() {
               disabled={!prompt.trim() || isSubmitting}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', background: prompt.trim() ? '#3b82f6' : 'rgba(255,255,255,0.04)', border: 'none', color: prompt.trim() ? '#fff' : 'rgba(255,255,255,0.2)', cursor: prompt.trim() ? 'pointer' : 'default', transition: 'all 0.2s', padding: 0, flexShrink: 0 }}
             >
-              <ArrowRight size={16} />
+              {isSubmitting ? <Loader size={16} className="spin-loader" /> : <ArrowRight size={16} />}
             </button>
           </div>
         </form>
