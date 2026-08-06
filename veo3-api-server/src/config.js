@@ -18,6 +18,12 @@ module.exports = {
   USER_DATA_DIR: path.join(os.homedir(), 'Veo3Data', '.api-chrome-profile'),
   EXTENSION_DIR: path.join(ROOT_DIR, 'extension'),
 
+  // Separate Google account for image generation (port 9223)
+  IMAGE_COOKIE_FILE: path.join(ROOT_DIR, 'cookies_image.json'),
+  IMAGE_USER_DATA_DIR: path.join(os.homedir(), 'Veo3Data', '.api-chrome-profile-img'),
+  IMAGE_DEBUG_PORT: 9223,
+  IMAGE_TARGET_URL: 'https://labs.google/fx/vi/tools/flow',
+
   // Browser path resolution (Mac/Windows default search)
   getBrowserPath: () => {
     if (process.env.BRAVE_PATH) return process.env.BRAVE_PATH;

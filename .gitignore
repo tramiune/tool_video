@@ -5,9 +5,21 @@ extracted_asar/
 node_modules/
 .DS_Store
 dist/
+# Sensitive: Google session cookies + temp uploads
+veo3-api-server/cookies.json
+veo3-api-server/cookies_image.json
+veo3-api-server/.audio_cookies.json
+veo3-api-server/.token_cache.json
+veo3-api-server/uploads/
+veo3-api-server/*_tmp.js
+veo3-api-server/deploy_rules.js
+
+# Secrets (API keys, service accounts)
 .env
 serviceAccountKey.json
 veo3-api-server/serviceAccountKey.json
+*.pem
+*.key
 .env.local
 .env.development.local
 .env.test.local

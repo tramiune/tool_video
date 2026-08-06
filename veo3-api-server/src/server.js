@@ -100,7 +100,7 @@ const tasks = {};
 const imageQueue = [];   // parallel image tasks
 
 // Concurrency config (overridable via env for tuning)
-const IMAGE_CONCURRENCY = parseInt(process.env.IMAGE_CONCURRENCY || '3', 10);
+const IMAGE_CONCURRENCY = parseInt(process.env.IMAGE_CONCURRENCY || '10', 10);
 let activeImageWorkers = 0;
 
 // ─── SESSION CACHE (anti-account-sharing) ────────────────────────────────────
@@ -134,7 +134,7 @@ async function validateSession(userId, sessionId) {
   }
 }
 
-const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '5', 10);
+const VIDEO_CONCURRENCY = parseInt(process.env.VIDEO_CONCURRENCY || '10', 10);
 const TASK_RETRY_LIMIT = 3;
 const userVideoLimits = new UserVideoLimitProvider({
   db,
@@ -212,6 +212,42 @@ function isRetryableTaskFailure(task) {
 
 app.use(cors());
 app.use(express.json());
+
+// ─── LOCAL-ONLY GUARD ────────────────────────────────────────────────────────
+// Sensitive endpoints that can modify Google sessions, burn credits, or upload
+// files must only be reachable from the local Mac (or local network). The
+// Cloudflare tunnel exposes the API to the internet, so any non-local request
+// to these paths is rejected outright.
+const LOCAL_ONLY_PATHS = [
+  '/api/set-cookies',
+  '/api/generate-image',
+  '/api/generate-video',
+  '/api/try-on',
+  '/api/upload',
+  '/api/audio/generate',
+  '/force-refresh',
+  '/captcha'
+];
+
+function isLocalRequest(req) {
+  // Cloudflare tunnel runs on the same host, so remoteAddress is always
+  // loopback. Real internet requests carry cf-connecting-ip / x-forwarded-for
+  // headers injected by cloudflared — their presence means it's NOT local.
+  if (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']) {
+    return false;
+  }
+  const ip = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+  return ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
+}
+
+app.use((req, res, next) => {
+  if (LOCAL_ONLY_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'))) {
+    if (!isLocalRequest(req)) {
+      return res.status(403).json({ error: 'Forbidden: endpoint is local-only' });
+    }
+  }
+  next();
+});
 
 // Serve static frontend files from 'public' directory
 app.use(express.static(path.join(__dirname, '../public')));
@@ -1305,7 +1341,7 @@ function drainImageQueue() {
 }
 
 // Helper function to process image input (downloads URLs or uploads file paths)
-async function processImageInput(imgInput) {
+async function processImageInput(imgInput, client = apiClient) {
   if (!imgInput) return null;
   if (typeof imgInput === 'string' && imgInput.startsWith('http')) {
     logger.info(`Fetching image URL: ${imgInput}`);
@@ -1313,9 +1349,9 @@ async function processImageInput(imgInput) {
     if (!res.ok) throw new Error(`Failed to fetch image: ${res.statusText}`);
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    return await apiClient.uploadImage(buffer);
+    return await client.uploadImage(buffer);
   } else if (typeof imgInput === 'string' && fs.existsSync(imgInput)) {
-    const mediaId = await apiClient.uploadImage(imgInput);
+    const mediaId = await client.uploadImage(imgInput);
     try { fs.unlinkSync(imgInput); } catch (e) {}
     return mediaId;
   }
@@ -1326,6 +1362,9 @@ async function runImageTask(taskId) {
   const task = tasks[taskId];
   if (!task) return;
 
+  const imageClient = apiClient.image;
+  const imageBrowser = browserManager.image;
+
   try {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
@@ -1335,13 +1374,13 @@ async function runImageTask(taskId) {
     if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
       const mediaIds = [];
       for (const imgInput of task.referenceImages) {
-        const mediaId = await processImageInput(imgInput);
+        const mediaId = await processImageInput(imgInput, imageClient);
         if (mediaId) mediaIds.push(mediaId);
       }
       task.referenceImages = mediaIds;
     } else if (task.referenceImage) {
       // Legacy single reference image fallback
-      const mediaId = await processImageInput(task.referenceImage);
+      const mediaId = await processImageInput(task.referenceImage, imageClient);
       task.referenceImages = mediaId ? [mediaId] : [];
     }
 
@@ -1356,7 +1395,7 @@ async function runImageTask(taskId) {
     for (const modelKey of imageModelsToTry) {
       try {
         logger.info(`[Image] Attempting generation with model: ${modelKey}`);
-        genRes = await apiClient.generateImage(task.prompt, {
+        genRes = await imageClient.generateImage(task.prompt, {
           aspectRatio: task.aspectRatio,
           model: modelKey,
           count: task.count,
@@ -1385,7 +1424,7 @@ async function runImageTask(taskId) {
 
       if (!targetUrl) {
         try {
-          targetUrl = await apiClient.getMediaUrl(name);
+          targetUrl = await imageClient.getMediaUrl(name);
         } catch (e) {
           const mediaStatus = item.mediaMetadata?.mediaStatus || {};
           const failureCode = [
@@ -1408,7 +1447,7 @@ async function runImageTask(taskId) {
           if (attempt > 1) logger.info(`[Image] Download retry ${attempt}/3 for ${taskId}...`);
 
           logger.info(`Downloading image via browser context (attempt ${attempt}/3)...`);
-          const bufferArray = await browserManager.page.evaluate(async (url) => {
+          const bufferArray = await imageBrowser.page.evaluate(async (url) => {
             const res = await fetch(url);
             if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
             const buffer = await res.arrayBuffer();
@@ -1772,6 +1811,9 @@ startCookieSyncListener().then(() => {
   // Initialize Browser Manager on start so it is warmed up
   browserManager.initialize().catch(err => {
     logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
+  });
+  browserManager.image.initialize().catch(err => {
+    logger.warn(`Initial image browser startup warning: ${err.message}. It will retry on the first API call.`);
   });
 
   // Schedule automatic 30-minute Google Flow tab refresh to keep session + cookies alive

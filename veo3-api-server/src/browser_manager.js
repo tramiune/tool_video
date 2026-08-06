@@ -9,13 +9,18 @@ const config = require('./config');
 puppeteer.use(StealthPlugin());
 
 class BrowserManager {
-  constructor() {
+  constructor(options = {}) {
     this.browser = null;
     this.page = null;
     this.cdp = null;
     this.oauthToken = null;
     this.tokenCapturedAt = null;
     this.isLaunching = false;
+    this.debugPort = options.debugPort || 9222;
+    this.userDataDir = options.userDataDir || config.USER_DATA_DIR;
+    this.cookieFile = options.cookieFile || config.COOKIE_FILE;
+    this.targetUrl = options.targetUrl || config.TARGET_URL;
+    this.label = options.label || 'video';
   }
 
   async initialize() {
@@ -35,24 +40,24 @@ class BrowserManager {
       }
 
       logger.info(`Launching browser at: ${browserPath}`);
-      
-      // On Mac/Linux, first try to connect to an already-running Chrome on port 9222
+
+      // On Mac/Linux, first try to connect to an already-running Chrome on the instance debug port
       if (process.platform === 'darwin' || process.platform === 'linux') {
         try {
           this.browser = await puppeteer.connect({
-            browserURL: 'http://127.0.0.1:9222',
+            browserURL: `http://127.0.0.1:${this.debugPort}`,
             defaultViewport: { width: 1280, height: 900 }
           });
-          logger.info('Connected to already-running Chrome on port 9222 (preserving manual login)');
+          logger.info(`[${this.label}] Connected to already-running Chrome on port ${this.debugPort} (preserving manual login)`);
         } catch (connErr) {
-          logger.info('No existing Chrome on 9222, spawning a new one...');
+          logger.info(`[${this.label}] No existing Chrome on ${this.debugPort}, spawning a new one...`);
         }
       }
 
       // Cleanup locks
       const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
       for (const file of lockFiles) {
-        const p = path.join(config.USER_DATA_DIR, file);
+        const p = path.join(this.userDataDir, file);
         if (fs.existsSync(p)) {
           try { fs.unlinkSync(p); } catch (e) {}
         }
@@ -70,7 +75,7 @@ class BrowserManager {
         ignoreDefaultArgs: ['--disable-extensions'],
         defaultViewport: { width: 1280, height: 900 },
         args: [
-          `--user-data-dir=${config.USER_DATA_DIR}`,
+          `--user-data-dir=${this.userDataDir}`,
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--no-zygote',
@@ -93,15 +98,15 @@ class BrowserManager {
 
 
       if (!this.browser && (isLinux || process.platform === 'darwin')) {
-        logger.info('Spawning Google Chrome process manually via spawn to load extension from profile...');
+        logger.info(`[${this.label}] Spawning Google Chrome process manually via spawn to load extension from profile...`);
         const chromeArgs = [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
-          `--user-data-dir=${config.USER_DATA_DIR}`,
+          `--user-data-dir=${this.userDataDir}`,
           `--load-extension=${config.EXTENSION_DIR}`,
           `--disable-extensions-except=${config.EXTENSION_DIR}`,
-          '--remote-debugging-port=9222',
+          `--remote-debugging-port=${this.debugPort}`,
           '--no-first-run',
           '--no-default-browser-check',
           '--disable-popup-blocking',
@@ -129,12 +134,12 @@ class BrowserManager {
         });
         chromeProcess.unref();
         
-        // Wait a moment for Chrome to open port 9222
+        // Wait a moment for Chrome to open port
         await new Promise(resolve => setTimeout(resolve, 4000));
         
         // Connect Puppeteer to the running instance
         this.browser = await puppeteer.connect({
-          browserURL: 'http://127.0.0.1:9222',
+          browserURL: `http://127.0.0.1:${this.debugPort}`,
           defaultViewport: { width: 1280, height: 900 }
         });
       } else if (!this.browser) {
@@ -211,13 +216,13 @@ class BrowserManager {
   }
 
   async injectCookies() {
-    if (!fs.existsSync(config.COOKIE_FILE)) {
-      logger.warn(`Cookies file not found at ${config.COOKIE_FILE}. API calls will fail until cookies are set.`);
+    if (!fs.existsSync(this.cookieFile)) {
+      logger.warn(`Cookies file not found at ${this.cookieFile}. API calls will fail until cookies are set.`);
       return;
     }
 
     try {
-      const content = fs.readFileSync(config.COOKIE_FILE, 'utf-8').trim();
+      const content = fs.readFileSync(this.cookieFile, 'utf-8').trim();
       if (!content) return;
 
       let cookies = [];
@@ -271,9 +276,9 @@ class BrowserManager {
 
   async refreshSession() {
     if (!this.page) return;
-    logger.info(`Navigating browser to trigger session refresh: ${config.TARGET_URL}`);
+    logger.info(`[${this.label}] Navigating browser to trigger session refresh: ${this.targetUrl}`);
     try {
-      await this.page.goto(config.TARGET_URL, { waitUntil: 'load', timeout: 30000 });
+      await this.page.goto(this.targetUrl, { waitUntil: 'load', timeout: 30000 });
       
       // Wait a moment for network requests to start
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -290,19 +295,21 @@ class BrowserManager {
       const hasLabsSession = cookies?.some(cookie => cookie.name === '__Secure-next-auth.session-token');
       if (this.oauthToken && hasLabsSession) {
         const cookiesJson = JSON.stringify(cookies);
-        fs.writeFileSync(config.COOKIE_FILE, cookiesJson, 'utf-8');
-        logger.success(`Extracted & updated ${cookies.length} refreshed cookies locally to cookies.json`);
+        fs.writeFileSync(this.cookieFile, cookiesJson, 'utf-8');
+        logger.success(`[${this.label}] Extracted & updated ${cookies.length} refreshed cookies locally to ${path.basename(this.cookieFile)}`);
 
-        // Sync refreshed cookies to Firestore
-        try {
-          const { db } = require('./firebase_worker');
-          await db.collection('settings').doc('cookies').set({
-            cookies: cookiesJson,
-            updatedAt: Date.now()
-          }, { merge: true });
-          logger.success("Synced refreshed cookies to Firestore settings/cookies");
-        } catch (dbErr) {
-          logger.warn("Could not sync refreshed cookies to Firestore:", dbErr.message);
+        // Sync refreshed cookies to Firestore (only for the video profile, image profile keeps local only)
+        if (this.label === 'video') {
+          try {
+            const { db } = require('./firebase_worker');
+            await db.collection('settings').doc('cookies').set({
+              cookies: cookiesJson,
+              updatedAt: Date.now()
+            }, { merge: true });
+            logger.success("Synced refreshed cookies to Firestore settings/cookies");
+          } catch (dbErr) {
+            logger.warn("Could not sync refreshed cookies to Firestore:", dbErr.message);
+          }
         }
       }
       return true;
@@ -402,4 +409,22 @@ class BrowserManager {
   }
 }
 
-module.exports = new BrowserManager();
+const videoBrowser = new BrowserManager({
+  label: 'video',
+  debugPort: 9222,
+  userDataDir: config.USER_DATA_DIR,
+  cookieFile: config.COOKIE_FILE,
+  targetUrl: config.TARGET_URL
+});
+
+const imageBrowser = new BrowserManager({
+  label: 'image',
+  debugPort: config.IMAGE_DEBUG_PORT,
+  userDataDir: config.IMAGE_USER_DATA_DIR,
+  cookieFile: config.IMAGE_COOKIE_FILE,
+  targetUrl: config.IMAGE_TARGET_URL
+});
+
+// Backwards-compatible default export = video browser (existing code relies on it)
+videoBrowser.image = imageBrowser;
+module.exports = videoBrowser;

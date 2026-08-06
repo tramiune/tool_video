@@ -14,25 +14,26 @@ class CaptchaService extends EventEmitter {
 
     io.on('connection', (socket) => {
       logger.info(`Extension connected: ${socket.id}`);
-      
-      // Store connection
-      this.connectedClients.set(socket.id, {
-        socket,
-        browserType: 'unknown',
-        userAgent: '',
-        secChUa: '',
-        secChUaPlatform: '',
-        secChUaMobile: ''
-      });
 
       socket.on('client:ready', (data) => {
         const client = this.connectedClients.get(socket.id);
-        if (client) {
-          client.browserType = data.browserType || 'unknown';
-          client.userAgent = data.userAgent || '';
-          client.secChUa = data.secChUa || '';
-          client.secChUaPlatform = data.secChUaPlatform || '"Windows"';
-          client.secChUaMobile = data.secChUaMobile || '?0';
+        if (!client) {
+          this.connectedClients.set(socket.id, {
+            socket,
+            browserType: data.browserType || 'unknown',
+            userAgent: data.userAgent || '',
+            secChUa: data.secChUa || '',
+            secChUaPlatform: data.secChUaPlatform || '',
+            secChUaMobile: data.secChUaMobile || ''
+          });
+        }
+        const readyClient = this.connectedClients.get(socket.id);
+        if (readyClient) {
+          readyClient.browserType = data.browserType || 'unknown';
+          readyClient.userAgent = data.userAgent || '';
+          readyClient.secChUa = data.secChUa || '';
+          readyClient.secChUaPlatform = data.secChUaPlatform || '"Windows"';
+          readyClient.secChUaMobile = data.secChUaMobile || '?0';
         }
         logger.info(`Extension client ready [${socket.id.substring(0, 6)}]: ${data.browserType}`);
       });
@@ -128,12 +129,12 @@ class CaptchaService extends EventEmitter {
   }
 
   // SAFE TEST fallback: solve captcha directly via CDP evaluate in the Puppeteer page
-  async _solveViaCdp(action, timeoutMs) {
+  async _solveViaCdp(action, timeoutMs, browserManager) {
     logger.info(`[TEST] Thử solve captcha trực tiếp qua CDP (action: ${action})...`);
-    const browserManager = require('./browser_manager');
-    if (!browserManager.page) throw new Error('No Puppeteer page available for CDP captcha solve');
+    const bm = browserManager || require('./browser_manager');
+    if (!bm.page) throw new Error('No Puppeteer page available for CDP captcha solve');
     const SITE_KEY = '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV';
-    const token = await browserManager.page.evaluate(({ siteKey, action }) => {
+    const token = await bm.page.evaluate(({ siteKey, action }) => {
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('grecaptcha timeout in page')), 20000);
         const wait = () => {
@@ -157,14 +158,14 @@ class CaptchaService extends EventEmitter {
   }
 
   // Request captcha solving via Chrome extension
-  async solveCaptcha(action = 'IMAGE_GENERATION', timeoutMs = 45000) {
+  async solveCaptcha(action = 'IMAGE_GENERATION', timeoutMs = 45000, browserManager = null) {
     await this._acquireLock();
 
     try {
       let client = this._pickClient();
       if (!client) {
         // CDP fallback: solve captcha directly in the Puppeteer page (no extension required)
-        return await this._solveViaCdp(action, timeoutMs);
+        return await this._solveViaCdp(action, timeoutMs, browserManager);
       }
 
       const requestId = `req_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;

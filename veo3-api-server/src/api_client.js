@@ -178,20 +178,23 @@ function releaseDownloadSlot() {
 }
 
 class ApiClient {
-  constructor() {
+  constructor(options = {}) {
     this.projectId = null;
     this.userTier = 'SERVICE_TIER_ADVANCED';
     this.paygateTier = 'PAYGATE_TIER_TWO';
     this.sessionId = ';' + Date.now();
+    this.browserManager = options.browserManager || browserManager;
+    this.cookieFile = options.cookieFile || config.COOKIE_FILE;
+    this.label = options.label || 'video';
   }
 
   // Load cookies and format as Cookie string for labs.google requests
   _getCookieHeader() {
-    if (!fs.existsSync(config.COOKIE_FILE)) {
-      throw new Error('cookies.json not found');
+    if (!fs.existsSync(this.cookieFile)) {
+      throw new Error(`${this.cookieFile} not found`);
     }
     try {
-      const content = fs.readFileSync(config.COOKIE_FILE, 'utf-8').trim();
+      const content = fs.readFileSync(this.cookieFile, 'utf-8').trim();
       if (!content) return '';
       let cookies = [];
       if (content.startsWith('[')) {
@@ -204,6 +207,26 @@ class ApiClient {
       logger.error('Failed to format cookie header', e);
       return '';
     }
+  }
+
+  // Retry wrapper for HTTP/2 stream errors (Google closes streams with
+  // NGHTTP2_ENHANCE_YOUR_CALM when too many run concurrently on one session).
+  async _retryH2(fn, attempts = 4) {
+    let lastErr;
+    for (let i = 1; i <= attempts; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        const msg = String(err?.message || err || '');
+        if (!/NGHTTP2_ENHANCE_YOUR_CALM|NGHTTP2_|stream closed|ECONNRESET|ETIMEDOUT/i.test(msg)) throw err;
+        if (i >= attempts) break;
+        const waitMs = 2000 * i + Math.floor(Math.random() * 1000);
+        logger.warn(`HTTP/2 stream error, retry ${i}/${attempts - 1} in ${waitMs / 1000}s...`);
+        await new Promise(r => setTimeout(r, waitMs));
+      }
+    }
+    throw lastErr;
   }
 
   // Base HTTP request to Google Labs TRPC endpoints using labs session cookies
@@ -235,7 +258,7 @@ class ApiClient {
       options.body = typeof body === 'string' ? body : JSON.stringify(body);
     }
 
-    const response = await gotScraping(options);
+    const response = await this._retryH2(() => gotScraping(options));
     
     let parsedBody = response.body;
     try {
@@ -256,7 +279,7 @@ class ApiClient {
   // Base HTTP request to Google aisandbox-pa backend using ya29 Bearer OAuth token
   async _apiRequest(method, endpoint, body = null) {
     const { gotScraping } = await import('got-scraping');
-    const token = await browserManager.getOAuthToken();
+    const token = await this.browserManager.getOAuthToken();
 
     const headers = {
       'Authorization': `Bearer ${token}`,
@@ -281,7 +304,7 @@ class ApiClient {
       options.body = typeof body === 'string' ? body : JSON.stringify(body);
     }
 
-    const response = await gotScraping(options);
+    const response = await this._retryH2(() => gotScraping(options));
     if (response.statusCode !== 200) {
       throw new Error(`API Gateway error ${response.statusCode}: ${JSON.stringify(response.body)}`);
     }
@@ -472,7 +495,7 @@ class ApiClient {
     const url = `/v1/projects/${projectId}/flowMedia:batchGenerateImages`;
     logger.info(`Sending image generation request for: "${prompt.substring(0, 30)}..."`);
     if (!reactiveCaptcha) {
-      const recaptchaToken = await captchaService.solveCaptcha('IMAGE_GENERATION');
+      const recaptchaToken = await captchaService.solveCaptcha('IMAGE_GENERATION', 45000, this.browserManager);
       return await this._apiRequest('POST', url, buildPayload(recaptchaToken));
     }
 
@@ -481,7 +504,7 @@ class ApiClient {
     } catch (err) {
       if (!this._isCaptchaRelatedError(err)) throw err;
       logger.info('[Image] Captcha requested by Google, solving and retrying once...');
-      const recaptchaToken = await captchaService.solveCaptcha('IMAGE_GENERATION');
+      const recaptchaToken = await captchaService.solveCaptcha('IMAGE_GENERATION', 45000, this.browserManager);
       return await this._apiRequest('POST', url, buildPayload(recaptchaToken));
     }
   }
@@ -576,7 +599,7 @@ class ApiClient {
     const url = endpoints[genType];
     logger.info(`Sending video generation request (${genType}, model: ${modelKey}) for: "${prompt.substring(0, 30)}..."`);
     if (!reactiveCaptcha) {
-      const recaptchaToken = await captchaService.solveCaptcha('VIDEO_GENERATION');
+      const recaptchaToken = await captchaService.solveCaptcha('VIDEO_GENERATION', 45000, this.browserManager);
       return await this._apiRequest('POST', url, buildPayload(recaptchaToken));
     }
 
@@ -585,7 +608,7 @@ class ApiClient {
     } catch (err) {
       if (!this._isCaptchaRelatedError(err)) throw err;
       logger.info('[Video] Captcha requested by Google, solving and retrying once...');
-      const recaptchaToken = await captchaService.solveCaptcha('VIDEO_GENERATION');
+      const recaptchaToken = await captchaService.solveCaptcha('VIDEO_GENERATION', 45000, this.browserManager);
       return await this._apiRequest('POST', url, buildPayload(recaptchaToken));
     }
   }
@@ -680,7 +703,7 @@ class ApiClient {
   }
 
   async _getVideoGcsUrlInner(mediaId, projectId, workflowId) {
-    const browser = browserManager.browser;
+    const browser = this.browserManager.browser;
     if (!browser) throw new Error('No browser context available');
 
     const editUrl = projectId && workflowId
@@ -704,8 +727,8 @@ class ApiClient {
         page = await browser.newPage();
         
         // Inherit cookies from the main page
-        if (browserManager.page) {
-          const cookies = await browserManager.page.cookies();
+        if (this.browserManager.page) {
+          const cookies = await this.browserManager.page.cookies();
           await page.setCookie(...cookies);
         }
 
@@ -782,11 +805,11 @@ class ApiClient {
   async getMediaUrl(mediaId, type = 'MEDIA_URL_TYPE_THUMBNAIL', { projectId, workflowId } = {}) {
     // Resolve via browser context first (avoids "Request Header Or Cookie Too Large" 400 errors).
     // Chrome handles cookies per-domain automatically instead of dumping all cookies into one header.
-    if (browserManager.page) {
+    if (this.browserManager.page) {
       try {
         const params = new URLSearchParams({ name: mediaId, mediaUrlType: type }).toString();
         const url = `${LABS_BASE}/fx/api/trpc/media.getMediaUrlRedirect?${params}`;
-        const finalUrl = await browserManager.page.evaluate(async (targetUrl) => {
+        const finalUrl = await this.browserManager.page.evaluate(async (targetUrl) => {
           try {
             const res = await fetch(targetUrl, {
               method: 'GET',
@@ -834,4 +857,17 @@ class ApiClient {
   }
 }
 
-module.exports = new ApiClient();
+const videoApiClient = new ApiClient({
+  label: 'video',
+  browserManager,
+  cookieFile: config.COOKIE_FILE
+});
+
+const imageApiClient = new ApiClient({
+  label: 'image',
+  browserManager: browserManager.image,
+  cookieFile: config.IMAGE_COOKIE_FILE
+});
+
+videoApiClient.image = imageApiClient;
+module.exports = videoApiClient;
