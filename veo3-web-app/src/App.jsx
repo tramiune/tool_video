@@ -1936,6 +1936,7 @@ function App() {
 
       const res = await fetch(`${API_BASE}/api/try-on`, {
         method: 'POST',
+        headers: { 'X-API-Key': import.meta.env.VITE_TRY_ON_API_KEY || 'meo3_tryon_k7p2m4x9' },
         body: formData
       });
 
