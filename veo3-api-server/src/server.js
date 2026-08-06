@@ -34,7 +34,7 @@ logger.onLog((logData) => {
 });
 
 // Configure file uploads
-const upload = multer({ dest: path.join(__dirname, '../uploads/') });
+const upload = multer({ dest: path.join(__dirname, '../uploads/'), limits: { files: 5, fileSize: 100 * 1024 * 1024 } });
 const autoToolUpload = multer({
   dest: path.join(__dirname, '../uploads/'),
   limits: { files: 3, fileSize: 10 * 1024 * 1024 }
@@ -210,7 +210,21 @@ function isRetryableTaskFailure(task) {
   return /INTERNAL|TIMED_OUT|TIMEOUT|timeout|VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Generation job finished with state: FAILED|UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED|OAuth token|capture token|UNAUTHENTICATED|\b401\b|QUOTA|RESOURCE_EXHAUSTED|\b429\b|Requested entity was not found|\bNOT_FOUND\b|\b404\b|Could not capture URL|Upload R2 failed|No successful media generated/i.test(rawCode);
 }
 
-app.use(cors());
+// CORS: only allow same-origin (legacy UI) + the public web app domain.
+// Never allow arbitrary origins to hit the API.
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // same-origin / non-browser requests
+    const allowed = [
+      'http://localhost:3456',
+      'https://api.meo3.cloud',
+      'https://tool-video.pages.dev',
+      'https://meo3.cloud'
+    ];
+    if (allowed.includes(origin)) return callback(null, true);
+    return callback(null, false); // don't set CORS headers → browser blocks
+  }
+}));
 app.use(express.json());
 
 // ─── LOCAL-ONLY GUARD ────────────────────────────────────────────────────────
@@ -220,14 +234,23 @@ app.use(express.json());
 // to these paths is rejected outright.
 const LOCAL_ONLY_PATHS = [
   '/api/set-cookies',
-  '/api/generate-image',
-  '/api/generate-video',
-  '/api/try-on',
-  '/api/upload',
-  '/api/audio/generate',
+  '/api/user-info',
+  '/api/token-status',
   '/force-refresh',
   '/captcha'
 ];
+
+// API-key protected endpoints: reachable through the tunnel but require a
+// shared secret header (used by external scripts like ai_web3/aff).
+const API_KEY_PATHS = ['/api/try-on'];
+const TRY_ON_API_KEY = process.env.TRY_ON_API_KEY || '';
+
+function isValidApiKey(req) {
+  if (!TRY_ON_API_KEY) return false;
+  return req.headers['x-api-key'] === TRY_ON_API_KEY
+    || req.headers.authorization === TRY_ON_API_KEY
+    || req.headers.authorization === `Bearer ${TRY_ON_API_KEY}`;
+}
 
 function isLocalRequest(req) {
   // Cloudflare tunnel runs on the same host, so remoteAddress is always
@@ -244,6 +267,11 @@ app.use((req, res, next) => {
   if (LOCAL_ONLY_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'))) {
     if (!isLocalRequest(req)) {
       return res.status(403).json({ error: 'Forbidden: endpoint is local-only' });
+    }
+  }
+  if (API_KEY_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'))) {
+    if (!isValidApiKey(req)) {
+      return res.status(401).json({ error: 'Unauthorized: missing or invalid X-API-Key' });
     }
   }
   next();
@@ -686,7 +714,8 @@ async function requireAdmin(req, res, next) {
     const userSnapshot = await db.collection('users').doc(decoded.uid).get();
     const userData = userSnapshot.exists ? userSnapshot.data() : {};
     const email = String(decoded.email || userData.email || '').toLowerCase();
-    if (userData.isAdmin !== true && !email.includes('traderfinn0312')) {
+    const ADMIN_EMAILS = ['traderfinn0312@gmail.com'];
+    if (userData.isAdmin !== true && !ADMIN_EMAILS.includes(email)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     req.authUser = { uid: decoded.uid, email: decoded.email || userData.email || null };
@@ -879,10 +908,24 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
 });
 
 // Proxy download to force attachment headers (works on mobile, ported from ai_web3)
+// Only allows media from our own R2 bucket / audio upstream (prevents SSRF).
+const ALLOWED_DOWNLOAD_HOSTS = [
+  'pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev',
+  'audio.aidancing.net'
+];
 app.get('/api/download', async (req, res) => {
   const fileUrl = req.query.url;
   const filename = req.query.filename || 'download';
   if (!fileUrl) return res.status(400).send('Missing url parameter');
+  let host;
+  try {
+    host = new URL(fileUrl).hostname;
+  } catch {
+    return res.status(400).send('Invalid url');
+  }
+  if (!ALLOWED_DOWNLOAD_HOSTS.includes(host)) {
+    return res.status(403).send('Forbidden: url host not allowed');
+  }
   try {
     const fetchResponse = await fetch(fileUrl);
     if (!fetchResponse.ok) throw new Error(`HTTP error ${fetchResponse.status}`);
@@ -1722,53 +1765,66 @@ async function cleanupOldTasks() {
     
     if (snapshot.empty) {
       logger.info('No expired tasks to clean up.');
-      return;
-    }
+    } else {
+      logger.info(`Found ${snapshot.size} expired tasks. Starting media deletion from R2 & doc deletion from Firestore...`);
+      const batch = db.batch();
+      
+      for (const doc of snapshot.docs) {
+        const docData = doc.data();
+        const filesToDelete = [];
 
-    logger.info(`Found ${snapshot.size} expired tasks. Starting media deletion from R2 & doc deletion from Firestore...`);
-    const batch = db.batch();
-    
-    for (const doc of snapshot.docs) {
-      const docData = doc.data();
-      const filesToDelete = [];
+        // Collect all media URLs
+        if (docData.mediaUrl) {
+          filesToDelete.push(docData.mediaUrl);
+        }
+        if (Array.isArray(docData.media)) {
+          docData.media.forEach(item => {
+            if (item.url) filesToDelete.push(item.url);
+          });
+        }
 
-      // Collect all media URLs
-      if (docData.mediaUrl) {
-        filesToDelete.push(docData.mediaUrl);
-      }
-      if (Array.isArray(docData.media)) {
-        docData.media.forEach(item => {
-          if (item.url) filesToDelete.push(item.url);
-        });
-      }
-
-      // Delete files from R2
-      for (const url of filesToDelete) {
-        if (url && url.startsWith(process.env.R2_PUBLIC_BASE)) {
-          const fileKey = url.replace(`${process.env.R2_PUBLIC_BASE}/`, '');
-          
-          // Safety guard: Only delete if key is in meo3 folders (meo3/videos/, meo3/images/, meo3/inputs/)
-          const isOurFolder = fileKey.startsWith('meo3/videos/') || fileKey.startsWith('meo3/images/') || fileKey.startsWith('meo3/inputs/');
-          
-          if (isOurFolder) {
-            try {
-              await deleteFromR2(fileKey);
-              logger.info(`Deleted file from Cloudflare R2: ${fileKey}`);
-            } catch (r2Err) {
-              logger.error(`Failed to delete ${fileKey} from R2:`, r2Err);
+        // Delete files from R2
+        for (const url of filesToDelete) {
+          if (url && url.startsWith(process.env.R2_PUBLIC_BASE)) {
+            const fileKey = url.replace(`${process.env.R2_PUBLIC_BASE}/`, '');
+            
+            // Safety guard: Only delete if key is in meo3 folders (meo3/videos/, meo3/images/, meo3/inputs/)
+            const isOurFolder = fileKey.startsWith('meo3/videos/') || fileKey.startsWith('meo3/images/') || fileKey.startsWith('meo3/inputs/');
+            
+            if (isOurFolder) {
+              try {
+                await deleteFromR2(fileKey);
+                logger.info(`Deleted file from Cloudflare R2: ${fileKey}`);
+              } catch (r2Err) {
+                logger.error(`Failed to delete ${fileKey} from R2:`, r2Err);
+              }
+            } else {
+              logger.warn(`Skipped deleting R2 key "${fileKey}" - safety guard active (not inside meo3 folders).`);
             }
-          } else {
-            logger.warn(`Skipped deleting R2 key "${fileKey}" - safety guard active (not inside meo3 folders).`);
           }
         }
+
+        // Add to Firestore batch delete
+        batch.delete(doc.ref);
       }
 
-      // Add to Firestore batch delete
-      batch.delete(doc.ref);
+      await batch.commit();
+      logger.success(`Successfully deleted ${snapshot.size} expired tasks from Firestore and matching media files from Cloudflare R2.`);
     }
 
-    await batch.commit();
-    logger.success(`Successfully deleted ${snapshot.size} expired tasks from Firestore and matching media files from Cloudflare R2.`);
+    // Clean up expired audio_tasks docs (media is hosted upstream on audio.aidancing.net,
+    // so we only remove the Firestore records after 24h).
+    const audioSnap = await db.collection('audio_tasks')
+      .where('createdAt', '<', oneDayAgo)
+      .get();
+    if (!audioSnap.empty) {
+      const audioBatch = db.batch();
+      for (const doc of audioSnap.docs) {
+        audioBatch.delete(doc.ref);
+      }
+      await audioBatch.commit();
+      logger.success(`Successfully deleted ${audioSnap.size} expired audio_tasks from Firestore.`);
+    }
   } catch (err) {
     logger.error('Error during expired tasks cleanup', err);
   }

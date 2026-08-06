@@ -118,6 +118,9 @@ class BrowserManager {
           '--allow-insecure-localhost',
           '--ignore-certificate-errors',
           '--mute-audio',
+          '--no-activate',
+          '--start-minimized',
+          '--window-position=-2000,-2000',
           '--disable-gpu',
           'about:blank'
         ];

@@ -865,8 +865,8 @@ const videoApiClient = new ApiClient({
 
 const imageApiClient = new ApiClient({
   label: 'image',
-  browserManager: browserManager.image,
-  cookieFile: config.IMAGE_COOKIE_FILE
+  browserManager,
+  cookieFile: config.COOKIE_FILE
 });
 
 videoApiClient.image = imageApiClient;
