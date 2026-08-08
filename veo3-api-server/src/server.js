@@ -16,7 +16,7 @@ const { db, auth } = require('./firebase_worker');
 const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
 const telegram = require('./telegram');
 const audioClient = require('./audio_client');
-const { processAutoToolJob, resumeAutoToolJobs } = require('./autotool');
+const { processAutoToolJob, resumeAutoToolJobs, generateProjectIdea, generateCharacterSuggestions, generateStyleSuggestion, generateScenes, generateCharacterImage, validatePlan } = require('./autotool');
 const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
 
 const app = express();
@@ -103,6 +103,113 @@ const imageQueue = [];   // parallel image tasks
 const IMAGE_CONCURRENCY = parseInt(process.env.IMAGE_CONCURRENCY || '10', 10);
 let activeImageWorkers = 0;
 
+// ─── GLOBAL GENERATION GATE (anti-throttle / anti-quota-exhaustion) ───────────
+// Google Flow throttles when the account sends too many generation requests in a
+// short window (PUBLIC_ERROR_USER_REQUESTS_THROTTLED) and blocks models for the
+// day once their daily quota is spent (PER_MODEL_DAILY_QUOTA_REACHED).
+// Strategy:
+//  1. Sliding-window rate limiter: never fire more than N generation triggers per
+//     minute across ALL workers, so bursts don't trip Google's user throttle.
+//  2. Circuit breaker: on any RESOURCE_EXHAUSTED / 429, open a global backoff
+//     window; every worker waits for it to close before the next trigger.
+//  3. Requeue instead of fail: throttled tasks go back to pending and retry after
+//     the window, instead of dying and burning AutoTool retry attempts.
+//  4. Daily-quota model blacklist: models that hit PER_MODEL_DAILY_QUOTA_REACHED
+//     are skipped for the rest of the process lifetime (fallback chain moves on).
+
+const RATE_WINDOW_MS = 60 * 1000;
+const VIDEO_MAX_PER_WINDOW = parseInt(process.env.VIDEO_MAX_PER_MINUTE || '2', 10);
+const IMAGE_MAX_PER_WINDOW = parseInt(process.env.IMAGE_MAX_PER_MINUTE || '4', 10);
+const THROTTLE_MAX_BACKOFF_MS = parseInt(process.env.THROTTLE_MAX_BACKOFF_MS || (10 * 60 * 1000), 10);
+const videoTriggerTimes = [];
+const imageTriggerTimes = [];
+
+const throttleState = {
+  video: { until: 0, backoffMs: 30 * 1000 },
+  image: { until: 0, backoffMs: 30 * 1000 }
+};
+
+const imageQuotaExhaustedModels = new Set();
+
+function isThrottleError(error) {
+  const raw = [error?.code, error?.message, error].filter(Boolean).map(String).join(' | ');
+  return /RESOURCE_EXHAUSTED|USER_REQUESTS_THROTTLED|\b429\b|quota/i.test(raw);
+}
+
+function isDailyQuotaError(error) {
+  return /PER_MODEL_DAILY_QUOTA_REACHED|DAILY_QUOTA|Resource has been exhausted/i.test(String(error?.message || ''));
+}
+
+function registerThrottle(type, error) {
+  const state = throttleState[type];
+  const now = Date.now();
+  const wasActive = state.until > now;
+  state.backoffMs = Math.min(wasActive ? state.backoffMs * 2 : 30 * 1000, THROTTLE_MAX_BACKOFF_MS);
+  state.until = now + state.backoffMs;
+  logger.warn(`[Throttle] ${type} circuit ${wasActive ? 'RE-OPENED' : 'OPENED'}: pausing ${type} for ${Math.round(state.backoffMs / 1000)}s (${String(error?.message || error).slice(0, 100)})`);
+}
+
+async function waitForThrottleGate(type) {
+  const state = throttleState[type];
+  while (state.until > Date.now()) {
+    const waitMs = state.until - Date.now();
+    logger.info(`[Throttle] ${type} circuit open, sleeping ${Math.round(waitMs / 1000)}s...`);
+    await sleep(Math.min(waitMs, 15 * 1000));
+  }
+}
+
+async function acquireGenerationSlot(type) {
+  await waitForThrottleGate(type);
+  const limit = type === 'video' ? VIDEO_MAX_PER_WINDOW : IMAGE_MAX_PER_WINDOW;
+  const arr = type === 'video' ? videoTriggerTimes : imageTriggerTimes;
+  const now = Date.now();
+  const windowStart = now - RATE_WINDOW_MS;
+  while (arr.length && arr[0] < windowStart) arr.shift();
+  if (arr.length < limit) {
+    arr.push(now);
+    return;
+  }
+  const waitMs = arr[0] + RATE_WINDOW_MS - now;
+  logger.info(`[RateLimit] ${type} slot full (${arr.length}/${limit} per minute), waiting ${Math.round(waitMs / 1000)}s...`);
+  await sleep(Math.min(waitMs + 500, 15 * 1000));
+  await acquireGenerationSlot(type);
+}
+
+// Requeue a task after a throttle/429 so it retries when Google calms down,
+// instead of being marked failed and burning the user's / AutoTool's attempts.
+async function requeueThrottledTask(task, type) {
+  const retryCount = Number(task.retryCount) || 0;
+  if (retryCount >= 10) {
+    const failure = getFriendlyTaskFailure(
+      new Error('Google đang giới hạn tài khoản vì quá nhiều yêu cầu. Hãy chờ một lúc rồi thử lại.'),
+      type
+    );
+    task.status = 'failed';
+    task.error = failure.message;
+    task.errorCode = failure.code || 'THROTTLE_LIMIT';
+    await task.docRef.update({ status: 'failed', error: failure.message, errorCode: task.errorCode });
+    logger.warn(`[Throttle] ${type} task ${task.id} gave up after ${retryCount} requeues`);
+    return;
+  }
+  task.status = 'pending';
+  task.error = null;
+  task.errorCode = null;
+  task.retryCount = retryCount + 1;
+  await task.docRef.update({
+    status: 'pending',
+    error: null,
+    errorCode: null,
+    retryCount: retryCount + 1,
+    retriedAt: Date.now()
+  });
+  if (type === 'video') {
+    videoScheduler.enqueue(task.id);
+  } else {
+    imageQueue.push(task.id);
+  }
+  logger.info(`[Throttle] ${type} task ${task.id} requeued after throttle (retry ${retryCount + 1})`);
+}
+
 // ─── SESSION CACHE (anti-account-sharing) ────────────────────────────────────
 const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const sessionCache = new Map(); // userId -> { sessionId, expiresAt }
@@ -149,6 +256,22 @@ const videoScheduler = new PerUserVideoScheduler({
   onError: (error, taskId) => logger.error(`[Video] Scheduler error${taskId ? ` for ${taskId}` : ''}`, error)
 });
 
+// Round-robin across video nicks. The 2nd video nick is used only once its
+// profile + cookies exist (so it's safe before the user logs it in).
+let videoClientRR = 0;
+function getVideoClients() {
+  const list = [apiClient];
+  if (fs.existsSync(config.VIDEO2_COOKIE_FILE) && fs.existsSync(config.VIDEO2_USER_DATA_DIR)) {
+    list.push(apiClient.video2);
+  }
+  return list;
+}
+function nextVideoClient() {
+  const list = getVideoClients();
+  videoClientRR = (videoClientRR + 1) % list.length;
+  return list[videoClientRR];
+}
+
 function getTaskFailureText(error) {
   return [error?.code, error?.message, error].filter(Boolean).map(String).join(' | ');
 }
@@ -174,8 +297,23 @@ function getFriendlyTaskFailure(error, type = 'video') {
   if (/DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(rawCode)) {
     return { code: rawCode, message: `${type === 'video' ? 'Video' : 'Ảnh'} bị bộ lọc an toàn từ chối. Hãy đổi ảnh hoặc nội dung.` };
   }
+  if (/PUBLIC_ERROR_MODEL_ACCESS_DENIED/i.test(rawCode)) {
+    return { code: rawCode, message: 'Mẫu AI này tạm thời không khả dụng với phiên đang dùng. Hãy thử lại sau giây lát.' };
+  }
+  if (/PUBLIC_ERROR_USER_REQUESTS_THROTTLED/i.test(rawCode)) {
+    return { code: rawCode, message: 'Bạn đang gửi yêu cầu hơi nhanh. Hãy chờ vài giây rồi thử lại.' };
+  }
+  if (/Failed to enqueue generation/i.test(rawCode)) {
+    return { code: rawCode, message: 'Hệ thống chưa tiếp nhận được lệnh tạo. Hãy bấm Thử lại.' };
+  }
+  if (/INVALID_ARGUMENT|invalid argument/i.test(rawCode)) {
+    return { code: rawCode, message: 'Yêu cầu có tham số không hợp lệ (ảnh hoặc tỷ lệ). Hãy kiểm tra lại rồi thử.' };
+  }
   if (/VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Could not capture URL|Upload R2 failed|No successful media generated/i.test(rawCode)) {
     return { code: rawCode, message: 'Tác phẩm đã xử lý nhưng máy chủ không lưu được kết quả. Hãy bấm Thử lại.' };
+  }
+  if (/Failed to resolve media download link/i.test(rawCode)) {
+    return { code: rawCode, message: 'Video đã tạo xong nhưng không tải được về. Hãy bấm Thử lại.' };
   }
   if (/TIMED_OUT|TIMEOUT|timeout/i.test(rawCode)) {
     return { code: rawCode, message: 'Hệ thống xử lý quá thời gian. Hãy bấm Thử lại.' };
@@ -186,7 +324,7 @@ function getFriendlyTaskFailure(error, type = 'video') {
   if (/UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED/i.test(rawCode)) {
     return { code: rawCode, message: 'Hệ thống tạm thời bị Google giới hạn. Hãy chờ khoảng 30 giây rồi thử lại.' };
   }
-  if (/OAuth token|capture token|UNAUTHENTICATED|\b401\b/i.test(rawCode)) {
+  if (/OAuth token|capture token|UNAUTHENTICATED|UNAUTHORIZED|\b401\b/i.test(rawCode)) {
     return { code: rawCode, message: 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Hãy thử lại sau.' };
   }
   if (/QUOTA|RESOURCE_EXHAUSTED|\b429\b/i.test(rawCode)) {
@@ -207,7 +345,7 @@ function isRetryableTaskFailure(task) {
   if (/CHILD_DANGER|PUBLIC_ERROR_MINOR|AUDIO_FILTER|AUDIO_GENERATION_FILTERED|IP_INPUT_IMAGE|IP_PROHIBITED|PROMINENT|PUBLIC_ERROR_SEXUAL|DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(rawCode)) {
     return false;
   }
-  return /INTERNAL|TIMED_OUT|TIMEOUT|timeout|VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Generation job finished with state: FAILED|UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED|OAuth token|capture token|UNAUTHENTICATED|\b401\b|QUOTA|RESOURCE_EXHAUSTED|\b429\b|Requested entity was not found|\bNOT_FOUND\b|\b404\b|Could not capture URL|Upload R2 failed|No successful media generated/i.test(rawCode);
+  return /INTERNAL|TIMED_OUT|TIMEOUT|timeout|VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Generation job finished with state: FAILED|Failed to enqueue generation|Failed to resolve media download link|UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED|OAuth token|capture token|UNAUTHENTICATED|UNAUTHORIZED|\b401\b|QUOTA|RESOURCE_EXHAUSTED|\b429\b|Requested entity was not found|\bNOT_FOUND\b|\b404\b|Could not capture URL|Upload R2 failed|No successful media generated/i.test(rawCode);
 }
 
 // CORS: only allow same-origin (legacy UI) + the public web app domain.
@@ -823,45 +961,396 @@ app.get('/api/autotool/jobs/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── AUTOTOOL PROJECTS (multi-project / multi-series) ──────────────────────
+function normalizeAutoToolProject(raw) {
+  const project = (raw && typeof raw === 'object') ? raw : {};
+  const characters = Array.isArray(project.characters) ? project.characters.slice(0, 3) : [];
+  return {
+    name: String(project.name || '').trim().slice(0, 200),
+    overview: String(project.overview || '').trim().slice(0, 3000),
+    mode: project.mode === 'standalone' ? 'standalone' : 'series',
+    characters: characters.map((character, index) => ({
+      name: String(character?.name || '').trim().slice(0, 120) || `Character ${index + 1}`,
+      age: String(character?.age ?? '').trim().slice(0, 100),
+      description: String(character?.description || '').trim().slice(0, 2000),
+      imageUrl: String(character?.imageUrl || '').trim()
+    })),
+    characterImageUrls: Array.isArray(project.characterImageUrls)
+      ? project.characterImageUrls.map(url => String(url || '').trim())
+      : characters.map(character => character.imageUrl),
+    style: {
+      artStyle: String(project.style?.artStyle || '').trim().slice(0, 500),
+      colorPalette: String(project.style?.colorPalette || '').trim().slice(0, 500),
+      mood: String(project.style?.mood || '').trim().slice(0, 500),
+      lighting: String(project.style?.lighting || '').trim().slice(0, 500),
+      camera: String(project.style?.camera || '').trim().slice(0, 500)
+    },
+    scenes: Array.isArray(project.scenes) ? project.scenes.slice(0, 6).map(scene => ({
+      title: String(scene?.title || 'Scene').trim().slice(0, 160),
+      imagePrompt: String(scene?.imagePrompt || '').trim(),
+      videoPrompt: String(scene?.videoPrompt || '').trim()
+    })) : [],
+    episodeCount: Number(project.episodeCount) || 0,
+    episodes: Array.isArray(project.episodes) ? project.episodes.slice(0, 50) : []
+  };
+}
+
+app.get('/api/autotool/projects', requireAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection('autotool_projects').where('userId', '==', req.authUser.uid).get();
+    const projects = snapshot.docs
+      .map(document => ({ id: document.id, ...normalizeAutoToolProject(document.data()), updatedAt: document.data().updatedAt || 0 }))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return res.json({ projects });
+  } catch (error) {
+    logger.error('AutoTool projects list failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/autotool/projects', requireAdmin, async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Project name is required' });
+    if (name.length > 200) return res.status(400).json({ error: 'Project name is too long' });
+    const ref = db.collection('autotool_projects').doc();
+    const now = Date.now();
+    const data = {
+      ...normalizeAutoToolProject({ name }),
+      userId: req.authUser.uid,
+      userEmail: req.authUser.email,
+      createdAt: now,
+      updatedAt: now
+    };
+    await ref.set(data);
+    logger.info(`[AutoTool] Created project "${name}" for ${req.authUser.email}`);
+    return res.status(201).json({ success: true, project: { id: ref.id, ...data, updatedAt: now } });
+  } catch (error) {
+    logger.error('AutoTool project creation failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/autotool/projects/:id', requireAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection('autotool_projects').doc(req.params.id).get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'AutoTool project not found' });
+    const data = snapshot.data();
+    if (data.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    return res.json({ project: { id: snapshot.id, ...normalizeAutoToolProject(data), updatedAt: data.updatedAt || 0 } });
+  } catch (error) {
+    logger.error('AutoTool project lookup failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/autotool/projects/:id', requireAdmin, parseAutoToolUpload, async (req, res) => {
+  const files = req.files?.characterImages || [];
+  try {
+    const ref = db.collection('autotool_projects').doc(req.params.id);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'AutoTool project not found' });
+    if (snapshot.data().userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+
+    const current = snapshot.data();
+    const next = {
+      name: String(req.body?.name ?? current.name ?? '').trim().slice(0, 200),
+      overview: String(req.body?.overview ?? current.overview ?? '').trim().slice(0, 3000),
+      mode: req.body?.mode === 'standalone' || current.mode === 'standalone' ? 'standalone' : 'series',
+      style: {
+        artStyle: String(req.body?.artStyle ?? current.style?.artStyle ?? '').trim().slice(0, 500),
+        colorPalette: String(req.body?.colorPalette ?? current.style?.colorPalette ?? '').trim().slice(0, 500),
+        mood: String(req.body?.mood ?? current.style?.mood ?? '').trim().slice(0, 500),
+        lighting: String(req.body?.lighting ?? current.style?.lighting ?? '').trim().slice(0, 500),
+        camera: String(req.body?.camera ?? current.style?.camera ?? '').trim().slice(0, 500)
+      },
+      scenes: null
+    };
+
+    let characters = current.characters || [];
+    if (req.body?.characters !== undefined) {
+      try {
+        characters = validateAutoToolCharacters(req.body.characters);
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
+
+    if (req.body?.scenes !== undefined) {
+      let scenes;
+      try {
+        scenes = typeof req.body.scenes === 'string' ? JSON.parse(req.body.scenes) : req.body.scenes;
+        if (!Array.isArray(scenes) || scenes.length < 1 || scenes.length > 6) {
+          return res.status(400).json({ error: 'scenes must be a JSON array of 1-6 scenes' });
+        }
+        scenes = scenes.map(scene => ({
+          title: String(scene?.title || 'Scene').trim().slice(0, 160),
+          imagePrompt: String(scene?.imagePrompt || '').trim(),
+          videoPrompt: String(scene?.videoPrompt || '').trim()
+        }));
+        if (scenes.some(scene => !scene.imagePrompt || !scene.videoPrompt)) {
+          return res.status(400).json({ error: 'Every scene must have imagePrompt and videoPrompt' });
+        }
+        next.scenes = scenes;
+      } catch (error) {
+        return res.status(400).json({ error: `Invalid scenes JSON: ${error.message}` });
+      }
+    }
+
+    let imageIndexes = [];
+    if (req.body?.imageIndexes !== undefined) {
+      try {
+        imageIndexes = parseAutoToolJsonField(req.body.imageIndexes ?? '[]', 'imageIndexes');
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
+    if (imageIndexes.length !== files.length) {
+      return res.status(400).json({ error: 'imageIndexes must match the uploaded characterImages files' });
+    }
+    if (files.some(file => !String(file.mimetype || '').startsWith('image/'))) {
+      return res.status(400).json({ error: 'characterImages must contain only image files' });
+    }
+    if (imageIndexes.some(index => !Number.isInteger(index) || index < 0 || index >= characters.length)) {
+      return res.status(400).json({ error: 'Each imageIndexes value must identify an existing character' });
+    }
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+      const file = files[fileIndex];
+      const extension = path.extname(file.originalname) || '.jpg';
+      const key = `meo3/autotool/characters/${req.authUser.uid}/${uuidv4()}${extension}`;
+      const buffer = await fs.promises.readFile(file.path);
+      characters[imageIndexes[fileIndex]].imageUrl = await uploadToR2(buffer, key, file.mimetype || 'image/jpeg');
+    }
+
+    const data = {
+      ...next,
+      characters,
+      characterImageUrls: characters.map(character => character.imageUrl),
+      episodeCount: Number(current.episodeCount) || 0,
+      episodes: Array.isArray(current.episodes) ? current.episodes : [],
+      userId: current.userId,
+      userEmail: current.userEmail,
+      createdAt: current.createdAt || Date.now(),
+      updatedAt: Date.now()
+    };
+    data.scenes = next.scenes !== null ? next.scenes : (Array.isArray(current.scenes) ? current.scenes : []);
+    await ref.set(data);
+    logger.info(`[AutoTool] Saved project "${data.name}"`);
+    return res.json({ success: true, project: { id: ref.id, ...normalizeAutoToolProject(data), updatedAt: data.updatedAt } });
+  } catch (error) {
+    logger.error('AutoTool project update failed', error);
+    return res.status(500).json({ error: error.message });
+  } finally {
+    await Promise.all(files.map(file => fs.promises.unlink(file.path).catch(() => {})));
+  }
+});
+
+app.delete('/api/autotool/projects/:id', requireAdmin, async (req, res) => {
+  try {
+    const ref = db.collection('autotool_projects').doc(req.params.id);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'AutoTool project not found' });
+    if (snapshot.data().userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    await ref.delete();
+    logger.info(`[AutoTool] Deleted project ${req.params.id}`);
+    return res.json({ success: true });
+  } catch (error) {
+    logger.error('AutoTool project delete failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// AI draft endpoints: each returns a rough draft the user can review & adjust.
+app.post('/api/autotool/projects/:id/ai/idea', requireAdmin, async (req, res) => {
+  try {
+    const topic = String(req.body?.topic || '').trim();
+    if (!topic) return res.status(400).json({ error: 'topic is required' });
+    if (topic.length > 5000) return res.status(400).json({ error: 'topic is too long' });
+    const draft = await generateProjectIdea({ topic });
+    logger.success(`[AutoTool] AI drafted project idea from topic`);
+    return res.json({ success: true, draft });
+  } catch (error) {
+    logger.error('AutoTool AI idea draft failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/autotool/projects/:id/ai/characters', requireAdmin, async (req, res) => {
+  try {
+    const ref = db.collection('autotool_projects').doc(req.params.id);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'AutoTool project not found' });
+    if (snapshot.data().userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    const project = normalizeAutoToolProject(snapshot.data());
+    const characters = await generateCharacterSuggestions(project);
+    logger.success(`[AutoTool] AI suggested ${characters.length} character(s)`);
+    return res.json({ success: true, characters });
+  } catch (error) {
+    logger.error('AutoTool AI character draft failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/autotool/projects/:id/ai/style', requireAdmin, async (req, res) => {
+  try {
+    const ref = db.collection('autotool_projects').doc(req.params.id);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'AutoTool project not found' });
+    if (snapshot.data().userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    const project = normalizeAutoToolProject(snapshot.data());
+    const style = await generateStyleSuggestion(project);
+    logger.success(`[AutoTool] AI suggested a visual style`);
+    return res.json({ success: true, style });
+  } catch (error) {
+    logger.error('AutoTool AI style draft failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/autotool/projects/:id/ai/scenes', requireAdmin, async (req, res) => {
+  try {
+    const ref = db.collection('autotool_projects').doc(req.params.id);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'AutoTool project not found' });
+    if (snapshot.data().userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    const project = normalizeAutoToolProject(snapshot.data());
+    if (!project.name || !project.overview) {
+      return res.status(400).json({ error: 'Save the project overview before generating scenes' });
+    }
+    if (project.characters.some(character => !character.imageUrl)) {
+      return res.status(400).json({ error: 'Every character needs an image (AI-generated or uploaded) before generating scenes' });
+    }
+    const priorContext = await getAutoToolEpisodeContext(req.authUser.uid, { ...project, id: req.params.id });
+    const plan = await generateScenes(project, priorContext);
+    await ref.update({ scenes: plan.scenes, episodeTitleDraft: plan.episodeTitle, updatedAt: Date.now() });
+    logger.success(`[AutoTool] AI drafted ${plan.scenes.length} scene(s) for project "${project.name}"`);
+    return res.json({ success: true, plan });
+  } catch (error) {
+    logger.error('AutoTool AI scene draft failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/autotool/projects/:id/ai/character-image', requireAdmin, async (req, res) => {
+  const characterIndex = Number(req.body?.characterIndex);
+  try {
+    const ref = db.collection('autotool_projects').doc(req.params.id);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'AutoTool project not found' });
+    if (snapshot.data().userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    const project = normalizeAutoToolProject(snapshot.data());
+    if (!Number.isInteger(characterIndex) || characterIndex < 0 || characterIndex >= project.characters.length) {
+      return res.status(400).json({ error: 'characterIndex is out of range' });
+    }
+    const character = project.characters[characterIndex];
+    if (!character.name) return res.status(400).json({ error: 'Character needs a name before generating an image' });
+    const imageUrl = await generateCharacterImage(
+      { ...project, id: req.params.id, userId: snapshot.data().userId },
+      character,
+      characterIndex
+    );
+    const currentCharacters = Array.isArray(snapshot.data().characters) ? snapshot.data().characters.map(c => ({ ...c })) : [];
+    while (currentCharacters.length <= characterIndex) currentCharacters.push({});
+    currentCharacters[characterIndex] = {
+      ...currentCharacters[characterIndex],
+      name: String(currentCharacters[characterIndex]?.name || character.name || '').trim().slice(0, 120),
+      age: String(currentCharacters[characterIndex]?.age ?? character.age ?? '').trim().slice(0, 100),
+      description: String(currentCharacters[characterIndex]?.description || character.description || '').trim().slice(0, 2000),
+      imageUrl,
+      imageStatus: 'generated'
+    };
+    await ref.update({
+      characters: currentCharacters,
+      characterImageUrls: currentCharacters.map(c => String(c?.imageUrl || '').trim()),
+      updatedAt: Date.now()
+    });
+    logger.success(`[AutoTool] Saved generated character image for "${character.name}"`);
+    return res.json({ success: true, imageUrl });
+  } catch (error) {
+    logger.error('AutoTool AI character image failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+async function getAutoToolEpisodeContext(userId, project) {
+  if (!userId) return '';
+  const snapshot = await db.collection('autotool_jobs')
+    .where('projectId', '==', project.id)
+    .limit(50)
+    .get();
+  return snapshot.docs
+    .map(document => document.data())
+    .filter(episode => episode.status === 'completed')
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, 10)
+    .map(episode => {
+      const scenes = (Array.isArray(episode.scenes) ? episode.scenes : []).map(scene => {
+        const title = String(scene.title || 'Untitled scene').slice(0, 120);
+        const imagePrompt = String(scene.imagePrompt || '').replace(/\s+/g, ' ').slice(0, 120);
+        const videoPrompt = String(scene.videoPrompt || '').replace(/\s+/g, ' ').slice(0, 120);
+        return `${title} [image: ${imagePrompt}; video: ${videoPrompt}]`;
+      }).join(' | ');
+      return `Episode ${episode.episodeNumber || '?'} - ${episode.episodeTitle || 'Untitled'}${scenes ? `: ${scenes}` : ''}`;
+    })
+    .join('\n');
+}
+
 app.post('/api/autotool/jobs', requireAdmin, async (req, res) => {
   try {
-    const profileRef = db.collection('autotool_profiles').doc(req.authUser.uid);
+    const projectId = String(req.body?.projectId || '').trim();
+    if (!projectId) {
+      return res.status(400).json({ error: 'projectId is required' });
+    }
+    const projectRef = db.collection('autotool_projects').doc(projectId);
+    const projectSnapshot = await projectRef.get();
+    if (!projectSnapshot.exists) return res.status(404).json({ error: 'AutoTool project not found' });
+    const projectData = projectSnapshot.data();
+    if (projectData.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+
+    const project = normalizeAutoToolProject(projectData);
+    if (!project.name || !project.overview) {
+      return res.status(400).json({ error: 'Complete the project idea before generating an episode' });
+    }
+    if (!Array.isArray(project.scenes) || project.scenes.length < 1) {
+      return res.status(400).json({ error: 'Generate and save the scene plan before creating an episode' });
+    }
+    if (project.characters.some(character => !character.imageUrl)) {
+      return res.status(400).json({ error: 'Every character needs an image before generating an episode' });
+    }
+
     const jobRef = db.collection('autotool_jobs').doc();
     let episodeNumber;
     await db.runTransaction(async transaction => {
-      const snapshot = await transaction.get(profileRef);
-      if (!snapshot.exists) throw Object.assign(new Error('Create an AutoTool profile before generating an episode'), { statusCode: 400 });
-      const profile = snapshot.data();
-      const channelTopic = typeof profile.channelTopic === 'string' ? profile.channelTopic.trim() : '';
-      let characters;
-      try {
-        characters = validateAutoToolCharacters(profile.characters);
-      } catch (error) {
-        throw Object.assign(new Error('AutoTool profile is incomplete'), { statusCode: 400 });
-      }
-      const characterImageUrls = Array.isArray(profile.characterImageUrls) ? profile.characterImageUrls : [];
-      const imagesMatchCharacters = characterImageUrls.length === characters.length
-        && characterImageUrls.every((url, index) => url === characters[index].imageUrl && /^https?:\/\//i.test(url));
-      if (!channelTopic || channelTopic.length > 5000 || !['series', 'standalone'].includes(profile.mode)
-        || !imagesMatchCharacters) {
-        throw Object.assign(new Error('AutoTool profile is incomplete'), { statusCode: 400 });
-      }
-
-      episodeNumber = (Number.isInteger(profile.episodeCount) ? profile.episodeCount : 0) + 1;
+      const snapshot = await transaction.get(projectRef);
+      if (!snapshot.exists) throw Object.assign(new Error('AutoTool project not found'), { statusCode: 404 });
+      const current = snapshot.data();
+      episodeNumber = (Number(current.episodeCount) || 0) + 1;
       const now = Date.now();
-      transaction.update(profileRef, { episodeCount: episodeNumber, updatedAt: now });
+      transaction.update(projectRef, { episodeCount: episodeNumber, updatedAt: now });
       transaction.set(jobRef, {
         userId: req.authUser.uid,
         userEmail: req.authUser.email,
-        profileId: profileRef.id,
-        channelTopic,
-        topic: channelTopic,
-        mode: profile.mode,
-        characters,
-        characterImageUrls,
+        projectId,
+        projectName: project.name,
+        channelTopic: project.overview,
+        topic: project.name,
+        mode: project.mode,
+        characters: project.characters,
+        characterImageUrls: project.characterImageUrls,
+        scenes: project.scenes.map((scene, index) => ({
+          index,
+          title: scene.title,
+          imagePrompt: scene.imagePrompt,
+          videoPrompt: scene.videoPrompt,
+          imageTaskId: null,
+          imageUrl: null,
+          videoTaskId: null,
+          videoUrl: null,
+          status: 'pending',
+          error: null
+        })),
         episodeNumber,
         episodeTitle: null,
-        scenes: [],
         status: 'queued',
         progress: 0,
         currentScene: null,
@@ -1406,7 +1895,7 @@ async function runImageTask(taskId) {
   if (!task) return;
 
   const imageClient = apiClient.image;
-  const imageBrowser = browserManager.image;
+  const imageBrowser = browserManager;
 
   try {
     await task.docRef.update({ status: 'processing' });
@@ -1429,14 +1918,17 @@ async function runImageTask(taskId) {
 
     const chosenModel = task.model || 'imagen_4';
     const imageModels = ['imagen_4', 'nano_banana_pro', 'nano_banana_2'];
-    // Ensure the chosen model is tried first, then fallbacks
-    const imageModelsToTry = [chosenModel, ...imageModels.filter(m => m !== chosenModel)];
+    // Ensure the chosen model is tried first, then fallbacks (skip models that
+    // already exhausted their daily quota so we don't waste attempts).
+    const imageModelsToTry = [chosenModel, ...imageModels.filter(m => m !== chosenModel)]
+      .filter(m => !imageQuotaExhaustedModels.has(m));
 
     let genRes = null;
     let lastError = null;
 
     for (const modelKey of imageModelsToTry) {
       try {
+        await acquireGenerationSlot('image');
         logger.info(`[Image] Attempting generation with model: ${modelKey}`);
         genRes = await imageClient.generateImage(task.prompt, {
           aspectRatio: task.aspectRatio,
@@ -1449,7 +1941,16 @@ async function runImageTask(taskId) {
           break; // Successfully triggered and generated!
         }
       } catch (err) {
-        logger.warn(`[Image] Model ${modelKey} failed: ${err.message}. Trying next fallback model...`);
+        if (isDailyQuotaError(err)) {
+          imageQuotaExhaustedModels.add(modelKey);
+          logger.warn(`[Image] Model ${modelKey} hit daily quota; blacklisting for today. Trying next fallback model...`);
+        } else if (isThrottleError(err)) {
+          registerThrottle('image', err);
+          await requeueThrottledTask(task, 'image');
+          return;
+        } else {
+          logger.warn(`[Image] Model ${modelKey} failed: ${err.message}. Trying next fallback model...`);
+        }
         lastError = err;
       }
     }
@@ -1583,11 +2084,12 @@ async function runVideoTask(taskId) {
   try {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
-    logger.info(`[Video] Starting task execution: ${taskId} (active workers: ${videoScheduler.activeCount}, user workers: ${videoScheduler.activeForUser(task.userId || 'anonymous')})`);
+    const vc = nextVideoClient();
+    logger.info(`[Video] Starting task execution: ${taskId} via nick ${vc.label} (active workers: ${videoScheduler.activeCount}, user workers: ${videoScheduler.activeForUser(task.userId || 'anonymous')})`);
 
     // 1. Upload start/end images if they are filepaths or URLs
-    task.startImage = await processImageInput(task.startImage);
-    task.endImage = await processImageInput(task.endImage);
+    task.startImage = await processImageInput(task.startImage, vc);
+    task.endImage = await processImageInput(task.endImage, vc);
 
     // Only use the forced Veo 3.1 Lite (Lower Priority) model without fallback as requested
     const videoModelsToTry = ['veo_3_1_lite'];
@@ -1604,8 +2106,9 @@ async function runVideoTask(taskId) {
 
     for (const modelKey of videoModelsToTry) {
       try {
+        await acquireGenerationSlot('video');
         logger.info(`[Video] Attempting generation with model: ${modelKey}`);
-        genRes = await apiClient.generateVideo(task.prompt, {
+        genRes = await vc.generateVideo(task.prompt, {
           aspectRatio: task.aspectRatio,
           model: modelKey,
           count: task.count,
@@ -1619,6 +2122,11 @@ async function runVideoTask(taskId) {
           break; // Successfully triggered!
         }
       } catch (err) {
+        if (isThrottleError(err)) {
+          registerThrottle('video', err);
+          await requeueThrottledTask(task, 'video');
+          return;
+        }
         logger.warn(`[Video] Model ${modelKey} failed to trigger: ${err.message}. Trying next fallback model...`);
         lastError = err;
       }
@@ -1635,12 +2143,12 @@ async function runVideoTask(taskId) {
 
     const mediaToPoll = rawMedia.map(m => ({
       name: m.name,
-      projectId: m.projectId || apiClient.projectId
+      projectId: m.projectId || vc.projectId
     }));
 
     // 3. Poll for status
     logger.info(`Polling status for ${mediaToPoll.length} items...`);
-    const pollRes = await apiClient.waitForVideos(mediaToPoll, {
+    const pollRes = await vc.waitForVideos(mediaToPoll, {
       onProgress: (statusData, elapsed) => {
         task.progress = `${elapsed}s elapsed`;
         logger.info(`[Video] Task ${taskId} polling progress: ${elapsed}s`);
@@ -1657,7 +2165,7 @@ async function runVideoTask(taskId) {
       if (genStatus === 'MEDIA_GENERATION_STATUS_SUCCESSFUL' || genStatus === 'GENERATION_STATUS_SUCCESSFUL' || genStatus === 'SUCCESSFUL') {
         const projectId = item.projectId;
         const workflowId = item.workflowId;
-        const downloadUrl = await apiClient.getMediaUrl(item.name, 'MEDIA_URL_TYPE_VIDEO', { projectId, workflowId });
+        const downloadUrl = await vc.getMediaUrl(item.name, 'MEDIA_URL_TYPE_VIDEO', { projectId, workflowId });
 
         // Download with retry (up to 3 attempts)
         let lastDlErr = null;
@@ -1666,7 +2174,7 @@ async function runVideoTask(taskId) {
             if (attempt > 1) logger.info(`[Video] Download retry ${attempt}/3 for ${taskId}...`);
 
             logger.info(`Downloading video via browser context (attempt ${attempt}/3)...`);
-            const bufferArray = await browserManager.page.evaluate(async (url) => {
+            const bufferArray = await vc.browserManager.page.evaluate(async (url) => {
               const res = await fetch(url);
               if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
               const buffer = await res.arrayBuffer();
@@ -1868,9 +2376,18 @@ startCookieSyncListener().then(() => {
   browserManager.initialize().catch(err => {
     logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
   });
-  browserManager.image.initialize().catch(err => {
-    logger.warn(`Initial image browser startup warning: ${err.message}. It will retry on the first API call.`);
-  });
+  if (fs.existsSync(config.IMAGE_USER_DATA_DIR)) {
+    browserManager.image.initialize().catch(err => {
+      logger.warn(`Initial image browser startup warning: ${err.message}. It will retry on the first API call.`);
+    });
+  }
+
+  // Warm up the 2nd video nick if its profile exists (login captured on first request)
+  if (fs.existsSync(config.VIDEO2_USER_DATA_DIR)) {
+    browserManager.video2.initialize().catch(err => {
+      logger.warn(`Initial video2 browser startup warning: ${err.message}. It will retry on the first API call.`);
+    });
+  }
 
   // Schedule automatic 30-minute Google Flow tab refresh to keep session + cookies alive
   const THIRTY_MINUTES_MS = 30 * 60 * 1000;

@@ -428,6 +428,15 @@ const imageBrowser = new BrowserManager({
   targetUrl: config.IMAGE_TARGET_URL
 });
 
+const videoBrowser2 = new BrowserManager({
+  label: 'video2',
+  debugPort: config.VIDEO2_DEBUG_PORT,
+  userDataDir: config.VIDEO2_USER_DATA_DIR,
+  cookieFile: config.VIDEO2_COOKIE_FILE,
+  targetUrl: config.VIDEO2_TARGET_URL
+});
+
 // Backwards-compatible default export = video browser (existing code relies on it)
 videoBrowser.image = imageBrowser;
+videoBrowser.video2 = videoBrowser2;
 module.exports = videoBrowser;

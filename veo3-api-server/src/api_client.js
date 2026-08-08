@@ -801,55 +801,148 @@ class ApiClient {
     return null;
   }
 
+  async _captureVideoUrlViaElement(mediaId) {
+    await acquireDownloadSlot();
+    try {
+      const browser = this.browserManager.browser;
+      if (!browser) throw new Error('No browser context available');
+
+      const redirectUrl = `${LABS_BASE}/fx/api/trpc/media.getMediaUrlRedirect?name=${mediaId}`;
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) logger.info(`Retrying video element capture (attempt ${attempt}/3)...`);
+        let page = null;
+        let cdp = null;
+        try {
+          page = await browser.newPage();
+
+          // Inherit cookies from the main page
+          if (this.browserManager.page) {
+            const cookies = await this.browserManager.page.cookies();
+            await page.setCookie(...cookies);
+          }
+
+          cdp = await page.target().createCDPSession();
+          await cdp.send('Network.enable');
+
+          const captured = { url: null };
+          const onResponse = (event) => {
+            const url = event.response?.url || '';
+            if (url.includes('flow-content.google/video') && url.includes(mediaId) && !captured.url) {
+              captured.url = url;
+            }
+          };
+          cdp.on('Network.responseReceived', onResponse);
+
+          // Load the flow base page for first-party cookie context, then inject a
+          // hidden <video> that follows the redirect to the signed flow-content URL.
+          await page.goto(`${LABS_BASE}/fx/vi/tools/flow`, { waitUntil: 'domcontentloaded' });
+          await page.evaluate((src) => {
+            const v = document.createElement('video');
+            v.muted = true;
+            v.preload = 'auto';
+            v.style.position = 'fixed';
+            v.style.left = '-9999px';
+            v.src = src;
+            document.body.appendChild(v);
+          }, redirectUrl);
+
+          // Wait up to 20s for the video request to be intercepted
+          let waited = 0;
+          while (!captured.url && waited < 20000) {
+            await new Promise(r => setTimeout(r, 400));
+            waited += 400;
+          }
+
+          if (captured.url) {
+            logger.success(`Captured video URL via <video> element: ${captured.url.substring(0, 60)}...`);
+            return captured.url;
+          }
+        } catch (err) {
+          logger.warn(`Video element capture error: ${err.message}`);
+        } finally {
+          if (cdp) { try { await cdp.detach(); } catch(e){} }
+          if (page) { try { await page.close(); } catch(e){} }
+        }
+      }
+      return null;
+    } finally {
+      releaseDownloadSlot();
+    }
+  }
+
   // Resolve the signed download URL for media
   async getMediaUrl(mediaId, type = 'MEDIA_URL_TYPE_THUMBNAIL', { projectId, workflowId } = {}) {
+    // For video media: Google changed getMediaUrlRedirect so passing
+    // mediaUrlType=MEDIA_URL_TYPE_VIDEO (or projectId/workflowId) makes it return
+    // 400 "Internal Error". The flow editor instead calls it with just
+    // ?name={mediaId} and lets a <video> element follow the redirect to the signed
+    // flow-content URL, which we replicate via CDP.
+    if (type === 'MEDIA_URL_TYPE_VIDEO') {
+      const capturedUrl = await this._captureVideoUrlViaElement(mediaId);
+      if (capturedUrl) return capturedUrl;
+      // Legacy fallback for projects that still load in the flow editor.
+      if (projectId && workflowId) {
+        try {
+          const gcsUrl = await this.getVideoGcsUrl(mediaId, projectId, workflowId);
+          if (gcsUrl) return gcsUrl;
+        } catch (err) {
+          logger.warn(`iframe+CDP GCS capture failed: ${err.message}.`);
+        }
+      }
+      throw new Error(`Failed to resolve media download link for ${mediaId}`);
+    }
+
     // Resolve via browser context first (avoids "Request Header Or Cookie Too Large" 400 errors).
     // Chrome handles cookies per-domain automatically instead of dumping all cookies into one header.
     if (this.browserManager.page) {
       try {
-        const params = new URLSearchParams({ name: mediaId, mediaUrlType: type }).toString();
-        const url = `${LABS_BASE}/fx/api/trpc/media.getMediaUrlRedirect?${params}`;
-        const finalUrl = await this.browserManager.page.evaluate(async (targetUrl) => {
-          try {
-            const res = await fetch(targetUrl, {
-              method: 'GET',
-              credentials: 'include',
-              redirect: 'follow',
-              headers: { Accept: 'application/json, */*' }
-            });
-            if (!res.ok) return null;
-            // If the request got redirected to the actual file URL, use it directly
-            if (res.url && res.url !== targetUrl && !res.url.includes('getMediaUrlRedirect')) {
-              return res.url;
-            }
-            // Otherwise parse the JSON body (trpc shape: result.data.json.url or body.url)
+        const params = new URLSearchParams({ name: mediaId, mediaUrlType: type });
+        if (projectId) params.set('projectId', projectId);
+        if (workflowId) params.set('workflowId', workflowId);
+        const url = `${LABS_BASE}/fx/api/trpc/media.getMediaUrlRedirect?${params.toString()}`;
+
+        // Google sometimes returns a transient 400/empty body right after a media
+        // item becomes SUCCESSFUL, so retry with backoff before giving up.
+        const MAX_ATTEMPTS = 3;
+        let finalUrl = null;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          if (attempt > 1) {
+            logger.warn(`[${this.label}] getMediaUrlRedirect empty/error (attempt ${attempt - 1}/3) for ${mediaId}, retrying in ${3 * attempt}s...`);
+            await new Promise(r => setTimeout(r, 3000 * attempt));
+          }
+          finalUrl = await this.browserManager.page.evaluate(async (targetUrl) => {
             try {
-              const body = await res.json();
-              const fileUrl = body?.result?.data?.json?.url || body?.url || body?.redirectUrl;
-              return (typeof fileUrl === 'string' && fileUrl.startsWith('http')) ? fileUrl : null;
+              const res = await fetch(targetUrl, {
+                method: 'GET',
+                credentials: 'include',
+                redirect: 'follow',
+                headers: { Accept: 'application/json, */*' }
+              });
+              if (!res.ok) return null;
+              // If the request got redirected to the actual file URL, use it directly
+              if (res.url && res.url !== targetUrl && !res.url.includes('getMediaUrlRedirect')) {
+                return res.url;
+              }
+              // Otherwise parse the JSON body (trpc shape: result.data.json.url or body.url)
+              try {
+                const body = await res.json();
+                const fileUrl = body?.result?.data?.json?.url || body?.url || body?.redirectUrl;
+                return (typeof fileUrl === 'string' && fileUrl.startsWith('http')) ? fileUrl : null;
+              } catch (e) {
+                return null;
+              }
             } catch (e) {
               return null;
             }
-          } catch (e) {
-            return null;
+          }, url);
+          if (finalUrl && finalUrl.startsWith('http')) {
+            logger.success(`Resolved ${type} via browser context: ${finalUrl.substring(0, 60)}...`);
+            return finalUrl;
           }
-        }, url);
-        if (finalUrl && finalUrl.startsWith('http')) {
-          logger.success(`Resolved ${type} via browser context: ${finalUrl.substring(0, 60)}...`);
-          return finalUrl;
         }
       } catch (err) {
         logger.warn(`Browser context resolve failed: ${err.message}`);
-      }
-    }
-
-    // For video type: use iframe+CDP capture to get actual GCS storage URL (last resort)
-    if (type === 'MEDIA_URL_TYPE_VIDEO' && projectId && workflowId) {
-      try {
-        const gcsUrl = await this.getVideoGcsUrl(mediaId, projectId, workflowId);
-        if (gcsUrl) return gcsUrl;
-      } catch (err) {
-        logger.warn(`iframe+CDP GCS capture failed: ${err.message}.`);
       }
     }
 
@@ -863,6 +956,12 @@ const videoApiClient = new ApiClient({
   cookieFile: config.COOKIE_FILE
 });
 
+const videoApiClient2 = new ApiClient({
+  label: 'video2',
+  browserManager: browserManager.video2,
+  cookieFile: config.VIDEO2_COOKIE_FILE
+});
+
 const imageApiClient = new ApiClient({
   label: 'image',
   browserManager,
@@ -870,4 +969,5 @@ const imageApiClient = new ApiClient({
 });
 
 videoApiClient.image = imageApiClient;
+videoApiClient.video2 = videoApiClient2;
 module.exports = videoApiClient;
