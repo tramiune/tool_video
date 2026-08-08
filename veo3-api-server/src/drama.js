@@ -258,7 +258,7 @@ async function mergeDialogues(clipPath, dialogue, tempDir, sceneIndex) {
   for (let lineIndex = 0; lineIndex < dialogue.length; lineIndex++) {
     const line = dialogue[lineIndex];
     if (!line.text) continue;
-    const audioPath = path.join(tempDir, `scene${sceneIndex}-line${lineIndex}.mp3`);
+    const audioPath = path.join(tempDir, `scene${sceneIndex}-line${lineIndex}.wav`);
     const url = await generateDialogueAudio(line.text, line.voiceIndex ?? 0);
     await downloadFile(url, audioPath);
     audioPaths.push(audioPath);
@@ -266,15 +266,16 @@ async function mergeDialogues(clipPath, dialogue, tempDir, sceneIndex) {
   if (audioPaths.length === 0) return null;
   if (audioPaths.length === 1) return audioPaths[0];
 
-  const mergedPath = path.join(tempDir, `scene${sceneIndex}-merged.mp3`);
+  const mergedPath = path.join(tempDir, `scene${sceneIndex}-merged.m4a`);
   const listPath = path.join(tempDir, `scene${sceneIndex}-list.txt`);
   await fsp.writeFile(listPath, audioPaths.map(audioPath => `file '${audioPath}'`).join('\n'));
   try {
-    await runFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', mergedPath]);
+    await runFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c:a', 'aac', '-b:a', '128k', mergedPath]);
   } catch (error) {
-    logger.warn(`[Drama] Audio merge stream-copy failed (${error.message}), retrying with transcode...`);
+    logger.warn(`[Drama] Audio merge failed (${error.message}), retrying with resample...`);
     await runFfmpeg([
       '-y', '-f', 'concat', '-safe', '0', '-i', listPath,
+      '-ar', '24000', '-ac', '1',
       '-c:a', 'aac', '-b:a', '128k', mergedPath
     ]);
   }
