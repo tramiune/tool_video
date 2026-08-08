@@ -1698,7 +1698,7 @@ function App() {
       const token = await user.getIdToken();
       const response = await fetch(`${API_BASE}/api/autotool/projects`, {
         method: 'POST',
-        headers: authHeaders(token),
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
       });
       const data = await response.json();
@@ -1743,7 +1743,7 @@ function App() {
       const body = topic !== undefined ? { topic } : (characterIndex !== undefined ? { characterIndex } : {});
       const response = await fetch(`${API_BASE}/api/autotool/projects/${autoToolProject.id}/ai/${action}`, {
         method: 'POST',
-        headers: authHeaders(token),
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
       const data = await response.json();
@@ -1901,7 +1901,7 @@ function App() {
       const token = await user.getIdToken();
       const response = await fetch(`${API_BASE}/api/autotool/jobs`, {
         method: 'POST',
-        headers: authHeaders(token),
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: autoToolProject.id })
       });
       const data = await response.json();
