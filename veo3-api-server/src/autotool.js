@@ -796,4 +796,17 @@ async function generateCharacterImage(project, character, characterIndex) {
   return mediaUrl;
 }
 
-module.exports = { processAutoToolJob, resumeAutoToolJobs, generateProjectIdea, generateCharacterSuggestions, generateStyleSuggestion, generateScenes, generateCharacterImage, validatePlan };
+module.exports = {
+  processAutoToolJob,
+  resumeAutoToolJobs,
+  generateProjectIdea,
+  generateCharacterSuggestions,
+  generateStyleSuggestion,
+  generateScenes,
+  generateCharacterImage,
+  validatePlan,
+  runChildTaskWithRetry,
+  updateScene,
+  waitForTask,
+  classifyFailure
+};

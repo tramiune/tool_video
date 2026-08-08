@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles } from 'lucide-react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -124,6 +124,51 @@ const EMPTY_AUTO_TOOL_STYLE = {
   mood: '',
   lighting: '',
   camera: ''
+};
+
+const createEmptyDramaCharacter = () => ({
+  name: '',
+  age: '',
+  role: '',
+  description: '',
+  voiceIndex: 0
+});
+
+const createEmptyDramaScene = () => ({
+  title: '',
+  description: '',
+  imagePrompt: '',
+  dialogue: [{ speaker: '', text: '' }]
+});
+
+const normalizeDramaScript = (script) => {
+  if (!script) return null;
+  return {
+    ...script,
+    id: script.id || null,
+    topic: script.topic || '',
+    title: script.title || '',
+    characters: Array.isArray(script.characters) ? script.characters.slice(0, 3).map((character, index) => ({
+      name: character.name || '',
+      age: character.age ?? '',
+      role: character.role || '',
+      description: character.description || '',
+      voiceIndex: character.voiceIndex !== undefined && character.voiceIndex !== null ? Number(character.voiceIndex) : index
+    })) : [],
+    baseImagePrompt: script.baseImagePrompt || '',
+    scenes: Array.isArray(script.scenes) ? script.scenes.map(scene => ({
+      title: scene.title || '',
+      description: scene.description || '',
+      imagePrompt: scene.imagePrompt || '',
+      dialogue: Array.isArray(scene.dialogue) ? scene.dialogue.map(line => ({
+        speaker: line.speaker || '',
+        text: line.text || ''
+      })) : []
+    })) : [],
+    episodes: Array.isArray(script.episodes) ? script.episodes : [],
+    status: script.status || 'draft',
+    updatedAt: script.updatedAt || 0
+  };
 };
 
 const normalizeAutoToolProject = (project) => {
@@ -358,6 +403,20 @@ function App() {
   const autoToolCharactersRef = useRef(autoToolCharacters);
   const previousPendingPaymentRef = useRef(undefined);
 
+  const [isDramaView, setIsDramaView] = useState(false);
+  const [dramaScripts, setDramaScripts] = useState([]);
+  const [dramaScriptsLoading, setDramaScriptsLoading] = useState(false);
+  const [dramaScript, setDramaScript] = useState(null);
+  const [dramaScriptLoading, setDramaScriptLoading] = useState(false);
+  const [dramaTopic, setDramaTopic] = useState('');
+  const [dramaSaving, setDramaSaving] = useState(false);
+  const [dramaAiLoading, setDramaAiLoading] = useState(false);
+  const [dramaCreating, setDramaCreating] = useState(false);
+  const [dramaJobId, setDramaJobId] = useState(null);
+  const [dramaJob, setDramaJob] = useState(null);
+  const [dramaError, setDramaError] = useState(null);
+  const [dramaVoices, setDramaVoices] = useState([]);
+
   const releaseAutoToolPreviews = () => {
     autoToolCharactersRef.current.forEach(character => {
       if (character.previewUrl) URL.revokeObjectURL(character.previewUrl);
@@ -484,18 +543,21 @@ function App() {
       const isHashAutoTool = hash === '#autotool';
       const isHashTryOn = hash === '#tryon';
       const isHashAudio = hash === '#audio';
+      const isHashDrama = hash === '#drama';
       
-      if (isHashAdmin || isHashAutoTool) {
+      if (isHashAdmin || isHashAutoTool || isHashDrama) {
         if (!user) {
           window.location.hash = '';
           setIsAdminView(false);
           setIsAutoToolView(false);
+          setIsDramaView(false);
           return;
         }
         if (userProfileLoaded && !currentUserIsAdmin) {
           window.location.hash = '';
           setIsAdminView(false);
           setIsAutoToolView(false);
+          setIsDramaView(false);
           alert("Bạn không có quyền truy cập trang quản trị!");
           return;
         }
@@ -504,6 +566,7 @@ function App() {
       setIsAutoToolView(isHashAutoTool);
       setIsTryOnView(isHashTryOn);
       setIsAudioView(isHashAudio);
+      setIsDramaView(isHashDrama);
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
@@ -578,6 +641,86 @@ function App() {
       if (interval) clearInterval(interval);
     };
   }, [autoToolJobId, user]);
+
+  // Load drama scripts + voices when entering Drama view
+  useEffect(() => {
+    if (!isDramaView || !user) return;
+    let cancelled = false;
+
+    const loadVoices = async () => {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`${API_BASE}/api/audio/voices`, {
+          headers: authHeaders(token)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
+        if (!cancelled && Array.isArray(data.voices)) setDramaVoices(data.voices);
+      } catch (error) {
+        console.error('Drama voices load failed:', error);
+      }
+    };
+
+    const loadScripts = async () => {
+      setDramaScriptsLoading(true);
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`${API_BASE}/api/drama/scripts`, {
+          headers: authHeaders(token)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
+        if (!cancelled && Array.isArray(data.scripts)) {
+          setDramaScripts(data.scripts.map(script => normalizeDramaScript({ ...script, id: script.id })));
+        }
+      } catch (error) {
+        console.error('Drama scripts load failed:', error);
+        if (!cancelled) setDramaError(error.message || 'Không thể tải danh sách kịch bản.');
+      } finally {
+        if (!cancelled) setDramaScriptsLoading(false);
+      }
+    };
+
+    loadVoices();
+    loadScripts();
+    return () => { cancelled = true; };
+  }, [isDramaView, user]);
+
+  // Poll drama job progress
+  useEffect(() => {
+    if (!dramaJobId || !user) return;
+    let cancelled = false;
+    let interval = null;
+
+    const fetchJob = async () => {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`${API_BASE}/api/drama/jobs/${dramaJobId}`, {
+          headers: authHeaders(token)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
+        if (!cancelled) {
+          setDramaJob(data);
+          setDramaError(null);
+          if ((data.status === 'completed' || data.status === 'failed') && interval) {
+            clearInterval(interval);
+            interval = null;
+          }
+        }
+      } catch (error) {
+        console.error('Drama job polling failed:', error);
+        if (!cancelled) setDramaError(error.message || 'Không thể theo dõi tiến trình công việc.');
+      }
+    };
+
+    fetchJob();
+    interval = setInterval(fetchJob, 3000);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [dramaJobId, user]);
 
   // Fetch users list in Admin mode (paginated, or full when searching)
   useEffect(() => {
@@ -1916,6 +2059,513 @@ function App() {
     } finally {
       setAutoToolCreating(false);
     }
+  };
+
+  const createDramaScript = async () => {
+    const topic = dramaTopic.trim();
+    if (!topic) {
+      setDramaError('Nhập chủ đề kịch bản, ví dụ: "mẹ chồng nàng dâu vừa sinh con".');
+      return;
+    }
+    if (dramaSaving) return;
+    setDramaSaving(true);
+    setDramaError(null);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/drama/scripts`, {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      if (!data.script?.id) throw new Error('Máy chủ không trả về mã kịch bản.');
+      setDramaScript(normalizeDramaScript({ ...data.script, id: data.script.id }));
+      setDramaScripts(current => [normalizeDramaScript({ ...data.script, id: data.script.id }), ...current]);
+    } catch (error) {
+      console.error('Drama script creation failed:', error);
+      setDramaError(error.message || 'Không thể tạo kịch bản.');
+    } finally {
+      setDramaSaving(false);
+    }
+  };
+
+  const generateDramaScript = async () => {
+    if (!user || !dramaScript?.id || dramaAiLoading || dramaSaving) return;
+    setDramaAiLoading(true);
+    setDramaError(null);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/drama/scripts/${dramaScript.id}/ai/generate`, {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: dramaTopic || dramaScript.topic })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      if (!data.script) throw new Error('Máy chủ không trả về kịch bản.');
+      const normalized = normalizeDramaScript({ ...data.script, id: dramaScript.id });
+      setDramaScript(normalized);
+      setDramaScripts(current => current.map(script => script.id === dramaScript.id ? normalized : script));
+    } catch (error) {
+      console.error('Drama AI script generation failed:', error);
+      setDramaError(error.message || 'AI chưa tạo được kịch bản. Vui lòng thử lại.');
+    } finally {
+      setDramaAiLoading(false);
+    }
+  };
+
+  const saveDramaScript = async (fields = {}) => {
+    if (!user || !dramaScript?.id || dramaSaving) return;
+    setDramaSaving(true);
+    setDramaError(null);
+    try {
+      const payload = {
+        ...fields,
+        status: fields.status || 'draft'
+      };
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/drama/scripts/${dramaScript.id}`, {
+        method: 'PUT',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      const normalized = normalizeDramaScript({ ...data.script, id: dramaScript.id });
+      setDramaScript(normalized);
+      setDramaScripts(current => current.map(script => script.id === dramaScript.id ? normalized : script));
+    } catch (error) {
+      console.error('Drama script save failed:', error);
+      setDramaError(error.message || 'Không thể lưu kịch bản.');
+    } finally {
+      setDramaSaving(false);
+    }
+  };
+
+  const deleteDramaScript = async (scriptId) => {
+    if (!user || dramaSaving) return;
+    if (!window.confirm('Xóa kịch bản này? Các video đã tạo vẫn còn trên R2.')) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/drama/scripts/${scriptId}`, {
+        method: 'DELETE',
+        headers: authHeaders(token)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      setDramaScripts(current => current.filter(script => script.id !== scriptId));
+      if (dramaScript?.id === scriptId) setDramaScript(null);
+    } catch (error) {
+      console.error('Drama script delete failed:', error);
+      setDramaError(error.message || 'Không thể xóa kịch bản.');
+    }
+  };
+
+  const openDramaScript = async (scriptId) => {
+    if (!user || dramaScriptLoading) return;
+    setDramaScriptLoading(true);
+    setDramaError(null);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/drama/scripts/${scriptId}`, {
+        headers: authHeaders(token)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      const normalized = normalizeDramaScript({ ...data.script, id: scriptId });
+      setDramaScript(normalized);
+      setDramaTopic(normalized.topic || '');
+    } catch (error) {
+      console.error('Drama script open failed:', error);
+      setDramaError(error.message || 'Không thể mở kịch bản.');
+    } finally {
+      setDramaScriptLoading(false);
+    }
+  };
+
+  const closeDramaScript = () => {
+    setDramaScript(null);
+    setDramaJobId(null);
+    setDramaJob(null);
+    setDramaError(null);
+    setDramaTopic('');
+  };
+
+  const handleDramaCreateJob = async () => {
+    if (!user || !dramaScript?.id || dramaCreating) return;
+    if (!dramaScript.title || !dramaScript.scenes.length) {
+      setDramaError('Cần có tiêu đề và kịch bản cảnh trước khi tạo video.');
+      return;
+    }
+    setDramaCreating(true);
+    setDramaError(null);
+    setDramaJobId(null);
+    setDramaJob(null);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/drama/scripts/${dramaScript.id}/jobs`, {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      if (!data.jobId) throw new Error('Máy chủ không trả về mã công việc.');
+      setDramaJobId(data.jobId);
+      setDramaJob({ status: data.status || 'Đang khởi tạo', episodeNumber: data.episodeNumber });
+    } catch (error) {
+      console.error('Drama job creation failed:', error);
+      setDramaError(error.message || 'Không thể tạo video. Vui lòng thử lại.');
+    } finally {
+      setDramaCreating(false);
+    }
+  };
+
+  const renderDramaView = () => {
+    const progress = dramaJob?.progress;
+    const numericProgress = typeof progress === 'number'
+      ? Math.max(0, Math.min(100, progress <= 1 ? progress * 100 : progress))
+      : null;
+    const scenes = Array.isArray(dramaJob?.scenes) ? dramaJob.scenes : [];
+    const jobError = dramaJob?.error;
+    const errorText = typeof jobError === 'string'
+      ? jobError
+      : jobError ? JSON.stringify(jobError) : dramaError;
+
+    return (
+      <div className="container" style={{ maxWidth: '920px', margin: '0 auto', padding: '40px 20px', gap: '24px', color: '#fff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Sparkles size={28} style={{ color: '#f472b6' }} />
+              <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2rem)', fontWeight: '800', margin: 0 }}>Drama Tool</h1>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>AI viết kịch bản drama gia đình (mẹ chồng nàng dâu...) → bạn duyệt → tự làm video có lời thoại tiếng Việt.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = ''; }}
+            className="glass-button"
+            style={{ width: '40px', height: '40px', padding: 0, borderRadius: '50%', flexShrink: 0 }}
+            title="Quay lại Workspace"
+          >
+            <ArrowLeft size={18} />
+          </button>
+        </div>
+
+        {dramaScriptsLoading ? (
+          <div className="glass-panel" style={{ minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: 'var(--text-secondary)' }}>
+            <Loader size={20} className="spin-loader" /> Đang tải danh sách kịch bản...
+          </div>
+        ) : !dramaScript ? (
+          <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.08rem', margin: 0 }}>Danh sách kịch bản</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '5px 0 0' }}>Mỗi kịch bản là một video drama hoàn chỉnh (tiêu đề, nhân vật, 6 cảnh kèm lời thoại).</p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '15px', borderRadius: '12px', border: '1px solid rgba(244,114,182,0.35)', background: 'rgba(244,114,182,0.07)' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  value={dramaTopic}
+                  onChange={(event) => setDramaTopic(event.target.value)}
+                  placeholder="Chủ đề kịch bản, ví dụ: mẹ chồng nàng dâu vừa sinh con"
+                  className="glass-input"
+                  style={{ flex: 1, minWidth: '220px' }}
+                  disabled={dramaSaving}
+                  onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); createDramaScript(); } }}
+                />
+                <button type="button" className="glass-button" onClick={createDramaScript} disabled={dramaSaving || !dramaTopic.trim()} style={{ padding: '12px 18px', background: dramaSaving ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: dramaTopic.trim() ? 1 : 0.5 }}>
+                  {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Plus size={17} />} Tạo kịch bản
+                </button>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', margin: 0 }}>Tạo kịch bản trước, rồi bấm "Sinh kịch bản bằng AI" để AI viết nội dung. Sau đó duyệt và bấm "Tạo video".</p>
+            </div>
+
+            {dramaScripts.length === 0 ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '26px 0' }}>
+                Chưa có kịch bản nào. Tạo kịch bản đầu tiên ở trên.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {dramaScripts.map(script => (
+                  <div key={script.id} className="glass-panel" style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {script.title || '(Chưa có tiêu đề)'}
+                      </div>
+                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '3px' }}>
+                        {script.characters.length} nhân vật · {script.scenes.length} cảnh · {script.status === 'draft' ? 'Bản nháp' : 'Đã duyệt'} · cập nhật {new Date(script.updatedAt || Date.now()).toLocaleString('vi-VN')}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                      <button type="button" className="glass-button" onClick={() => openDramaScript(script.id)} style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
+                        Mở
+                      </button>
+                      <button type="button" className="glass-button" onClick={() => deleteDramaScript(script.id)} style={{ padding: '8px 12px', fontSize: '0.8rem', color: '#f87171' }}>
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <h2 style={{ fontSize: '1.1rem', margin: 0 }}>{dramaScript.title || '(Chưa có tiêu đề)'}</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '5px 0 0' }}>
+                  Chủ đề: {dramaScript.topic || 'mẹ chồng nàng dâu'} · {dramaScript.scenes.length} cảnh · {dramaScript.characters.length} nhân vật
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                <button type="button" className="glass-button" onClick={closeDramaScript} style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
+                  ← Danh sách
+                </button>
+                <button type="button" className="glass-button" onClick={() => deleteDramaScript(dramaScript.id)} style={{ padding: '8px 12px', fontSize: '0.8rem', color: '#f87171' }}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button type="button" className="glass-button" onClick={generateDramaScript} disabled={dramaAiLoading || dramaSaving} style={{ flex: 1, padding: '14px 20px', background: dramaAiLoading ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: (dramaAiLoading || dramaSaving) ? 0.6 : 1 }}>
+                {dramaAiLoading ? <Loader size={17} className="spin-loader" /> : <Sparkles size={17} />} {dramaScript.title ? 'Sinh lại kịch bản' : 'Sinh kịch bản bằng AI'}
+              </button>
+              <button type="button" className="glass-button" onClick={handleDramaCreateJob} disabled={dramaCreating || !dramaScript.title || !dramaScript.scenes.length} style={{ flex: 1, padding: '14px 20px', background: dramaCreating ? undefined : 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)', opacity: (dramaCreating || !dramaScript.title || !dramaScript.scenes.length) ? 0.5 : 1 }}>
+                {dramaCreating ? <Loader size={17} className="spin-loader" /> : <Video size={17} />} Tạo video ({dramaScript.scenes.length} cảnh)
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Tiêu đề kịch bản</label>
+              <input
+                type="text"
+                value={dramaScript.title}
+                onChange={(event) => setDramaScript(current => ({ ...current, title: event.target.value }))}
+                placeholder="Tiêu đề kịch bản"
+                className="glass-input"
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Prompt ảnh gốc (phong cách hình ảnh chung)</label>
+              <textarea
+                value={dramaScript.baseImagePrompt}
+                onChange={(event) => setDramaScript(current => ({ ...current, baseImagePrompt: event.target.value }))}
+                placeholder="Ví dụ: A 3D Pixar-style modern Vietnamese house, cinematic lighting, vertical 9:16..."
+                className="glass-input"
+                rows={3}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <label style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Nhân vật</label>
+              {dramaScript.characters.map((character, characterIndex) => (
+                <div key={characterIndex} className="glass-panel" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      value={character.name}
+                      onChange={(event) => setDramaScript(current => {
+                        const characters = [...current.characters];
+                        characters[characterIndex] = { ...characters[characterIndex], name: event.target.value };
+                        return { ...current, characters };
+                      })}
+                      placeholder="Tên nhân vật"
+                      className="glass-input"
+                      style={{ flex: 1, minWidth: '140px' }}
+                    />
+                    <input
+                      type="text"
+                      value={character.role}
+                      onChange={(event) => setDramaScript(current => {
+                        const characters = [...current.characters];
+                        characters[characterIndex] = { ...characters[characterIndex], role: event.target.value };
+                        return { ...current, characters };
+                      })}
+                      placeholder="Vai trò (vd: mẹ chồng)"
+                      className="glass-input"
+                      style={{ flex: 1, minWidth: '140px' }}
+                    />
+                    <select
+                      value={character.voiceIndex ?? characterIndex}
+                      onChange={(event) => setDramaScript(current => {
+                        const characters = [...current.characters];
+                        characters[characterIndex] = { ...characters[characterIndex], voiceIndex: Number(event.target.value) };
+                        return { ...current, characters };
+                      })}
+                      className="glass-input"
+                      style={{ flex: 1, minWidth: '160px' }}
+                      title="Giọng đọc tiếng Việt cho nhân vật"
+                    >
+                      {dramaVoices.map((voice, voiceIndex) => (
+                        <option key={voiceIndex} value={voiceIndex} style={{ color: '#111' }}>
+                          {voice.name} ({voiceIndex})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <textarea
+                    value={character.description}
+                    onChange={(event) => setDramaScript(current => {
+                      const characters = [...current.characters];
+                      characters[characterIndex] = { ...characters[characterIndex], description: event.target.value };
+                      return { ...current, characters };
+                    })}
+                    placeholder="Mô tả tính cách ngoại hình"
+                    className="glass-input"
+                    rows={2}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Kịch bản cảnh ({dramaScript.scenes.length})</label>
+              </div>
+              {dramaScript.scenes.map((scene, sceneIndex) => (
+                <div key={sceneIndex} className="glass-panel" style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', borderLeft: '3px solid #f472b6' }}>
+                  <input
+                    type="text"
+                    value={scene.title}
+                    onChange={(event) => setDramaScript(current => {
+                      const scenes = [...current.scenes];
+                      scenes[sceneIndex] = { ...scenes[sceneIndex], title: event.target.value };
+                      return { ...current, scenes };
+                    })}
+                    placeholder={`Cảnh ${sceneIndex + 1}: Tiêu đề`}
+                    className="glass-input"
+                  />
+                  <textarea
+                    value={scene.description}
+                    onChange={(event) => setDramaScript(current => {
+                      const scenes = [...current.scenes];
+                      scenes[sceneIndex] = { ...scenes[sceneIndex], description: event.target.value };
+                      return { ...current, scenes };
+                    })}
+                    placeholder="Mô tả hình ảnh cảnh này (tiếng Anh để làm video)"
+                    className="glass-input"
+                    rows={3}
+                  />
+                  <textarea
+                    value={scene.imagePrompt}
+                    onChange={(event) => setDramaScript(current => {
+                      const scenes = [...current.scenes];
+                      scenes[sceneIndex] = { ...scenes[sceneIndex], imagePrompt: event.target.value };
+                      return { ...current, scenes };
+                    })}
+                    placeholder="Prompt ảnh gốc của cảnh (tiếng Anh)"
+                    className="glass-input"
+                    rows={2}
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ color: 'var(--text-secondary)', fontSize: '0.74rem' }}>Lời thoại</label>
+                    {(Array.isArray(scene.dialogue) ? scene.dialogue : []).map((line, lineIndex) => (
+                      <div key={lineIndex} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <input
+                          type="text"
+                          value={line.speaker}
+                          onChange={(event) => setDramaScript(current => {
+                            const scenes = [...current.scenes];
+                            const dialogue = [...(scenes[sceneIndex].dialogue || [])];
+                            dialogue[lineIndex] = { ...dialogue[lineIndex], speaker: event.target.value };
+                            scenes[sceneIndex] = { ...scenes[sceneIndex], dialogue };
+                            return { ...current, scenes };
+                          })}
+                          placeholder="Ai nói (tên nhân vật)"
+                          className="glass-input"
+                          style={{ flex: 0.3, minWidth: '120px' }}
+                        />
+                        <input
+                          type="text"
+                          value={line.text}
+                          onChange={(event) => setDramaScript(current => {
+                            const scenes = [...current.scenes];
+                            const dialogue = [...(scenes[sceneIndex].dialogue || [])];
+                            dialogue[lineIndex] = { ...dialogue[lineIndex], text: event.target.value };
+                            scenes[sceneIndex] = { ...scenes[sceneIndex], dialogue };
+                            return { ...current, scenes };
+                          })}
+                          placeholder="Lời thoại tiếng Việt"
+                          className="glass-input"
+                          style={{ flex: 1, minWidth: '220px' }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button type="button" className="glass-button" onClick={() => saveDramaScript({ ...dramaScript, status: 'draft' })} disabled={dramaSaving} style={{ flex: 1, padding: '14px 20px' }}>
+                {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Check size={17} />} Lưu kịch bản
+              </button>
+              <button type="button" className="glass-button" onClick={handleDramaCreateJob} disabled={dramaCreating || !dramaScript.title || !dramaScript.scenes.length} style={{ flex: 1, padding: '14px 20px', background: dramaCreating ? undefined : 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)', opacity: (dramaCreating || !dramaScript.title || !dramaScript.scenes.length) ? 0.5 : 1 }}>
+                {dramaCreating ? <Loader size={17} className="spin-loader" /> : <Play size={17} />} Duyệt & Tạo video
+              </button>
+            </div>
+
+            {errorText && (
+              <div className="glass-panel" style={{ padding: '12px 14px', borderColor: 'rgba(248,113,113,0.5)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5', fontSize: '0.82rem' }}>
+                {errorText}
+              </div>
+            )}
+
+            {dramaJob && (
+              <div className="glass-panel" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px', borderColor: 'rgba(167,139,250,0.4)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Video size={18} style={{ color: '#a78bfa' }} />
+                    <span style={{ fontWeight: 'bold', fontSize: '0.92rem' }}>
+                      {dramaJob.status === 'completed' ? 'Hoàn thành' :
+                       dramaJob.status === 'failed' ? 'Thất bại' : 'Đang tạo video...'} (Tập {dramaJob.episodeNumber || 1})
+                    </span>
+                  </div>
+                  {numericProgress !== null && <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{Math.round(numericProgress)}%</span>}
+                </div>
+                {numericProgress !== null && (
+                  <div style={{ height: '8px', borderRadius: '6px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', borderRadius: '6px', background: 'linear-gradient(90deg, #ec4899, #8b5cf6)', transition: 'width 0.4s', width: `${numericProgress}%` }} />
+                  </div>
+                )}
+                {scenes.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {scenes.map((scene, index) => {
+                      const sceneStatus = scene?.status || 'pending';
+                      const isDone = sceneStatus === 'completed';
+                      const isFailed = sceneStatus === 'failed';
+                      return (
+                        <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', fontSize: '0.8rem' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                            {isDone ? <Check size={15} style={{ color: '#34d399', flexShrink: 0 }} />
+                              : isFailed ? <X size={15} style={{ color: '#f87171', flexShrink: 0 }} />
+                              : <Loader size={15} className="spin-loader" style={{ flexShrink: 0 }} />}
+                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Cảnh {index + 1}: {scene?.title || ''}</span>
+                          </span>
+                          <span style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>
+                            {isDone ? 'xong' : isFailed ? 'lỗi' : scene?.imageUrl ? 'video...' : 'ảnh...'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {dramaJob.finalUrl && (
+                  <video controls src={dramaJob.finalUrl} style={{ width: '100%', borderRadius: '12px', maxHeight: '420px', background: '#000' }} />
+                )}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    );
   };
 
   const renderAutoToolView = () => {
@@ -3708,6 +4358,10 @@ function App() {
     return renderAudioView();
   }
 
+  if (isDramaView) {
+    return renderDramaView();
+  }
+
   const RATIOS = [
     { value: '16:9', label: '16:9', width: 14, height: 8 },
     { value: '4:3', label: '4:3', width: 14, height: 10.5 },
@@ -3993,6 +4647,32 @@ function App() {
                     >
                       <Video size={12} />
                       AutoTool
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        window.location.hash = '#drama';
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        width: '100%',
+                        padding: '8px 10px',
+                        background: 'rgba(236,72,153,0.12)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#ec4899',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <Clapperboard size={12} />
+                      Drama (Mẹ chồng nàng dâu)
                     </button>
                     <button
                       type="button"

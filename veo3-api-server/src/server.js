@@ -17,6 +17,7 @@ const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
 const telegram = require('./telegram');
 const audioClient = require('./audio_client');
 const { processAutoToolJob, resumeAutoToolJobs, generateProjectIdea, generateCharacterSuggestions, generateStyleSuggestion, generateScenes, generateCharacterImage, validatePlan } = require('./autotool');
+const drama = require('./drama');
 const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
 
 const app = express();
@@ -1368,6 +1369,193 @@ app.post('/api/autotool/jobs', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── DRAMA SCRIPTS (mẹ chồng nàng dâu / family drama) ──────────────────────
+app.get('/api/drama/scripts', requireAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection('drama_scripts').where('userId', '==', req.authUser.uid).get();
+    const scripts = snapshot.docs
+      .map(document => ({ id: document.id, ...drama.normalizeDramaScript(document.data()), updatedAt: document.data().updatedAt || 0 }))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return res.json({ scripts });
+  } catch (error) {
+    logger.error('Drama script list failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/drama/scripts', requireAdmin, async (req, res) => {
+  try {
+    const topic = String(req.body?.topic || '').trim();
+    const ref = db.collection('drama_scripts').doc();
+    const now = Date.now();
+    const data = {
+      userId: req.authUser.uid,
+      userEmail: req.authUser.email,
+      topic,
+      title: '',
+      characters: [],
+      baseImagePrompt: '',
+      scenes: [],
+      episodes: [],
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now
+    };
+    await ref.set(data);
+    logger.info(`[Drama] Created script for ${req.authUser.email} (${topic || 'mẹ chồng nàng dâu'})`);
+    return res.status(201).json({ success: true, script: { id: ref.id, ...drama.normalizeDramaScript(data), updatedAt: now } });
+  } catch (error) {
+    logger.error('Drama script creation failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/drama/scripts/:id/ai/generate', requireAdmin, async (req, res) => {
+  try {
+    const scriptRef = db.collection('drama_scripts').doc(req.params.id);
+    const snapshot = await scriptRef.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
+    const current = snapshot.data();
+    if (current.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+
+    const draft = await drama.generateDramaScript({
+      topic: String(req.body?.topic || current.topic || '').trim()
+    });
+    const now = Date.now();
+    const updated = {
+      ...drama.normalizeDramaScript({ ...current, ...draft }),
+      updatedAt: now
+    };
+    await scriptRef.update(updated);
+    logger.success(`[Drama] AI script generated for ${req.authUser.email}: ${draft.title}`);
+    return res.json({ success: true, script: { id: scriptRef.id, ...updated } });
+  } catch (error) {
+    logger.error('Drama AI script generation failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection('drama_scripts').doc(req.params.id).get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
+    return res.json({ script: { id: snapshot.id, ...drama.normalizeDramaScript(snapshot.data()), updatedAt: snapshot.data().updatedAt || 0 } });
+  } catch (error) {
+    logger.error('Drama script lookup failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
+  try {
+    const scriptRef = db.collection('drama_scripts').doc(req.params.id);
+    const snapshot = await scriptRef.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
+    const current = snapshot.data();
+    if (current.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+
+    const now = Date.now();
+    const updated = {
+      ...drama.normalizeDramaScript({ ...current, ...req.body }),
+      status: String(req.body?.status || current.status || 'draft'),
+      updatedAt: now
+    };
+    await scriptRef.update(updated);
+    return res.json({ success: true, script: { id: scriptRef.id, ...updated } });
+  } catch (error) {
+    logger.error('Drama script update failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
+  try {
+    const scriptRef = db.collection('drama_scripts').doc(req.params.id);
+    const snapshot = await scriptRef.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
+    if (snapshot.data().userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    await scriptRef.delete();
+    return res.json({ success: true });
+  } catch (error) {
+    logger.error('Drama script delete failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Drama video job: creates an episode from an approved script.
+app.post('/api/drama/scripts/:id/jobs', requireAdmin, async (req, res) => {
+  try {
+    const scriptRef = db.collection('drama_scripts').doc(req.params.id);
+    const snapshot = await scriptRef.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
+    const scriptData = snapshot.data();
+    if (scriptData.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+
+    const script = drama.normalizeDramaScript(scriptData);
+    if (!script.title) return res.status(400).json({ error: 'Generate a script before creating a video' });
+    if (!Array.isArray(script.scenes) || script.scenes.length < 1) {
+      return res.status(400).json({ error: 'Generate and save the scene plan before creating a video' });
+    }
+
+    const jobRef = db.collection('drama_jobs').doc();
+    let episodeNumber;
+    await db.runTransaction(async transaction => {
+      const transactionSnapshot = await transaction.get(scriptRef);
+      if (!transactionSnapshot.exists) throw Object.assign(new Error('Drama script not found'), { statusCode: 404 });
+      const current = transactionSnapshot.data();
+      episodeNumber = (Number(current.episodeCount) || 0) + 1;
+      const now = Date.now();
+      transaction.update(scriptRef, { episodeCount: episodeNumber, updatedAt: now });
+      transaction.set(jobRef, {
+        userId: req.authUser.uid,
+        userEmail: req.authUser.email,
+        scriptId: req.params.id,
+        title: script.title,
+        characters: script.characters,
+        baseImagePrompt: script.baseImagePrompt,
+        scenes: script.scenes.map((scene, index) => ({
+          index,
+          title: scene.title,
+          description: scene.description,
+          imagePrompt: scene.imagePrompt,
+          dialogue: scene.dialogue,
+          imageTaskId: null,
+          imageUrl: null,
+          videoTaskId: null,
+          videoUrl: null,
+          audioStatus: null,
+          status: 'pending',
+          error: null
+        })),
+        episodeNumber,
+        status: 'queued',
+        progress: 0,
+        currentScene: null,
+        finalUrl: null,
+        error: null,
+        createdAt: now,
+        updatedAt: now
+      });
+    });
+    drama.processDramaJob(jobRef.id);
+    return res.status(202).json({ success: true, jobId: jobRef.id, status: 'queued', episodeNumber });
+  } catch (error) {
+    logger.error('Drama job creation failed', error);
+    return res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/drama/jobs/:id', requireAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection('drama_jobs').doc(req.params.id).get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Drama job not found' });
+    return res.json({ id: snapshot.id, ...snapshot.data() });
+  } catch (error) {
+    logger.error('Drama job lookup failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Local file upload endpoint: forwards files to R2 to store input assets in R2
 app.post('/api/upload', upload.array('files'), async (req, res) => {
   try {
@@ -2367,6 +2555,7 @@ startCookieSyncListener().then(() => {
     // Start Firestore Listener
     startFirestoreListener();
     resumeAutoToolJobs().catch(err => logger.error('[AutoTool] Resume failed', err));
+    drama.resumeDramaJobs().catch(err => logger.error('[Drama] Resume failed', err));
   });
 
   // Run cleanup once per day at 23:50 server time
