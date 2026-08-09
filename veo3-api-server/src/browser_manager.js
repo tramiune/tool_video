@@ -158,7 +158,11 @@ class BrowserManager {
       });
 
       const pages = await this.browser.pages();
-      this.page = await this.browser.newPage();
+      if (pages && pages.length > 0) {
+        this.page = await this._createBackgroundPage(this.browser, pages[0].target());
+      } else {
+        this.page = await this.browser.newPage();
+      }
       
       // Log all browser console logs with deserialized arguments for debugging
       this.page.on('console', async (msg) => {
@@ -205,6 +209,13 @@ class BrowserManager {
 
       // Navigate to Google Labs Flow to trigger OAuth token generation
       await this.refreshSession();
+
+      // Park the Chrome window off-screen in normal state. Kept NORMAL (not
+      // minimized) because Chrome defers video media loading in minimized
+      // windows and background tabs — normal state + off-screen position is the
+      // only combination where <video>/iframe fetch the media while nothing is
+      // visible to the user.
+      await this._ensureWindowParked();
 
     } catch (err) {
       logger.error('Failed to launch browser', err);
@@ -408,6 +419,87 @@ class BrowserManager {
       this.page = null;
       this.cdp = null;
       this.oauthToken = null;
+    }
+  }
+
+  // Open a new tab for media capture. Puppeteer's newPage() (foreground tab)
+  // is REQUIRED here: background:true tabs report hidden visibility, so Chrome
+  // defers video media loading and the capture returns NULL. A minimized window
+  // has the same problem. So we keep the window parked off-screen in NORMAL
+  // state — media loads, but the 40px sliver at the screen's bottom-left edge
+  // is not visible to the user.
+  async _createBackgroundPage(browser, anchorTarget) {
+    // Ensure the window is parked off-screen (normal) BEFORE opening the tab,
+    // so newPage() never has to un-minimize the window to 0,0 (no visible flash).
+    await this._ensureWindowParked();
+    const page = await browser.newPage();
+    // Re-park after the tab opens as a safety net (newPage keeps an already
+    // parked window parked, but re-parking is cheap insurance).
+    await this._parkWindowOffScreen(page.target()._targetId);
+    return page;
+  }
+
+  async newBackgroundPage() {
+    await this.initialize();
+    const browser = this.browser;
+    if (!browser) throw new Error('No browser context available');
+    return this._createBackgroundPage(browser, this.page.target());
+  }
+
+  // Force the Chrome window to the bottom-left off-screen position while in
+  // NORMAL state. Kept normal (not minimized) so video media still loads.
+  // macOS clamps the position: left:-1247 with width 1287 leaves a ~40px
+  // sliver on the left edge; top:2000 clamps to the screen bottom (954).
+  async _parkWindowOffScreen(targetId) {
+    try {
+      const session = await this.page.target().createCDPSession();
+      try {
+        const { windowId } = await session.send('Browser.getWindowForTarget', { targetId });
+        if (windowId) {
+          await session.send('Browser.setWindowBounds', {
+            windowId,
+            bounds: { left: -1247, top: 2000, width: 1287, height: 926, windowState: 'normal' }
+          });
+        }
+      } finally {
+        await session.detach().catch(() => {});
+      }
+    } catch (err) {
+      logger.debug(`[${this.label}] Window park best-effort failed: ${err.message}`);
+    }
+  }
+
+  // Best-effort: make sure the window is parked off-screen in normal state.
+  // If the window is minimized, Chrome refuses to reposition it and stays
+  // minimized (which would block media loading), so first open a throwaway
+  // foreground tab to force it normal, then park it.
+  async _ensureWindowParked() {
+    const browser = this.browser;
+    if (!browser) return;
+    try {
+      const pages = await browser.pages();
+      const anchor = (pages && pages.length) ? pages[0].target() : this.page.target();
+      await this._parkWindowOffScreen(anchor._targetId);
+      const { windowId } = await (async () => {
+        const s = await this.page.target().createCDPSession();
+        try {
+          const r = await s.send('Browser.getWindowForTarget', { targetId: anchor._targetId });
+          return r;
+        } finally { await s.detach().catch(() => {}); }
+      })();
+      if (windowId) {
+        const s = await this.page.target().createCDPSession();
+        try {
+          const { bounds } = await s.send('Browser.getWindowBounds', { windowId });
+          if (bounds.windowState === 'minimized') {
+            const tmp = await browser.newPage();
+            await this._parkWindowOffScreen(tmp.target()._targetId);
+            await tmp.close().catch(() => {});
+          }
+        } finally { await s.detach().catch(() => {}); }
+      }
+    } catch (err) {
+      logger.debug(`[${this.label}] Window ensure-parked best-effort failed: ${err.message}`);
     }
   }
 }
