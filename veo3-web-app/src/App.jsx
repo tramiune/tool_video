@@ -2512,6 +2512,32 @@ function App() {
               </button>
             </div>
 
+            {Array.isArray(dramaScript.episodes) && dramaScript.episodes.length > 0 && (
+              <div className="glass-panel" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px', borderColor: 'rgba(52,211,153,0.35)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Video size={18} style={{ color: '#34d399' }} />
+                  <span style={{ fontWeight: 'bold', fontSize: '0.92rem' }}>Các tập đã hoàn thành</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {dramaScript.episodes.map(episode => (
+                    <div key={episode.jobId || episode.number} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>
+                          Tập {episode.number || ''}{episode.title ? `: ${episode.title}` : ''}
+                        </span>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
+                          {episode.completedAt ? new Date(episode.completedAt).toLocaleString('vi-VN') : ''}
+                        </span>
+                      </div>
+                      {episode.finalUrl && (
+                        <video controls src={episode.finalUrl} style={{ width: '100%', borderRadius: '12px', maxHeight: '420px', background: '#000' }} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {errorText && (
               <div className="glass-panel" style={{ padding: '12px 14px', borderColor: 'rgba(248,113,113,0.5)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5', fontSize: '0.82rem' }}>
                 {errorText}
