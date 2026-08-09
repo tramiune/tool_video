@@ -2169,6 +2169,27 @@ function App() {
     }
   };
 
+  const restoreDramaJob = async (scriptId) => {
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/drama/scripts/${scriptId}/jobs/latest`, {
+        headers: authHeaders(token)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
+      if (data.job) {
+        setDramaJobId(data.job.id);
+        setDramaJob(data.job);
+        if (data.job.status === 'completed' || data.job.status === 'failed') {
+          setDramaJobId(null);
+          setDramaJob(data.job);
+        }
+      }
+    } catch (error) {
+      console.error('Drama job restore failed:', error);
+    }
+  };
+
   const openDramaScript = async (scriptId) => {
     if (!user || dramaScriptLoading) return;
     setDramaScriptLoading(true);
@@ -2183,6 +2204,7 @@ function App() {
       const normalized = normalizeDramaScript({ ...data.script, id: scriptId });
       setDramaScript(normalized);
       setDramaTopic(normalized.topic || '');
+      await restoreDramaJob(scriptId);
     } catch (error) {
       console.error('Drama script open failed:', error);
       setDramaError(error.message || 'Không thể mở kịch bản.');

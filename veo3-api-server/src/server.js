@@ -1546,6 +1546,22 @@ app.post('/api/drama/scripts/:id/jobs', requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/drama/scripts/:id/jobs/latest', requireAdmin, async (req, res) => {
+  try {
+    const snapshot = await db.collection('drama_jobs')
+      .where('scriptId', '==', req.params.id)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .get();
+    if (snapshot.empty) return res.json({ job: null });
+    const doc = snapshot.docs[0];
+    return res.json({ job: { id: doc.id, ...doc.data() } });
+  } catch (error) {
+    logger.error('Drama latest job lookup failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/drama/jobs/:id', requireAdmin, async (req, res) => {
   try {
     const snapshot = await db.collection('drama_jobs').doc(req.params.id).get();
