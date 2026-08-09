@@ -824,7 +824,7 @@ function App() {
       free: 0,
       basic_69k: 69000,
       standard_99k: 99000,
-      premium_169k: 199000
+      premium_169k: 169000
     };
 
     const currentPrice = prices[userTier] || 0;
@@ -862,6 +862,11 @@ function App() {
   // Đếm tổng số video đã tạo từ trước đến nay (all-time), dùng để giới hạn free tier
   const getAllTimeVideoCount = () => {
     return tasks.filter(t => t.type === 'video' && t.status !== 'failed').length;
+  };
+
+  // Đếm tổng số ảnh đã tạo từ trước đến nay (all-time), dùng để giới hạn free tier
+  const getAllTimeImageCount = () => {
+    return tasks.filter(t => t.type === 'image' && t.status !== 'failed').length;
   };
 
   const handleUpgradeTier = async (newTier) => {
@@ -1242,7 +1247,7 @@ function App() {
                               <option value="free">Free</option>
                               <option value="hocvien">Học viên (30 ảnh/ngày)</option>
                               <option value="basic_69k">Basic (69k)</option>
-                              <option value="premium_169k">Premium (199k)</option>
+                              <option value="premium_169k">Premium (169k)</option>
                             </select>
                           </td>
                           <td data-label="Hạn dùng" style={{ padding: '14px 8px', color: isUserExpired ? '#ef4444' : 'var(--text-secondary)' }}>
@@ -1348,8 +1353,8 @@ function App() {
                 >
                   <option value="30000">30,000đ (Bù Basic)</option>
                   <option value="69000">69,000đ (Gói Cơ bản)</option>
-                  <option value="199000">199,000đ (Gói Premium)</option>
-                  <option value="130000">130,000đ (Bù Basic &rarr; Premium)</option>
+                  <option value="169000">169,000đ (Gói Premium)</option>
+                  <option value="100000">100,000đ (Bù Basic &rarr; Premium)</option>
                 </select>
               </div>
 
@@ -4158,7 +4163,7 @@ function App() {
 
     // Limit checking
     const limits = {
-      free: { videos: 1, images: 0 },
+      free: { videos: Infinity, images: Infinity },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 5, images: 10 },
       standard_99k: { videos: 20, images: 40 },
@@ -4171,11 +4176,11 @@ function App() {
     const usage = getTodayUsage();
 
     if (activeTab === 'video') {
-      // Free tier: chỉ được làm 1 video duy nhất toàn đời (all-time)
+      // Free tier: chỉ được làm 3 video duy nhất toàn đời (all-time)
       if (activeUserTier === 'free') {
         const allTimeVideos = getAllTimeVideoCount();
-        if (allTimeVideos >= 1) {
-          setLimitError({ type: 'video', limit: 1, current: allTimeVideos, isAllTime: true });
+        if (allTimeVideos >= 3) {
+          setLimitError({ type: 'video', limit: 3, current: allTimeVideos, isAllTime: true });
           return;
         }
       } else if (usage.videos >= currentLimits.videos) {
@@ -4184,9 +4189,18 @@ function App() {
       }
     }
 
-    if (activeTab === 'image' && usage.images >= currentLimits.images) {
-      setLimitError({ type: 'image', limit: currentLimits.images, current: usage.images });
-      return;
+    if (activeTab === 'image') {
+      // Free tier: chỉ được làm 3 ảnh duy nhất toàn đời (all-time)
+      if (activeUserTier === 'free') {
+        const allTimeImages = getAllTimeImageCount();
+        if (allTimeImages >= 3) {
+          setLimitError({ type: 'image', limit: 3, current: allTimeImages, isAllTime: true });
+          return;
+        }
+      } else if (usage.images >= currentLimits.images) {
+        setLimitError({ type: 'image', limit: currentLimits.images, current: usage.images });
+        return;
+      }
     }
     
     setIsSubmitting(true);
@@ -5428,7 +5442,7 @@ function App() {
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>Hết lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'}</h3>
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
               {limitError.isAllTime
-                ? <>Gói <strong>Free</strong> chỉ được tạo <strong>1 video duy nhất</strong> (trọn đời). Bạn đã dùng hết lượt thử miễn phí rồi. Nâng cấp để tiếp tục tạo video nhé! 🎬</>
+                ? <>Gói <strong>Free</strong> chỉ được tạo <strong>{limitError.limit} {limitError.type === 'video' ? 'video' : 'ảnh'}</strong> (trọn đời). Bạn đã dùng hết lượt thử miễn phí rồi. Nâng cấp để tiếp tục tạo {limitError.type === 'video' ? 'video' : 'ảnh'} nhé! 🎬</>
                 : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Basic' : userTier === 'standard_99k' ? 'Standard' : 'Premium'}</strong>.</>
               }
             </p>
@@ -5560,7 +5574,7 @@ function App() {
                 {userTier === 'premium_169k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#fbbf24', color: '#16161a', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
                 <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Premium</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#fbbf24' }}>199k</span>
+                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#fbbf24' }}>169k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />

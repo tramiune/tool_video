@@ -31,7 +31,7 @@ async function runTest() {
     pendingPayment: {
       code: mockCode,
       tier: 'premium_169k',
-      amount: 199000,
+      amount: 169000,
       createdAt: Date.now()
     }
   });
@@ -40,7 +40,7 @@ async function runTest() {
   
   const payload = JSON.stringify({
     gateway: "OCB",
-    amount: 199000,
+    amount: 169000,
     content: `Simulated transaction matching ${mockCode}`
   });
 
