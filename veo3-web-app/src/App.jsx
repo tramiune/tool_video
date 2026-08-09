@@ -138,6 +138,7 @@ const createEmptyDramaScene = () => ({
   title: '',
   description: '',
   imagePrompt: '',
+  videoPrompt: '',
   dialogue: [{ speaker: '', text: '' }]
 });
 
@@ -160,6 +161,7 @@ const normalizeDramaScript = (script) => {
       title: scene.title || '',
       description: scene.description || '',
       imagePrompt: scene.imagePrompt || '',
+      videoPrompt: scene.videoPrompt || '',
       dialogue: Array.isArray(scene.dialogue) ? scene.dialogue.map(line => ({
         speaker: line.speaker || '',
         text: line.text || ''
@@ -2469,6 +2471,37 @@ function App() {
                     className="glass-input"
                     rows={2}
                   />
+                  <textarea
+                    value={scene.videoPrompt}
+                    onChange={(event) => setDramaScript(current => {
+                      const scenes = [...current.scenes];
+                      scenes[sceneIndex] = { ...scenes[sceneIndex], videoPrompt: event.target.value };
+                      return { ...current, scenes };
+                    })}
+                    placeholder="Prompt video: mô tả chuyển động/hành động của clip 8 giây (tiếng Anh)"
+                    className="glass-input"
+                    rows={2}
+                  />
+                  {(() => {
+                    const jobScene = scenes[sceneIndex];
+                    if (!jobScene) return null;
+                    return (
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                        {jobScene.imageUrl && (
+                          <div style={{ flex: '1 1 160px', minWidth: '140px' }}>
+                            <label style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Ảnh gốc</label>
+                            <img src={jobScene.imageUrl} alt={`Cảnh ${sceneIndex + 1}`} style={{ width: '100%', borderRadius: '10px', marginTop: '4px', border: '1px solid rgba(255,255,255,0.08)' }} />
+                          </div>
+                        )}
+                        {jobScene.videoUrl && (
+                          <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
+                            <label style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Clip đã tạo</label>
+                            <video controls src={jobScene.videoUrl} style={{ width: '100%', borderRadius: '10px', marginTop: '4px', maxHeight: '240px', background: '#000' }} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <label style={{ color: 'var(--text-secondary)', fontSize: '0.74rem' }}>Lời thoại</label>
                     {(Array.isArray(scene.dialogue) ? scene.dialogue : []).map((line, lineIndex) => (

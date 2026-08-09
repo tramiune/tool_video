@@ -91,11 +91,11 @@ async function generateDramaScript({ topic }) {
       `Hãy sáng tạo một kịch bản phim ngắn drama về chủ đề: "${theme}".`,
       'Kịch bản phải đánh trúng cảm xúc, có kịch tính, nhiều mâu thuẫn và cao trào, kiểu nội dung "mẹ chồng nàng dâu" hoặc drama gia đình dễ gây tranh cãi.',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
-      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
+      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
       '- title: tiêu đề kịch bản, ngắn gọn, gây tò mò (tiếng Việt).',
       '- characters: 3 nhân vật, mỗi người có role (vd: "con dâu", "mẹ chồng", "chồng") và description ngắn.',
       '- baseImagePrompt: prompt tiếng Anh mô tả khung cảnh gốc + phong cách hình ảnh chung (vd: "A 3D Pixar-style modern Vietnamese house, cinematic lighting..."), vertical 9:16.',
-      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình đó), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
+      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình đó), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
       'Mỗi cảnh là một clip 8 giây, lời thoại phải đọc được trong ~7 giây, tự nhiên, đời thường, đúng giọng từng nhân vật.'
     ].join('\n'),
     temperature: 0.9
@@ -125,6 +125,7 @@ async function generateDramaScript({ topic }) {
       title: String(scene?.title || `Cảnh ${index + 1}`).trim().slice(0, 160),
       description: String(scene?.description || '').trim().slice(0, 3000),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
+      videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
       dialogue: Array.isArray(scene?.dialogue) ? scene.dialogue.slice(0, 4).map(line => ({
         speaker: String(line?.speaker || '').trim().slice(0, 120),
         text: String(line?.text || '').trim().slice(0, 600)
@@ -152,6 +153,7 @@ function normalizeDramaScript(raw) {
       title: String(scene?.title || `Cảnh ${index + 1}`).trim().slice(0, 160),
       description: String(scene?.description || '').trim().slice(0, 3000),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
+      videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
       dialogue: Array.isArray(scene?.dialogue) ? scene.dialogue.slice(0, 4).map(line => ({
         speaker: String(line?.speaker || '').trim().slice(0, 120),
         text: String(line?.text || '').trim().slice(0, 600)
@@ -314,16 +316,19 @@ async function runDramaJob(jobId) {
     if (!snapshot.exists || TERMINAL_JOB_STATUSES.has(snapshot.data().status)) return;
     let job = snapshot.data();
 
-    const totalSteps = job.scenes.length * 2 + 1;
+    const totalSteps = job.scenes.length * 3;
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), `drama-${jobId}-`));
     const clipPaths = [];
 
     try {
+      // Phase 1: generate every scene's still image first, so video N can use
+      // scene N+1's image as its end frame → the last frame of video N becomes
+      // the first frame of video N+1 (seamless chaining).
       for (let index = 0; index < job.scenes.length; index++) {
         failedSceneIndex = index;
         snapshot = await jobRef.get();
         job = snapshot.data();
-        let scene = job.scenes[index];
+        const scene = job.scenes[index];
 
         // 1. Scene still image
         let imageUrl = scene.imageUrl;
@@ -352,26 +357,33 @@ async function runDramaJob(jobId) {
             progressUpdate: {
               status: 'generating',
               currentScene: index + 1,
-              progress: Math.round((index * 2 / totalSteps) * 100)
+              progress: Math.round(((index * 3) / totalSteps) * 100)
             }
           });
           imageUrl = imageResult.url;
           await updateScene(jobRef, index, { imageUrl, status: 'image_completed' }, {
-            progress: Math.round(((index * 2 + 1) / totalSteps) * 100)
+            progress: Math.round(((index * 3 + 1) / totalSteps) * 100)
           });
         }
+      }
 
-        // 2. 8-second video from that still
+      // Phase 2: generate videos, chaining each clip to the next scene's image.
+      for (let index = 0; index < job.scenes.length; index++) {
+        failedSceneIndex = index;
         snapshot = await jobRef.get();
         job = snapshot.data();
-        scene = job.scenes[index];
+        const scene = job.scenes[index];
+
+        // 2. 8-second video from that still, ending at the next scene's frame
         if (!scene.videoUrl) {
+          const nextScene = job.scenes[index + 1];
+          const endImage = (nextScene && nextScene.imageUrl) ? nextScene.imageUrl : null;
           const videoResult = await runChildTaskWithRetry({
             jobRef,
             job: { ...job, characters: job.characters || [] },
             sceneIndex: index,
             taskType: 'video',
-            prompt: `${scene.description}\nCreate one coherent 8-second vertical clip. Photorealistic Vietnamese family drama, natural movement.`,
+            prompt: `${scene.videoPrompt || scene.description}\nCreate one coherent 8-second vertical clip. Photorealistic Vietnamese family drama, natural movement.`,
             extraTaskData: {
               userId: job.userId,
               email: job.userEmail || null,
@@ -381,23 +393,32 @@ async function runDramaJob(jobId) {
               model: 'veo_3_1_lite',
               count: 1,
               durationSeconds: 8,
-              startImage: imageUrl,
+              startImage: scene.imageUrl,
+              endImage,
               dramaJobId: jobId,
               sceneIndex: index,
               createdAt: Date.now()
             },
             timeoutMs: VIDEO_TIMEOUT_MS,
-            stageStatus: 'video_processing'
+            stageStatus: 'video_processing',
+            progressUpdate: {
+              status: 'generating',
+              currentScene: index + 1,
+              progress: Math.round(((job.scenes.length + index) / totalSteps) * 100)
+            }
           });
           await updateScene(jobRef, index, { videoUrl: videoResult.url, status: 'video_completed' }, {
-            progress: Math.round(((index * 2 + 2) / totalSteps) * 100)
+            progress: Math.round(((job.scenes.length + index + 1) / totalSteps) * 100)
           });
         }
+      }
 
-        // 3. Dialogue TTS + merge with the clip
+      // Phase 3: dialogue TTS + merge with the clip
+      for (let index = 0; index < job.scenes.length; index++) {
+        failedSceneIndex = index;
         snapshot = await jobRef.get();
         job = snapshot.data();
-        scene = job.scenes[index];
+        const scene = job.scenes[index];
         const clipPath = path.join(tempDir, `clip-${String(index).padStart(2, '0')}.mp4`);
         await downloadFile(scene.videoUrl, clipPath);
 

@@ -1518,6 +1518,7 @@ app.post('/api/drama/scripts/:id/jobs', requireAdmin, async (req, res) => {
           title: scene.title,
           description: scene.description,
           imagePrompt: scene.imagePrompt,
+          videoPrompt: scene.videoPrompt,
           dialogue: scene.dialogue,
           imageTaskId: null,
           imageUrl: null,
