@@ -37,46 +37,58 @@ function extractJson(content) {
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
     if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));
-    throw error;
+    throw new Error(`AI did not return valid JSON. Raw response: ${text.slice(0, 300)}`);
   }
 }
 
-async function callDramaAI({ system, user, temperature = 0.8 }) {
+async function callDramaAI({ system, user, temperature = 0.8, maxRetries = 3 }) {
   const baseUrl = (process.env.AUTOTOOL_AI_BASE_URL || 'http://127.0.0.1:8081').replace(/\/$/, '');
   const apiUrl = `${baseUrl}${baseUrl.endsWith('/v1') ? '' : '/v1'}/chat/completions`;
   const apiKey = process.env.AUTOTOOL_AI_API_KEY;
   if (!apiKey) throw new Error('AUTOTOOL_AI_API_KEY is not configured');
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Number(process.env.AUTOTOOL_SCRIPT_TIMEOUT_MS || 180000));
-  try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: process.env.AUTOTOOL_AI_MODEL || 'gemini-3.6-flash',
-        temperature,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user }
-        ]
-      }),
-      signal: controller.signal
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Drama AI request failed (${response.status}): ${body.slice(0, 500)}`);
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Number(process.env.AUTOTOOL_SCRIPT_TIMEOUT_MS || 180000));
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: process.env.AUTOTOOL_AI_MODEL || 'gemini-3.6-flash',
+          temperature,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user }
+          ]
+        }),
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Drama AI request failed (${response.status}): ${body.slice(0, 500)}`);
+      }
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      try {
+        return extractJson(content);
+      } catch (parseError) {
+        lastError = parseError;
+        logger.warn(`[Drama] AI returned non-JSON on attempt ${attempt}: ${String(content || '').slice(0, 200)}`);
+        if (attempt >= maxRetries) throw lastError;
+        user += '\n\nQUAN TRỌNG: Phản hồi trước của bạn KHÔNG phải JSON hợp lệ. Hãy chỉ trả về MỘT đối tượng JSON thuần túy đúng schema yêu cầu, không mở đầu, không giải thích, không markdown.';
+        await sleep(1000 * attempt);
+      }
+    } finally {
+      clearTimeout(timeout);
     }
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    return extractJson(content);
-  } finally {
-    clearTimeout(timeout);
   }
+  throw lastError || new Error('Drama AI call failed');
 }
 
 // ─── STEP 1: AI drafts the whole drama script ───────────────────────────────
