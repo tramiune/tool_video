@@ -4215,14 +4215,8 @@ function App() {
       });
       console.log("Task successfully written to Firestore! Doc ID:", docRef.id);
 
-      // Clear form
+      // Clear form (keep start/end frames so user can send again)
       setPrompt('');
-      setStartFile(null);
-      setEndFile(null);
-      setStartLibraryUrl(null);
-      setEndLibraryUrl(null);
-      setStartUploadState(null);
-      setEndUploadState(null);
       setRefFiles([]);
       setRefUploadStates([]);
       refUploadPromisesRef.current = new Map();
