@@ -724,7 +724,7 @@ class ApiClient {
       let cdp = null;
 
       try {
-        page = await this.browserManager.newBackgroundPage();
+        page = await browser.newPage();
         
         // Inherit cookies from the main page
         if (this.browserManager.page) {
@@ -814,7 +814,7 @@ class ApiClient {
         let page = null;
         let cdp = null;
         try {
-          page = await this.browserManager.newBackgroundPage();
+          page = await browser.newPage();
 
           // Inherit cookies from the main page
           if (this.browserManager.page) {
