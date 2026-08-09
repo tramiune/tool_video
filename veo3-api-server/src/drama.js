@@ -166,6 +166,12 @@ function normalizeDramaScript(raw) {
       description: String(scene?.description || '').trim().slice(0, 3000),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
       videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
+      imageUrl: scene?.imageUrl || null,
+      videoUrl: scene?.videoUrl || null,
+      imageTaskId: scene?.imageTaskId || null,
+      videoTaskId: scene?.videoTaskId || null,
+      imageStatus: scene?.imageStatus || null,
+      videoStatus: scene?.videoStatus || null,
       dialogue: Array.isArray(scene?.dialogue) ? scene.dialogue.slice(0, 4).map(line => ({
         speaker: String(line?.speaker || '').trim().slice(0, 120),
         text: String(line?.text || '').trim().slice(0, 600)
@@ -350,7 +356,7 @@ async function runDramaJob(jobId) {
             job: { ...job, characters: job.characters || [] },
             sceneIndex: index,
             taskType: 'image',
-            prompt: `${scene.imagePrompt || scene.description}\nVertical 9:16 composition. Photorealistic Vietnamese family drama.`,
+            prompt: buildScenePrompt(job, scene, 'image'),
             extraTaskData: {
               userId: job.userId,
               email: job.userEmail || null,
@@ -395,7 +401,7 @@ async function runDramaJob(jobId) {
             job: { ...job, characters: job.characters || [] },
             sceneIndex: index,
             taskType: 'video',
-            prompt: `${scene.videoPrompt || scene.description}\nCreate one coherent 8-second vertical clip. Photorealistic Vietnamese family drama, natural movement.`,
+            prompt: buildScenePrompt(job, scene, 'video'),
             extraTaskData: {
               userId: job.userId,
               email: job.userEmail || null,
@@ -492,6 +498,161 @@ function resolveVoiceIndex(characters, speakerName) {
   return index >= 0 ? index : 0;
 }
 
+function buildScenePrompt(job, scene, mediaType) {
+  const baseImagePrompt = String(job.baseImagePrompt || '').trim();
+  const characters = Array.isArray(job.characters) ? job.characters.filter(c => String(c.name || '').trim()) : [];
+  const characterLines = characters.map(character => {
+    const role = String(character.role || '').trim();
+    const description = String(character.description || '').trim();
+    const name = String(character.name || '').trim();
+    return `- ${name}${role ? ` (${role})` : ''}${description ? `: ${description}` : ''}`;
+  });
+  const parts = [];
+  if (mediaType === 'image') {
+    parts.push(String(scene.imagePrompt || scene.description || '').trim());
+    if (baseImagePrompt) {
+      parts.push(`Setting (keep identical in every frame): ${baseImagePrompt}`);
+    }
+    if (characterLines.length > 0) {
+      parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
+    }
+    parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
+  } else {
+    parts.push(String(scene.videoPrompt || scene.description || '').trim());
+    if (baseImagePrompt) {
+      parts.push(`Setting (keep identical in every frame): ${baseImagePrompt}`);
+    }
+    if (characterLines.length > 0) {
+      parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
+    }
+    parts.push('Create one coherent 8-second vertical clip. Photorealistic Vietnamese family drama, natural movement.');
+  }
+  return parts.join('\n');
+}
+
+// ─── SINGLE-SCENE MEDIA GENERATION ─────────────────────────────────────────
+// Generate just one scene's still image or video independently, persisting the
+// result (imageUrl/videoUrl) back onto the drama_scripts scene document.
+function sceneTaskId(scriptId, sceneIndex, mediaType) {
+  return `${scriptId}_scene_${sceneIndex + 1}_${mediaType}`;
+}
+
+// Validates the request, marks the scene as processing, then spawns the
+// generation in the background. Returns immediately with the deterministic
+// taskId so the frontend can poll the script doc / task for progress.
+async function startSceneMedia({
+  scriptRef, script, sceneIndex, mediaType, userId, userEmail
+}) {
+  const scene = script.scenes[sceneIndex];
+  if (!scene) throw new Error(`Cảnh ${sceneIndex + 1} không tồn tại`);
+
+  const taskId = sceneTaskId(scriptRef.id, sceneIndex, mediaType);
+
+  if (mediaType === 'video' && !scene.imageUrl) {
+    throw new Error('Cảnh chưa có ảnh. Vui lòng tạo ảnh cho cảnh này trước.');
+  }
+
+  await updateScene(scriptRef, sceneIndex, {
+    [`${mediaType}TaskId`]: taskId,
+    [`${mediaType}Status`]: 'processing',
+    status: `${mediaType}_processing`,
+    error: null
+  });
+
+  generateSceneMedia({ scriptRef, script, sceneIndex, mediaType, userId, userEmail })
+    .catch((error) => {
+      logger.error(`[Drama] Scene ${sceneIndex + 1} ${mediaType} failed: ${error.message}`);
+    });
+
+  return { taskId, mediaType, status: 'processing' };
+}
+
+async function generateSceneMedia({
+  scriptRef, script, sceneIndex, mediaType, userId, userEmail
+}) {
+  const scene = script.scenes[sceneIndex];
+  if (!scene) throw new Error(`Cảnh ${sceneIndex + 1} không tồn tại`);
+
+  const job = {
+    ...script,
+    characters: script.characters || [],
+    baseImagePrompt: script.baseImagePrompt || ''
+  };
+
+  try {
+    if (mediaType === 'image') {
+      const imageResult = await runChildTaskWithRetry({
+        jobRef: scriptRef,
+        job,
+        sceneIndex,
+        taskType: 'image',
+        prompt: buildScenePrompt(job, scene, 'image'),
+        extraTaskData: {
+          userId,
+          email: userEmail || null,
+          type: 'image',
+          status: 'pending',
+          aspectRatio: '9:16',
+          model: 'nano_banana_2',
+          count: 1,
+          referenceImages: [],
+          dramaScriptId: scriptRef.id,
+          sceneIndex,
+          createdAt: Date.now()
+        },
+        timeoutMs: IMAGE_TIMEOUT_MS,
+        stageStatus: 'image_processing'
+      });
+      await updateScene(scriptRef, sceneIndex, {
+        imageUrl: imageResult.url,
+        imageStatus: 'completed',
+        status: 'completed'
+      });
+      return { url: imageResult.url, taskId: imageResult.taskId, mediaType };
+    }
+
+    const nextScene = script.scenes[sceneIndex + 1];
+    const endImage = (nextScene && nextScene.imageUrl) ? nextScene.imageUrl : null;
+    const videoResult = await runChildTaskWithRetry({
+      jobRef: scriptRef,
+      job,
+      sceneIndex,
+      taskType: 'video',
+      prompt: buildScenePrompt(job, scene, 'video'),
+      extraTaskData: {
+        userId,
+        email: userEmail || null,
+        type: 'video',
+        status: 'pending',
+        aspectRatio: '9:16',
+        model: 'veo_3_1_lite',
+        count: 1,
+        durationSeconds: 8,
+        startImage: scene.imageUrl,
+        endImage,
+        dramaScriptId: scriptRef.id,
+        sceneIndex,
+        createdAt: Date.now()
+      },
+      timeoutMs: VIDEO_TIMEOUT_MS,
+      stageStatus: 'video_processing'
+    });
+    await updateScene(scriptRef, sceneIndex, {
+      videoUrl: videoResult.url,
+      videoStatus: 'completed',
+      status: 'completed'
+    });
+    return { url: videoResult.url, taskId: videoResult.taskId, mediaType };
+  } catch (error) {
+    await updateScene(scriptRef, sceneIndex, {
+      [`${mediaType}Status`]: 'failed',
+      status: 'failed',
+      error: error.message
+    }).catch(() => {});
+    throw error;
+  }
+}
+
 async function recordDramaEpisode(jobRef, job) {
   const scriptId = job?.scriptId;
   if (!scriptId) return;
@@ -535,6 +696,9 @@ module.exports = {
   normalizeDramaScript,
   processDramaJob,
   resumeDramaJobs,
+  startSceneMedia,
+  buildScenePrompt,
+  sceneTaskId,
   MAX_SCENES,
   MAX_CHARACTERS
 };

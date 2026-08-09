@@ -162,6 +162,12 @@ const normalizeDramaScript = (script) => {
       description: scene.description || '',
       imagePrompt: scene.imagePrompt || '',
       videoPrompt: scene.videoPrompt || '',
+      imageUrl: scene.imageUrl || '',
+      videoUrl: scene.videoUrl || '',
+      imageTaskId: scene.imageTaskId || '',
+      videoTaskId: scene.videoTaskId || '',
+      imageStatus: scene.imageStatus || '',
+      videoStatus: scene.videoStatus || '',
       dialogue: Array.isArray(scene.dialogue) ? scene.dialogue.map(line => ({
         speaker: line.speaker || '',
         text: line.text || ''
@@ -418,6 +424,7 @@ function App() {
   const [dramaJob, setDramaJob] = useState(null);
   const [dramaError, setDramaError] = useState(null);
   const [dramaVoices, setDramaVoices] = useState([]);
+  const [dramaSceneBusy, setDramaSceneBusy] = useState({});
 
   const releaseAutoToolPreviews = () => {
     autoToolCharactersRef.current.forEach(character => {
@@ -2251,6 +2258,93 @@ function App() {
     }
   };
 
+  const handleDramaSceneMedia = async (sceneIndex, mediaType) => {
+    if (!user || !dramaScript?.id || dramaSceneBusy[`${sceneIndex}:${mediaType}`]) return;
+    setDramaSceneBusy(current => ({ ...current, [`${sceneIndex}:${mediaType}`]: true }));
+    setDramaError(null);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE}/api/drama/scripts/${dramaScript.id}/scenes/${sceneIndex}/${mediaType}`, {
+        method: 'POST',
+        headers: authHeaders(token)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
+      setDramaScript(current => {
+        const scenes = [...current.scenes];
+        scenes[sceneIndex] = {
+          ...scenes[sceneIndex],
+          [`${mediaType}Status`]: 'processing',
+          [`${mediaType}TaskId`]: data.taskId || scenes[sceneIndex][`${mediaType}TaskId`]
+        };
+        return { ...current, scenes };
+      });
+    } catch (error) {
+      console.error('Drama scene media failed:', error);
+      setDramaError(error.message || 'Không thể tạo media cho cảnh này.');
+    } finally {
+      setDramaSceneBusy(current => ({ ...current, [`${sceneIndex}:${mediaType}`]: false }));
+    }
+  };
+
+  // Poll the script doc while any scene is processing, to surface media URLs.
+  useEffect(() => {
+    if (!user || !dramaScript?.id) return;
+    const processingScenes = (dramaScript.scenes || []).some(scene =>
+      scene.imageStatus === 'processing' || scene.videoStatus === 'processing'
+    );
+    if (!processingScenes) return;
+    let cancelled = false;
+    let interval = null;
+
+    const fetchScript = async () => {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`${API_BASE}/api/drama/scripts/${dramaScript.id}`, {
+          headers: authHeaders(token)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
+        if (cancelled) return;
+        const normalized = normalizeDramaScript({ ...data.script, id: dramaScript.id });
+        setDramaScript(current => {
+          if (!current) return normalized;
+          const mergedScenes = (current.scenes || []).map((scene, index) => {
+            const remoteScene = normalized.scenes[index];
+            if (!remoteScene) return scene;
+            return {
+              ...scene,
+              imageUrl: remoteScene.imageUrl || scene.imageUrl,
+              videoUrl: remoteScene.videoUrl || scene.videoUrl,
+              imageTaskId: remoteScene.imageTaskId || scene.imageTaskId,
+              videoTaskId: remoteScene.videoTaskId || scene.videoTaskId,
+              imageStatus: remoteScene.imageStatus || scene.imageStatus,
+              videoStatus: remoteScene.videoStatus || scene.videoStatus
+            };
+          });
+          return { ...current, scenes: mergedScenes, updatedAt: normalized.updatedAt };
+        });
+        const stillProcessing = (normalized.scenes || []).some(scene =>
+          scene.imageStatus === 'processing' || scene.videoStatus === 'processing'
+        );
+        if (!stillProcessing && interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      } catch (error) {
+        console.error('Drama scene media polling failed:', error);
+        if (!cancelled) setDramaError(error.message || 'Không thể theo dõi tiến trình tạo media cảnh.');
+      }
+    };
+
+    fetchScript();
+    interval = setInterval(fetchScript, 4000);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [dramaScript?.id, dramaScript?.scenes, user]);
+
   const renderDramaView = () => {
     const progress = dramaJob?.progress;
     const numericProgress = typeof progress === 'number'
@@ -2504,26 +2598,61 @@ function App() {
                     className="glass-input"
                     rows={2}
                   />
-                  {(() => {
-                    const jobScene = scenes[sceneIndex];
-                    if (!jobScene) return null;
-                    return (
-                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                        {jobScene.imageUrl && (
-                          <div style={{ flex: '1 1 160px', minWidth: '140px' }}>
-                            <label style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Ảnh gốc</label>
-                            <img src={jobScene.imageUrl} alt={`Cảnh ${sceneIndex + 1}`} style={{ width: '100%', borderRadius: '10px', marginTop: '4px', border: '1px solid rgba(255,255,255,0.08)' }} />
-                          </div>
-                        )}
-                        {jobScene.videoUrl && (
-                          <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
-                            <label style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>Clip đã tạo</label>
-                            <video controls src={jobScene.videoUrl} style={{ width: '100%', borderRadius: '10px', marginTop: '4px', maxHeight: '240px', background: '#000' }} />
-                          </div>
-                        )}
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    {scene.imageUrl && (
+                      <div style={{ flex: '1 1 160px', minWidth: '140px' }}>
+                        <label style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
+                          Ảnh cảnh {scene.imageStatus === 'processing' ? '(đang tạo...)' : scene.imageStatus === 'failed' ? '(lỗi)' : ''}
+                        </label>
+                        <img src={scene.imageUrl} alt={`Cảnh ${sceneIndex + 1}`} style={{ width: '100%', borderRadius: '10px', marginTop: '4px', border: '1px solid rgba(255,255,255,0.08)', opacity: scene.imageStatus === 'processing' ? 0.55 : 1 }} />
                       </div>
-                    );
-                  })()}
+                    )}
+                    {scene.videoUrl && (
+                      <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
+                        <label style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
+                          Clip cảnh {scene.videoStatus === 'processing' ? '(đang tạo...)' : scene.videoStatus === 'failed' ? '(lỗi)' : ''}
+                        </label>
+                        <video controls src={scene.videoUrl} style={{ width: '100%', borderRadius: '10px', marginTop: '4px', maxHeight: '240px', background: '#000' }} />
+                      </div>
+                    )}
+                    {(scene.imageStatus === 'processing' || scene.videoStatus === 'processing') && (
+                      <div style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontSize: '0.8rem' }}>
+                        <Loader size={16} className="spin-loader" />
+                        {scene.imageStatus === 'processing' ? 'Đang tạo ảnh cảnh...' : 'Đang tạo video cảnh...'}
+                      </div>
+                    )}
+                    {scene.imageStatus === 'failed' && (
+                      <div style={{ flex: '1 1 100%', color: '#f87171', fontSize: '0.78rem' }}>
+                        Tạo ảnh thất bại. Vui lòng thử lại.
+                      </div>
+                    )}
+                    {scene.videoStatus === 'failed' && (
+                      <div style={{ flex: '1 1 100%', color: '#f87171', fontSize: '0.78rem' }}>
+                        Tạo video thất bại. Vui lòng thử lại.
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="glass-button"
+                      onClick={() => handleDramaSceneMedia(sceneIndex, 'image')}
+                      disabled={dramaSceneBusy[`${sceneIndex}:image`] || dramaSaving}
+                      style={{ padding: '8px 14px', fontSize: '0.78rem', flex: '1 1 140px' }}
+                    >
+                      {dramaSceneBusy[`${sceneIndex}:image`] ? <Loader size={14} className="spin-loader" /> : <ImageIcon size={14} />} {scene.imageUrl ? 'Làm lại ảnh' : 'Tạo ảnh cảnh'}
+                    </button>
+                    <button
+                      type="button"
+                      className="glass-button"
+                      onClick={() => handleDramaSceneMedia(sceneIndex, 'video')}
+                      disabled={dramaSceneBusy[`${sceneIndex}:video`] || dramaSaving || !scene.imageUrl}
+                      style={{ padding: '8px 14px', fontSize: '0.78rem', flex: '1 1 140px', opacity: !scene.imageUrl ? 0.5 : 1 }}
+                      title={!scene.imageUrl ? 'Cần tạo ảnh cảnh trước khi tạo video' : undefined}
+                    >
+                      {dramaSceneBusy[`${sceneIndex}:video`] ? <Loader size={14} className="spin-loader" /> : <Video size={14} />} {scene.videoUrl ? 'Làm lại video' : 'Tạo video cảnh'}
+                    </button>
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <label style={{ color: 'var(--text-secondary)', fontSize: '0.74rem' }}>Lời thoại</label>
                     {(Array.isArray(scene.dialogue) ? scene.dialogue : []).map((line, lineIndex) => (

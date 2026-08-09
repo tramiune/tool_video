@@ -1520,10 +1520,10 @@ app.post('/api/drama/scripts/:id/jobs', requireAdmin, async (req, res) => {
           imagePrompt: scene.imagePrompt,
           videoPrompt: scene.videoPrompt,
           dialogue: scene.dialogue,
-          imageTaskId: null,
-          imageUrl: null,
-          videoTaskId: null,
-          videoUrl: null,
+          imageTaskId: scene.imageTaskId || null,
+          imageUrl: scene.imageUrl || null,
+          videoTaskId: scene.videoTaskId || null,
+          videoUrl: scene.videoUrl || null,
           audioStatus: null,
           status: 'pending',
           error: null
@@ -1543,6 +1543,42 @@ app.post('/api/drama/scripts/:id/jobs', requireAdmin, async (req, res) => {
   } catch (error) {
     logger.error('Drama job creation failed', error);
     return res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+// Generate a single scene's still image or video independently. Persists the
+// result (imageUrl / videoUrl + task status) back onto the script scene doc.
+app.post('/api/drama/scripts/:id/scenes/:sceneIndex/:mediaType', requireAdmin, async (req, res) => {
+  try {
+    const sceneIndex = Number(req.params.sceneIndex);
+    const mediaType = String(req.params.mediaType || '').toLowerCase();
+    if (mediaType !== 'image' && mediaType !== 'video') {
+      return res.status(400).json({ error: 'mediaType must be "image" or "video"' });
+    }
+
+    const scriptRef = db.collection('drama_scripts').doc(req.params.id);
+    const snapshot = await scriptRef.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
+    const scriptData = snapshot.data();
+    if (scriptData.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+
+    const script = drama.normalizeDramaScript(scriptData);
+    if (!script.scenes[sceneIndex]) return res.status(400).json({ error: `Scene ${sceneIndex + 1} not found` });
+
+    const result = await drama.startSceneMedia({
+      scriptRef,
+      script,
+      sceneIndex,
+      mediaType,
+      userId: req.authUser.uid,
+      userEmail: req.authUser.email
+    });
+
+    return res.status(202).json({ success: true, ...result });
+  } catch (error) {
+    logger.error('Drama single scene media generation failed', error);
+    const status = (error.message && error.message.includes('trước')) ? 400 : 500;
+    return res.status(status).json({ error: error.message });
   }
 });
 
