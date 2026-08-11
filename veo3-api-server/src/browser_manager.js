@@ -124,6 +124,11 @@ class BrowserManager {
           '--disable-gpu',
           'about:blank'
         ];
+
+        if (process.env.HEADLESS === 'true') {
+          logger.info(`[${this.label}] Launching Chrome in HEADLESS mode to prevent window focus issues`);
+          chromeArgs.push('--headless=new');
+        }
         
         const { spawn } = require('child_process');
         const spawnEnv = { ...process.env };

@@ -376,7 +376,11 @@ const LOCAL_ONLY_PATHS = [
   '/api/user-info',
   '/api/token-status',
   '/force-refresh',
-  '/captcha'
+  '/captcha',
+  '/api/generate-video',
+  '/api/generate-image',
+  '/api/audio/generate',
+  '/api/upload'
 ];
 
 // API-key protected endpoints: reachable through the tunnel but require a
