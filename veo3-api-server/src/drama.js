@@ -117,8 +117,8 @@ async function generateDramaScript({ topic }) {
       '  * Mỗi câu thoại phải đủ dài để đọc/nói chậm rãi trong khoảng 7 đến 8 giây (độ dài kịch bản thoại khoảng 25-35 từ tiếng Việt), diễn đạt sâu sắc, kịch tính, tránh thoại ngắn cụt lủn.',
       'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH & VỊ TRÍ NHÂN VẬT:',
       '- Cảnh 1 (Scene 1) PHẢI chứa đầy đủ tất cả các nhân vật trong characters cùng xuất hiện trong một khung hình (ví dụ: mô tả rõ cả Huy, Lan và bà mẹ đều đứng trong phòng khách). Mô tả chi tiết ngoại hình và trang phục của họ ngay trong Cảnh 1.',
-      '- Các nhân vật tuyệt đối KHÔNG ĐƯỢC thay đổi vị trí đứng (trái/phải/giữa) của mình trong suốt tất cả các cảnh của tập phim. Ví dụ: Nếu Huy đứng ở rìa bên trái, Lan đứng ở rìa bên phải ở Cảnh 1, thì các cảnh 2, 3, 4, 5, 6 Huy vẫn phải đứng ở rìa bên trái, Lan đứng ở rìa bên phải.',
-      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả cực kỳ rõ ràng, chi tiết vị trí đứng sát hai bên rìa của từng nhân vật bằng tiếng Anh (ví dụ: "Huy is standing on the far left side, Lan is standing on the far right side"). Giữ nguyên vị trí trái/phải cực hạn này nhất quán xuyên suốt các cảnh.',
+      '- Các nhân vật tuyệt đối KHÔNG ĐƯỢC phép di chuyển đi đâu hết, không được di chuyển/chạy ra khỏi vị trí đứng ban đầu của họ xuyên suốt kịch bản. Ví dụ: Nếu Huy đứng ở rìa bên trái, Lan đứng ở rìa bên phải ở Cảnh 1, thì trong các cảnh 2, 3, 4, 5, 6 cả hai vẫn phải đứng yên tại vị trí đó (Huy rìa bên trái, Lan rìa bên phải), tuyệt đối không đi lại, không thay đổi vị trí đứng.',
+      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả cực kỳ rõ ràng vị trí đứng cố định sát hai bên rìa của từng nhân vật bằng tiếng Anh (ví dụ: "Huy is standing completely static on the far left side, Lan is standing completely static on the far right side. Both characters remain fixed in their spots, talking with subtle facial expressions and natural lip movements, without walking or shifting positions"). Giữ nguyên vị trí cực hạn cố định này nhất quán xuyên suốt các cảnh.',
       '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ].join('\n'),
     temperature: 0.9
@@ -652,6 +652,7 @@ function buildScenePrompt(job, scene, mediaType) {
     if (dialogueLines) {
       parts.push(`Important: Character Dialogues (make sure their lips move/talk and their expressions match this dialogue):\n${dialogueLines}`);
     }
+    parts.push('Important: Both characters must remain completely static in their spots. Absolutely no walking, no shifting places, no running out of their positions. Keep the actors fixed in their positions, only their mouths and subtle facial expressions move.');
     parts.push('Create one coherent 8-second vertical clip. Photorealistic Vietnamese family drama, natural movement.');
   }
   return parts.join('\n');
