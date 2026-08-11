@@ -421,6 +421,9 @@ function App() {
   const [isMergingVideo, setIsMergingVideo] = useState(false);
   const [mergedVideoUrl, setMergedVideoUrl] = useState(null);
   const [mergeError, setMergeError] = useState(null);
+  const [isLibraryPopupOpen, setIsLibraryPopupOpen] = useState(false);
+  const [activePreviewIndex, setActivePreviewIndex] = useState(0);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 73, y: window.innerHeight - 330 });
   const isDraggingToolsBtn = useRef(false);
   const toolsBtnDragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
@@ -4192,31 +4195,23 @@ function App() {
   };
 
   const renderMergeVideoView = () => {
-    const handleFileChange = (e) => {
-      const selectedFiles = Array.from(e.target.files || []);
-      if (selectedFiles.length === 0) return;
-
-      const newItems = selectedFiles.map(file => ({
-        id: Math.random().toString(36).substr(2, 9),
-        type: 'local',
-        file: file,
-        name: file.name,
-        previewUrl: URL.createObjectURL(file)
-      }));
-
-      setMergeVideoFiles(prev => [...prev, ...newItems]);
-      e.target.value = '';
-    };
-
     const handleSelectFromLibrary = (videoTask) => {
       const newItem = {
         id: Math.random().toString(36).substr(2, 9),
         type: 'remote',
-        name: `Thư viện: ${videoTask.prompt ? videoTask.prompt.substring(0, 30) + '...' : 'Video #' + videoTask.id.substring(0, 5)}`,
+        name: videoTask.prompt ? videoTask.prompt.substring(0, 30) + '...' : `Video #${videoTask.id.substring(0, 5)}`,
         url: videoTask.mediaUrl,
         previewUrl: videoTask.mediaUrl
       };
-      setMergeVideoFiles(prev => [...prev, newItem]);
+      setMergeVideoFiles(prev => {
+        const next = [...prev, newItem];
+        // Auto select the new video as the active preview if it's the first or second video
+        if (next.length === 1) {
+          setActivePreviewIndex(0);
+        }
+        return next;
+      });
+      setIsLibraryPopupOpen(false);
     };
 
     const handleMoveUp = (index) => {
@@ -4226,6 +4221,12 @@ function App() {
         const temp = copy[index];
         copy[index] = copy[index - 1];
         copy[index - 1] = temp;
+        // Adjust active index accordingly
+        if (activePreviewIndex === index) {
+          setActivePreviewIndex(index - 1);
+        } else if (activePreviewIndex === index - 1) {
+          setActivePreviewIndex(index);
+        }
         return copy;
       });
     };
@@ -4237,17 +4238,24 @@ function App() {
         const temp = copy[index];
         copy[index] = copy[index + 1];
         copy[index + 1] = temp;
+        // Adjust active index accordingly
+        if (activePreviewIndex === index) {
+          setActivePreviewIndex(index + 1);
+        } else if (activePreviewIndex === index + 1) {
+          setActivePreviewIndex(index);
+        }
         return copy;
       });
     };
 
-    const handleRemoveFile = (item) => {
-      setMergeVideoFiles(prev => prev.filter(x => x.id !== item.id));
-      if (item.type === 'local') {
-        try {
-          URL.revokeObjectURL(item.previewUrl);
-        } catch (e) {}
-      }
+    const handleRemoveFile = (index) => {
+      setMergeVideoFiles(prev => {
+        const next = prev.filter((_, idx) => idx !== index);
+        if (activePreviewIndex >= next.length && next.length > 0) {
+          setActivePreviewIndex(next.length - 1);
+        }
+        return next;
+      });
     };
 
     const handleMergeVideos = async () => {
@@ -4262,18 +4270,10 @@ function App() {
 
       try {
         const formData = new FormData();
-        const itemsMetadata = [];
-        let localIndex = 0;
-
-        mergeVideoFiles.forEach(item => {
-          if (item.type === 'local') {
-            formData.append('videos', item.file);
-            itemsMetadata.push({ type: 'local', index: localIndex });
-            localIndex++;
-          } else if (item.type === 'remote') {
-            itemsMetadata.push({ type: 'remote', url: item.url });
-          }
-        });
+        const itemsMetadata = mergeVideoFiles.map(item => ({
+          type: 'remote',
+          url: item.url
+        }));
 
         formData.append('items', JSON.stringify(itemsMetadata));
 
@@ -4301,31 +4301,32 @@ function App() {
     };
 
     const handleReset = () => {
-      mergeVideoFiles.forEach(item => {
-        if (item.type === 'local') {
-          try { URL.revokeObjectURL(item.previewUrl); } catch (e) {}
-        }
-      });
       setMergeVideoFiles([]);
       setMergedVideoUrl(null);
       setMergeError(null);
+      setActivePreviewIndex(0);
+      setIsPreviewPlaying(false);
     };
 
     const completedVideos = tasks.filter(t => t.type === 'video' && t.status === 'completed' && t.mediaUrl);
+    const activeVideo = mergeVideoFiles[activePreviewIndex];
 
     return (
-      <div className="container" style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
+      <div className="container" style={{ maxWidth: '900px', margin: '0 auto', padding: '30px 20px', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '100vh', color: '#fff' }}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '16px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '1.8rem' }}>🎬</span>
-              <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2rem)', fontWeight: '800', margin: 0, background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              <img src="/logo.png" alt="meo3 logo" style={{ height: '32px', objectFit: 'contain' }} />
+              <span className="logo-text" style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>meo3</span>
+              <span style={{ fontSize: '1.2rem', margin: '0 8px', color: 'rgba(255,255,255,0.2)' }}>/</span>
+              <span style={{ fontSize: '1.2rem' }}>🎬</span>
+              <h1 style={{ fontSize: 'clamp(1.2rem, 4vw, 1.4rem)', fontWeight: '800', margin: 0, background: 'linear-gradient(135deg, #a78bfa 0%, #ec4899 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 Ghép Video AI
               </h1>
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px', margin: 0 }}>
-              Ghép nối nhiều video ngắn từ thiết bị hoặc trực tiếp từ Thư viện của bạn thành một video hoàn thiện.
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', marginTop: '6px', margin: 0 }}>
+              Ghép nối các thước phim ngắn từ Thư viện của bạn thành một video hoàn thiện.
             </p>
           </div>
           <button
@@ -4339,249 +4340,304 @@ function App() {
           </button>
         </div>
 
-        {/* Main Interface Layout */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Select from Library Section */}
-          {completedVideos.length > 0 && (
-            <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>🗂️</span> Bước 1: Chọn từ Thư viện video của bạn
-              </h3>
-              <div style={{ display: 'flex', gap: '14px', overflowX: 'auto', paddingBottom: '8px' }} className="custom-scrollbar">
-                {completedVideos.map(item => (
-                  <div key={item.id} style={{ flex: '0 0 160px', width: '160px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <video 
-                      src={item.mediaUrl} 
-                      style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: '6px', background: '#000', cursor: 'pointer' }} 
-                      muted 
-                      playsInline 
-                      onMouseEnter={e => e.currentTarget.play().catch(()=>{})} 
-                      onMouseLeave={e => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} 
-                    />
-                    <div style={{ fontSize: '0.75rem', color: '#fff', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', lineHeight: '1.3', fontStyle: 'italic' }}>
-                      {item.prompt || "Video không tên"}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectFromLibrary(item)}
-                      style={{
-                        width: '100%',
-                        padding: '6px',
-                        background: 'rgba(139, 92, 246, 0.15)',
-                        border: 'none',
-                        borderRadius: '6px',
-                        color: '#a78bfa',
-                        fontSize: '0.72rem',
-                        fontWeight: 'bold',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseOver={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.3)'; }}
-                      onMouseOut={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.15)'; }}
-                    >
-                      <Plus size={12} /> Thêm vào hàng ghép
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+        {/* Main Work Area: Top Large Video Preview and Controls */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
+          
+          {/* Large Video Preview Player */}
+          <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', background: 'rgba(15, 15, 20, 0.6)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px' }}>
+            <div style={{ width: '100%', aspectRatio: '16/9', borderRadius: '12px', overflow: 'hidden', background: '#000', position: 'relative', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {mergedVideoUrl ? (
+                <video src={mergedVideoUrl} controls style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : activeVideo ? (
+                <video 
+                  key={activeVideo.id + "_" + isPreviewPlaying}
+                  src={activeVideo.previewUrl} 
+                  autoPlay={isPreviewPlaying}
+                  loop
+                  muted
+                  playsInline
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                />
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px' }}>
+                  <span style={{ fontSize: '3rem', display: 'block', marginBottom: '10px' }}>🎬</span>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>Chưa chọn video preview</div>
+                  <div style={{ fontSize: '0.78rem', marginTop: '4px' }}>Bấm nút cộng (+) ở thanh timeline phía dưới để thêm cảnh</div>
+                </div>
+              )}
 
-          {/* Form Card */}
-          <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>📥</span> Hoặc: Tải lên video từ thiết bị
-            </h3>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed rgba(139, 92, 246, 0.3)', borderRadius: '12px', padding: '32px 16px', background: 'rgba(139, 92, 246, 0.02)', textAlign: 'center', position: 'relative', cursor: 'pointer', transition: 'all 0.2s' }}
-                 onMouseOver={(e) => { e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.6)'; e.currentTarget.style.background = 'rgba(139, 92, 246, 0.04)'; }}
-                 onMouseOut={(e) => { e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.3)'; e.currentTarget.style.background = 'rgba(139, 92, 246, 0.02)'; }}
-                 onClick={() => document.getElementById('merge-video-input').click()}
-            >
-              <input 
-                type="file" 
-                id="merge-video-input" 
-                multiple 
-                accept="video/*" 
-                onChange={handleFileChange} 
-                style={{ display: 'none' }} 
-              />
-              <span style={{ fontSize: '2.5rem', marginBottom: '10px' }}>🎥</span>
-              <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>Bấm vào đây để chọn video từ thiết bị</span>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Hỗ trợ chọn nhiều file cùng lúc</span>
+              {/* Status overlays */}
+              {isMergingVideo && (
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', zIndex: 10 }}>
+                  <span className="spin" style={{ width: '32px', height: '32px', border: '3px solid #8b5cf6', borderTopColor: 'transparent', borderRadius: '50%' }} />
+                  <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#a78bfa' }}>Đang ghép & xuất video...</span>
+                </div>
+              )}
             </div>
 
-            {mergeVideoFiles.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
-                    Danh sách các clip cần ghép ({mergeVideoFiles.length}):
+            {/* Play/Pause controls and Stitch Video Trigger Button */}
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  disabled={!activeVideo || mergedVideoUrl}
+                  onClick={() => setIsPreviewPlaying(prev => !prev)}
+                  className="glass-button"
+                  style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', cursor: (!activeVideo || mergedVideoUrl) ? 'not-allowed' : 'pointer', opacity: (!activeVideo || mergedVideoUrl) ? 0.4 : 1 }}
+                >
+                  {isPreviewPlaying ? (
+                    <><span>⏸</span> Tạm dừng</>
+                  ) : (
+                    <><span>▶</span> Phát thử</>
+                  )}
+                </button>
+                {activeVideo && (
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>
+                    Đang xem: {activeVideo.name}
                   </span>
+                )}
+              </div>
+
+              {/* Export Video button, glowing purple when enabled */}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                {mergedVideoUrl && (
+                  <a 
+                    href={`${API_BASE}/api/download?url=${encodeURIComponent(mergedVideoUrl)}&filename=video_ghep_hoan_chinh.mp4`}
+                    download="video_ghep_hoan_chinh.mp4"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '10px 20px',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      fontWeight: 'bold',
+                      textDecoration: 'none',
+                      boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <Download size={14} /> Tải video đã ghép
+                  </a>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleMergeVideos}
+                  disabled={mergeVideoFiles.length < 2 || isMergingVideo}
+                  style={{
+                    padding: '10px 20px',
+                    background: mergeVideoFiles.length >= 2 
+                      ? 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)' 
+                      : 'rgba(255,255,255,0.05)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: mergeVideoFiles.length >= 2 ? '#fff' : 'rgba(255,255,255,0.3)',
+                    fontSize: '0.85rem',
+                    fontWeight: 'bold',
+                    cursor: mergeVideoFiles.length >= 2 ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: mergeVideoFiles.length >= 2 ? '0 0 15px rgba(139, 92, 246, 0.4)' : 'none',
+                    transition: 'all 0.2s',
+                    opacity: isMergingVideo ? 0.7 : 1
+                  }}
+                >
+                  <span>⚡</span> Xuất video
+                </button>
+
+                {mergeVideoFiles.length > 0 && (
                   <button 
                     onClick={handleReset} 
-                    style={{ background: 'rgba(239, 68, 68, 0.12)', border: 'none', borderRadius: '6px', color: '#ef4444', fontSize: '0.75rem', fontWeight: 'bold', padding: '6px 12px', cursor: 'pointer' }}
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.8rem', padding: '10px 14px', cursor: 'pointer' }}
                   >
-                    Xóa tất cả
+                    Reset
                   </button>
-                </div>
+                )}
+              </div>
+            </div>
 
-                {/* Video items list */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {mergeVideoFiles.map((item, index) => (
-                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px' }}>
-                      <span style={{ fontSize: '0.78rem', fontWeight: 'bold', color: 'var(--text-secondary)', width: '20px' }}>
-                        #{index + 1}
-                      </span>
-                      
-                      {/* Video Thumbnail/Preview */}
-                      <video src={item.previewUrl} style={{ width: '60px', height: '45px', borderRadius: '4px', objectFit: 'cover', background: '#000' }} muted playsInline />
+            {/* Error Message */}
+            {mergeError && (
+              <div style={{ width: '100%', padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', color: '#f87171', fontSize: '0.8rem' }}>
+                {mergeError}
+              </div>
+            )}
+          </div>
 
-                      {/* File Info */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                          {item.name}
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                          {item.type === 'local' ? `${(item.file.size / (1024 * 1024)).toFixed(2)} MB` : 'Từ Thư viện AI'}
-                        </div>
-                      </div>
+          {/* Bottom Timeline: Horizontal Clips Sequencer */}
+          <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', background: 'rgba(15, 15, 20, 0.4)', borderRadius: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>Timeline: Cảnh phim ghép ({mergeVideoFiles.length})</span>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Nhấp chọn từng cảnh để xem thử preview ở trên</span>
+            </div>
 
-                      {/* Reorder Buttons */}
-                      <div style={{ display: 'flex', gap: '4px' }}>
+            {/* Timeline container */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflowX: 'auto', padding: '10px 4px 14px 4px', minHeight: '120px' }} className="custom-scrollbar">
+              {mergeVideoFiles.map((item, index) => {
+                const isActive = activePreviewIndex === index;
+                return (
+                  <div 
+                    key={item.id} 
+                    onClick={() => { setActivePreviewIndex(index); setIsPreviewPlaying(false); }}
+                    style={{
+                      flex: '0 0 160px',
+                      width: '160px',
+                      background: isActive ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.02)',
+                      border: isActive ? '2px solid #8b5cf6' : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: '10px',
+                      padding: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      boxShadow: isActive ? '0 4px 15px rgba(139, 92, 246, 0.2)' : 'none',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(0,0,0,0.7)', borderRadius: '4px', padding: '2px 6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#a78bfa', zIndex: 2 }}>
+                      #{index + 1}
+                    </div>
+
+                    <video src={item.previewUrl} style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: '6px', background: '#000' }} muted playsInline />
+                    
+                    <div style={{ fontSize: '0.72rem', color: '#fff', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', lineHeight: '1.2' }}>
+                      {item.name}
+                    </div>
+
+                    {/* Timeline Controls (Move/Delete) */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', marginTop: '2px' }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', gap: '2px' }}>
                         <button
                           type="button"
                           onClick={() => handleMoveUp(index)}
                           disabled={index === 0}
-                          style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', color: '#fff', cursor: index === 0 ? 'not-allowed' : 'pointer', opacity: index === 0 ? 0.3 : 1 }}
+                          style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', color: '#fff', cursor: index === 0 ? 'not-allowed' : 'pointer', opacity: index === 0 ? 0.3 : 1 }}
                         >
-                          <ArrowUp size={14} />
+                          <ArrowLeft size={12} />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleMoveDown(index)}
                           disabled={index === mergeVideoFiles.length - 1}
-                          style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', color: '#fff', cursor: index === mergeVideoFiles.length - 1 ? 'not-allowed' : 'pointer', opacity: index === mergeVideoFiles.length - 1 ? 0.3 : 1 }}
+                          style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', color: '#fff', cursor: index === mergeVideoFiles.length - 1 ? 'not-allowed' : 'pointer', opacity: index === mergeVideoFiles.length - 1 ? 0.3 : 1 }}
                         >
-                          <ArrowDown size={14} />
+                          <ArrowRight size={12} />
                         </button>
                       </div>
-
-                      {/* Remove Button */}
                       <button
                         type="button"
-                        onClick={() => handleRemoveFile(item)}
-                        style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '6px', color: '#ef4444', cursor: 'pointer' }}
-                        title="Xóa clip"
+                        onClick={() => handleRemoveFile(index)}
+                        style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px', color: '#ef4444', cursor: 'pointer' }}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={12} />
                       </button>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+                  </div>
+                );
+              })}
 
-          {/* Merge Trigger Button */}
-          {mergeVideoFiles.length >= 2 && !mergedVideoUrl && (
-            <button
-              type="button"
-              onClick={handleMergeVideos}
-              disabled={isMergingVideo}
-              style={{
-                width: '100%',
-                padding: '16px',
-                background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-                border: 'none',
-                borderRadius: '12px',
-                color: '#fff',
-                fontSize: '1rem',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)',
-                transition: 'all 0.2s'
-              }}
-              onMouseOver={(e) => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.boxShadow = '0 0 25px rgba(236, 72, 153, 0.6)'; }}
-              onMouseOut={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 0 20px rgba(139, 92, 246, 0.4)'; }}
-            >
-              {isMergingVideo ? (
-                <>
-                  <span className="spin" style={{ width: '18px', height: '18px', border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />
-                  Đang ghép và xuất video... Cậu chờ xíu nhé... ☕
-                </>
-              ) : (
-                <>
-                  <span>⚡</span> Bắt đầu ghép & xuất video hoàn chỉnh
-                </>
-              )}
-            </button>
-          )}
-
-          {/* Error Message */}
-          {mergeError && (
-            <div style={{ padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', color: '#f87171', fontSize: '0.85rem' }}>
-              {mergeError}
+              {/* Add Clip (+) Trigger Button */}
+              <button
+                type="button"
+                onClick={() => setIsLibraryPopupOpen(true)}
+                style={{
+                  flex: '0 0 100px',
+                  height: '100px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  background: 'rgba(139, 92, 246, 0.05)',
+                  border: '2px dashed rgba(139, 92, 246, 0.3)',
+                  borderRadius: '10px',
+                  color: '#a78bfa',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={e => { e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.6)'; e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)'; }}
+                onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.3)'; e.currentTarget.style.background = 'rgba(139, 92, 246, 0.05)'; }}
+              >
+                <Plus size={24} />
+                <span style={{ fontSize: '0.72rem', fontWeight: 'bold' }}>Thêm cảnh</span>
+              </button>
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* Export Output Panel */}
-          {mergedVideoUrl && (
-            <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.02)' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>🎉</span> Xuất video thành công!
-              </h3>
+        {/* Library Picker Popup Modal */}
+        {isLibraryPopupOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div className="glass-panel" style={{ width: '90%', maxWidth: '650px', maxHeight: '80vh', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid rgba(255,255,255,0.1)', background: '#121216', position: 'relative' }}>
               
-              <video src={mergedVideoUrl} controls style={{ width: '100%', borderRadius: '12px', background: '#000', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }} />
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <a 
-                  href={`${API_BASE}/api/download?url=${encodeURIComponent(mergedVideoUrl)}&filename=video_ghep_hoan_chinh.mp4`}
-                  download="video_ghep_hoan_chinh.mp4"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '14px',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    borderRadius: '10px',
-                    color: '#fff',
-                    fontWeight: 'bold',
-                    textDecoration: 'none',
-                    textAlign: 'center',
-                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
-                    fontSize: '0.9rem'
-                  }}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🗂️</span> Thư viện video của bạn
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsLibraryPopupOpen(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
                 >
-                  <Download size={16} /> Tải Video xuống
-                </a>
-                <button 
-                  onClick={handleReset}
-                  style={{
-                    padding: '14px',
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '10px',
-                    color: '#fff',
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    fontSize: '0.9rem'
-                  }}
-                >
-                  Ghép tiếp video khác
+                  <X size={20} />
                 </button>
               </div>
+
+              {/* Scrollable list of user library items */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '12px', paddingRight: '4px' }} className="custom-scrollbar">
+                {completedVideos.length === 0 ? (
+                  <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '8px' }}>📭</span>
+                    <div style={{ fontSize: '0.85rem' }}>Thư viện của cậu đang trống rỗng.</div>
+                    <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>Hãy tạo video AI ở Trang chủ trước nhé!</div>
+                  </div>
+                ) : (
+                  completedVideos.map(item => (
+                    <div 
+                      key={item.id} 
+                      onClick={() => handleSelectFromLibrary(item)}
+                      style={{
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: '8px',
+                        padding: '6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseOver={e => { e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.4)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                      onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+                    >
+                      <video src={item.mediaUrl} style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: '4px', background: '#000' }} muted playsInline />
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', lineHeight: '1.2' }} title={item.prompt}>
+                        {item.prompt || "Video không tên"}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '12px' }}>
+                <button
+                  type="button"
+                  className="glass-button"
+                  onClick={() => setIsLibraryPopupOpen(false)}
+                  style={{ padding: '8px 16px', borderRadius: '6px', fontSize: '0.8rem' }}
+                >
+                  Đóng
+                </button>
+              </div>
+
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
       </div>
     );
   };
