@@ -373,6 +373,8 @@ function App() {
   const [audioLoadingVoices, setAudioLoadingVoices] = useState(false);
   const [audioMsg, setAudioMsg] = useState(null);
   const [audioPreviewVoice, setAudioPreviewVoice] = useState(null);
+  const [copiedAudioJobId, setCopiedAudioJobId] = useState(null);
+  const [expandedAudioJobId, setExpandedAudioJobId] = useState(null);
   const [qrLoading, setQrLoading] = useState(true);
   const [videoDuration, setVideoDuration] = useState(8);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
@@ -3595,29 +3597,74 @@ function App() {
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {audioJobs.map(j => (
-              <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 16px' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.text}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    {new Date(j.createdAt).toLocaleString('vi-VN')} · {audioJobStatusLabel(j.status)}
+            {audioJobs.map(j => {
+              const isExpanded = expandedAudioJobId === j.id;
+              const isCopied = copiedAudioJobId === j.id;
+              return (
+                <div key={j.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                    <div 
+                      style={{ 
+                        flex: 1, 
+                        fontSize: '0.85rem', 
+                        fontWeight: '600', 
+                        cursor: 'pointer',
+                        wordBreak: 'break-word',
+                        whiteSpace: isExpanded ? 'pre-wrap' : 'nowrap',
+                        overflow: isExpanded ? 'visible' : 'hidden',
+                        textOverflow: isExpanded ? 'clip' : 'ellipsis'
+                      }}
+                      onClick={() => setExpandedAudioJobId(isExpanded ? null : j.id)}
+                      title={isExpanded ? 'Bấm để thu gọn' : 'Bấm để xem chi tiết đầy đủ'}
+                    >
+                      {j.text}
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(j.text);
+                        setCopiedAudioJobId(j.id);
+                        setTimeout(() => setCopiedAudioJobId(null), 1500);
+                      }}
+                      style={{
+                        background: isCopied ? '#10b981' : 'rgba(255,255,255,0.06)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        fontSize: '0.7rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {isCopied ? 'Đã chép ✓' : '📋 Sao chép'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                      {new Date(j.createdAt).toLocaleString('vi-VN')} · {audioJobStatusLabel(j.status)}
+                    </div>
+                    <div>
+                      {j.status === 'COMPLETED' && j.outputUrl ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <audio controls src={j.outputUrl} style={{ height: '36px', maxWidth: '200px' }} />
+                          <a href={j.outputUrl} target="_blank" rel="noopener noreferrer" download style={{ color: '#10b981', fontSize: '0.75rem', whiteSpace: 'nowrap', textDecoration: 'none', fontWeight: '500' }}>⬇ Tải về</a>
+                        </div>
+                      ) : j.status === 'FAILED' ? (
+                        <span style={{ color: '#f87171', fontSize: '0.75rem' }}>Thất bại</span>
+                      ) : (
+                        <span className="badge proc" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem' }}>
+                          <span className="spin" /> Đang xử lý…
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                {j.status === 'COMPLETED' && j.outputUrl ? (
-                  <>
-                    <audio controls src={j.outputUrl} style={{ height: '38px', maxWidth: '220px' }} />
-                    <a href={j.outputUrl} target="_blank" rel="noopener noreferrer" download style={{ color: '#10b981', fontSize: '0.75rem', whiteSpace: 'nowrap', textDecoration: 'none' }}>⬇ Tải về</a>
-                  </>
-                ) : j.status === 'FAILED' ? (
-                  <span style={{ color: '#f87171', fontSize: '0.75rem' }}>Thất bại</span>
-                ) : (
-                  <span className="badge proc" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem' }}>
-                    <span className="spin" /> Đang xử lý…
-                  </span>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
+
         </div>
       </div>
     );
