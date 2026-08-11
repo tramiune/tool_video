@@ -606,7 +606,17 @@ function App() {
           alert("Tài khoản của bạn chưa được cấp quyền truy cập Công cụ AI này!");
           return;
         }
-        setChannelType(isHashSumo ? 'sumo' : 'drama');
+        const targetChannel = isHashSumo ? 'sumo' : 'drama';
+        setChannelType(targetChannel);
+        setDramaScript(current => {
+          if (current) {
+            const scriptChannel = current.channelType || 'drama';
+            if (scriptChannel !== targetChannel) {
+              return null;
+            }
+          }
+          return current;
+        });
       }
 
       if (isHashMergeVideo) {
@@ -2359,7 +2369,7 @@ function App() {
       const response = await fetch(`${API_BASE}/api/drama/scripts/${dramaScript.id}/ai/generate`, {
         method: 'POST',
         headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: dramaTopic || dramaScript.topic })
+        body: JSON.stringify({ topic: dramaTopic || dramaScript.topic, channelType })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);

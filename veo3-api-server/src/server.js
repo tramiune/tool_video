@@ -1553,7 +1553,7 @@ app.post('/api/drama/scripts/:id/ai/generate', requireDramaAccess, async (req, r
     const current = snapshot.data();
     if (current.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
 
-    const channelType = String(current.channelType || 'drama').trim();
+    const channelType = String(req.body?.channelType || current.channelType || 'drama').trim();
     const draft = await drama.generateDramaScript({
       topic: String(req.body?.topic || current.topic || '').trim(),
       channelType
@@ -1561,6 +1561,7 @@ app.post('/api/drama/scripts/:id/ai/generate', requireDramaAccess, async (req, r
     const now = Date.now();
     const updated = {
       ...drama.normalizeDramaScript({ ...current, ...draft }),
+      channelType,
       updatedAt: now
     };
     await scriptRef.update(updated);
