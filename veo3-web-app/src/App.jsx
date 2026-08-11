@@ -1248,9 +1248,9 @@ function App() {
             width: '42px',
             height: '42px',
             borderRadius: '50%',
-            background: '#ffffff',
-            border: '1px solid rgba(0, 104, 255, 0.2)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            overflow: 'hidden',
+            background: 'transparent',
+            boxShadow: '0 4px 14px rgba(0, 104, 255, 0.4), 0 2px 5px rgba(0,0,0,0.3)',
             cursor: 'pointer',
             transition: 'transform 0.2s',
             zIndex: 99999
@@ -1266,7 +1266,7 @@ function App() {
             e.currentTarget.style.filter = 'none';
           }}
         >
-          <img src="/zalo.svg" alt="Zalo" style={{ width: '24px', height: '24px', pointerEvents: 'none' }} />
+          <img src="/zalo.svg" alt="Zalo" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
         </a>
 
         {/* AI Tools Floating Button (Bottom of Stack) */}
