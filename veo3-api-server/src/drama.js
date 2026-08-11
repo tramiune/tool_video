@@ -1,7 +1,7 @@
 const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 
 const { db } = require('./firebase_worker');
 const { uploadToR2 } = require('./s3_uploader');
@@ -270,26 +270,64 @@ function runFfmpeg(args) {
   });
 }
 
+function getAudioDuration(audioPath) {
+  return new Promise((resolve) => {
+    const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
+    exec(`"${ffprobePath}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`, (err, stdout) => {
+      if (err) {
+        logger.error(`[Drama] Failed to get audio duration: ${err.message}`);
+        resolve(0);
+      } else {
+        const dur = parseFloat(stdout.trim());
+        resolve(isNaN(dur) ? 0 : dur);
+      }
+    });
+  });
+}
+
 // Overlay an audio file on top of a silent video clip (audio length matches clip).
+// If speech ends before 8 seconds, freeze the last frame for the remaining duration to lock character.
 async function muxAudioIntoTemp(clipPath, audioPath, outputPath) {
   try {
-    await runFfmpeg([
-      '-y', '-i', clipPath, '-i', audioPath,
-      '-filter_complex', '[1:a]apad=pad_dur=1[a]',
-      '-map', '0:v', '-map', '[a]',
-      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-      '-shortest', '-movflags', '+faststart', outputPath
-    ]);
+    const D = await getAudioDuration(audioPath);
+    logger.info(`[Drama] Muxing audio/video. Audio duration: ${D.toFixed(2)}s`);
+
+    if (D > 0 && D < 8) {
+      const padDur = 8 - D;
+      // Trim video at D seconds, clone the last frame (tpad stop_mode=clone) for the remaining (8-D) seconds,
+      // and pad the audio with silence so the output is exactly 8 seconds long.
+      await runFfmpeg([
+        '-y', '-i', clipPath, '-i', audioPath,
+        '-filter_complex', `[0:v]trim=end=${D.toFixed(3)},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${padDur.toFixed(3)}[v];[1:a]apad=pad_dur=${padDur.toFixed(3)}[a]`,
+        '-map', '[v]', '-map', '[a]',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-shortest', '-movflags', '+faststart', outputPath
+      ]);
+    } else {
+      await runFfmpeg([
+        '-y', '-i', clipPath, '-i', audioPath,
+        '-filter_complex', '[1:a]apad=pad_dur=1[a]',
+        '-map', '0:v', '-map', '[a]',
+        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+        '-shortest', '-movflags', '+faststart', outputPath
+      ]);
+    }
   } catch (error) {
-    logger.warn(`[Drama] Fast mux failed (${error.message}), retrying with transcode...`);
-    await runFfmpeg([
-      '-y', '-i', clipPath, '-i', audioPath,
-      '-filter_complex', '[1:a]apad=pad_dur=1[a]',
-      '-map', '0:v', '-map', '[a]',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
-      '-c:a', 'aac', '-b:a', '128k',
-      '-shortest', '-movflags', '+faststart', outputPath
-    ]);
+    logger.warn(`[Drama] Complex mux failed (${error.message}), retrying with simple shortest mux...`);
+    try {
+      await runFfmpeg([
+        '-y', '-i', clipPath, '-i', audioPath,
+        '-filter_complex', '[1:a]apad=pad_dur=1[a]',
+        '-map', '0:v', '-map', '[a]',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-shortest', '-movflags', '+faststart', outputPath
+      ]);
+    } catch (fallbackError) {
+      logger.error(`[Drama] Fallback mux also failed: ${fallbackError.message}`);
+      throw fallbackError;
+    }
   }
 }
 
