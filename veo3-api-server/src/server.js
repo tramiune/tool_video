@@ -866,6 +866,26 @@ async function requireAdmin(req, res, next) {
   }
 }
 
+async function requireDramaAccess(req, res, next) {
+  try {
+    const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
+    if (!match) return res.status(401).json({ error: 'Missing Firebase ID token' });
+    const decoded = await auth.verifyIdToken(match[1]);
+    const userSnapshot = await db.collection('users').doc(decoded.uid).get();
+    const userData = userSnapshot.exists ? userSnapshot.data() : {};
+    const email = String(decoded.email || userData.email || '').toLowerCase();
+    const ADMIN_EMAILS = ['traderfinn0312@gmail.com'];
+    const isAdmin = userData.isAdmin === true || ADMIN_EMAILS.includes(email);
+    if (!isAdmin && userData.hasDramaAccess !== true) {
+      return res.status(403).json({ error: 'Drama access authorization required' });
+    }
+    req.authUser = { uid: decoded.uid, email: decoded.email || userData.email || null, isAdmin };
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid Firebase ID token' });
+  }
+}
+
 app.get('/api/autotool/profile', requireAdmin, async (req, res) => {
   try {
     const snapshot = await db.collection('autotool_profiles').doc(req.authUser.uid).get();
@@ -1372,7 +1392,7 @@ app.post('/api/autotool/jobs', requireAdmin, async (req, res) => {
 });
 
 // ─── DRAMA SCRIPTS (mẹ chồng nàng dâu / family drama) ──────────────────────
-app.get('/api/drama/scripts', requireAdmin, async (req, res) => {
+app.get('/api/drama/scripts', requireDramaAccess, async (req, res) => {
   try {
     const snapshot = await db.collection('drama_scripts').where('userId', '==', req.authUser.uid).get();
     const scripts = snapshot.docs
@@ -1385,7 +1405,7 @@ app.get('/api/drama/scripts', requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/drama/scripts', requireAdmin, async (req, res) => {
+app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
   try {
     const topic = String(req.body?.topic || '').trim();
     
@@ -1412,7 +1432,7 @@ app.post('/api/drama/scripts', requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/drama/scripts/:id/ai/generate', requireAdmin, async (req, res) => {
+app.post('/api/drama/scripts/:id/ai/generate', requireDramaAccess, async (req, res) => {
   try {
     const scriptRef = db.collection('drama_scripts').doc(req.params.id);
     const snapshot = await scriptRef.get();
@@ -1437,10 +1457,13 @@ app.post('/api/drama/scripts/:id/ai/generate', requireAdmin, async (req, res) =>
   }
 });
 
-app.get('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
+app.get('/api/drama/scripts/:id', requireDramaAccess, async (req, res) => {
   try {
     const snapshot = await db.collection('drama_scripts').doc(req.params.id).get();
     if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
+    if (snapshot.data().userId !== req.authUser.uid && !req.authUser.isAdmin) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     return res.json({ script: { id: snapshot.id, ...drama.normalizeDramaScript(snapshot.data()), updatedAt: snapshot.data().updatedAt || 0 } });
   } catch (error) {
     logger.error('Drama script lookup failed', error);
@@ -1448,13 +1471,13 @@ app.get('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
   }
 });
 
-app.put('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
+app.put('/api/drama/scripts/:id', requireDramaAccess, async (req, res) => {
   try {
     const scriptRef = db.collection('drama_scripts').doc(req.params.id);
     const snapshot = await scriptRef.get();
     if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
     const current = snapshot.data();
-    if (current.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    if (current.userId !== req.authUser.uid && !req.authUser.isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
     const now = Date.now();
     const updated = {
@@ -1470,12 +1493,12 @@ app.put('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
   }
 });
 
-app.delete('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
+app.delete('/api/drama/scripts/:id', requireDramaAccess, async (req, res) => {
   try {
     const scriptRef = db.collection('drama_scripts').doc(req.params.id);
     const snapshot = await scriptRef.get();
     if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
-    if (snapshot.data().userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    if (snapshot.data().userId !== req.authUser.uid && !req.authUser.isAdmin) return res.status(403).json({ error: 'Forbidden' });
     await scriptRef.delete();
     return res.json({ success: true });
   } catch (error) {
@@ -1485,13 +1508,13 @@ app.delete('/api/drama/scripts/:id', requireAdmin, async (req, res) => {
 });
 
 // Drama video job: creates an episode from an approved script.
-app.post('/api/drama/scripts/:id/jobs', requireAdmin, async (req, res) => {
+app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => {
   try {
     const scriptRef = db.collection('drama_scripts').doc(req.params.id);
     const snapshot = await scriptRef.get();
     if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
     const scriptData = snapshot.data();
-    if (scriptData.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    if (scriptData.userId !== req.authUser.uid && !req.authUser.isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
     const script = drama.normalizeDramaScript(scriptData);
     if (!script.title) return res.status(400).json({ error: 'Generate a script before creating a video' });
@@ -1550,7 +1573,7 @@ app.post('/api/drama/scripts/:id/jobs', requireAdmin, async (req, res) => {
 
 // Generate a single scene's still image or video independently. Persists the
 // result (imageUrl / videoUrl + task status) back onto the script scene doc.
-app.post('/api/drama/scripts/:id/scenes/:sceneIndex/:mediaType', requireAdmin, async (req, res) => {
+app.post('/api/drama/scripts/:id/scenes/:sceneIndex/:mediaType', requireDramaAccess, async (req, res) => {
   try {
     const sceneIndex = Number(req.params.sceneIndex);
     const mediaType = String(req.params.mediaType || '').toLowerCase();
@@ -1562,7 +1585,7 @@ app.post('/api/drama/scripts/:id/scenes/:sceneIndex/:mediaType', requireAdmin, a
     const snapshot = await scriptRef.get();
     if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
     const scriptData = snapshot.data();
-    if (scriptData.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
+    if (scriptData.userId !== req.authUser.uid && !req.authUser.isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
     const script = drama.normalizeDramaScript(scriptData);
     if (!script.scenes[sceneIndex]) return res.status(400).json({ error: `Scene ${sceneIndex + 1} not found` });
@@ -1584,8 +1607,15 @@ app.post('/api/drama/scripts/:id/scenes/:sceneIndex/:mediaType', requireAdmin, a
   }
 });
 
-app.get('/api/drama/scripts/:id/jobs/latest', requireAdmin, async (req, res) => {
+app.get('/api/drama/scripts/:id/jobs/latest', requireDramaAccess, async (req, res) => {
   try {
+    const scriptRef = db.collection('drama_scripts').doc(req.params.id);
+    const scriptSnap = await scriptRef.get();
+    if (!scriptSnap.exists) return res.status(404).json({ error: 'Drama script not found' });
+    if (scriptSnap.data().userId !== req.authUser.uid && !req.authUser.isAdmin) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const snapshot = await db.collection('drama_jobs')
       .where('scriptId', '==', req.params.id)
       .get();
@@ -1602,10 +1632,13 @@ app.get('/api/drama/scripts/:id/jobs/latest', requireAdmin, async (req, res) => 
   }
 });
 
-app.get('/api/drama/jobs/:id', requireAdmin, async (req, res) => {
+app.get('/api/drama/jobs/:id', requireDramaAccess, async (req, res) => {
   try {
     const snapshot = await db.collection('drama_jobs').doc(req.params.id).get();
     if (!snapshot.exists) return res.status(404).json({ error: 'Drama job not found' });
+    if (snapshot.data().userId !== req.authUser.uid && !req.authUser.isAdmin) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     return res.json({ id: snapshot.id, ...snapshot.data() });
   } catch (error) {
     logger.error('Drama job lookup failed', error);
@@ -1613,13 +1646,13 @@ app.get('/api/drama/jobs/:id', requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/drama/jobs/:id/cancel', requireAdmin, async (req, res) => {
+app.post('/api/drama/jobs/:id/cancel', requireDramaAccess, async (req, res) => {
   try {
     const jobRef = db.collection('drama_jobs').doc(req.params.id);
     const snapshot = await jobRef.get();
     if (!snapshot.exists) return res.status(404).json({ error: 'Drama job not found' });
-    
     const job = snapshot.data();
+    if (job.userId !== req.authUser.uid && !req.authUser.isAdmin) return res.status(403).json({ error: 'Forbidden' });
     if (job.status === 'completed' || job.status === 'failed') {
       return res.status(400).json({ error: 'Tác vụ đã kết thúc trước đó.' });
     }
