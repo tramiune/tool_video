@@ -805,10 +805,23 @@ body {
   to { transform: rotate(360deg); }
 }
 
+.desktop-only-zalo {
+  display: flex !important;
+}
+.mobile-only-floating-zalo {
+  display: none !important;
+}
+
 /* ==========================================
    MOBILE RESPONSIVE STYLES (max 768px)
    ========================================== */
 @media (max-width: 768px) {
+  .desktop-only-zalo {
+    display: none !important;
+  }
+  .mobile-only-floating-zalo {
+    display: flex !important;
+  }
 
   /* ---- Header ---- */
   .header-container {
