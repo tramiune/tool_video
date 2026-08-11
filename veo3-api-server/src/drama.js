@@ -1,7 +1,7 @@
 const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const { spawn, exec } = require('child_process');
+const { spawn } = require('child_process');
 
 const { db } = require('./firebase_worker');
 const { uploadToR2 } = require('./s3_uploader');
@@ -118,7 +118,7 @@ async function generateDramaScript({ topic }) {
       'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH & VỊ TRÍ NHÂN VẬT:',
       '- Cảnh 1 (Scene 1) PHẢI chứa đầy đủ tất cả các nhân vật trong characters cùng xuất hiện trong một khung hình (ví dụ: mô tả rõ cả Huy, Lan và bà mẹ đều đứng trong phòng khách). Mô tả chi tiết ngoại hình và trang phục của họ ngay trong Cảnh 1.',
       '- Các nhân vật tuyệt đối KHÔNG ĐƯỢC phép di chuyển đi đâu hết, không được di chuyển/chạy ra khỏi vị trí đứng ban đầu của họ xuyên suốt kịch bản. Ví dụ: Nếu Huy đứng ở rìa bên trái, Lan đứng ở rìa bên phải ở Cảnh 1, thì trong các cảnh 2, 3, 4, 5, 6 cả hai vẫn phải đứng yên tại vị trí đó (Huy rìa bên trái, Lan rìa bên phải), tuyệt đối không đi lại, không thay đổi vị trí đứng.',
-      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả cực kỳ rõ ràng vị trí đứng cố định sát hai bên rìa của từng nhân vật bằng tiếng Anh (ví dụ: "Huy is standing completely static on the far left side, Lan is standing completely static on the far right side. Both characters remain fixed in their spots, talking with subtle facial expressions and natural lip movements, without walking or shifting positions"). Giữ nguyên vị trí cực hạn cố định này nhất quán xuyên suốt các cảnh.',
+      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả cực kỳ rõ ràng vị trí đứng cố định sát hai bên rìa của từng nhân vật bằng tiếng Anh (ví dụ: "Huy is standing completely static on the far left side, Lan is standing completely static on the far right side. Both characters remain fixed in their spots, talking with subtle facial expressions and natural lip movements, without walking or shifting positions. Once the dialogue speech ends, they must freeze completely in their final static pose, remaining totally motionless for the remaining seconds of the video without any body movement, actions, or gestures"). Giữ nguyên vị trí cực hạn cố định này nhất quán xuyên suốt các cảnh.',
       '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ].join('\n'),
     temperature: 0.9
@@ -270,64 +270,26 @@ function runFfmpeg(args) {
   });
 }
 
-function getAudioDuration(audioPath) {
-  return new Promise((resolve) => {
-    const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
-    exec(`"${ffprobePath}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`, (err, stdout) => {
-      if (err) {
-        logger.error(`[Drama] Failed to get audio duration: ${err.message}`);
-        resolve(0);
-      } else {
-        const dur = parseFloat(stdout.trim());
-        resolve(isNaN(dur) ? 0 : dur);
-      }
-    });
-  });
-}
-
 // Overlay an audio file on top of a silent video clip (audio length matches clip).
-// If speech ends before 8 seconds, freeze the last frame for the remaining duration to lock character.
 async function muxAudioIntoTemp(clipPath, audioPath, outputPath) {
   try {
-    const D = await getAudioDuration(audioPath);
-    logger.info(`[Drama] Muxing audio/video. Audio duration: ${D.toFixed(2)}s`);
-
-    if (D > 0 && D < 8) {
-      const padDur = 8 - D;
-      // Trim video at D seconds, clone the last frame (tpad stop_mode=clone) for the remaining (8-D) seconds,
-      // and pad the audio with silence so the output is exactly 8 seconds long.
-      await runFfmpeg([
-        '-y', '-i', clipPath, '-i', audioPath,
-        '-filter_complex', `[0:v]trim=end=${D.toFixed(3)},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${padDur.toFixed(3)}[v];[1:a]apad=pad_dur=${padDur.toFixed(3)}[a]`,
-        '-map', '[v]', '-map', '[a]',
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
-        '-c:a', 'aac', '-b:a', '128k',
-        '-shortest', '-movflags', '+faststart', outputPath
-      ]);
-    } else {
-      await runFfmpeg([
-        '-y', '-i', clipPath, '-i', audioPath,
-        '-filter_complex', '[1:a]apad=pad_dur=1[a]',
-        '-map', '0:v', '-map', '[a]',
-        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-        '-shortest', '-movflags', '+faststart', outputPath
-      ]);
-    }
+    await runFfmpeg([
+      '-y', '-i', clipPath, '-i', audioPath,
+      '-filter_complex', '[1:a]apad=pad_dur=1[a]',
+      '-map', '0:v', '-map', '[a]',
+      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+      '-shortest', '-movflags', '+faststart', outputPath
+    ]);
   } catch (error) {
-    logger.warn(`[Drama] Complex mux failed (${error.message}), retrying with simple shortest mux...`);
-    try {
-      await runFfmpeg([
-        '-y', '-i', clipPath, '-i', audioPath,
-        '-filter_complex', '[1:a]apad=pad_dur=1[a]',
-        '-map', '0:v', '-map', '[a]',
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
-        '-c:a', 'aac', '-b:a', '128k',
-        '-shortest', '-movflags', '+faststart', outputPath
-      ]);
-    } catch (fallbackError) {
-      logger.error(`[Drama] Fallback mux also failed: ${fallbackError.message}`);
-      throw fallbackError;
-    }
+    logger.warn(`[Drama] Fast mux failed (${error.message}), retrying with transcode...`);
+    await runFfmpeg([
+      '-y', '-i', clipPath, '-i', audioPath,
+      '-filter_complex', '[1:a]apad=pad_dur=1[a]',
+      '-map', '0:v', '-map', '[a]',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-shortest', '-movflags', '+faststart', outputPath
+    ]);
   }
 }
 
@@ -690,7 +652,7 @@ function buildScenePrompt(job, scene, mediaType) {
     if (dialogueLines) {
       parts.push(`Important: Character Dialogues (make sure their lips move/talk and their expressions match this dialogue):\n${dialogueLines}`);
     }
-    parts.push('Important: Both characters must remain completely static in their spots. Absolutely no walking, no shifting places, no running out of their positions. Keep the actors fixed in their positions, only their mouths and subtle facial expressions move.');
+    parts.push('Important: Both characters must remain completely static in their spots. Absolutely no walking, no shifting places, no running out of their positions. Keep the actors fixed in their positions, only their mouths and subtle facial expressions move. Once their speech or dialogue ends, the characters must freeze completely in their final pose, remaining totally motionless and static for the remaining seconds of the clip.');
     parts.push('Create one coherent 8-second vertical clip. Photorealistic Vietnamese family drama, natural movement.');
   }
   return parts.join('\n');
