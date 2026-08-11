@@ -149,6 +149,7 @@ const normalizeDramaScript = (script) => {
     id: script.id || null,
     topic: script.topic || '',
     title: script.title || '',
+    channelType: script.channelType || 'drama',
     characters: Array.isArray(script.characters) ? script.characters.slice(0, 3).map((character, index) => ({
       name: character.name || '',
       age: character.age ?? '',
@@ -429,6 +430,7 @@ function App() {
   const toolsBtnDragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const hasDraggedToolsBtn = useRef(false);
   const [dramaScripts, setDramaScripts] = useState([]);
+  const [channelType, setChannelType] = useState('drama');
   const [dramaScriptsLoading, setDramaScriptsLoading] = useState(false);
   const [dramaScript, setDramaScript] = useState(null);
   const [dramaScriptSavedState, setDramaScriptSavedState] = useState(null);
@@ -572,6 +574,7 @@ function App() {
       const isHashTryOn = hash === '#tryon';
       const isHashAudio = hash === '#audio';
       const isHashDrama = hash === '#drama';
+      const isHashSumo = hash === '#sumo';
       const isHashTools = hash === '#tools';
       const isHashMergeVideo = hash === '#merge-video';
       
@@ -591,7 +594,7 @@ function App() {
         }
       }
 
-      if (isHashDrama) {
+      if (isHashDrama || isHashSumo) {
         if (!user) {
           window.location.hash = '';
           setIsDramaView(false);
@@ -600,9 +603,10 @@ function App() {
         if (userProfileLoaded && !currentUserHasDramaAccess) {
           window.location.hash = '';
           setIsDramaView(false);
-          alert("Tài khoản của bạn chưa được cấp quyền truy cập Công cụ Mẹ Chồng Nàng Dâu!");
+          alert("Tài khoản của bạn chưa được cấp quyền truy cập Công cụ AI này!");
           return;
         }
+        setChannelType(isHashSumo ? 'sumo' : 'drama');
       }
 
       if (isHashMergeVideo) {
@@ -617,7 +621,7 @@ function App() {
       setIsAutoToolView(isHashAutoTool);
       setIsTryOnView(isHashTryOn);
       setIsAudioView(isHashAudio);
-      setIsDramaView(isHashDrama);
+      setIsDramaView(isHashDrama || isHashSumo);
       setIsToolsView(isHashTools);
       setIsMergeVideoView(isHashMergeVideo);
     };
@@ -2331,7 +2335,7 @@ function App() {
       const response = await fetch(`${API_BASE}/api/drama/scripts`, {
         method: 'POST',
         headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic })
+        body: JSON.stringify({ topic, channelType })
       });
       const data = await response.json();
       const normalized = normalizeDramaScript({ ...data.script, id: data.script.id });
@@ -2645,21 +2649,14 @@ function App() {
           <h2 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#a78bfa', margin: '0 0 16px 0', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             🛠️ Công cụ chung
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+          <div className="common-tools-grid">
             {/* Simple Button 1: Audio Tool */}
             <div 
-              className="glass-panel" 
+              className="glass-panel common-tool-card" 
               onClick={() => { window.location.hash = '#audio'; }}
               style={{
-                padding: '20px 24px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 border: '1px solid rgba(16, 185, 129, 0.2)',
-                background: 'rgba(16, 185, 129, 0.02)',
-                borderRadius: '12px'
+                background: 'rgba(16, 185, 129, 0.02)'
               }}
               onMouseOver={(e) => {
                 e.currentTarget.style.transform = 'translateY(-3px)';
@@ -2672,30 +2669,23 @@ function App() {
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <span style={{ fontSize: '2rem' }}>🎙️</span>
-                <div>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, color: '#10b981' }}>Công cụ Audio AI</h3>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '4px 0 0 0' }}>Nhân bản giọng đọc AI tiếng Việt</p>
+              <div className="card-info" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span className="card-emoji" style={{ fontSize: '2rem' }}>🎙️</span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <h3 className="card-title" style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, color: '#10b981' }}>Audio AI</h3>
+                  <p className="card-desc" style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '4px 0 0 0' }}>Nhân bản giọng đọc AI tiếng Việt</p>
                 </div>
               </div>
-              <span style={{ fontSize: '1.2rem', color: '#10b981' }}>➔</span>
+              <span className="card-arrow" style={{ fontSize: '1.2rem', color: '#10b981' }}>➔</span>
             </div>
 
             {/* Simple Button 2: Video Merge Tool */}
             <div 
-              className="glass-panel" 
+              className="glass-panel common-tool-card" 
               onClick={() => { window.location.hash = '#merge-video'; }}
               style={{
-                padding: '20px 24px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 border: '1px solid rgba(139, 92, 246, 0.2)',
-                background: 'rgba(139, 92, 246, 0.02)',
-                borderRadius: '12px'
+                background: 'rgba(139, 92, 246, 0.02)'
               }}
               onMouseOver={(e) => {
                 e.currentTarget.style.transform = 'translateY(-3px)';
@@ -2708,14 +2698,14 @@ function App() {
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <span style={{ fontSize: '2rem' }}>🎬</span>
-                <div>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, color: '#a78bfa' }}>Ghép Video AI</h3>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '4px 0 0 0' }}>Ghép nối các thước phim từ Thư viện</p>
+              <div className="card-info" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span className="card-emoji" style={{ fontSize: '2rem' }}>🎬</span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <h3 className="card-title" style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, color: '#a78bfa' }}>Ghép Video</h3>
+                  <p className="card-desc" style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '4px 0 0 0' }}>Ghép nối các thước phim từ Thư viện</p>
                 </div>
               </div>
-              <span style={{ fontSize: '1.2rem', color: '#a78bfa' }}>➔</span>
+              <span className="card-arrow" style={{ fontSize: '1.2rem', color: '#a78bfa' }}>➔</span>
             </div>
           </div>
         </div>
@@ -2792,6 +2782,69 @@ function App() {
                 </button>
               </div>
             </div>
+
+            {/* Card 3: Sumo Deer Tool */}
+            <div 
+              className="glass-panel" 
+              onClick={() => { window.location.hash = '#sumo'; }}
+              style={{
+                padding: 0,
+                overflow: 'hidden',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid rgba(245, 158, 11, 0.2)',
+                position: 'relative'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-6px)';
+                e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.6)';
+                e.currentTarget.style.boxShadow = '0 12px 30px rgba(245, 158, 11, 0.15)';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1.05)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.2)';
+                e.currentTarget.style.boxShadow = 'none';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1)';
+              }}
+            >
+              <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(245, 158, 11, 0.15)' }}>
+                <img 
+                  src="/sumo_tool_preview.jpg" 
+                  alt="Sumo Tool Preview" 
+                  className="tool-img"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+                />
+              </div>
+              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.25rem' }}>🦌</span>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#f59e0b' }}>Xây Kênh Gạc Hươu Sumo</h3>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                  Công cụ tự động hóa xây kênh chia sẻ kiến thức dinh dưỡng cho bé. Sử dụng nhân vật hươu Sumo thông thái và em bé để tạo kịch bản học tập vui nhộn.
+                </p>
+                <button 
+                  type="button" 
+                  className="glass-button"
+                  style={{ 
+                    width: '100%', 
+                    padding: '12px', 
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+                    border: 'none',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                    marginTop: '10px'
+                  }}
+                >
+                  Trải nghiệm ngay
+                </button>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -2858,13 +2911,13 @@ function App() {
                 <div>
                   <h2 style={{ fontSize: '1.05rem', margin: 0 }}>{dramaScript.title || '(Chưa có tiêu đề)'}</h2>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '3px 0 0' }}>
-                    Chủ đề: {dramaScript.topic || 'mẹ chồng nàng dâu'} · {dramaScript.scenes.length} cảnh · {dramaScript.characters.length} nhân vật
+                    Chủ đề: {dramaScript.topic || (channelType === 'sumo' ? 'Gạc Hươu Sumo' : 'mẹ chồng nàng dâu')} · {dramaScript.scenes.length} cảnh · {dramaScript.characters.length} nhân vật
                   </p>
                 </div>
               </div>
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" className="glass-button" onClick={generateDramaScript} disabled={dramaAiLoading || dramaSaving || isJobRunning} style={{ flex: 1, padding: '12px 18px', background: (dramaAiLoading || isJobRunning) ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: (dramaAiLoading || dramaSaving || isJobRunning) ? 0.4 : 1, fontSize: '0.82rem' }}>
+                <button type="button" className="glass-button" onClick={generateDramaScript} disabled={dramaAiLoading || dramaSaving || isJobRunning} style={{ flex: 1, padding: '12px 18px', background: (dramaAiLoading || isJobRunning) ? undefined : (channelType === 'sumo' ? 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)' : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)'), opacity: (dramaAiLoading || dramaSaving || isJobRunning) ? 0.4 : 1, fontSize: '0.82rem' }}>
                   {dramaAiLoading ? <Loader size={15} className="spin-loader" /> : <Sparkles size={15} />} {dramaScript.title ? 'Sinh lại kịch bản' : 'Sinh kịch bản bằng AI'}
                 </button>
                 <button type="button" className="glass-button" onClick={handleDramaCreateJob} disabled={dramaCreating || !dramaScript.title || !dramaScript.scenes.length || isJobRunning} style={{ flex: 1, padding: '12px 18px', background: (dramaCreating || isJobRunning) ? undefined : 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)', opacity: (dramaCreating || !dramaScript.title || !dramaScript.scenes.length || isJobRunning) ? 0.4 : 1, fontSize: '0.82rem' }}>
@@ -2966,55 +3019,84 @@ function App() {
         ) : !dramaScript ? (
           <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>
             <div>
-              <h2 style={{ fontSize: '1.08rem', margin: 0 }}>Danh sách kịch bản</h2>
+              <h2 style={{ fontSize: '1.08rem', margin: 0 }}>
+                {channelType === 'sumo' ? 'Danh sách kịch bản Gạc Hươu Sumo' : 'Danh sách kịch bản Mẹ Chồng Nàng Dâu'}
+              </h2>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '15px', borderRadius: '12px', border: '1px solid rgba(244,114,182,0.25)', background: 'rgba(244,114,182,0.04)' }}>
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '10px', 
+              padding: '15px', 
+              borderRadius: '12px', 
+              border: channelType === 'sumo' ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid rgba(244, 114, 182, 0.25)', 
+              background: channelType === 'sumo' ? 'rgba(245, 158, 11, 0.04)' : 'rgba(244, 114, 182, 0.04)' 
+            }}>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <input
                   type="text"
                   value={dramaTopic}
                   onChange={(event) => setDramaTopic(event.target.value)}
-                  placeholder="Chủ đề kịch bản, ví dụ: mẹ chồng nàng dâu"
+                  placeholder={channelType === 'sumo' ? "Chủ đề hoạt hình Sumo, ví dụ: bé lười ăn rau" : "Chủ đề kịch bản, ví dụ: mẹ chồng nàng dâu"}
                   className="glass-input"
                   style={{ flex: 1, minWidth: '220px' }}
                   disabled={dramaSaving}
                   onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); createDramaScript(); } }}
                 />
-                <button type="button" className="glass-button" onClick={createDramaScript} disabled={dramaSaving} style={{ padding: '12px 18px', background: dramaSaving ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: dramaSaving ? 0.5 : 1 }}>
+                <button 
+                  type="button" 
+                  className="glass-button" 
+                  onClick={createDramaScript} 
+                  disabled={dramaSaving} 
+                  style={{ 
+                    padding: '12px 18px', 
+                    background: dramaSaving ? undefined : (channelType === 'sumo' ? 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)' : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)'), 
+                    opacity: dramaSaving ? 0.5 : 1 
+                  }}
+                >
                   {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Plus size={17} />} {dramaSaving ? 'Đang tạo bằng AI...' : 'Tạo kịch bản'}
                 </button>
               </div>
             </div>
 
-            {dramaScripts.length === 0 ? (
-              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '26px 0' }}>
-                Chưa có kịch bản nào. Tạo kịch bản đầu tiên ở trên.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {dramaScripts.map(script => (
-                  <div key={script.id} className="glass-panel" style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {script.title || '(Chưa có tiêu đề)'}
-                      </div>
-                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '3px' }}>
-                        {script.scenes.length} cảnh · {script.characters.length} nhân vật · {new Date(script.updatedAt || Date.now()).toLocaleDateString('vi-VN')}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                      <button type="button" className="glass-button" onClick={() => openDramaScript(script.id)} style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
-                        Mở
-                      </button>
-                      <button type="button" className="glass-button" onClick={() => deleteDramaScript(script.id)} style={{ padding: '8px 12px', fontSize: '0.8rem', color: '#f87171' }}>
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
+            {(() => {
+              const filteredScripts = dramaScripts.filter(s => {
+                if (channelType === 'sumo') return s.channelType === 'sumo';
+                return s.channelType !== 'sumo';
+              });
+              if (filteredScripts.length === 0) {
+                return (
+                  <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '26px 0' }}>
+                    Chưa có kịch bản nào. Tạo kịch bản đầu tiên ở trên.
                   </div>
-                ))}
-              </div>
-            )}
+                );
+              }
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {filteredScripts.map(script => (
+                    <div key={script.id} className="glass-panel" style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {script.title || '(Chưa có tiêu đề)'}
+                        </div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '3px' }}>
+                          {script.scenes.length} cảnh · {script.characters.length} nhân vật · {new Date(script.updatedAt || Date.now()).toLocaleDateString('vi-VN')}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                        <button type="button" className="glass-button" onClick={() => openDramaScript(script.id)} style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
+                          Mở
+                        </button>
+                        <button type="button" className="glass-button" onClick={() => deleteDramaScript(script.id)} style={{ padding: '8px 12px', fontSize: '0.8rem', color: '#f87171' }}>
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </section>
         ) : (
           <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>

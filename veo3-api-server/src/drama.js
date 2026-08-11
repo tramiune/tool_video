@@ -91,19 +91,48 @@ async function callDramaAI({ system, user, temperature = 0.8, maxRetries = 3 }) 
   throw lastError || new Error('Drama AI call failed');
 }
 
-// ─── STEP 1: AI drafts the whole drama script ───────────────────────────────
-// Produces: title, characters (name/age/role/description), base image prompt,
-// and up to 6 scenes, each with a Vietnamese spoken dialogue.
-async function generateDramaScript({ topic }) {
+// Produces: title, characters, baseImagePrompt, and scenes.
+async function generateDramaScript({ topic, channelType = 'drama' }) {
   const inputTopic = String(topic || '').trim();
-  const themePrompt = inputTopic 
-    ? `Hãy sáng tạo một kịch bản phim ngắn drama về chủ đề cụ thể: "${inputTopic}".`
-    : 'Hãy tự sáng tạo ra một chủ đề drama gia đình Việt Nam ngẫu nhiên bất kỳ (mâu thuẫn mẹ chồng nàng dâu, ngoại tình, phân chia tài sản, sự vô cảm,...) thật kịch tính và viết kịch bản dựa trên chủ đề tự nghĩ đó.';
+  
+  let systemPrompt = '';
+  let userPrompts = [];
+  
+  if (channelType === 'sumo') {
+    const themePrompt = inputTopic 
+      ? `Hãy sáng tạo một kịch bản phim ngắn 3D Pixar vui nhộn, mang tính giáo dục dinh dưỡng cho trẻ nhỏ về chủ đề cụ thể: "${inputTopic}".`
+      : 'Hãy tự sáng tạo ra một chủ đề hoạt hình dinh dưỡng trẻ em 3D Pixar ngẫu nhiên bất kỳ (lười ăn rau, tiêu hóa tốt, chất xơ, vitamin, ăn uống đa dạng...) thật vui vẻ kịch tính và viết kịch bản dựa trên chủ đề tự nghĩ đó.';
+      
+    systemPrompt = 'Bạn là biên kịch phim hoạt hình 3D Pixar vui nhộn, giáo dục dinh dưỡng cho trẻ em Việt Nam dạng dọc (9:16). '
+      + 'Tuân thủ chính xác schema JSON được yêu cầu, không xuất thêm gì khác.';
+      
+    userPrompts = [
+      themePrompt,
+      'Kịch bản cần có tính giáo dục, vui nhộn và kịch tính nhẹ nhàng cho trẻ em. Hai nhân vật bắt buộc xuất hiện xuyên suốt kịch bản là bé Bin (5 tuổi đáng yêu, lười ăn rau) và chú hươu Sumo (chuyên gia dinh dưỡng thông thái, đi bằng 2 chân, luôn đưa ra các giải pháp dinh dưỡng và sản phẩm Gạc Hươu Non SUMO). Có thể thêm nhân vật thứ 3 là "Bạn học" hoặc "Mẹ".',
+      'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
+      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
+      '- title: tiêu đề kịch bản hoạt hình, ngắn gọn, vui nhộn (tiếng Việt).',
+      '- characters: đúng 3 nhân vật (vd: "Bin", "Sumo", "Bạn" hoặc "Mẹ"), mỗi người có role và description ngắn.',
+      '- baseImagePrompt: prompt tiếng Anh mô tả khung cảnh picnic/công viên/nhà ở + phong cách 3D Pixar hoạt hình (vd: "A 3D Pixar-style school picnic in a bright green sunny park, cinematic lighting..."), vertical 9:16.',
+      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình đó), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
+      '- YÊU CẦU QUAN TRỌNG VỀ THOẠI (DIALOGUE):',
+      '  * Bắt buộc cảnh nào cũng phải có thoại. Mảng dialogue của mỗi cảnh chỉ được phép chứa đúng 1 câu thoại duy nhất của 1 nhân vật (1 người nói duy nhất mỗi cảnh, không có đối thoại qua lại trong cùng 1 cảnh).',
+      '  * Mỗi câu thoại phải đủ dài để đọc/nói chậm rãi trong khoảng 7 đến 8 giây (độ dài kịch bản thoại khoảng 25-35 từ tiếng Việt), diễn đạt vui nhộn, dễ hiểu cho trẻ nhỏ, tránh thoại ngắn cụt lủn.',
+      'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH & VỊ TRÍ NHÂN VẬT:',
+      '- Cảnh 1 (Scene 1) PHẢI chứa đầy đủ tất cả các nhân vật trong characters cùng xuất hiện trong một khung hình (ví dụ: mô tả rõ cả bé Bin, chú hươu Sumo và bạn bè đứng ở thảm dã ngoại). Mô tả chi tiết ngoại hình đáng yêu của họ ngay trong Cảnh 1.',
+      '- Các nhân vật tuyệt đối KHÔNG ĐƯỢC phép di chuyển đi đâu hết, không được di chuyển/chạy ra khỏi vị trí đứng ban đầu của họ xuyên suốt kịch bản. Ví dụ: Nếu Bin đứng bên trái, Sumo đứng bên phải ở Cảnh 1, thì trong các cảnh 2, 3, 4, 5, 6 cả hai vẫn phải đứng yên tại vị trí đó, tuyệt đối không đi lại, không thay đổi vị trí đứng.',
+      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả cực kỳ rõ ràng vị trí đứng cố định sát hai bên rìa của từng nhân vật bằng tiếng Anh (ví dụ: "Bin is standing completely static on the far left side, Sumo is standing completely static on the far right side. Both characters remain fixed in their spots, talking with subtle facial expressions and natural lip movements, without walking or shifting positions. Sumo always stands upright on two legs. Once the dialogue speech ends, they must freeze completely in their final static pose, remaining totally motionless for the remaining seconds of the video without any body movement, actions, or gestures"). Giữ nguyên vị trí cực hạn cố định này nhất quán xuyên suốt các cảnh.',
+      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
+    ];
+  } else {
+    const themePrompt = inputTopic 
+      ? `Hãy sáng tạo một kịch bản phim ngắn drama về chủ đề cụ thể: "${inputTopic}".`
+      : 'Hãy tự sáng tạo ra một chủ đề drama gia đình Việt Nam ngẫu nhiên bất kỳ (mâu thuẫn mẹ chồng nàng dâu, ngoại tình, phân chia tài sản, sự vô cảm,...) thật kịch tính và viết kịch bản dựa trên chủ đề tự nghĩ đó.';
 
-  const parsed = await callDramaAI({
-    system: 'Bạn là biên kịch phim ngắn drama gia đình Việt Nam dạng dọc (9:16). '
-      + 'Tuân thủ chính xác schema JSON được yêu cầu, không xuất thêm gì khác.',
-    user: [
+    systemPrompt = 'Bạn là biên kịch phim ngắn drama gia đình Việt Nam dạng dọc (9:16). '
+      + 'Tuân thủ chính xác schema JSON được yêu cầu, không xuất thêm gì khác.';
+
+    userPrompts = [
       themePrompt,
       'Kịch bản phải đánh trúng cảm xúc, có kịch tính, nhiều mâu thuẫn và cao trào, kiểu nội dung "mẹ chồng nàng dâu" hoặc drama gia đình dễ gây tranh cãi.',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
@@ -120,7 +149,12 @@ async function generateDramaScript({ topic }) {
       '- Các nhân vật tuyệt đối KHÔNG ĐƯỢC phép di chuyển đi đâu hết, không được di chuyển/chạy ra khỏi vị trí đứng ban đầu của họ xuyên suốt kịch bản. Ví dụ: Nếu Huy đứng ở rìa bên trái, Lan đứng ở rìa bên phải ở Cảnh 1, thì trong các cảnh 2, 3, 4, 5, 6 cả hai vẫn phải đứng yên tại vị trí đó (Huy rìa bên trái, Lan rìa bên phải), tuyệt đối không đi lại, không thay đổi vị trí đứng.',
       '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả cực kỳ rõ ràng vị trí đứng cố định sát hai bên rìa của từng nhân vật bằng tiếng Anh (ví dụ: "Huy is standing completely static on the far left side, Lan is standing completely static on the far right side. Both characters remain fixed in their spots, talking with subtle facial expressions and natural lip movements, without walking or shifting positions. Once the dialogue speech ends, they must freeze completely in their final static pose, remaining totally motionless for the remaining seconds of the video without any body movement, actions, or gestures"). Giữ nguyên vị trí cực hạn cố định này nhất quán xuyên suốt các cảnh.',
       '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
-    ].join('\n'),
+    ];
+  }
+
+  const parsed = await callDramaAI({
+    system: systemPrompt,
+    user: userPrompts.join('\n'),
     temperature: 0.9
   });
 
@@ -382,6 +416,21 @@ async function runDramaJob(jobId) {
           imageUrl = null; // force regeneration if missing or deleted
           if (index === 0) {
             // Scene 1: Generate initial still image
+            const referenceImages = [];
+            if (job.channelType === 'sumo') {
+              referenceImages.push(
+                'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/bin_character.jpg',
+                'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_character.jpg'
+              );
+              const promptLower = String(scene.imagePrompt || '').toLowerCase();
+              if (promptLower.includes('mother') || promptLower.includes('mom') || promptLower.includes('mẹ')) {
+                referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/mother_character.jpg');
+              }
+              if (promptLower.includes('gac huou non sumo') || promptLower.includes('sumo non') || promptLower.includes('pouch') || promptLower.includes('product') || promptLower.includes('package')) {
+                referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_product.png');
+              }
+            }
+
             const imageResult = await runChildTaskWithRetry({
               jobRef,
               job: { ...job, characters: job.characters || [] },
@@ -396,7 +445,7 @@ async function runDramaJob(jobId) {
                 aspectRatio: '9:16',
                 model: 'nano_banana_2',
                 count: 1,
-                referenceImages: [],
+                referenceImages,
                 dramaJobId: jobId,
                 sceneIndex: index,
                 createdAt: Date.now()
@@ -709,6 +758,21 @@ async function generateSceneMedia({
 
   try {
     if (mediaType === 'image') {
+      const referenceImages = [];
+      if (script.channelType === 'sumo') {
+        referenceImages.push(
+          'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/bin_character.jpg',
+          'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_character.jpg'
+        );
+        const promptLower = String(scene.imagePrompt || '').toLowerCase();
+        if (promptLower.includes('mother') || promptLower.includes('mom') || promptLower.includes('mẹ')) {
+          referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/mother_character.jpg');
+        }
+        if (promptLower.includes('gac huou non sumo') || promptLower.includes('sumo non') || promptLower.includes('pouch') || promptLower.includes('product') || promptLower.includes('package')) {
+          referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_product.png');
+        }
+      }
+
       const imageResult = await runChildTaskWithRetry({
         jobRef: scriptRef,
         job,
@@ -723,7 +787,7 @@ async function generateSceneMedia({
           aspectRatio: '9:16',
           model: 'nano_banana_2',
           count: 1,
-          referenceImages: [],
+          referenceImages,
           dramaScriptId: scriptRef.id,
           sceneIndex,
           createdAt: Date.now()

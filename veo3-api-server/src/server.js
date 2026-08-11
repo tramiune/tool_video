@@ -1397,10 +1397,108 @@ app.post('/api/autotool/jobs', requireAdmin, async (req, res) => {
 app.get('/api/drama/scripts', requireDramaAccess, async (req, res) => {
   try {
     const snapshot = await db.collection('drama_scripts').where('userId', '==', req.authUser.uid).get();
-    const scripts = snapshot.docs
-      .map(document => ({ id: document.id, ...drama.normalizeDramaScript(document.data()), updatedAt: document.data().updatedAt || 0 }))
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-    return res.json({ scripts });
+    let scripts = snapshot.docs.map(document => ({ 
+      id: document.id, 
+      ...drama.normalizeDramaScript(document.data()), 
+      channelType: document.data().channelType || 'drama',
+      updatedAt: document.data().updatedAt || 0 
+    }));
+
+    const hasSumo = scripts.some(s => s.channelType === 'sumo');
+    if (!hasSumo) {
+      const ref = db.collection('drama_scripts').doc();
+      const now = Date.now();
+      const defaultSumoScript = {
+        userId: req.authUser.uid,
+        userEmail: req.authUser.email,
+        topic: 'Ăn đa dạng - Gạc Hươu Sumo',
+        channelType: 'sumo',
+        title: 'BIN CÓ THỂ ĂN MỘT MÓN MỖI NGÀY KHÔNG?',
+        characters: [
+          { name: 'Bin', age: '5', role: 'Nhân vật chính', description: 'Bé trai 5 tuổi đáng yêu, năng động, lười ăn rau.', voiceIndex: 0 },
+          { name: 'Sumo', age: 'Chưa rõ', role: 'Chuyên gia dinh dưỡng', description: 'Chú hươu Sumo thông thái, đi bằng hai chân, vui tính.', voiceIndex: 1 },
+          { name: 'Bạn', age: '5', role: 'Bạn học', description: 'Bạn học cùng lớp của Bin.', voiceIndex: 2 }
+        ],
+        baseImagePrompt: 'Pixar-style 3D animation, beautiful sunny Vietnamese school picnic in a green park, children sitting on picnic blankets with colorful lunch boxes. Bin, a cute 5-year-old Vietnamese boy, proudly holds up his favorite food and makes a confident funny expression. His classmates look surprised and curious. Chú hươu Sumo approaches from behind with a playful but serious expression, standing upright like a friendly nutrition expert. Colorful fruits, vegetables, rice, eggs and other foods visible on the picnic table. Bright natural sunlight, cinematic composition, playful educational atmosphere, high-quality 3D animation.',
+        status: 'draft',
+        createdAt: now,
+        updatedAt: now,
+        scenes: [
+          {
+            index: 0,
+            title: 'Hook: Bin tuyên bố gây sốc',
+            description: 'Pixar-style 3D animation, beautiful sunny school picnic. Bin holds up favorite food, Sumo standing behind upright like a nutrition expert.',
+            imagePrompt: 'Pixar-style 3D animation, beautiful sunny Vietnamese school picnic in a green park, children sitting on picnic blankets with colorful lunch boxes. Bin, a cute 5-year-old Vietnamese boy, proudly holds up his favorite food and makes a confident funny expression. His classmates look surprised and curious. Chú hươu Sumo approaches from behind with a playful but serious expression, standing upright like a friendly nutrition expert. Colorful fruits, vegetables, rice, eggs and other foods visible on the picnic table. Bright natural sunlight, cinematic composition, playful educational atmosphere, high-quality 3D animation. No injury, no illness, no medical emergency, no frightening imagery. IMPORTANT CHARACTER CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
+            videoPrompt: 'Duration: exactly 8 seconds. Vertical 9:16. Start with a close-up of colorful lunch boxes being opened during a school picnic. Camera quickly moves toward Bin as he confidently raises his favorite food and announces his decision. His classmates react with surprise. Sumo enters from behind and stops beside Bin, giving him a playful serious look. Dialogue: Bin: "Tớ quyết định rồi! Từ hôm nay tớ chỉ ăn món tớ thích thôi!" Bạn: "Ngày nào cũng ăn một món á?" Bin: "Đúng! Vừa ngon vừa khỏi phải suy nghĩ!" Sumo: "Khoan đã Bin! Đây chính là lúc dinh dưỡng bắt đầu có chuyện đấy!" IMPORTANT: Keep Bin and Sumo exactly identical throughout the video. Sumo must ONLY stand and walk on TWO LEGS.',
+            dialogue: [
+              { speaker: 'Bin', text: 'Tớ quyết định rồi! Từ hôm nay tớ chỉ ăn món tớ thích thôi!' },
+              { speaker: 'Bạn', text: 'Ngày nào cũng ăn một món á?' },
+              { speaker: 'Bin', text: 'Đúng! Vừa ngon vừa khỏi phải suy nghĩ!' },
+              { speaker: 'Sumo', text: 'Khoan đã Bin! Đây chính là lúc dinh dưỡng bắt đầu có chuyện đấy!' }
+            ]
+          },
+          {
+            index: 1,
+            title: 'Bin bắt bẻ Sumo',
+            description: 'Pixar-style 3D animation, school picnic. Bin and Sumo sit opposite each other beside food groups: rice, bread, eggs, vegetables, fruits.',
+            imagePrompt: 'Pixar-style 3D animation, school picnic in a bright green park. Bin and Chú hươu Sumo sit opposite each other beside a colorful picnic table. Sumo points toward different food groups arranged on the table: rice, bread, eggs, fish, milk, vegetables and tropical fruits. Above each food group are simple colorful educational icons representing carbohydrate, protein, fat, vitamins, minerals and fiber. Bin looks surprised and fascinated. Warm sunlight, playful science education atmosphere, cinematic 3D animation. IMPORTANT CHARACTER CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
+            videoPrompt: 'Duration: exactly 8 seconds. Vertical 9:16. Bin looks skeptical and points toward his favorite food. Sumo calmly points toward different food groups on the picnic table. As Sumo explains, simple colorful nutrition icons appear one by one above the foods. Bin becomes increasingly interested. Dialogue: Bin: "Món tớ thích cũng có dinh dưỡng mà! Vậy tại sao phải ăn nhiều thứ?" Sumo: "Vì không có một loại thực phẩm nào cung cấp tất cả dưỡng chất mà cơ thể cần." Bin: "Vậy cơ thể tớ giống một đội có nhiều thành viên à?" Sumo: "Chính xác!"',
+            dialogue: [
+              { speaker: 'Bin', text: 'Món tớ thích cũng có dinh dưỡng mà! Vậy tại sao phải ăn nhiều thứ?' },
+              { speaker: 'Sumo', text: 'Vì không có một loại thực phẩm nào cung cấp tất cả dưỡng chất mà cơ thể cần.' },
+              { speaker: 'Bin', text: 'Vậy cơ thể tớ giống một đội có nhiều thành viên à?' },
+              { speaker: 'Sumo', text: 'Chính xác!' }
+            ]
+          },
+          {
+            index: 2,
+            title: 'Thử thách đĩa ăn cầu vồng',
+            description: 'Pixar-style 3D animation, school picnic challenge. A large clean plate with rice, egg, vegetables, fruits.',
+            imagePrompt: 'Pixar-style 3D animation, colorful school picnic challenge. A large clean plate sits on a picnic table. Bin excitedly chooses different foods and places them onto the plate: rice, egg, green vegetables and colorful tropical fruits. Chú hươu Sumo stands beside him like a friendly nutrition coach, smiling and guiding Bin. The plate gradually becomes colorful and balanced-looking. Bright sunlight, fun educational challenge, cinematic Pixar-quality 3D animation, vibrant but natural colors. IMPORTANT CHARACTER CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
+            videoPrompt: 'Duration: exactly 8 seconds. Vertical 9:16. Sumo places an empty plate in front of Bin like a fun challenge. Bin excitedly chooses different foods and places them onto the plate one by one: rice, egg, green vegetables and colorful fruits. Camera briefly zooms out to reveal the colorful plate. Dialogue: Sumo: "Thử thách nhé! Bin hãy chọn đồ ăn để tạo một chiếc đĩa thật đa dạng." Bin: "Thế này đủ chưa?" Sumo: "Đẹp rồi! Quan trọng là ăn đa dạng và phù hợp với nhu cầu của mỗi bé." Bin: "Khó hơn tớ tưởng!" IMPORTANT: Keep all characters identical. Sumo must ONLY stand and walk on TWO LEGS.',
+            dialogue: [
+              { speaker: 'Sumo', text: 'Thử thách nhé! Bin hãy chọn đồ ăn để tạo một chiếc đĩa thật đa dạng.' },
+              { speaker: 'Bin', text: 'Thế này đủ chưa?' },
+              { speaker: 'Sumo', text: 'Đẹp rồi! Quan trọng là ăn đa dạng và phù hợp với nhu cầu của mỗi bé.' },
+              { speaker: 'Bin', text: 'Khó hơn tớ tưởng!' }
+            ]
+          },
+          {
+            index: 3,
+            title: 'Sumo đưa gói Gạc Hươu Non',
+            description: 'Pixar-style 3D animation, child nutrition scene. Sumo holds a pouch of Gạc Hươu Non Sumo, Bin looks curious.',
+            imagePrompt: 'Pixar-style 3D animation, premium children\'s nutrition scene at a sunny school picnic. Bin sits beside a colorful picnic table while Chú hươu Sumo stands beside him holding one clearly visible pouch of GẠC HƯƠU NON SUMO. Keep the product packaging clean, premium and visually consistent. Around the product are five tropical fruit icons: orange, mango, guava, banana and passion fruit, together with simple Vitamin C, Zinc and fructooligosaccharide educational symbols. Bin looks curious and interested. Warm natural sunlight, premium children\'s nutrition advertising style, cinematic 3D animation. IMPORTANT CHARACTER AND PRODUCT CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Keep GẠC HƯƠU NON SUMO packaging visually consistent and unchanged. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
+            videoPrompt: 'Duration: exactly 8 seconds. Vertical 9:16. Bin looks at his colorful plate and asks Sumo a question. Sumo takes one GẠC HƯƠU NON SUMO pouch and presents it to Bin. Camera makes a short clean product close-up. Five tropical fruit icons appear around the pouch. Dialogue: Bin: "Có hôm tớ ăn uống chưa được đa dạng thì sao?" Sumo: "Vẫn nên cố gắng duy trì bữa ăn đa dạng. Ngoài ra, bố mẹ có thể lựa chọn thêm sản phẩm dinh dưỡng phù hợp với độ tuổi." Sumo: "Gạc Hươu Non SUMO có nhung hươu cô đặc, Vitamin C, Kẽm, Fructooligosaccharides và hỗn hợp trái cây nhiệt đới." Bin: "Cam, xoài, ổi, chuối và chanh dây đúng không?" Sumo: "Đúng rồi!" IMPORTANT: Product packaging must remain visually consistent. Keep Bin and Sumo exactly identical. Sumo must ONLY stand and walk on TWO LEGS.',
+            dialogue: [
+              { speaker: 'Bin', text: 'Có hôm tớ ăn uống chưa được đa dạng thì sao?' },
+              { speaker: 'Sumo', text: 'Vẫn nên cố gắng duy trì bữa ăn đa dạng. Ngoài ra, bố mẹ có thể lựa chọn thêm sản phẩm dinh dưỡng phù hợp với độ tuổi.' },
+              { speaker: 'Sumo', text: 'Gạc Hươu Non SUMO có nhung hươu cô đặc, Vitamin C, Kẽm, Fructooligosaccharides và hỗn hợp trái cây nhiệt đới.' },
+              { speaker: 'Bin', text: 'Cam, xoài, ổi, chuối và chanh dây đúng không?' },
+              { speaker: 'Sumo', text: 'Đúng rồi!' }
+            ]
+          },
+          {
+            index: 4,
+            title: 'Cú chốt gây tranh luận',
+            description: 'Pixar-style 3D animation, ending picnic. Bin points to camera, Sumo stands beside smiling.',
+            imagePrompt: 'Pixar-style 3D animation, beautiful sunny school picnic ending. Bin stands beside a colorful picnic table with a diverse plate of food. His favorite food is also visible beside the plate. Chú hươu Sumo stands next to Bin with a proud friendly smile. Bin points directly toward the camera with a playful challenging expression. Behind them are floating colorful food icons and a large glowing number "3". Several classmates look curious and excited. Cinematic golden sunlight, energetic educational children\'s content, high-quality Pixar-style 3D animation. IMPORTANT CHARACTER CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
+            videoPrompt: 'Duration: exactly 8 seconds. Vertical 9:16. Bin looks at the colorful plate, then looks at his favorite food and smiles. Bin turns toward Sumo with a confident expression. Sumo nods proudly. Bin then turns directly toward the camera and points playfully at the audience. A large colorful number "3" appears behind him. Dialogue: Bin: "Tớ vẫn ăn món mình thích, nhưng sẽ không chỉ ăn mỗi món đó nữa!" Sumo: "Đấy mới là Bin thông minh!" Bin: "Nếu chỉ được chọn 3 món ăn để ăn trong một ngày, bạn sẽ chọn món gì?" Sumo: "Để xem ai chọn được chiếc đĩa thông minh nhất nhé!" IMPORTANT: Keep all characters identical. Sumo must ONLY stand and walk on TWO LEGS.',
+            dialogue: [
+              { speaker: 'Bin', text: 'Tớ vẫn ăn món mình thích, nhưng sẽ không chỉ ăn mỗi món đó nữa!' },
+              { speaker: 'Sumo', text: 'Đấy mới là Bin thông minh!' },
+              { speaker: 'Bin', text: 'Nếu chỉ được chọn 3 món ăn để ăn trong một ngày, bạn sẽ chọn món gì?' },
+              { speaker: 'Sumo', text: 'Để xem ai chọn được chiếc đĩa thông minh nhất nhé!' }
+            ]
+          }
+        ]
+      };
+      await ref.set(defaultSumoScript);
+      logger.success(`[Drama/Sumo] Auto-prepopulated default Sumo script for ${req.authUser.email}`);
+      scripts.unshift({ id: ref.id, ...defaultSumoScript });
+    }
+
+    const sortedScripts = scripts.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return res.json({ scripts: sortedScripts });
   } catch (error) {
     logger.error('Drama script list failed', error);
     return res.status(500).json({ error: error.message });
@@ -1410,9 +1508,10 @@ app.get('/api/drama/scripts', requireDramaAccess, async (req, res) => {
 app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
   try {
     const topic = String(req.body?.topic || '').trim();
+    const channelType = String(req.body?.channelType || 'drama').trim();
     
     // Auto-generate the full script content using Gemini on creation
-    const draft = await drama.generateDramaScript({ topic });
+    const draft = await drama.generateDramaScript({ topic, channelType });
     
     const ref = db.collection('drama_scripts').doc();
     const now = Date.now();
@@ -1420,13 +1519,14 @@ app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
       userId: req.authUser.uid,
       userEmail: req.authUser.email,
       topic,
+      channelType,
       ...drama.normalizeDramaScript(draft),
       status: 'draft',
       createdAt: now,
       updatedAt: now
     };
     await ref.set(data);
-    logger.success(`[Drama] Created and generated script for ${req.authUser.email}: ${draft.title}`);
+    logger.success(`[Drama] Created and generated script for ${req.authUser.email}: ${draft.title} (Channel: ${channelType})`);
     return res.status(201).json({ success: true, script: { id: ref.id, ...data } });
   } catch (error) {
     logger.error('Drama script creation and generation failed', error);
@@ -1442,8 +1542,10 @@ app.post('/api/drama/scripts/:id/ai/generate', requireDramaAccess, async (req, r
     const current = snapshot.data();
     if (current.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
 
+    const channelType = String(current.channelType || 'drama').trim();
     const draft = await drama.generateDramaScript({
-      topic: String(req.body?.topic || current.topic || '').trim()
+      topic: String(req.body?.topic || current.topic || '').trim(),
+      channelType
     });
     const now = Date.now();
     const updated = {
@@ -1451,7 +1553,7 @@ app.post('/api/drama/scripts/:id/ai/generate', requireDramaAccess, async (req, r
       updatedAt: now
     };
     await scriptRef.update(updated);
-    logger.success(`[Drama] AI script generated for ${req.authUser.email}: ${draft.title}`);
+    logger.success(`[Drama] AI script generated for ${req.authUser.email}: ${draft.title} (Channel: ${channelType})`);
     return res.json({ success: true, script: { id: scriptRef.id, ...updated } });
   } catch (error) {
     logger.error('Drama AI script generation failed', error);

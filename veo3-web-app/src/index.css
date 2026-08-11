@@ -1128,4 +1128,65 @@ body {
   .admin-view [style*="minmax(200px"] { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
 }
 
+/* Responsive minimalist common tools style */
+.common-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.common-tool-card {
+  padding: 20px 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 12px;
+}
+
+@media (max-width: 768px) {
+  .common-tools-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+  
+  .common-tool-card {
+    padding: 12px 10px !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    gap: 8px !important;
+  }
+  
+  .common-tool-card .card-arrow {
+    display: none !important;
+  }
+
+  .common-tool-card .card-emoji {
+    font-size: 1.5rem !important;
+    margin: 0 !important;
+  }
+  
+  .common-tool-card .card-info {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 2px !important;
+  }
+
+  .common-tool-card .card-title {
+    font-size: 0.82rem !important;
+    text-align: center !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+  }
+  
+  .common-tool-card .card-desc {
+    display: none !important;
+  }
+}
+
+
 
