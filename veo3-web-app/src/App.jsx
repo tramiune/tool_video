@@ -4969,6 +4969,7 @@ function App() {
             {userTier !== 'premium_169k' && (
               <button 
                 type="button"
+                className="header-upgrade-btn"
                 style={{
                   background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
                   border: 'none',
@@ -4994,7 +4995,7 @@ function App() {
                   e.currentTarget.style.boxShadow = '0 0 12px rgba(139, 92, 246, 0.4)';
                 }}
               >
-                <span style={{ display: 'inline-block', transform: 'scale(1.1)' }}>⚡</span> Nâng cấp
+                <span style={{ display: 'inline-block', transform: 'scale(1.1)' }}>⚡</span> <span className="mobile-hide-text">Nâng cấp</span>
               </button>
             )}
           </div>
@@ -5233,6 +5234,7 @@ function App() {
           {/* Tools Directory Button */}
           <button
             type="button"
+            className="header-tool-btn"
             onClick={() => {
               window.location.hash = '#tools';
               setIsToolsView(true);
@@ -5264,7 +5266,7 @@ function App() {
             }}
           >
             <LayoutGrid size={14} />
-            <span style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.3px' }}>Công cụ AI</span>
+            <span className="mobile-hide-text" style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.3px' }}>Công cụ AI</span>
           </button>
         </div>
       </header>
