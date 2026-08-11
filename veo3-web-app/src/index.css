@@ -805,10 +805,17 @@ body {
   to { transform: rotate(360deg); }
 }
 
+.header-tool-btn-text::before {
+  content: "Công cụ AI";
+}
+
 /* ==========================================
    MOBILE RESPONSIVE STYLES (max 768px)
    ========================================== */
 @media (max-width: 768px) {
+  .header-tool-btn-text::before {
+    content: "Tool";
+  }
 
   /* ---- Header ---- */
   .header-container {

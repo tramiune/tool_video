@@ -5216,7 +5216,7 @@ function App() {
             }}
           >
             <LayoutGrid size={14} />
-            <span className="mobile-hide-text" style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.3px' }}>Công cụ AI</span>
+            <span className="header-tool-btn-text" style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.3px' }}></span>
           </button>
           {/* Avatar Dropdown Container */}
           <div style={{ position: 'relative' }} ref={userDropdownRef}>
