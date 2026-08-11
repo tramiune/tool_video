@@ -2645,7 +2645,7 @@ function App() {
           <h2 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#a78bfa', margin: '0 0 16px 0', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             🛠️ Công cụ chung
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
             {/* Simple Button 1: Audio Tool */}
             <div 
               className="glass-panel" 
@@ -2727,7 +2727,7 @@ function App() {
           </h2>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
             gap: '24px'
           }}>
             {/* Card 2: Drama Tool */}
