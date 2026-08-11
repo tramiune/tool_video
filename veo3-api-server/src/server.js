@@ -2448,7 +2448,22 @@ async function runImageTask(taskId) {
     logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
 
     // Upload reference images if any (supports array task.referenceImages)
+    let promptMapping = '';
     if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
+      task.referenceImages.forEach((imgUrl, idx) => {
+        if (typeof imgUrl === 'string') {
+          if (imgUrl.includes('bin_character')) {
+            promptMapping += ` Use input_file_${idx}.png as the character design reference for Bin.`;
+          } else if (imgUrl.includes('sumo_character')) {
+            promptMapping += ` Use input_file_${idx}.png as the character design reference for Chú hươu Sumo (the deer character wearing red cape and red bowtie).`;
+          } else if (imgUrl.includes('mother_character')) {
+            promptMapping += ` Use input_file_${idx}.png as the character design reference for the mother (Mẹ).`;
+          } else if (imgUrl.includes('sumo_product')) {
+            promptMapping += ` Use input_file_${idx}.png as the design and packaging reference for the Gạc Hươu Non Sumo product pouch.`;
+          }
+        }
+      });
+
       const mediaIds = [];
       for (const imgInput of task.referenceImages) {
         const mediaId = await processImageInput(imgInput, imageClient);
@@ -2460,6 +2475,8 @@ async function runImageTask(taskId) {
       const mediaId = await processImageInput(task.referenceImage, imageClient);
       task.referenceImages = mediaId ? [mediaId] : [];
     }
+
+    const finalPrompt = task.prompt + (promptMapping ? `\n\nIMPORTANT REFERENCE MAPPING:${promptMapping}` : '');
 
     const chosenModel = task.model || 'imagen_4';
     const imageModels = ['imagen_4', 'nano_banana_pro', 'nano_banana_2'];
@@ -2475,7 +2492,7 @@ async function runImageTask(taskId) {
       try {
         await acquireGenerationSlot('image');
         logger.info(`[Image] Attempting generation with model: ${modelKey}`);
-        genRes = await imageClient.generateImage(task.prompt, {
+        genRes = await imageClient.generateImage(finalPrompt, {
           aspectRatio: task.aspectRatio,
           model: modelKey,
           count: task.count,
