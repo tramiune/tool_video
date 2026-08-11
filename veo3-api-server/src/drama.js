@@ -103,24 +103,28 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       ? `Hãy sáng tạo một kịch bản phim hoạt hình 3D Pixar vui nhộn, giáo dục dinh dưỡng và quảng cáo sản phẩm Gạc Hươu Non Sumo về chủ đề cụ thể: "${inputTopic}".`
       : 'Hãy tự sáng tạo ra một chủ đề kịch bản hoạt hình dinh dưỡng trẻ em 3D Pixar vui nhộn ngẫu nhiên bất kỳ (lười ăn rau, tiêu hóa tốt, chất xơ, vitamin, ăn uống đa dạng...) để quảng cáo sản phẩm Gạc Hươu Non Sumo.';
       
-    systemPrompt = 'Bạn là biên kịch chuyên nghiệp viết phim hoạt hình 3D Pixar vui nhộn, đáng yêu, giáo dục dinh dưỡng trẻ em Việt Nam kết hợp quảng cáo thương hiệu Gạc Hươu Non SUMO dạng dọc (9:16). '
+    systemPrompt = 'Bạn là nhà biên kịch phim hoạt hình 3D Pixar xuất chúng, cực kỳ sáng tạo, chuyên viết các câu chuyện vui nhộn, bất ngờ, đầy trí tưởng tượng cho trẻ em Việt Nam kết hợp quảng cáo thương hiệu Gạc Hươu Non SUMO dạng dọc (9:16). '
       + 'Tuân thủ chính xác schema JSON được yêu cầu, không xuất thêm gì khác.';
       
     userPrompts = [
       themePrompt,
-      'KỊCH BẢN PHẢI MANG TINH THẦN VUI TƯƠI, TRẺ THƠ, DỄ THƯƠNG. Có đúng 3 nhân vật xuất hiện xuyên suốt kịch bản: bé Bin (5 tuổi đáng yêu, mặc áo thun kẻ sọc ngang xanh-cam-trắng và quần đùi xanh), chú hươu Sumo (chuyên gia dinh dưỡng thông thái, đi bằng 2 chân, luôn mặc áo choàng đỏ và thắt nơ đỏ ở cổ - red cape and red bowtie), và nhân vật phụ thứ 3 (Bạn học hoặc Mẹ bé Bin).',
+      'KỊCH BẢN PHẢI ĐẶC BIỆT SÁNG TẠO, DÍ DỎM, TRÁNH RẬP KHUÔN. Có đúng 3 nhân vật xuất hiện xuyên suốt kịch bản: bé Bin (5 tuổi đáng yêu, mặc áo thun kẻ sọc ngang xanh-cam-trắng và quần đùi xanh), chú hươu Sumo (chuyên gia dinh dưỡng thông thái, đi bằng 2 chân, luôn mặc áo choàng đỏ và thắt nơ đỏ ở cổ - red cape and red bowtie), và nhân vật phụ thứ 3 (Bạn học hoặc Mẹ bé Bin).',
+      'YÊU CẦU SÁNG TẠO & PHONG CÁCH KỂ CHUYỆN:',
+      '- Bối cảnh đa dạng (Settings): Hãy tự do lựa chọn các địa điểm ngộ nghĩnh khác nhau tùy thuộc vào chủ đề (ví dụ: căn bếp ma thuật rực rỡ, quầy nước trái cây đầy màu sắc, khu rừng rau củ khổng lồ, góc camping mini ngoài sân sau, thế giới tưởng tượng trong mơ của Bin...). ĐỪNG chỉ rập khuôn ở thảm picnic!',
+      '- Lời thoại sinh động, ẩn dụ hài hước (Playful Analogies): Tránh thuyết giảng khô khan. Hãy dùng các ví von dễ thương của trẻ em (ví dụ: ví dạ dày như đoàn tàu cần nhiên liệu nhiều màu, ví vitamin như các siêu anh hùng bảo vệ cơ thể khỏi quái vật vi khuẩn...). Lời thoại hài hước, dí dỏm, tạo bất ngờ cho trẻ nhỏ.',
+      '- Quảng cáo tự nhiên (Organic Ad placement): Lồng ghép sản phẩm Gạc Hươu Non Sumo một cách tự nhiên vào mạch truyện của cảnh 5 (ví dụ: như một bảo bối năng lượng bỏ túi của hươu Sumo, túi nước ép trái cây kỳ diệu giúp tiếp năng lượng nhanh...).',
       'CẤU TRÚC KỊCH BẢN BẮT BUỘC ĐÚNG 6 CẢNH (MAX_SCENES = 6):',
-      '- Cảnh 1 (Hook): Bin đưa ra một tuyên bố ngộ nghĩnh hoặc lười thực hiện thói quen tốt liên quan đến chủ đề (lười ăn rau, kén ăn, bỏ bữa, lười uống nước...). Mẹ hoặc bạn ngạc nhiên. Sumo xuất hiện bất ngờ.',
-      '- Cảnh 2 (Thắc mắc/Tranh luận): Bin hỏi Sumo tại sao phải làm thế. Sumo dùng kiến thức khoa học vui nhộn, dễ hiểu cho trẻ em giải thích/trả lời thắc mắc của Bin phù hợp với chủ đề.',
-      '- Cảnh 3 (Hậu quả kịch tính nhẹ): Sumo giải thích/nêu ví dụ điều gì xảy ra nếu Bin tiếp tục thói quen xấu đó (mệt mỏi, khó tiêu, bụng kêu ọc ạch, tiêu hóa vất vả...). Bin nhận ra và hơi lo lắng.',
-      '- Cảnh 4 (Giải pháp/Hoạt động vui vẻ): Sumo đưa ra một giải pháp thú vị, trò chơi hoặc thử thách thiết thực để giải quyết vấn đề (ví dụ: tạo đĩa ăn cầu vồng đa dạng màu sắc, trò chơi chọn thực phẩm tốt, thử thách uống nước đúng giờ...). Bin hào hứng tham gia và vượt qua.',
-      '- Cảnh 5 (Quảng cáo sản phẩm): Bin băn khoăn nếu có những ngày bận rộn/ăn uống chưa đủ chất hoặc lười ăn thì sao. Sumo giới thiệu sản phẩm GẠC HƯƠU NON SUMO (chứa nhung hươu cô đặc, Vitamin C, Kẽm, Fructooligosaccharides và hỗn hợp 5 loại trái cây nhiệt đới: cam, xoài, ổi, chuối, chanh dây) giúp bổ sung dinh dưỡng dễ dàng và thơm ngon.',
-      '- Cảnh 6 (Kết thúc & Tương tác): Bin thay đổi suy nghĩ, vui vẻ thực hiện thói quen tốt. Bin hướng về camera đưa ra một câu hỏi đố vui/tương tác thú vị đố khán giả liên quan đến chủ đề để kích thích bình luận.',
+      '- Cảnh 1 (Hook): Bin có một hành động hoặc tuyên bố gây cười, ngộ nghĩnh hoặc lười ăn/uống lành mạnh. Mẹ hoặc bạn ngạc nhiên. Sumo xuất hiện bất ngờ với hiệu ứng dễ thương.',
+      '- Cảnh 2 (Thắc mắc/Tranh luận): Bin hỏi Sumo bằng giọng ngây thơ/bắt bẻ đáng yêu. Sumo dùng hình ảnh ví von hoặc phép so sánh khoa học cực kỳ vui nhộn để trả lời.',
+      '- Cảnh 3 (Hậu quả kịch tính nhẹ): Sumo mô tả hoặc mở ra một hình dung ngộ nghĩnh về hậu quả nếu Bin lười làm thói quen tốt (ví dụ: các bạn tế bào trong người đình công, bụng reo réo kêu cứu...). Bin bất ngờ lo lắng nhẹ.',
+      '- Cảnh 4 (Giải pháp/Hoạt động vui vẻ): Sumo bày ra một trò chơi, thử thách hoặc phép thuật ngắn để giải quyết vấn đề (ví dụ: thử thách đĩa ăn cầu vồng, trò chơi phân loại siêu quả, thi xem ai uống nước nhanh...). Bin hào hứng tham gia.',
+      '- Cảnh 5 (Quảng cáo sản phẩm): Bin tò mò làm sao để luôn đủ chất khi đi học/kén ăn. Sumo giới thiệu GẠC HƯƠU NON SUMO (nhung hươu cô đặc, Vitamin C, Kẽm, FOS, và 5 loại quả nhiệt đới: cam, xoài, ổi, chuối, chanh dây) như một bảo bối năng lượng tiện lợi, thơm ngon cho bé.',
+      '- Cảnh 6 (Kết thúc & Tương tác): Bin thay đổi suy nghĩ, tạo dáng đáng yêu cùng Sumo. Bin hướng về camera đố khán giả một câu hỏi vui nhộn liên quan đến chủ đề để kích thích người xem bình luận dưới video.',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
       '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
-      '- title: tiêu đề kịch bản hoạt hình, ngắn gọn, vui nhộn (tiếng Việt).',
+      '- title: tiêu đề kịch bản hoạt hình, ngắn gọn, sáng tạo, thu hút trẻ em (tiếng Việt).',
       '- characters: đúng 3 nhân vật như yêu cầu, kèm vai trò và mô tả chi tiết ngoại hình.',
-      '- baseImagePrompt: mô tả bối cảnh ngoài trời/picnic/công viên rực rỡ + phong cách hoạt hình 3D Pixar, vertical 9:16.',
+      '- baseImagePrompt: mô tả bối cảnh sáng tạo đã chọn + phong cách hoạt hình 3D Pixar, vertical 9:16.',
       `- scenes: đúng 6 cảnh theo cấu trúc trên. Mỗi cảnh có title, description (mô tả cảnh bằng tiếng Anh), imagePrompt (prompt vẽ ảnh tiếng Anh mô tả bối cảnh tĩnh, nhân vật Bin đứng yên bên trái, Sumo đứng yên bên phải mặc áo choàng đỏ nơ đỏ), videoPrompt (prompt tiếng Anh cho clip 8s mô tả chuyển động cơ thể nhẹ nhàng và mấp máy miệng khi nói thoại), và dialogue (mảng thoại tiếng Việt, mỗi cảnh chỉ được chứa đúng 1 câu thoại duy nhất của nhân vật chính trong cảnh đó, dài từ 25-35 từ để khớp 8 giây).`,
       'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH & VỊ TRÍ NHÂN VẬT:',
       '- Cảnh 1 (Scene 1) PHẢI mô tả rõ cả bé Bin, chú hươu Sumo (mặc áo choàng đỏ nơ đỏ) và bạn bè. Mô tả chi tiết ngoại hình của họ ngay trong Cảnh 1.',
