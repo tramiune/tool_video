@@ -108,7 +108,10 @@ async function generateDramaScript({ topic }) {
       '- characters: 3 nhân vật, mỗi người có role (vd: "con dâu", "mẹ chồng", "chồng") và description ngắn.',
       '- baseImagePrompt: prompt tiếng Anh mô tả khung cảnh gốc + phong cách hình ảnh chung (vd: "A 3D Pixar-style modern Vietnamese house, cinematic lighting..."), vertical 9:16.',
       `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình đó), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
-      'Mỗi cảnh là một clip 8 giây, lời thoại phải đọc được trong ~7 giây, tự nhiên, đời thường, đúng giọng từng nhân vật.'
+      'Mỗi cảnh là một clip 8 giây, lời thoại phải đọc được trong ~7 giây, tự nhiên, đời thường, đúng giọng từng nhân vật.',
+      'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH & VỊ TRÍ NHÂN VẬT:',
+      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả rõ ràng vị trí đứng của từng nhân vật (ví dụ: "Huy is standing on the left, Lan is standing on the right"). Giữ nguyên vị trí trái/phải này nhất quán xuyên suốt các cảnh.',
+      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ].join('\n'),
     temperature: 0.9
   });
