@@ -4614,7 +4614,21 @@ function App() {
                       onMouseOver={e => { e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.4)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
                       onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
                     >
-                      <video src={item.mediaUrl} style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: '4px', background: '#000' }} muted playsInline />
+                      <video 
+                        src={item.mediaUrl} 
+                        style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: '4px', background: '#000' }} 
+                        muted 
+                        playsInline 
+                        onMouseEnter={e => {
+                          e.currentTarget.muted = false;
+                          e.currentTarget.play().catch(() => {});
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.pause();
+                          e.currentTarget.currentTime = 0;
+                          e.currentTarget.muted = true;
+                        }}
+                      />
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', lineHeight: '1.2' }} title={item.prompt}>
                         {item.prompt || "Video không tên"}
                       </div>
