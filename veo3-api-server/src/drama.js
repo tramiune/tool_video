@@ -545,6 +545,10 @@ function buildScenePrompt(job, scene, mediaType) {
     const name = String(character.name || '').trim();
     return `- ${name}${role ? ` (${role})` : ''}${description ? `: ${description}` : ''}`;
   });
+
+  const dialogues = Array.isArray(scene.dialogue) ? scene.dialogue : [];
+  const dialogueLines = dialogues.map(line => `- [${line.speaker}]: "${line.text}"`).join('\n');
+
   const parts = [];
   if (mediaType === 'image') {
     parts.push(String(scene.imagePrompt || scene.description || '').trim());
@@ -554,6 +558,9 @@ function buildScenePrompt(job, scene, mediaType) {
     if (characterLines.length > 0) {
       parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
     }
+    if (dialogueLines) {
+      parts.push(`Character Dialogues (for facial expressions reference):\n${dialogueLines}`);
+    }
     parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
   } else {
     parts.push(String(scene.videoPrompt || scene.description || '').trim());
@@ -562,6 +569,9 @@ function buildScenePrompt(job, scene, mediaType) {
     }
     if (characterLines.length > 0) {
       parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
+    }
+    if (dialogueLines) {
+      parts.push(`Important: Character Dialogues (make sure their lips move/talk and their expressions match this dialogue):\n${dialogueLines}`);
     }
     parts.push('Create one coherent 8-second vertical clip. Photorealistic Vietnamese family drama, natural movement.');
   }
