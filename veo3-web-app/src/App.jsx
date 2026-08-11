@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard } from 'lucide-react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -414,6 +414,7 @@ function App() {
   const previousPendingPaymentRef = useRef(undefined);
 
   const [isDramaView, setIsDramaView] = useState(false);
+  const [isToolsView, setIsToolsView] = useState(false);
   const [dramaScripts, setDramaScripts] = useState([]);
   const [dramaScriptsLoading, setDramaScriptsLoading] = useState(false);
   const [dramaScript, setDramaScript] = useState(null);
@@ -556,6 +557,7 @@ function App() {
       const isHashTryOn = hash === '#tryon';
       const isHashAudio = hash === '#audio';
       const isHashDrama = hash === '#drama';
+      const isHashTools = hash === '#tools';
       
       if (isHashAdmin || isHashAutoTool || isHashDrama) {
         if (!user) {
@@ -579,6 +581,7 @@ function App() {
       setIsTryOnView(isHashTryOn);
       setIsAudioView(isHashAudio);
       setIsDramaView(isHashDrama);
+      setIsToolsView(isHashTools);
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
@@ -2368,6 +2371,173 @@ function App() {
       if (interval) clearInterval(interval);
     };
   }, [dramaScript?.id, dramaScript?.scenes, user]);
+
+  const renderToolsView = () => {
+    return (
+      <div className="container" style={{ maxWidth: '1000px', margin: '0 auto', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '32px', color: '#fff' }}>
+        
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <LayoutGrid size={28} style={{ color: '#a78bfa' }} />
+              <h1 style={{ fontSize: 'clamp(1.8rem, 5vw, 2.2rem)', fontWeight: '800', margin: 0, background: 'linear-gradient(135deg, #a78bfa 0%, #f472b6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                Danh sách công cụ AI
+              </h1>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px', margin: 0 }}>
+              Khám phá và sử dụng các công cụ AI chuyên nghiệp hỗ trợ sáng tạo nội dung.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = ''; }}
+            className="glass-button"
+            style={{ width: '40px', height: '40px', padding: 0, borderRadius: '50%', flexShrink: 0 }}
+            title="Quay lại Trang chủ"
+          >
+            <ArrowLeft size={18} />
+          </button>
+        </div>
+
+        {/* Tools Directory Cards */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: '24px',
+          marginTop: '10px'
+        }}>
+          
+          {/* Card 1: Audio Tool */}
+          <div 
+            className="glass-panel" 
+            onClick={() => { window.location.hash = '#audio'; }}
+            style={{
+              padding: 0,
+              overflow: 'hidden',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              border: '1px solid rgba(16, 185, 129, 0.2)',
+              position: 'relative'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'translateY(-6px)';
+              e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.6)';
+              e.currentTarget.style.boxShadow = '0 12px 30px rgba(16, 185, 129, 0.15)';
+              const img = e.currentTarget.querySelector('.tool-img');
+              if (img) img.style.transform = 'scale(1.05)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+              e.currentTarget.style.boxShadow = 'none';
+              const img = e.currentTarget.querySelector('.tool-img');
+              if (img) img.style.transform = 'scale(1)';
+            }}
+          >
+            <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(16, 185, 129, 0.15)' }}>
+              <img 
+                src="/audio_tool_preview.jpg" 
+                alt="Audio Tool Preview" 
+                className="tool-img"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+              />
+            </div>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.25rem' }}>🎙️</span>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#10b981' }}>Công cụ Audio AI</h3>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                Nhân bản giọng nói chuyên nghiệp tiếng Việt. Tải lên file ghi âm mẫu và tạo giọng nói chất lượng cao để ghép thoại cho video.
+              </p>
+              <button 
+                type="button" 
+                className="glass-button"
+                style={{ 
+                  width: '100%', 
+                  padding: '12px', 
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  border: 'none',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  marginTop: '10px'
+                }}
+              >
+                Trải nghiệm ngay
+              </button>
+            </div>
+          </div>
+
+          {/* Card 2: Drama Tool */}
+          <div 
+            className="glass-panel" 
+            onClick={() => { window.location.hash = '#drama'; }}
+            style={{
+              padding: 0,
+              overflow: 'hidden',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              border: '1px solid rgba(236, 72, 153, 0.2)',
+              position: 'relative'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'translateY(-6px)';
+              e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.6)';
+              e.currentTarget.style.boxShadow = '0 12px 30px rgba(236, 72, 153, 0.15)';
+              const img = e.currentTarget.querySelector('.tool-img');
+              if (img) img.style.transform = 'scale(1.05)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.2)';
+              e.currentTarget.style.boxShadow = 'none';
+              const img = e.currentTarget.querySelector('.tool-img');
+              if (img) img.style.transform = 'scale(1)';
+            }}
+          >
+            <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(236, 72, 153, 0.15)' }}>
+              <img 
+                src="/drama_tool_preview.jpg" 
+                alt="Drama Tool Preview" 
+                className="tool-img"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+              />
+            </div>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Clapperboard size={20} style={{ color: '#ec4899' }} />
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#ec4899' }}>Công cụ Phim Drama</h3>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                Tạo kịch bản kịch tính và xuất video phim ngắn hoàn chỉnh dạng dọc 9:16 có nhép miệng (Lip-Sync) và thoại tiếng Việt tự động bằng AI.
+              </p>
+              <button 
+                type="button" 
+                className="glass-button"
+                style={{ 
+                  width: '100%', 
+                  padding: '12px', 
+                  background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+                  border: 'none',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  marginTop: '10px'
+                }}
+              >
+                Trải nghiệm ngay
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  };
 
   const renderDramaView = () => {
     const progress = dramaJob?.progress;
@@ -4670,6 +4840,10 @@ function App() {
     );
   }
 
+  if (isToolsView) {
+    return renderToolsView();
+  }
+
   if (isAudioView) {
     return renderAudioView();
   }
@@ -4809,32 +4983,32 @@ function App() {
             <img src="/zalo.svg" alt="Zalo" style={{ width: '20px', height: '20px' }} />
           </a>
 
-          {/* Audio Tool Button */}
+          {/* Tools Directory Button */}
           <button
             type="button"
             onClick={() => {
-              window.location.hash = '#audio';
-              setIsAudioView(true);
+              window.location.hash = '#tools';
+              setIsToolsView(true);
             }}
-            title="Công cụ tạo giọng nói AI (Voice Cloning)"
+            title="Danh sách công cụ AI"
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: '30px',
-              height: '30px',
+              width: '32px',
+              height: '32px',
               padding: '0',
-              background: isAudioView ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'rgba(255,255,255,0.06)',
-              border: isAudioView ? 'none' : '1px solid rgba(255,255,255,0.12)',
+              background: isToolsView ? 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)' : 'rgba(255,255,255,0.06)',
+              border: isToolsView ? 'none' : '1px solid rgba(255,255,255,0.12)',
               borderRadius: '50%',
-              color: isAudioView ? '#fff' : 'var(--text-secondary)',
+              color: isToolsView ? '#fff' : 'var(--text-secondary)',
               cursor: 'pointer',
               transition: 'all 0.2s ease'
             }}
-            onMouseOver={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.borderColor = '#10b981'; e.currentTarget.style.color = '#10b981'; }}
-            onMouseOut={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = isAudioView ? 'transparent' : 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = isAudioView ? '#fff' : 'var(--text-secondary)'; }}
+            onMouseOver={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.borderColor = '#a78bfa'; e.currentTarget.style.color = '#a78bfa'; }}
+            onMouseOut={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = isToolsView ? 'transparent' : 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = isToolsView ? '#fff' : 'var(--text-secondary)'; }}
           >
-            <span style={{ fontSize: '0.85rem', lineHeight: 1 }}>🎙️</span>
+            <LayoutGrid size={15} />
           </button>
 
           {/* Avatar Dropdown Container */}
