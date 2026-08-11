@@ -412,6 +412,8 @@ class BrowserManager {
   }
 }
 
+const useSingleProfile = process.env.SINGLE_PROFILE === 'true';
+
 const videoBrowser = new BrowserManager({
   label: 'video',
   debugPort: 9222,
@@ -420,7 +422,7 @@ const videoBrowser = new BrowserManager({
   targetUrl: config.TARGET_URL
 });
 
-const imageBrowser = new BrowserManager({
+const imageBrowser = useSingleProfile ? videoBrowser : new BrowserManager({
   label: 'image',
   debugPort: config.IMAGE_DEBUG_PORT,
   userDataDir: config.IMAGE_USER_DATA_DIR,
@@ -428,7 +430,7 @@ const imageBrowser = new BrowserManager({
   targetUrl: config.IMAGE_TARGET_URL
 });
 
-const videoBrowser2 = new BrowserManager({
+const videoBrowser2 = useSingleProfile ? videoBrowser : new BrowserManager({
   label: 'video2',
   debugPort: config.VIDEO2_DEBUG_PORT,
   userDataDir: config.VIDEO2_USER_DATA_DIR,

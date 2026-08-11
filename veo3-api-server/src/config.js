@@ -1,7 +1,9 @@
 const path = require('path');
 const os = require('os');
+const dotenv = require('dotenv');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
+dotenv.config({ path: path.join(ROOT_DIR, '.env') });
 
 module.exports = {
   PORT: parseInt(process.env.PORT || '3456', 10),
