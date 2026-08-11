@@ -550,6 +550,68 @@ function resolveVoiceIndex(characters, speakerName) {
   return index >= 0 ? index : 0;
 }
 
+function getCharacterPositionLabel(job, scene, speakerName) {
+  const name = String(speakerName || '').trim().toLowerCase();
+  const characters = Array.isArray(job.characters) ? job.characters : [];
+  const charObj = characters.find(c => String(c.name || '').trim().toLowerCase() === name);
+  
+  // 1. Determine descriptor (gender/age)
+  let descriptor = 'person';
+  if (charObj) {
+    const role = String(charObj.role || '').toLowerCase();
+    const desc = String(charObj.description || '').toLowerCase();
+    const charName = String(charObj.name || '').toLowerCase();
+    
+    if (role.includes('mẹ') || role.includes('bà') || charName.includes('bà') || desc.includes('bà') || desc.includes('elderly woman') || desc.includes('old woman')) {
+      descriptor = 'elderly woman';
+    } else if (role.includes('con dâu') || role.includes('vợ') || charName.includes('lan') || role.includes('nữ') || desc.includes('young woman') || desc.includes('girl')) {
+      descriptor = 'young woman';
+    } else if (role.includes('chồng') || role.includes('con trai') || charName.includes('huy') || role.includes('nam') || desc.includes('young man') || desc.includes('boy')) {
+      descriptor = 'young man';
+    } else if (role.includes('bố') || role.includes('cha') || role.includes('ông') || desc.includes('elderly man') || desc.includes('old man')) {
+      descriptor = 'elderly man';
+    } else if (role.includes('nữ') || desc.includes('woman') || desc.includes('female')) {
+      descriptor = 'woman';
+    } else if (role.includes('nam') || desc.includes('man') || desc.includes('male')) {
+      descriptor = 'man';
+    }
+  }
+
+  // 2. Find position (left or right)
+  const fullText = [
+    scene.videoPrompt,
+    scene.imagePrompt,
+    scene.description,
+    job.baseImagePrompt
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  let position = '';
+  const nameIdx = fullText.indexOf(name);
+  if (nameIdx >= 0) {
+    const windowText = fullText.slice(Math.max(0, nameIdx - 40), Math.min(fullText.length, nameIdx + 60));
+    if (windowText.includes('left')) {
+      position = 'on the left';
+    } else if (windowText.includes('right')) {
+      position = 'on the right';
+    }
+  }
+
+  if (!position) {
+    if (fullText.includes(`${name} is standing on the left`) || fullText.includes(`${name} on the left`)) {
+      position = 'on the left';
+    } else if (fullText.includes(`${name} is standing on the right`) || fullText.includes(`${name} on the right`)) {
+      position = 'on the right';
+    }
+  }
+
+  if (!position && charObj) {
+    const charIdx = characters.indexOf(charObj);
+    position = charIdx === 0 ? 'on the left' : 'on the right';
+  }
+
+  return `the ${descriptor} ${position || 'on the right'}`;
+}
+
 function buildScenePrompt(job, scene, mediaType) {
   const baseImagePrompt = String(job.baseImagePrompt || '').trim();
   const characters = Array.isArray(job.characters) ? job.characters.filter(c => String(c.name || '').trim()) : [];
@@ -561,7 +623,10 @@ function buildScenePrompt(job, scene, mediaType) {
   });
 
   const dialogues = Array.isArray(scene.dialogue) ? scene.dialogue : [];
-  const dialogueLines = dialogues.map(line => `- [${line.speaker}]: "${line.text}"`).join('\n');
+  const dialogueLines = dialogues.map(line => {
+    const positionLabel = getCharacterPositionLabel(job, scene, line.speaker);
+    return `- [${positionLabel}]: "${line.text}"`;
+  }).join('\n');
 
   const parts = [];
   if (mediaType === 'image') {
