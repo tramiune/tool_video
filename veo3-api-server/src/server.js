@@ -2478,8 +2478,12 @@ async function runImageTask(taskId) {
 
     const finalPrompt = task.prompt + (promptMapping ? `\n\nIMPORTANT REFERENCE MAPPING:${promptMapping}` : '');
 
-    const chosenModel = task.model || 'imagen_4';
-    const imageModels = ['imagen_4', 'nano_banana_pro', 'nano_banana_2'];
+    let chosenModel = task.model || 'imagen_4';
+    let imageModels = ['imagen_4', 'nano_banana_pro', 'nano_banana_2'];
+    if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
+      chosenModel = 'imagen_4_ref';
+      imageModels = ['imagen_4_ref', 'imagen_4', 'nano_banana_pro', 'nano_banana_2'];
+    }
     // Ensure the chosen model is tried first, then fallbacks (skip models that
     // already exhausted their daily quota so we don't waste attempts).
     const imageModelsToTry = [chosenModel, ...imageModels.filter(m => m !== chosenModel)]
