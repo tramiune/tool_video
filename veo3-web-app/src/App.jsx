@@ -1184,7 +1184,6 @@ function App() {
 
     return (
       <div
-        className="mobile-only-floating-zalo"
         onMouseDown={onMouseDown}
         onTouchStart={onTouchStart}
         style={{
@@ -5182,38 +5181,6 @@ function App() {
               </button>
             )}
           </div>
-
-          {/* Zalo Link in Header (Desktop only) */}
-          <a
-            href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Tham gia nhóm Zalo hỗ trợ"
-            className="desktop-only-zalo"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              overflow: 'hidden',
-              background: 'transparent',
-              boxShadow: '0 2px 8px rgba(0, 104, 255, 0.3)'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'scale(1.1)';
-              e.currentTarget.style.filter = 'drop-shadow(0 0 6px rgba(0, 104, 255, 0.5))';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.filter = 'none';
-            }}
-          >
-            <img src="/zalo.svg" alt="Zalo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          </a>
 
           {/* AI Tools Button in Header */}
           <button
