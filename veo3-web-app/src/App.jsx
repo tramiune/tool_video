@@ -2408,7 +2408,7 @@ function App() {
                 <Sparkles size={28} style={{ color: '#f472b6' }} />
                 <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2rem)', fontWeight: '800', margin: 0 }}>Drama Tool</h1>
               </div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px', margin: 0 }}>AI viết kịch bản drama gia đình (mẹ chồng nàng dâu...) → bạn duyệt → tự làm video có lời thoại tiếng Việt.</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px', margin: 0 }}>Tạo video drama gia đình bằng AI.</p>
             </div>
             <button
               type="button"
@@ -2537,16 +2537,15 @@ function App() {
           <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>
             <div>
               <h2 style={{ fontSize: '1.08rem', margin: 0 }}>Danh sách kịch bản</h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '5px 0 0' }}>Mỗi kịch bản là một video drama hoàn chỉnh (tiêu đề, nhân vật, 6 cảnh kèm lời thoại).</p>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '15px', borderRadius: '12px', border: '1px solid rgba(244,114,182,0.35)', background: 'rgba(244,114,182,0.07)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '15px', borderRadius: '12px', border: '1px solid rgba(244,114,182,0.25)', background: 'rgba(244,114,182,0.04)' }}>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <input
                   type="text"
                   value={dramaTopic}
                   onChange={(event) => setDramaTopic(event.target.value)}
-                  placeholder="Chủ đề kịch bản, ví dụ: mẹ chồng nàng dâu vừa sinh con"
+                  placeholder="Chủ đề kịch bản, ví dụ: mẹ chồng nàng dâu"
                   className="glass-input"
                   style={{ flex: 1, minWidth: '220px' }}
                   disabled={dramaSaving}
@@ -2556,7 +2555,6 @@ function App() {
                   {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Plus size={17} />} {dramaSaving ? 'Đang tạo bằng AI...' : 'Tạo kịch bản'}
                 </button>
               </div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', margin: 0 }}>Tạo kịch bản trước, rồi bấm "Sinh kịch bản bằng AI" để AI viết nội dung. Sau đó duyệt và bấm "Tạo video".</p>
             </div>
 
             {dramaScripts.length === 0 ? (
@@ -2572,7 +2570,7 @@ function App() {
                         {script.title || '(Chưa có tiêu đề)'}
                       </div>
                       <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '3px' }}>
-                        {script.characters.length} nhân vật · {script.scenes.length} cảnh · {script.status === 'draft' ? 'Bản nháp' : 'Đã duyệt'} · cập nhật {new Date(script.updatedAt || Date.now()).toLocaleString('vi-VN')}
+                        {script.scenes.length} cảnh · {script.characters.length} nhân vật · {new Date(script.updatedAt || Date.now()).toLocaleDateString('vi-VN')}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
