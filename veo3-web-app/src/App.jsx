@@ -416,7 +416,7 @@ function App() {
 
   const [isDramaView, setIsDramaView] = useState(false);
   const [isToolsView, setIsToolsView] = useState(false);
-  const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 160, y: window.innerHeight - 100 });
+  const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 160, y: window.innerHeight - 280 });
   const isDraggingToolsBtn = useRef(false);
   const toolsBtnDragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const hasDraggedToolsBtn = useRef(false);
@@ -622,11 +622,12 @@ function App() {
       let newX = toolsBtnDragStart.current.posX + deltaX;
       let newY = toolsBtnDragStart.current.posY + deltaY;
       
-      // Boundaries check (keep it inside viewport)
+      // Boundaries check (keep it inside viewport, above the bottom input area)
       const btnWidth = 130;
       const btnHeight = 44;
+      const bottomLimit = window.innerHeight - 220; // Clear the bottom 220px text input panel
       newX = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, newX));
-      newY = Math.max(10, Math.min(window.innerHeight - btnHeight - 10, newY));
+      newY = Math.max(10, Math.min(bottomLimit, newY));
       
       setToolsBtnPosition({ x: newX, y: newY });
     };
@@ -652,8 +653,9 @@ function App() {
       setToolsBtnPosition(prev => {
         const btnWidth = 130;
         const btnHeight = 44;
+        const bottomLimit = window.innerHeight - 220;
         const newX = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, prev.x));
-        const newY = Math.max(10, Math.min(window.innerHeight - btnHeight - 10, prev.y));
+        const newY = Math.max(10, Math.min(bottomLimit, prev.y));
         return { x: newX, y: newY };
       });
     };
