@@ -2380,24 +2380,120 @@ function App() {
       : jobError ? JSON.stringify(jobError) : dramaError;
 
     return (
-      <div className="container" style={{ maxWidth: '920px', margin: '0 auto', padding: '40px 20px', gap: '24px', color: '#fff' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Sparkles size={28} style={{ color: '#f472b6' }} />
-              <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2rem)', fontWeight: '800', margin: 0 }}>Drama Tool</h1>
+      <div className="container" style={{ maxWidth: '920px', margin: '0 auto', padding: '24px 20px 140px 20px', display: 'flex', flexDirection: 'column', gap: '20px', color: '#fff' }}>
+        
+        {/* Sticky Header Panel */}
+        <div style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          background: 'rgba(18,18,20,0.96)',
+          backdropFilter: 'blur(16px)',
+          margin: '0 -20px',
+          padding: '20px 20px 14px 20px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Sparkles size={28} style={{ color: '#f472b6' }} />
+                <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2rem)', fontWeight: '800', margin: 0 }}>Drama Tool</h1>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px', margin: 0 }}>AI viết kịch bản drama gia đình (mẹ chồng nàng dâu...) → bạn duyệt → tự làm video có lời thoại tiếng Việt.</p>
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>AI viết kịch bản drama gia đình (mẹ chồng nàng dâu...) → bạn duyệt → tự làm video có lời thoại tiếng Việt.</p>
+            <button
+              type="button"
+              onClick={() => { if (dramaScript) closeDramaScript(); else window.location.hash = ''; }}
+              className="glass-button"
+              style={{ width: '40px', height: '40px', padding: 0, borderRadius: '50%', flexShrink: 0 }}
+              title={dramaScript ? "Quay lại danh sách kịch bản" : "Quay lại Workspace"}
+            >
+              <ArrowLeft size={18} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => { window.location.hash = ''; }}
-            className="glass-button"
-            style={{ width: '40px', height: '40px', padding: 0, borderRadius: '50%', flexShrink: 0 }}
-            title="Quay lại Workspace"
-          >
-            <ArrowLeft size={18} />
-          </button>
+
+          {/* Sticky Editor Actions Header when script is open */}
+          {dramaScript && (
+            <div className="glass-panel" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '14px', background: 'rgba(255,255,255,0.01)', border: 'none', margin: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.05rem', margin: 0 }}>{dramaScript.title || '(Chưa có tiêu đề)'}</h2>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '3px 0 0' }}>
+                    Chủ đề: {dramaScript.topic || 'mẹ chồng nàng dâu'} · {dramaScript.scenes.length} cảnh · {dramaScript.characters.length} nhân vật
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" className="glass-button" onClick={generateDramaScript} disabled={dramaAiLoading || dramaSaving} style={{ flex: 1, padding: '12px 18px', background: dramaAiLoading ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: (dramaAiLoading || dramaSaving) ? 0.6 : 1, fontSize: '0.82rem' }}>
+                  {dramaAiLoading ? <Loader size={15} className="spin-loader" /> : <Sparkles size={15} />} {dramaScript.title ? 'Sinh lại kịch bản' : 'Sinh kịch bản bằng AI'}
+                </button>
+                <button type="button" className="glass-button" onClick={handleDramaCreateJob} disabled={dramaCreating || !dramaScript.title || !dramaScript.scenes.length} style={{ flex: 1, padding: '12px 18px', background: dramaCreating ? undefined : 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)', opacity: (dramaCreating || !dramaScript.title || !dramaScript.scenes.length) ? 0.5 : 1, fontSize: '0.82rem' }}>
+                  {dramaCreating ? <Loader size={15} className="spin-loader" /> : <Video size={15} />} Tạo video ({dramaScript.scenes.length} cảnh)
+                </button>
+              </div>
+
+              {/* Active Progress panel stays sticky below action buttons */}
+              {errorText && (
+                <div className="glass-panel" style={{ padding: '10px 12px', borderColor: 'rgba(248,113,113,0.4)', background: 'rgba(248,113,113,0.06)', color: '#fca5a5', fontSize: '0.78rem', margin: 0 }}>
+                  {errorText}
+                </div>
+              )}
+
+              {dramaJob && (
+                <div className="glass-panel" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px', borderColor: 'rgba(167,139,250,0.35)', background: 'rgba(167,139,250,0.02)', margin: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Video size={16} style={{ color: '#a78bfa' }} />
+                      <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>
+                        {dramaJob.status === 'completed' ? 'Hoàn thành' :
+                         dramaJob.status === 'failed' ? 'Thất bại' : 'Đang tạo video...'} (Tập {dramaJob.episodeNumber || 1})
+                      </span>
+                      {dramaJob.status !== 'completed' && dramaJob.status !== 'failed' && dramaJobId && (
+                        <button
+                          onClick={() => cancelDramaJob(dramaJobId)}
+                          className="btn-cancel-job"
+                        >
+                          Dừng chạy
+                        </button>
+                      )}
+                    </div>
+                    {numericProgress !== null && <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{Math.round(numericProgress)}%</span>}
+                  </div>
+                  {numericProgress !== null && (
+                    <div style={{ height: '6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', borderRadius: '4px', background: 'linear-gradient(90deg, #ec4899, #8b5cf6)', transition: 'width 0.4s', width: `${numericProgress}%` }} />
+                    </div>
+                  )}
+                  {scenes.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '110px', overflowY: 'auto' }}>
+                      {scenes.map((scene, index) => {
+                        const sceneStatus = scene?.status || 'pending';
+                        const isDone = sceneStatus === 'completed';
+                        const isFailed = sceneStatus === 'failed';
+                        return (
+                          <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', fontSize: '0.75rem' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                              {isDone ? <Check size={13} style={{ color: '#34d399', flexShrink: 0 }} />
+                                : isFailed ? <X size={13} style={{ color: '#f87171', flexShrink: 0 }} />
+                                : <Loader size={13} className="spin-loader" style={{ flexShrink: 0 }} />}
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Cảnh {index + 1}: {scene?.title || ''}</span>
+                            </span>
+                            <span style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>
+                              {isDone ? 'xong' : isFailed ? 'lỗi' : scene?.imageUrl ? 'video...' : 'ảnh...'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {dramaScriptsLoading ? (
@@ -2461,31 +2557,6 @@ function App() {
           </section>
         ) : (
           <section className="glass-panel" style={{ padding: 'clamp(18px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: '22px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <div>
-                <h2 style={{ fontSize: '1.1rem', margin: 0 }}>{dramaScript.title || '(Chưa có tiêu đề)'}</h2>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '5px 0 0' }}>
-                  Chủ đề: {dramaScript.topic || 'mẹ chồng nàng dâu'} · {dramaScript.scenes.length} cảnh · {dramaScript.characters.length} nhân vật
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                <button type="button" className="glass-button" onClick={closeDramaScript} style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
-                  ← Danh sách
-                </button>
-                <button type="button" className="glass-button" onClick={() => deleteDramaScript(dramaScript.id)} style={{ padding: '8px 12px', fontSize: '0.8rem', color: '#f87171' }}>
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button type="button" className="glass-button" onClick={generateDramaScript} disabled={dramaAiLoading || dramaSaving} style={{ flex: 1, padding: '14px 20px', background: dramaAiLoading ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: (dramaAiLoading || dramaSaving) ? 0.6 : 1 }}>
-                {dramaAiLoading ? <Loader size={17} className="spin-loader" /> : <Sparkles size={17} />} {dramaScript.title ? 'Sinh lại kịch bản' : 'Sinh kịch bản bằng AI'}
-              </button>
-              <button type="button" className="glass-button" onClick={handleDramaCreateJob} disabled={dramaCreating || !dramaScript.title || !dramaScript.scenes.length} style={{ flex: 1, padding: '14px 20px', background: dramaCreating ? undefined : 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)', opacity: (dramaCreating || !dramaScript.title || !dramaScript.scenes.length) ? 0.5 : 1 }}>
-                {dramaCreating ? <Loader size={17} className="spin-loader" /> : <Video size={17} />} Tạo video ({dramaScript.scenes.length} cảnh)
-              </button>
-            </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Tiêu đề kịch bản</label>
@@ -2734,79 +2805,10 @@ function App() {
               </div>
             )}
 
-            {errorText && (
-              <div className="glass-panel" style={{ padding: '12px 14px', borderColor: 'rgba(248,113,113,0.5)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5', fontSize: '0.82rem' }}>
-                {errorText}
-              </div>
-            )}
-
-            {dramaJob && (
-              <div className="glass-panel" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px', borderColor: 'rgba(167,139,250,0.4)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Video size={18} style={{ color: '#a78bfa' }} />
-                    <span style={{ fontWeight: 'bold', fontSize: '0.92rem' }}>
-                      {dramaJob.status === 'completed' ? 'Hoàn thành' :
-                       dramaJob.status === 'failed' ? 'Thất bại' : 'Đang tạo video...'} (Tập {dramaJob.episodeNumber || 1})
-                    </span>
-                    {dramaJob.status !== 'completed' && dramaJob.status !== 'failed' && dramaJobId && (
-                      <button
-                        onClick={() => cancelDramaJob(dramaJobId)}
-                        style={{
-                          padding: '3px 8px',
-                          fontSize: '0.72rem',
-                          background: 'rgba(239, 68, 68, 0.2)',
-                          color: '#fca5a5',
-                          border: '1px solid rgba(239, 68, 68, 0.4)',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseOver={(e) => {
-                          e.target.style.background = 'rgba(239, 68, 68, 0.3)';
-                          e.target.style.borderColor = 'rgba(239, 68, 68, 0.6)';
-                        }}
-                        onMouseOut={(e) => {
-                          e.target.style.background = 'rgba(239, 68, 68, 0.2)';
-                          e.target.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-                        }}
-                      >
-                        Dừng chạy
-                      </button>
-                    )}
-                  </div>
-                  {numericProgress !== null && <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{Math.round(numericProgress)}%</span>}
-                </div>
-                {numericProgress !== null && (
-                  <div style={{ height: '8px', borderRadius: '6px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', borderRadius: '6px', background: 'linear-gradient(90deg, #ec4899, #8b5cf6)', transition: 'width 0.4s', width: `${numericProgress}%` }} />
-                  </div>
-                )}
-                {scenes.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {scenes.map((scene, index) => {
-                      const sceneStatus = scene?.status || 'pending';
-                      const isDone = sceneStatus === 'completed';
-                      const isFailed = sceneStatus === 'failed';
-                      return (
-                        <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', fontSize: '0.8rem' }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                            {isDone ? <Check size={15} style={{ color: '#34d399', flexShrink: 0 }} />
-                              : isFailed ? <X size={15} style={{ color: '#f87171', flexShrink: 0 }} />
-                              : <Loader size={15} className="spin-loader" style={{ flexShrink: 0 }} />}
-                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Cảnh {index + 1}: {scene?.title || ''}</span>
-                          </span>
-                          <span style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>
-                            {isDone ? 'xong' : isFailed ? 'lỗi' : scene?.imageUrl ? 'video...' : 'ảnh...'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {dramaJob.finalUrl && (
-                  <video controls src={dramaJob.finalUrl} style={{ width: '100%', borderRadius: '12px', maxHeight: '420px', background: '#000' }} />
-                )}
+            {dramaJob?.finalUrl && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+                <label style={{ color: '#a78bfa', fontSize: '0.85rem', fontWeight: 'bold' }}>Tác phẩm hoàn chỉnh (Full Video)</label>
+                <video controls src={dramaJob.finalUrl} style={{ width: '100%', borderRadius: '12px', maxHeight: '420px', background: '#000' }} />
               </div>
             )}
           </section>
