@@ -1588,12 +1588,14 @@ app.get('/api/drama/scripts/:id/jobs/latest', requireAdmin, async (req, res) => 
   try {
     const snapshot = await db.collection('drama_jobs')
       .where('scriptId', '==', req.params.id)
-      .orderBy('createdAt', 'desc')
-      .limit(1)
       .get();
     if (snapshot.empty) return res.json({ job: null });
-    const doc = snapshot.docs[0];
-    return res.json({ job: { id: doc.id, ...doc.data() } });
+    
+    // Sort in memory to avoid Firestore composite index requirement
+    const jobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    jobs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    
+    return res.json({ job: jobs[0] });
   } catch (error) {
     logger.error('Drama latest job lookup failed', error);
     return res.status(500).json({ error: error.message });
