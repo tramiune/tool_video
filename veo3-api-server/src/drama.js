@@ -484,12 +484,19 @@ async function runDramaJob(jobId) {
         }));
         const audioPath = await mergeDialogues(clipPath, dialogue, tempDir, index);
         if (audioPath) {
-          await muxAudioIntoTemp(clipPath, audioPath, clipPath.replace(/\.mp4$/, '.muxed.mp4'));
-          clipPaths.push(clipPath.replace(/\.mp4$/, '.muxed.mp4'));
+          const muxedClipPath = clipPath.replace(/\.mp4$/, '.muxed.mp4');
+          await muxAudioIntoTemp(clipPath, audioPath, muxedClipPath);
+          
+          // Upload the muxed video (with audio) to R2 and save back to Firestore
+          const muxedBuffer = await fsp.readFile(muxedClipPath);
+          const muxedR2Url = await uploadToR2(muxedBuffer, `meo3/videos/${jobId}_scene_${index + 1}_video_muxed.mp4`, 'video/mp4');
+          
+          await updateScene(jobRef, index, { videoUrl: muxedR2Url, audioStatus: 'completed', status: 'completed' });
+          clipPaths.push(muxedClipPath);
         } else {
           clipPaths.push(clipPath);
+          await updateScene(jobRef, index, { audioStatus: 'none', status: 'completed' });
         }
-        await updateScene(jobRef, index, { audioStatus: audioPath ? 'completed' : 'none', status: 'completed' });
       }
 
       snapshot = await jobRef.get();
@@ -682,12 +689,36 @@ async function generateSceneMedia({
       timeoutMs: VIDEO_TIMEOUT_MS,
       stageStatus: 'video_processing'
     });
+    let videoUrl = videoResult.url;
+    const dialogue = (scene.dialogue || []).map(line => ({
+      ...line,
+      voiceIndex: resolveVoiceIndex(job.characters || [], line.speaker)
+    }));
+
+    if (dialogue.length > 0) {
+      const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), `scene-audio-${scriptRef.id}-${sceneIndex}-`));
+      try {
+        const clipPath = path.join(tempDir, `clip.mp4`);
+        await downloadFile(videoUrl, clipPath);
+        
+        const audioPath = await mergeDialogues(clipPath, dialogue, tempDir, sceneIndex);
+        if (audioPath) {
+          const muxedClipPath = path.join(tempDir, `muxed.mp4`);
+          await muxAudioIntoTemp(clipPath, audioPath, muxedClipPath);
+          const muxedBuffer = await fsp.readFile(muxedClipPath);
+          videoUrl = await uploadToR2(muxedBuffer, `meo3/videos/${scriptRef.id}_scene_${sceneIndex + 1}_video_muxed.mp4`, 'video/mp4');
+        }
+      } finally {
+        await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+
     await updateScene(scriptRef, sceneIndex, {
-      videoUrl: videoResult.url,
+      videoUrl,
       videoStatus: 'completed',
       status: 'completed'
     });
-    return { url: videoResult.url, taskId: videoResult.taskId, mediaType };
+    return { url: videoUrl, taskId: videoResult.taskId, mediaType };
   } catch (error) {
     await updateScene(scriptRef, sceneIndex, {
       [`${mediaType}Status`]: 'failed',
