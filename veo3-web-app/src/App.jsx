@@ -2743,27 +2743,7 @@ function App() {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="glass-button"
-                      onClick={() => handleDramaSceneMedia(sceneIndex, 'image')}
-                      disabled={dramaSceneBusy[`${sceneIndex}:image`] || dramaSaving}
-                      style={{ padding: '8px 14px', fontSize: '0.78rem', flex: '1 1 140px' }}
-                    >
-                      {dramaSceneBusy[`${sceneIndex}:image`] ? <Loader size={14} className="spin-loader" /> : <ImageIcon size={14} />} {scene.imageUrl ? 'Làm lại ảnh' : 'Tạo ảnh cảnh'}
-                    </button>
-                    <button
-                      type="button"
-                      className="glass-button"
-                      onClick={() => handleDramaSceneMedia(sceneIndex, 'video')}
-                      disabled={dramaSceneBusy[`${sceneIndex}:video`] || dramaSaving || !scene.imageUrl}
-                      style={{ padding: '8px 14px', fontSize: '0.78rem', flex: '1 1 140px', opacity: !scene.imageUrl ? 0.5 : 1 }}
-                      title={!scene.imageUrl ? 'Cần tạo ảnh cảnh trước khi tạo video' : undefined}
-                    >
-                      {dramaSceneBusy[`${sceneIndex}:video`] ? <Loader size={14} className="spin-loader" /> : <Video size={14} />} {scene.videoUrl ? 'Làm lại video' : 'Tạo video cảnh'}
-                    </button>
-                  </div>
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <label style={{ color: 'var(--text-secondary)', fontSize: '0.74rem' }}>Lời thoại</label>
                     {(Array.isArray(scene.dialogue) ? scene.dialogue : []).map((line, lineIndex) => (
