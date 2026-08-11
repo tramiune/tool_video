@@ -2260,6 +2260,27 @@ function App() {
     }
   };
 
+  const cancelDramaJob = async (jobId) => {
+    if (!user || !jobId) return;
+    if (window.confirm('Bạn có chắc chắn muốn dừng tác vụ này không?')) {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch(`${API_BASE}/api/drama/jobs/${jobId}/cancel`, {
+          method: 'POST',
+          headers: authHeaders(token)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Server returned code ${response.status}`);
+        
+        setDramaJob(prev => prev ? { ...prev, status: 'failed', error: 'Đã dừng chạy.' } : null);
+        setDramaJobId(null);
+      } catch (error) {
+        console.error('Cancel drama job failed:', error);
+        setDramaError(error.message || 'Không thể dừng tác vụ.');
+      }
+    }
+  };
+
   const handleDramaSceneMedia = async (sceneIndex, mediaType) => {
     if (!user || !dramaScript?.id || dramaSceneBusy[`${sceneIndex}:${mediaType}`]) return;
     setDramaSceneBusy(current => ({ ...current, [`${sceneIndex}:${mediaType}`]: true }));
@@ -2728,6 +2749,31 @@ function App() {
                       {dramaJob.status === 'completed' ? 'Hoàn thành' :
                        dramaJob.status === 'failed' ? 'Thất bại' : 'Đang tạo video...'} (Tập {dramaJob.episodeNumber || 1})
                     </span>
+                    {dramaJob.status !== 'completed' && dramaJob.status !== 'failed' && dramaJobId && (
+                      <button
+                        onClick={() => cancelDramaJob(dramaJobId)}
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '0.72rem',
+                          background: 'rgba(239, 68, 68, 0.2)',
+                          color: '#fca5a5',
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => {
+                          e.target.style.background = 'rgba(239, 68, 68, 0.3)';
+                          e.target.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                        }}
+                        onMouseOut={(e) => {
+                          e.target.style.background = 'rgba(239, 68, 68, 0.2)';
+                          e.target.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                        }}
+                      >
+                        Dừng chạy
+                      </button>
+                    )}
                   </div>
                   {numericProgress !== null && <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{Math.round(numericProgress)}%</span>}
                 </div>

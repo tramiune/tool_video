@@ -358,6 +358,10 @@ async function runDramaJob(jobId) {
         failedSceneIndex = index;
         snapshot = await jobRef.get();
         job = snapshot.data();
+        if (job.status === 'failed') {
+          logger.info(`[Drama] Job ${jobId} aborted in step 1 of scene ${index + 1} due to cancellation.`);
+          return;
+        }
         let scene = job.scenes[index];
 
         // 1. Get or generate the start image for this scene
@@ -430,6 +434,12 @@ async function runDramaJob(jobId) {
         }
 
         // 2. Generate video for this scene
+        snapshot = await jobRef.get();
+        job = snapshot.data();
+        if (job.status === 'failed') {
+          logger.info(`[Drama] Job ${jobId} aborted in step 2 of scene ${index + 1} due to cancellation.`);
+          return;
+        }
         let videoUrl = scene.videoUrl;
         const vidExists = await checkUrlExists(videoUrl);
         if (!videoUrl || !vidExists) {
@@ -474,6 +484,10 @@ async function runDramaJob(jobId) {
         failedSceneIndex = index;
         snapshot = await jobRef.get();
         job = snapshot.data();
+        if (job.status === 'failed') {
+          logger.info(`[Drama] Job ${jobId} aborted in Phase 3 scene ${index + 1} due to cancellation.`);
+          return;
+        }
         const scene = job.scenes[index];
         const clipPath = path.join(tempDir, `clip-${String(index).padStart(2, '0')}.mp4`);
         await downloadFile(scene.videoUrl, clipPath);

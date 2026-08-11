@@ -1613,6 +1613,30 @@ app.get('/api/drama/jobs/:id', requireAdmin, async (req, res) => {
   }
 });
 
+app.post('/api/drama/jobs/:id/cancel', requireAdmin, async (req, res) => {
+  try {
+    const jobRef = db.collection('drama_jobs').doc(req.params.id);
+    const snapshot = await jobRef.get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Drama job not found' });
+    
+    const job = snapshot.data();
+    if (job.status === 'completed' || job.status === 'failed') {
+      return res.status(400).json({ error: 'Tác vụ đã kết thúc trước đó.' });
+    }
+    
+    await jobRef.update({
+      status: 'failed',
+      error: 'Tác vụ bị người dùng dừng chạy.',
+      updatedAt: Date.now()
+    });
+    
+    return res.json({ success: true, message: 'Đã dừng tác vụ thành công.' });
+  } catch (error) {
+    logger.error('Drama job cancellation failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Local file upload endpoint: forwards files to R2 to store input assets in R2
 app.post('/api/upload', upload.array('files'), async (req, res) => {
   try {
