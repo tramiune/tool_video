@@ -417,6 +417,7 @@ function App() {
   const [dramaScripts, setDramaScripts] = useState([]);
   const [dramaScriptsLoading, setDramaScriptsLoading] = useState(false);
   const [dramaScript, setDramaScript] = useState(null);
+  const [dramaScriptSavedState, setDramaScriptSavedState] = useState(null);
   const [dramaScriptLoading, setDramaScriptLoading] = useState(false);
   const [dramaTopic, setDramaTopic] = useState('');
   const [dramaSaving, setDramaSaving] = useState(false);
@@ -2090,10 +2091,10 @@ function App() {
         body: JSON.stringify({ topic })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
-      if (!data.script?.id) throw new Error('Máy chủ không trả về mã kịch bản.');
-      setDramaScript(normalizeDramaScript({ ...data.script, id: data.script.id }));
-      setDramaScripts(current => [normalizeDramaScript({ ...data.script, id: data.script.id }), ...current]);
+      const normalized = normalizeDramaScript({ ...data.script, id: data.script.id });
+      setDramaScript(normalized);
+      setDramaScriptSavedState(normalized);
+      setDramaScripts(current => [normalized, ...current]);
     } catch (error) {
       console.error('Drama script creation failed:', error);
       setDramaError(error.message || 'Không thể tạo kịch bản.');
@@ -2118,6 +2119,7 @@ function App() {
       if (!data.script) throw new Error('Máy chủ không trả về kịch bản.');
       const normalized = normalizeDramaScript({ ...data.script, id: dramaScript.id });
       setDramaScript(normalized);
+      setDramaScriptSavedState(normalized);
       setDramaScripts(current => current.map(script => script.id === dramaScript.id ? normalized : script));
     } catch (error) {
       console.error('Drama AI script generation failed:', error);
@@ -2146,6 +2148,7 @@ function App() {
       if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
       const normalized = normalizeDramaScript({ ...data.script, id: dramaScript.id });
       setDramaScript(normalized);
+      setDramaScriptSavedState(normalized);
       setDramaScripts(current => current.map(script => script.id === dramaScript.id ? normalized : script));
     } catch (error) {
       console.error('Drama script save failed:', error);
@@ -2208,6 +2211,7 @@ function App() {
       if (!response.ok) throw new Error(data.error || data.message || `Server returned code ${response.status}`);
       const normalized = normalizeDramaScript({ ...data.script, id: scriptId });
       setDramaScript(normalized);
+      setDramaScriptSavedState(normalized);
       setDramaTopic(normalized.topic || '');
       await restoreDramaJob(scriptId);
     } catch (error) {
@@ -2220,6 +2224,7 @@ function App() {
 
   const closeDramaScript = () => {
     setDramaScript(null);
+    setDramaScriptSavedState(null);
     setDramaJobId(null);
     setDramaJob(null);
     setDramaError(null);
@@ -2375,6 +2380,11 @@ function App() {
       ? jobError
       : jobError ? JSON.stringify(jobError) : dramaError;
 
+    const isJobRunning = dramaJob && dramaJob.status !== 'completed' && dramaJob.status !== 'failed';
+    const isDramaChanged = JSON.stringify(dramaScript) !== JSON.stringify(dramaScriptSavedState);
+    const hasDramaContent = dramaScript && String(dramaScript.title || '').trim() && Array.isArray(dramaScript.scenes) && dramaScript.scenes.length > 0;
+    const isSaveEnabled = isDramaChanged && hasDramaContent && !dramaSaving;
+
     return (
       <div className="container" style={{ maxWidth: '920px', margin: '0 auto', padding: '24px 20px 140px 20px', display: 'flex', flexDirection: 'column', gap: '20px', color: '#fff' }}>
         
@@ -2424,10 +2434,10 @@ function App() {
               </div>
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" className="glass-button" onClick={generateDramaScript} disabled={dramaAiLoading || dramaSaving} style={{ flex: 1, padding: '12px 18px', background: dramaAiLoading ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: (dramaAiLoading || dramaSaving) ? 0.6 : 1, fontSize: '0.82rem' }}>
+                <button type="button" className="glass-button" onClick={generateDramaScript} disabled={dramaAiLoading || dramaSaving || isJobRunning} style={{ flex: 1, padding: '12px 18px', background: (dramaAiLoading || isJobRunning) ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: (dramaAiLoading || dramaSaving || isJobRunning) ? 0.4 : 1, fontSize: '0.82rem' }}>
                   {dramaAiLoading ? <Loader size={15} className="spin-loader" /> : <Sparkles size={15} />} {dramaScript.title ? 'Sinh lại kịch bản' : 'Sinh kịch bản bằng AI'}
                 </button>
-                <button type="button" className="glass-button" onClick={handleDramaCreateJob} disabled={dramaCreating || !dramaScript.title || !dramaScript.scenes.length} style={{ flex: 1, padding: '12px 18px', background: dramaCreating ? undefined : 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)', opacity: (dramaCreating || !dramaScript.title || !dramaScript.scenes.length) ? 0.5 : 1, fontSize: '0.82rem' }}>
+                <button type="button" className="glass-button" onClick={handleDramaCreateJob} disabled={dramaCreating || !dramaScript.title || !dramaScript.scenes.length || isJobRunning} style={{ flex: 1, padding: '12px 18px', background: (dramaCreating || isJobRunning) ? undefined : 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)', opacity: (dramaCreating || !dramaScript.title || !dramaScript.scenes.length || isJobRunning) ? 0.4 : 1, fontSize: '0.82rem' }}>
                   {dramaCreating ? <Loader size={15} className="spin-loader" /> : <Video size={15} />} Tạo video ({dramaScript.scenes.length} cảnh)
                 </button>
               </div>
@@ -2450,9 +2460,36 @@ function App() {
                       </span>
                       {dramaJob.status !== 'completed' && dramaJob.status !== 'failed' && dramaJobId && (
                         <button
+                          type="button"
                           onClick={() => cancelDramaJob(dramaJobId)}
-                          className="btn-cancel-job"
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: '0.72rem',
+                            fontWeight: 'bold',
+                            background: 'rgba(239, 68, 68, 0.18)',
+                            color: '#fca5a5',
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            borderRadius: '20px',
+                            cursor: 'pointer',
+                            marginLeft: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            transition: 'all 0.2s ease-in-out',
+                            boxShadow: '0 0 10px rgba(239, 68, 68, 0.1)'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)';
+                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                            e.currentTarget.style.boxShadow = '0 0 14px rgba(239, 68, 68, 0.2)';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)';
+                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                            e.currentTarget.style.boxShadow = '0 0 10px rgba(239, 68, 68, 0.1)';
+                          }}
                         >
+                          <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444', animation: 'pulse 1.5s infinite' }} />
                           Dừng chạy
                         </button>
                       )}
@@ -2767,11 +2804,19 @@ function App() {
             </div>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button type="button" className="glass-button" onClick={() => saveDramaScript({ ...dramaScript, status: 'draft' })} disabled={dramaSaving} style={{ flex: 1, padding: '14px 20px' }}>
-                {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Check size={17} />} Lưu kịch bản
-              </button>
-              <button type="button" className="glass-button" onClick={handleDramaCreateJob} disabled={dramaCreating || !dramaScript.title || !dramaScript.scenes.length} style={{ flex: 1, padding: '14px 20px', background: dramaCreating ? undefined : 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)', opacity: (dramaCreating || !dramaScript.title || !dramaScript.scenes.length) ? 0.5 : 1 }}>
-                {dramaCreating ? <Loader size={17} className="spin-loader" /> : <Play size={17} />} Duyệt & Tạo video
+              <button 
+                type="button" 
+                className="glass-button" 
+                onClick={() => saveDramaScript({ ...dramaScript, status: 'draft' })} 
+                disabled={!isSaveEnabled} 
+                style={{ 
+                  flex: 1, 
+                  padding: '14px 20px', 
+                  background: isSaveEnabled ? 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)' : undefined, 
+                  opacity: isSaveEnabled ? 1 : 0.4 
+                }}
+              >
+                {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Check size={17} />} {dramaSaving ? 'Đang lưu...' : 'Lưu kịch bản'}
               </button>
             </div>
 
