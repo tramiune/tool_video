@@ -342,6 +342,7 @@ function App() {
   const [userExpiryDate, setUserExpiryDate] = useState(null);
   const [pendingPayment, setPendingPayment] = useState(null);
   const [currentUserIsAdmin, setCurrentUserIsAdmin] = useState(false);
+  const [currentUserHasDramaAccess, setCurrentUserHasDramaAccess] = useState(false);
   const [isAdminView, setIsAdminView] = useState(false);
   const [adminUsersList, setAdminUsersList] = useState([]);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
@@ -535,13 +536,15 @@ function App() {
         setUserTier(data.tier || 'free');
         setUserExpiryDate(data.expiryDate || null);
         setPendingPayment(nextPendingPayment);
-        setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
+         setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
+        setCurrentUserHasDramaAccess(data.hasDramaAccess || data.isAdmin || emailIsAdmin || false);
       } else {
         previousPendingPaymentRef.current = null;
         setUserTier('free');
         setUserExpiryDate(null);
         setPendingPayment(null);
         setCurrentUserIsAdmin(emailIsAdmin || false);
+        setCurrentUserHasDramaAccess(emailIsAdmin || false);
       }
       setUserProfileLoaded(true);
     });
@@ -559,20 +562,32 @@ function App() {
       const isHashDrama = hash === '#drama';
       const isHashTools = hash === '#tools';
       
-      if (isHashAdmin || isHashAutoTool || isHashDrama) {
+      if (isHashAdmin || isHashAutoTool) {
         if (!user) {
           window.location.hash = '';
           setIsAdminView(false);
           setIsAutoToolView(false);
-          setIsDramaView(false);
           return;
         }
         if (userProfileLoaded && !currentUserIsAdmin) {
           window.location.hash = '';
           setIsAdminView(false);
           setIsAutoToolView(false);
-          setIsDramaView(false);
           alert("Bạn không có quyền truy cập trang quản trị!");
+          return;
+        }
+      }
+
+      if (isHashDrama) {
+        if (!user) {
+          window.location.hash = '';
+          setIsDramaView(false);
+          return;
+        }
+        if (userProfileLoaded && !currentUserHasDramaAccess) {
+          window.location.hash = '';
+          setIsDramaView(false);
+          alert("Tài khoản của bạn chưa được cấp quyền truy cập Công cụ Mẹ Chồng Nàng Dâu!");
           return;
         }
       }
@@ -586,7 +601,7 @@ function App() {
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [user, userProfileLoaded, currentUserIsAdmin]);
+  }, [user, userProfileLoaded, currentUserIsAdmin, currentUserHasDramaAccess]);
 
   useEffect(() => {
     if (!isAutoToolView || !user || !userProfileLoaded || !currentUserIsAdmin) return;
@@ -1195,6 +1210,7 @@ function App() {
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '12px 8px' }}>Email</th>
                     <th style={{ padding: '12px 8px' }}>Quyền</th>
+                    <th style={{ padding: '12px 8px' }}>Quyền Drama</th>
                     <th style={{ padding: '12px 8px' }}>Gói cước</th>
                     <th style={{ padding: '12px 8px' }}>Hạn dùng</th>
                     <th style={{ padding: '12px 8px', textAlign: 'right' }}>Thao tác</th>
@@ -1203,7 +1219,7 @@ function App() {
                 <tbody>
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan="5" style={{ padding: '40px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <td colSpan="6" style={{ padding: '40px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                         Không có người dùng nào khớp từ khóa.
                       </td>
                     </tr>
@@ -1241,6 +1257,36 @@ function App() {
                               ) : (
                                 <span style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem' }}>
                                   User
+                                </span>
+                              )}
+                            </button>
+                          </td>
+                          <td data-label="Quyền Drama" style={{ padding: '14px 8px' }}>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await setDoc(doc(db, 'users', usr.id), { hasDramaAccess: !usr.hasDramaAccess }, { merge: true });
+                                } catch (err) {
+                                  console.error("Error toggling drama access:", err);
+                                }
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: 0,
+                                display: 'flex',
+                                alignItems: 'center'
+                              }}
+                              title={usr.hasDramaAccess ? "Thu hồi quyền Drama" : "Cấp quyền Drama"}
+                            >
+                              {usr.hasDramaAccess ? (
+                                <span style={{ background: 'rgba(236,72,153,0.1)', color: '#ec4899', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Check size={10} /> Có quyền
+                                </span>
+                              ) : (
+                                <span style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem' }}>
+                                  Không có
                                 </span>
                               )}
                             </button>
@@ -5138,32 +5184,7 @@ function App() {
                       <Video size={12} />
                       AutoTool
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        window.location.hash = '#drama';
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        width: '100%',
-                        padding: '8px 10px',
-                        background: 'rgba(236,72,153,0.12)',
-                        border: 'none',
-                        borderRadius: '6px',
-                        color: '#ec4899',
-                        fontSize: '0.75rem',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        marginTop: '4px'
-                      }}
-                    >
-                      <Clapperboard size={12} />
-                      Drama (Mẹ chồng nàng dâu)
-                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
