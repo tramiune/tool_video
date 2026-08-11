@@ -1229,7 +1229,39 @@ function App() {
           e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
         }}
       >
-        {/* Zalo Floating Button (Top of Stack) */}
+        {/* AI Tools Floating Button (Top of Stack) */}
+        <div
+          onClick={onClick}
+          title="Danh sách công cụ AI"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '42px',
+            height: '42px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+            boxShadow: '0 0 16px rgba(139, 92, 246, 0.5), 0 4px 10px rgba(0,0,0,0.3)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            color: '#fff',
+            cursor: 'pointer',
+            transition: 'transform 0.2s',
+            animation: 'pulse 3s infinite',
+            zIndex: 99999
+          }}
+          onMouseOver={(e) => {
+            if (!isDraggingToolsBtn.current) {
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          <LayoutGrid size={18} style={{ pointerEvents: 'none' }} />
+        </div>
+
+        {/* Zalo Floating Button (Bottom of Stack) */}
         <a
           href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
           target="_blank"
@@ -1268,38 +1300,6 @@ function App() {
         >
           <img src="/zalo.svg" alt="Zalo" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
         </a>
-
-        {/* AI Tools Floating Button (Bottom of Stack) */}
-        <div
-          onClick={onClick}
-          title="Danh sách công cụ AI"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '42px',
-            height: '42px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-            boxShadow: '0 0 16px rgba(139, 92, 246, 0.5), 0 4px 10px rgba(0,0,0,0.3)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            color: '#fff',
-            cursor: 'pointer',
-            transition: 'transform 0.2s',
-            animation: 'pulse 3s infinite',
-            zIndex: 99999
-          }}
-          onMouseOver={(e) => {
-            if (!isDraggingToolsBtn.current) {
-              e.currentTarget.style.transform = 'scale(1.1)';
-            }
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-        >
-          <LayoutGrid size={18} style={{ pointerEvents: 'none' }} />
-        </div>
       </div>
     );
   };
