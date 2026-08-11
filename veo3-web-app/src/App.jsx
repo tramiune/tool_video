@@ -1152,8 +1152,8 @@ function App() {
   };
 
   const renderFloatingToolsButton = () => {
-    // Only render if user is logged in, profile loaded, and not currently on the Tools view
-    if (!user || !userProfileLoaded || isToolsView) return null;
+    // Only render if user is logged in and profile loaded
+    if (!user || !userProfileLoaded) return null;
 
     const onMouseDown = (e) => {
       // Only handle left clicks
@@ -1182,18 +1182,6 @@ function App() {
       }
     };
 
-    const onClick = (e) => {
-      if (hasDraggedToolsBtn.current) {
-        // Prevent action if it was dragged
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      // Otherwise navigate to tools
-      window.location.hash = '#tools';
-      setIsToolsView(true);
-    };
-
     return (
       <div
         onMouseDown={onMouseDown}
@@ -1207,21 +1195,20 @@ function App() {
           userSelect: 'none',
           touchAction: 'none', // Prevents scrolling while dragging on mobile
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
-          gap: '8px',
+          justifyContent: 'center',
           padding: '8px',
           background: 'rgba(20, 20, 25, 0.65)',
           backdropFilter: 'blur(10px)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: '24px',
+          borderRadius: '50%',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
           transition: isDraggingToolsBtn.current ? 'none' : 'transform 0.2s'
         }}
         onMouseOver={(e) => {
           if (!isDraggingToolsBtn.current) {
-            e.currentTarget.style.transform = 'scale(1.03)';
-            e.currentTarget.style.boxShadow = '0 8px 32px rgba(139, 92, 246, 0.25), 0 8px 32px rgba(0, 0, 0, 0.4)';
+            e.currentTarget.style.transform = 'scale(1.05)';
+            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 104, 255, 0.2), 0 8px 32px rgba(0, 0, 0, 0.4)';
           }
         }}
         onMouseOut={(e) => {
@@ -1229,39 +1216,7 @@ function App() {
           e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
         }}
       >
-        {/* AI Tools Floating Button (Top of Stack) */}
-        <div
-          onClick={onClick}
-          title="Danh sách công cụ AI"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '42px',
-            height: '42px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-            boxShadow: '0 0 16px rgba(139, 92, 246, 0.5), 0 4px 10px rgba(0,0,0,0.3)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            color: '#fff',
-            cursor: 'pointer',
-            transition: 'transform 0.2s',
-            animation: 'pulse 3s infinite',
-            zIndex: 99999
-          }}
-          onMouseOver={(e) => {
-            if (!isDraggingToolsBtn.current) {
-              e.currentTarget.style.transform = 'scale(1.1)';
-            }
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-        >
-          <LayoutGrid size={18} style={{ pointerEvents: 'none' }} />
-        </div>
-
-        {/* Zalo Floating Button (Bottom of Stack) */}
+        {/* Zalo Floating Button */}
         <a
           href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
           target="_blank"
@@ -5227,8 +5182,42 @@ function App() {
             )}
           </div>
 
-
-
+          {/* AI Tools Button in Header */}
+          <button
+            type="button"
+            onClick={() => {
+              window.location.hash = '#tools';
+              setIsToolsView(true);
+            }}
+            title="Danh sách công cụ AI"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '6px 14px',
+              background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+              border: 'none',
+              borderRadius: '20px',
+              color: '#fff',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease-in-out',
+              boxShadow: '0 0 14px rgba(139, 92, 246, 0.4)',
+              fontWeight: 'bold',
+              height: '32px'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+              e.currentTarget.style.boxShadow = '0 0 20px rgba(236, 72, 153, 0.6)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 0 14px rgba(139, 92, 246, 0.4)';
+            }}
+          >
+            <LayoutGrid size={14} />
+            <span className="mobile-hide-text" style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.3px' }}>Công cụ AI</span>
+          </button>
           {/* Avatar Dropdown Container */}
           <div style={{ position: 'relative' }} ref={userDropdownRef}>
             <div 

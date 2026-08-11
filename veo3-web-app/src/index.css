@@ -823,9 +823,9 @@ body {
   .logo-text {
     font-size: 1.54rem;
   }
-
-
-
+  .mobile-hide-text {
+    display: none !important;
+  }
   /* ---- Gallery ---- */
   .gallery-layout {
     padding: 10px 8px 170px 8px;
