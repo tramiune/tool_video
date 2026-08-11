@@ -416,7 +416,7 @@ function App() {
 
   const [isDramaView, setIsDramaView] = useState(false);
   const [isToolsView, setIsToolsView] = useState(false);
-  const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 62, y: window.innerHeight - 340 });
+  const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 73, y: window.innerHeight - 330 });
   const isDraggingToolsBtn = useRef(false);
   const toolsBtnDragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const hasDraggedToolsBtn = useRef(false);
@@ -623,9 +623,9 @@ function App() {
       let newY = toolsBtnDragStart.current.posY + deltaY;
       
       // Boundaries check (keep it inside viewport, above the bottom input area)
-      const btnWidth = 42;
-      const btnHeight = 92;
-      const bottomLimit = window.innerHeight - 220 - btnHeight; // Clear the bottom 220px text input panel
+      const btnWidth = 58;
+      const btnHeight = 108;
+      const bottomLimit = window.innerHeight - 190 - btnHeight - 5; // Sit 5px above the bottom input area
       newX = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, newX));
       newY = Math.max(10, Math.min(bottomLimit, newY));
       
@@ -651,9 +651,9 @@ function App() {
     // Resize handler to keep button on-screen
     const handleResize = () => {
       setToolsBtnPosition(prev => {
-        const btnWidth = 42;
-        const btnHeight = 92;
-        const bottomLimit = window.innerHeight - 220 - btnHeight;
+        const btnWidth = 58;
+        const btnHeight = 108;
+        const bottomLimit = window.innerHeight - 190 - btnHeight - 5;
         const newX = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, prev.x));
         const newY = Math.max(10, Math.min(bottomLimit, prev.y));
         return { x: newX, y: newY };
@@ -1210,7 +1210,23 @@ function App() {
           flexDirection: 'column',
           alignItems: 'center',
           gap: '8px',
+          padding: '8px',
+          background: 'rgba(20, 20, 25, 0.65)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '24px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
           transition: isDraggingToolsBtn.current ? 'none' : 'transform 0.2s'
+        }}
+        onMouseOver={(e) => {
+          if (!isDraggingToolsBtn.current) {
+            e.currentTarget.style.transform = 'scale(1.03)';
+            e.currentTarget.style.boxShadow = '0 8px 32px rgba(139, 92, 246, 0.25), 0 8px 32px rgba(0, 0, 0, 0.4)';
+          }
+        }}
+        onMouseOut={(e) => {
+          e.currentTarget.style.transform = 'scale(1)';
+          e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
         }}
       >
         {/* Zalo Floating Button (Top of Stack) */}
