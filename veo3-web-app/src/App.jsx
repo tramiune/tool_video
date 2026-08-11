@@ -2078,16 +2078,12 @@ function App() {
   };
 
   const createDramaScript = async () => {
-    const topic = dramaTopic.trim();
-    if (!topic) {
-      setDramaError('Nhập chủ đề kịch bản, ví dụ: "mẹ chồng nàng dâu vừa sinh con".');
-      return;
-    }
     if (dramaSaving) return;
     setDramaSaving(true);
     setDramaError(null);
     try {
       const token = await user.getIdToken();
+      const topic = dramaTopic.trim();
       const response = await fetch(`${API_BASE}/api/drama/scripts`, {
         method: 'POST',
         headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
@@ -2519,7 +2515,7 @@ function App() {
                   disabled={dramaSaving}
                   onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); createDramaScript(); } }}
                 />
-                <button type="button" className="glass-button" onClick={createDramaScript} disabled={dramaSaving || !dramaTopic.trim()} style={{ padding: '12px 18px', background: dramaSaving ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: dramaTopic.trim() ? 1 : 0.5 }}>
+                <button type="button" className="glass-button" onClick={createDramaScript} disabled={dramaSaving} style={{ padding: '12px 18px', background: dramaSaving ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: dramaSaving ? 0.5 : 1 }}>
                   {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Plus size={17} />} Tạo kịch bản
                 </button>
               </div>

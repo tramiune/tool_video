@@ -95,12 +95,16 @@ async function callDramaAI({ system, user, temperature = 0.8, maxRetries = 3 }) 
 // Produces: title, characters (name/age/role/description), base image prompt,
 // and up to 6 scenes, each with a Vietnamese spoken dialogue.
 async function generateDramaScript({ topic }) {
-  const theme = String(topic || '').trim() || DEFAULT_DRAMA_TOPIC;
+  const inputTopic = String(topic || '').trim();
+  const themePrompt = inputTopic 
+    ? `Hãy sáng tạo một kịch bản phim ngắn drama về chủ đề cụ thể: "${inputTopic}".`
+    : 'Hãy tự sáng tạo ra một chủ đề drama gia đình Việt Nam ngẫu nhiên bất kỳ (mâu thuẫn mẹ chồng nàng dâu, ngoại tình, phân chia tài sản, sự vô cảm,...) thật kịch tính và viết kịch bản dựa trên chủ đề tự nghĩ đó.';
+
   const parsed = await callDramaAI({
     system: 'Bạn là biên kịch phim ngắn drama gia đình Việt Nam dạng dọc (9:16). '
       + 'Tuân thủ chính xác schema JSON được yêu cầu, không xuất thêm gì khác.',
     user: [
-      `Hãy sáng tạo một kịch bản phim ngắn drama về chủ đề: "${theme}".`,
+      themePrompt,
       'Kịch bản phải đánh trúng cảm xúc, có kịch tính, nhiều mâu thuẫn và cao trào, kiểu nội dung "mẹ chồng nàng dâu" hoặc drama gia đình dễ gây tranh cãi.',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
       '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
