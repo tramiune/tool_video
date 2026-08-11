@@ -2519,38 +2519,34 @@ async function cleanupOldTasks() {
     } else {
       logger.info(`Found ${snapshot.size} expired tasks. Starting media deletion from R2 & doc deletion from Firestore...`);
       const batch = db.batch();
-      
       for (const doc of snapshot.docs) {
-        const docData = doc.data();
+        const data = doc.data();
         const filesToDelete = [];
+        const isDramaAsset = data.dramaScriptId || data.dramaJobId || doc.id.includes('_scene_');
+        
+        if (!isDramaAsset) {
+          if (data.mediaUrl) filesToDelete.push(data.mediaUrl);
+          if (data.startImage && typeof data.startImage === 'string') filesToDelete.push(data.startImage);
+          if (data.endImage && typeof data.endImage === 'string') filesToDelete.push(data.endImage);
+          if (data.media && Array.isArray(data.media)) {
+            for (const m of data.media) {
+              if (m.url) filesToDelete.push(m.url);
+            }
+          }
 
-        // Collect all media URLs
-        if (docData.mediaUrl) {
-          filesToDelete.push(docData.mediaUrl);
-        }
-        if (Array.isArray(docData.media)) {
-          docData.media.forEach(item => {
-            if (item.url) filesToDelete.push(item.url);
-          });
-        }
-
-        // Delete files from R2
-        for (const url of filesToDelete) {
-          if (url && url.startsWith(process.env.R2_PUBLIC_BASE)) {
-            const fileKey = url.replace(`${process.env.R2_PUBLIC_BASE}/`, '');
-            
-            // Safety guard: Only delete if key is in meo3 folders (meo3/videos/, meo3/images/, meo3/inputs/)
-            const isOurFolder = fileKey.startsWith('meo3/videos/') || fileKey.startsWith('meo3/images/') || fileKey.startsWith('meo3/inputs/');
-            
-            if (isOurFolder) {
-              try {
-                await deleteFromR2(fileKey);
-                logger.info(`Deleted file from Cloudflare R2: ${fileKey}`);
-              } catch (r2Err) {
-                logger.error(`Failed to delete ${fileKey} from R2:`, r2Err);
+          // Delete files from R2
+          for (const url of filesToDelete) {
+            if (url && url.startsWith(process.env.R2_PUBLIC_BASE)) {
+              const fileKey = url.replace(`${process.env.R2_PUBLIC_BASE}/`, '');
+              const isOurFolder = fileKey.startsWith('meo3/videos/') || fileKey.startsWith('meo3/images/') || fileKey.startsWith('meo3/inputs/');
+              if (isOurFolder) {
+                try {
+                  await deleteFromR2(fileKey);
+                  logger.info(`Deleted file from Cloudflare R2: ${fileKey}`);
+                } catch (r2Err) {
+                  logger.error(`Failed to delete ${fileKey} from R2:`, r2Err);
+                }
               }
-            } else {
-              logger.warn(`Skipped deleting R2 key "${fileKey}" - safety guard active (not inside meo3 folders).`);
             }
           }
         }

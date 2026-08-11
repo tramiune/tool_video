@@ -339,63 +339,83 @@ async function runDramaJob(jobId) {
     const clipPaths = [];
 
     try {
-      // Phase 1: generate every scene's still image first, so video N can use
-      // scene N+1's image as its end frame → the last frame of video N becomes
-      // the first frame of video N+1 (seamless chaining).
+      // Combined Phase 1 & 2: Process scenes sequentially.
+      // Scene 1 generates a still image via AI.
+      // Scenes N (N > 1) extract the last frame of Scene N-1 video as their still image.
+      // All scene videos are generated with startImage = scene still, endImage = null.
       for (let index = 0; index < job.scenes.length; index++) {
         failedSceneIndex = index;
         snapshot = await jobRef.get();
         job = snapshot.data();
-        const scene = job.scenes[index];
+        let scene = job.scenes[index];
 
-        // 1. Scene still image
+        // 1. Get or generate the start image for this scene
         let imageUrl = scene.imageUrl;
         if (!imageUrl) {
-          const imageResult = await runChildTaskWithRetry({
-            jobRef,
-            job: { ...job, characters: job.characters || [] },
-            sceneIndex: index,
-            taskType: 'image',
-            prompt: buildScenePrompt(job, scene, 'image'),
-            extraTaskData: {
-              userId: job.userId,
-              email: job.userEmail || null,
-              type: 'image',
-              status: 'pending',
-              aspectRatio: '9:16',
-              model: 'nano_banana_2',
-              count: 1,
-              referenceImages: [],
-              dramaJobId: jobId,
+          if (index === 0) {
+            // Scene 1: Generate initial still image
+            const imageResult = await runChildTaskWithRetry({
+              jobRef,
+              job: { ...job, characters: job.characters || [] },
               sceneIndex: index,
-              createdAt: Date.now()
-            },
-            timeoutMs: IMAGE_TIMEOUT_MS,
-            stageStatus: 'image_processing',
-            progressUpdate: {
-              status: 'generating',
-              currentScene: index + 1,
-              progress: Math.round(((index * 3) / totalSteps) * 100)
+              taskType: 'image',
+              prompt: buildScenePrompt(job, scene, 'image'),
+              extraTaskData: {
+                userId: job.userId,
+                email: job.userEmail || null,
+                type: 'image',
+                status: 'pending',
+                aspectRatio: '9:16',
+                model: 'nano_banana_2',
+                count: 1,
+                referenceImages: [],
+                dramaJobId: jobId,
+                sceneIndex: index,
+                createdAt: Date.now()
+              },
+              timeoutMs: IMAGE_TIMEOUT_MS,
+              stageStatus: 'image_processing',
+              progressUpdate: {
+                status: 'generating',
+                currentScene: index + 1,
+                progress: Math.round(((index * 2) / (job.scenes.length * 2)) * 100)
+              }
+            });
+            imageUrl = imageResult.url;
+            await updateScene(jobRef, index, { imageUrl, status: 'image_completed' }, {
+              progress: Math.round(((index * 2 + 0.5) / (job.scenes.length * 2)) * 100)
+            });
+          } else {
+            // Scene N (N > 1): Extract last frame from previous scene's video
+            const prevScene = job.scenes[index - 1];
+            if (!prevScene || !prevScene.videoUrl) {
+              throw new Error(`Cảnh ${index} chưa có video để trích xuất frame cuối`);
             }
-          });
-          imageUrl = imageResult.url;
-          await updateScene(jobRef, index, { imageUrl, status: 'image_completed' }, {
-            progress: Math.round(((index * 3 + 1) / totalSteps) * 100)
-          });
+            logger.info(`[Drama] Extracting last frame from scene ${index} video: ${prevScene.videoUrl}`);
+            const prevVideoPath = path.join(tempDir, `prev-clip-${index}.mp4`);
+            const lastFramePath = path.join(tempDir, `last-frame-${index}.png`);
+            
+            await downloadFile(prevScene.videoUrl, prevVideoPath);
+            await runFfmpeg([
+              '-y',
+              '-sseof', '-0.1',
+              '-i', prevVideoPath,
+              '-vframes', '1',
+              '-q:v', '2',
+              lastFramePath
+            ]);
+            
+            const lastFrameBuffer = await fsp.readFile(lastFramePath);
+            imageUrl = await uploadToR2(lastFrameBuffer, `meo3/images/${jobId}_scene_${index + 1}_image.png`, 'image/png');
+            await updateScene(jobRef, index, { imageUrl, status: 'image_completed' }, {
+              progress: Math.round(((index * 2 + 0.5) / (job.scenes.length * 2)) * 100)
+            });
+            logger.success(`[Drama] Scene ${index + 1} image extracted and uploaded: ${imageUrl}`);
+          }
         }
-      }
 
-      // Phase 2: generate videos, chaining each clip to the next scene's image.
-      for (let index = 0; index < job.scenes.length; index++) {
-        failedSceneIndex = index;
-        snapshot = await jobRef.get();
-        job = snapshot.data();
-        const scene = job.scenes[index];
-
-        // 2. 8-second video from that still, ending at the next scene's frame
+        // 2. Generate video for this scene
         if (!scene.videoUrl) {
-          const nextScene = job.scenes[index + 1];
-          const endImage = (nextScene && nextScene.imageUrl) ? nextScene.imageUrl : null;
           const videoResult = await runChildTaskWithRetry({
             jobRef,
             job: { ...job, characters: job.characters || [] },
@@ -411,8 +431,8 @@ async function runDramaJob(jobId) {
               model: 'veo_3_1_lite',
               count: 1,
               durationSeconds: 8,
-              startImage: scene.imageUrl,
-              endImage,
+              startImage: imageUrl,
+              endImage: null,
               dramaJobId: jobId,
               sceneIndex: index,
               createdAt: Date.now()
@@ -422,11 +442,11 @@ async function runDramaJob(jobId) {
             progressUpdate: {
               status: 'generating',
               currentScene: index + 1,
-              progress: Math.round(((job.scenes.length + index) / totalSteps) * 100)
+              progress: Math.round(((index * 2 + 1) / (job.scenes.length * 2)) * 100)
             }
           });
           await updateScene(jobRef, index, { videoUrl: videoResult.url, status: 'video_completed' }, {
-            progress: Math.round(((job.scenes.length + index + 1) / totalSteps) * 100)
+            progress: Math.round(((index * 2 + 2) / (job.scenes.length * 2)) * 100)
           });
         }
       }
@@ -610,9 +630,6 @@ async function generateSceneMedia({
       });
       return { url: imageResult.url, taskId: imageResult.taskId, mediaType };
     }
-
-    const nextScene = script.scenes[sceneIndex + 1];
-    const endImage = (nextScene && nextScene.imageUrl) ? nextScene.imageUrl : null;
     const videoResult = await runChildTaskWithRetry({
       jobRef: scriptRef,
       job,
@@ -629,7 +646,7 @@ async function generateSceneMedia({
         count: 1,
         durationSeconds: 8,
         startImage: scene.imageUrl,
-        endImage,
+        endImage: null,
         dramaScriptId: scriptRef.id,
         sceneIndex,
         createdAt: Date.now()
