@@ -205,6 +205,17 @@ async function waitForAudioOutput(jobUid) {
   throw new Error(`Audio generation timed out for ${jobUid}`);
 }
 
+async function checkUrlExists(url) {
+  if (!url || typeof url !== 'string' || !url.startsWith('http')) return false;
+  try {
+    const res = await fetch(url, { method: 'HEAD' });
+    return res.status !== 404;
+  } catch (error) {
+    logger.warn(`[Drama] Error checking URL existence for ${url}: ${error.message}`);
+    return false;
+  }
+}
+
 async function generateDialogueAudio(text, voiceIndex = 0) {
   const jobUid = await audioClient.createJob(text, 'vi', Number(voiceIndex));
   await audioClient.startJob(jobUid);
@@ -351,7 +362,9 @@ async function runDramaJob(jobId) {
 
         // 1. Get or generate the start image for this scene
         let imageUrl = scene.imageUrl;
-        if (!imageUrl) {
+        const imgExists = await checkUrlExists(imageUrl);
+        if (!imageUrl || !imgExists) {
+          imageUrl = null; // force regeneration if missing or deleted
           if (index === 0) {
             // Scene 1: Generate initial still image
             const imageResult = await runChildTaskWithRetry({
@@ -382,6 +395,7 @@ async function runDramaJob(jobId) {
               }
             });
             imageUrl = imageResult.url;
+            scene.imageUrl = imageUrl;
             await updateScene(jobRef, index, { imageUrl, status: 'image_completed' }, {
               progress: Math.round(((index * 2 + 0.5) / (job.scenes.length * 2)) * 100)
             });
@@ -407,6 +421,7 @@ async function runDramaJob(jobId) {
             
             const lastFrameBuffer = await fsp.readFile(lastFramePath);
             imageUrl = await uploadToR2(lastFrameBuffer, `meo3/images/${jobId}_scene_${index + 1}_image.png`, 'image/png');
+            scene.imageUrl = imageUrl;
             await updateScene(jobRef, index, { imageUrl, status: 'image_completed' }, {
               progress: Math.round(((index * 2 + 0.5) / (job.scenes.length * 2)) * 100)
             });
@@ -415,7 +430,9 @@ async function runDramaJob(jobId) {
         }
 
         // 2. Generate video for this scene
-        if (!scene.videoUrl) {
+        let videoUrl = scene.videoUrl;
+        const vidExists = await checkUrlExists(videoUrl);
+        if (!videoUrl || !vidExists) {
           const videoResult = await runChildTaskWithRetry({
             jobRef,
             job: { ...job, characters: job.characters || [] },
@@ -445,6 +462,7 @@ async function runDramaJob(jobId) {
               progress: Math.round(((index * 2 + 1) / (job.scenes.length * 2)) * 100)
             }
           });
+          scene.videoUrl = videoResult.url;
           await updateScene(jobRef, index, { videoUrl: videoResult.url, status: 'video_completed' }, {
             progress: Math.round(((index * 2 + 2) / (job.scenes.length * 2)) * 100)
           });

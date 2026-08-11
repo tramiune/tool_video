@@ -2088,10 +2088,10 @@ function startFirestoreListener() {
 
             if (taskData.type === 'video') {
               videoScheduler.enqueue(taskId);
-              logger.info(`Task queued from Firestore: ${taskId} (type: video, prompt: "${taskData.prompt.substring(0, 20)}...")`);
+              logger.info(`Task queued from Firestore: ${taskId} (type: video, prompt: "${String(taskData.prompt || '').substring(0, 20)}...")`);
             } else {
               imageQueue.push(taskId);
-              logger.info(`Task queued from Firestore: ${taskId} (type: image, prompt: "${taskData.prompt.substring(0, 20)}...")`);
+              logger.info(`Task queued from Firestore: ${taskId} (type: image, prompt: "${String(taskData.prompt || '').substring(0, 20)}...")`);
               drainImageQueue();
             }
           }
@@ -2522,17 +2522,14 @@ async function cleanupOldTasks() {
       for (const doc of snapshot.docs) {
         const data = doc.data();
         const filesToDelete = [];
-        const isDramaAsset = data.dramaScriptId || data.dramaJobId || doc.id.includes('_scene_');
-        
-        if (!isDramaAsset) {
-          if (data.mediaUrl) filesToDelete.push(data.mediaUrl);
-          if (data.startImage && typeof data.startImage === 'string') filesToDelete.push(data.startImage);
-          if (data.endImage && typeof data.endImage === 'string') filesToDelete.push(data.endImage);
-          if (data.media && Array.isArray(data.media)) {
-            for (const m of data.media) {
-              if (m.url) filesToDelete.push(m.url);
-            }
+        if (data.mediaUrl) filesToDelete.push(data.mediaUrl);
+        if (data.startImage && typeof data.startImage === 'string') filesToDelete.push(data.startImage);
+        if (data.endImage && typeof data.endImage === 'string') filesToDelete.push(data.endImage);
+        if (data.media && Array.isArray(data.media)) {
+          for (const m of data.media) {
+            if (m.url) filesToDelete.push(m.url);
           }
+        }
 
           // Delete files from R2
           for (const url of filesToDelete) {
@@ -2544,12 +2541,10 @@ async function cleanupOldTasks() {
                   await deleteFromR2(fileKey);
                   logger.info(`Deleted file from Cloudflare R2: ${fileKey}`);
                 } catch (r2Err) {
-                  logger.error(`Failed to delete ${fileKey} from R2:`, r2Err);
                 }
               }
             }
           }
-        }
 
         // Add to Firestore batch delete
         batch.delete(doc.ref);
