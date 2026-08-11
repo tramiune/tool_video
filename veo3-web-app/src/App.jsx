@@ -4308,6 +4308,16 @@ function App() {
       setIsPreviewPlaying(false);
     };
 
+    const handlePreviewVideoEnded = () => {
+      if (activePreviewIndex < mergeVideoFiles.length - 1) {
+        setActivePreviewIndex(prev => prev + 1);
+        setIsPreviewPlaying(true);
+      } else {
+        setActivePreviewIndex(0);
+        setIsPreviewPlaying(false);
+      }
+    };
+
     const completedVideos = tasks.filter(t => t.type === 'video' && t.status === 'completed' && t.mediaUrl);
     const activeVideo = mergeVideoFiles[activePreviewIndex];
 
@@ -4353,8 +4363,8 @@ function App() {
                   key={activeVideo.id + "_" + isPreviewPlaying}
                   src={activeVideo.previewUrl} 
                   autoPlay={isPreviewPlaying}
-                  loop
                   playsInline
+                  onEnded={handlePreviewVideoEnded}
                   style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
                 />
               ) : (
