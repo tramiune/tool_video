@@ -100,28 +100,31 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
   
   if (channelType === 'sumo') {
     const themePrompt = inputTopic 
-      ? `Hãy sáng tạo một kịch bản phim ngắn 3D Pixar vui nhộn, mang tính giáo dục dinh dưỡng cho trẻ nhỏ về chủ đề cụ thể: "${inputTopic}".`
-      : 'Hãy tự sáng tạo ra một chủ đề hoạt hình dinh dưỡng trẻ em 3D Pixar ngẫu nhiên bất kỳ (lười ăn rau, tiêu hóa tốt, chất xơ, vitamin, ăn uống đa dạng...) thật vui vẻ kịch tính và viết kịch bản dựa trên chủ đề tự nghĩ đó.';
+      ? `Hãy sáng tạo một kịch bản phim hoạt hình 3D Pixar vui nhộn, giáo dục dinh dưỡng và quảng cáo sản phẩm Gạc Hươu Non Sumo về chủ đề cụ thể: "${inputTopic}".`
+      : 'Hãy tự sáng tạo ra một chủ đề kịch bản hoạt hình dinh dưỡng trẻ em 3D Pixar vui nhộn ngẫu nhiên bất kỳ (lười ăn rau, tiêu hóa tốt, chất xơ, vitamin, ăn uống đa dạng...) để quảng cáo sản phẩm Gạc Hươu Non Sumo.';
       
-    systemPrompt = 'Bạn là biên kịch phim hoạt hình 3D Pixar vui nhộn, giáo dục dinh dưỡng cho trẻ em Việt Nam dạng dọc (9:16). '
+    systemPrompt = 'Bạn là biên kịch chuyên nghiệp viết phim hoạt hình 3D Pixar vui nhộn, đáng yêu, giáo dục dinh dưỡng trẻ em Việt Nam kết hợp quảng cáo thương hiệu Gạc Hươu Non SUMO dạng dọc (9:16). '
       + 'Tuân thủ chính xác schema JSON được yêu cầu, không xuất thêm gì khác.';
       
     userPrompts = [
       themePrompt,
-      'Kịch bản cần có tính giáo dục, vui nhộn và kịch tính nhẹ nhàng cho trẻ em. Hai nhân vật bắt buộc xuất hiện xuyên suốt kịch bản là bé Bin (5 tuổi đáng yêu, lười ăn rau) và chú hươu Sumo (chuyên gia dinh dưỡng thông thái, đi bằng 2 chân, luôn đưa ra các giải pháp dinh dưỡng và sản phẩm Gạc Hươu Non SUMO). Có thể thêm nhân vật thứ 3 là "Bạn học" hoặc "Mẹ".',
+      'KỊCH BẢN PHẢI MANG TINH THẦN VUI TƯƠI, TRẺ THƠ, DỄ THƯƠNG. Có đúng 3 nhân vật xuất hiện xuyên suốt kịch bản: bé Bin (5 tuổi đáng yêu, mặc áo thun kẻ sọc ngang xanh-cam-trắng và quần đùi xanh), chú hươu Sumo (chuyên gia dinh dưỡng thông thái, đi bằng 2 chân, luôn mặc áo choàng đỏ và thắt nơ đỏ ở cổ - red cape and red bowtie), và nhân vật phụ thứ 3 (Bạn học hoặc Mẹ bé Bin).',
+      'CẤU TRÚC KỊCH BẢN BẮT BUỘC ĐÚNG 5 CẢNH (MAX_SCENES = 5):',
+      '- Cảnh 1 (Hook): Bin đưa ra một tuyên bố ngộ nghĩnh hoặc lười ăn rau/món ăn đa dạng trong bữa ăn/buổi dã ngoại. Bạn học hoặc mẹ ngạc nhiên. Chú hươu Sumo xuất hiện bất ngờ.',
+      '- Cảnh 2 (Tranh luận/Giải thích): Bin thắc mắc hỏi Sumo tại sao phải ăn nhiều thứ. Sumo dùng kiến thức khoa học vui nhộn, dễ hiểu cho trẻ em giải thích vai trò của dinh dưỡng (rau xanh, chất xơ, vitamin, protein...).',
+      '- Cảnh 3 (Thử thách): Sumo đưa ra một thử thách thú vị (ví dụ: tạo đĩa ăn cầu vồng đa dạng đồ ăn tốt cho cơ thể). Bin tham gia thực hiện hào hứng.',
+      '- Cảnh 4 (Quảng cáo sản phẩm): Bin băn khoăn nếu có những ngày ăn chưa đủ chất/lười ăn thì sao. Chú hươu Sumo giới thiệu sản phẩm GẠC HƯƠU NON SUMO (chứa nhung hươu cô đặc, Vitamin C, Kẽm, Fructooligosaccharides và hỗn hợp 5 loại trái cây nhiệt đới: cam, xoài, ổi, chuối, chanh dây) giúp bổ sung dinh dưỡng dễ dàng và thơm ngon.',
+      '- Cảnh 5 (Kết thúc & Tương tác): Bin thay đổi suy nghĩ, vui vẻ ăn đa dạng hơn. Bin hướng về camera đưa ra một câu hỏi tương tác thú vị đố khán giả xem video để kích thích bình luận.',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
       '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
       '- title: tiêu đề kịch bản hoạt hình, ngắn gọn, vui nhộn (tiếng Việt).',
-      '- characters: đúng 3 nhân vật (vd: "Bin", "Sumo", "Bạn" hoặc "Mẹ"), mỗi người có role và description ngắn.',
-      '- baseImagePrompt: prompt tiếng Anh mô tả khung cảnh picnic/công viên/nhà ở + phong cách 3D Pixar hoạt hình (vd: "A 3D Pixar-style school picnic in a bright green sunny park, cinematic lighting..."), vertical 9:16.',
-      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình đó), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
-      '- YÊU CẦU QUAN TRỌNG VỀ THOẠI (DIALOGUE):',
-      '  * Bắt buộc cảnh nào cũng phải có thoại. Mảng dialogue của mỗi cảnh chỉ được phép chứa đúng 1 câu thoại duy nhất của 1 nhân vật (1 người nói duy nhất mỗi cảnh, không có đối thoại qua lại trong cùng 1 cảnh).',
-      '  * Mỗi câu thoại phải đủ dài để đọc/nói chậm rãi trong khoảng 7 đến 8 giây (độ dài kịch bản thoại khoảng 25-35 từ tiếng Việt), diễn đạt vui nhộn, dễ hiểu cho trẻ nhỏ, tránh thoại ngắn cụt lủn.',
+      '- characters: đúng 3 nhân vật như yêu cầu, kèm vai trò và mô tả chi tiết ngoại hình.',
+      '- baseImagePrompt: mô tả bối cảnh ngoài trời/picnic/công viên rực rỡ + phong cách hoạt hình 3D Pixar, vertical 9:16.',
+      `- scenes: đúng 5 cảnh theo cấu trúc trên. Mỗi cảnh có title, description (mô tả cảnh bằng tiếng Anh), imagePrompt (prompt vẽ ảnh tiếng Anh mô tả bối cảnh tĩnh, nhân vật Bin đứng yên bên trái, Sumo đứng yên bên phải mặc áo choàng đỏ nơ đỏ), videoPrompt (prompt tiếng Anh cho clip 8s mô tả chuyển động cơ thể nhẹ nhàng và mấp máy miệng khi nói thoại), và dialogue (mảng thoại tiếng Việt, mỗi cảnh chỉ được chứa đúng 1 câu thoại duy nhất của nhân vật chính trong cảnh đó, dài từ 25-35 từ để khớp 8 giây).`,
       'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH & VỊ TRÍ NHÂN VẬT:',
-      '- Cảnh 1 (Scene 1) PHẢI chứa đầy đủ tất cả các nhân vật trong characters cùng xuất hiện trong một khung hình (ví dụ: mô tả rõ cả bé Bin, chú hươu Sumo và bạn bè đứng ở thảm dã ngoại). Mô tả chi tiết ngoại hình đáng yêu của họ ngay trong Cảnh 1.',
-      '- Các nhân vật tuyệt đối KHÔNG ĐƯỢC phép di chuyển đi đâu hết, không được di chuyển/chạy ra khỏi vị trí đứng ban đầu của họ xuyên suốt kịch bản. Ví dụ: Nếu Bin đứng bên trái, Sumo đứng bên phải ở Cảnh 1, thì trong các cảnh 2, 3, 4, 5, 6 cả hai vẫn phải đứng yên tại vị trí đó, tuyệt đối không đi lại, không thay đổi vị trí đứng.',
-      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả cực kỳ rõ ràng vị trí đứng cố định sát hai bên rìa của từng nhân vật bằng tiếng Anh (ví dụ: "Bin is standing completely static on the far left side, Sumo is standing completely static on the far right side. Both characters remain fixed in their spots, talking with subtle facial expressions and natural lip movements, without walking or shifting positions. Sumo always stands upright on two legs. Once the dialogue speech ends, they must freeze completely in their final static pose, remaining totally motionless for the remaining seconds of the video without any body movement, actions, or gestures"). Giữ nguyên vị trí cực hạn cố định này nhất quán xuyên suốt các cảnh.',
+      '- Cảnh 1 (Scene 1) PHẢI mô tả rõ cả bé Bin, chú hươu Sumo (mặc áo choàng đỏ nơ đỏ) và bạn bè. Mô tả chi tiết ngoại hình của họ ngay trong Cảnh 1.',
+      '- Các nhân vật tuyệt đối KHÔNG ĐƯỢC phép di chuyển đi đâu hết, không được di chuyển/chạy ra khỏi vị trí đứng ban đầu của họ xuyên suốt kịch bản. Ví dụ: Nếu Bin đứng bên trái, Sumo đứng bên phải ở Cảnh 1, thì trong các cảnh 2, 3, 4, 5 cả hai vẫn phải đứng yên tại vị trí đó, tuyệt đối không đi lại, không thay đổi vị trí đứng.',
+      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả cực kỳ rõ ràng vị trí đứng cố định sát hai bên rìa của từng nhân vật bằng tiếng Anh (ví dụ: "Bin is standing completely static on the far left side, Sumo is standing completely static on the far right side. Sumo is a friendly deer character wearing a red cape and a red bowtie on his neck, standing upright on two legs. Both characters remain fixed in their spots, talking with subtle facial expressions and natural lip movements, without walking or shifting positions. Once the dialogue speech ends, they must freeze completely in their final static pose, remaining totally motionless for the remaining seconds of the video without any body movement, actions, or gestures"). Giữ nguyên vị trí cực hạn cố định này nhất quán xuyên suốt các cảnh.',
       '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ];
   } else {
