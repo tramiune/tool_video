@@ -1452,6 +1452,17 @@ app.get('/api/drama/scripts', requireDramaAccess, async (req, res) => {
           },
           {
             index: 2,
+            title: 'Hậu quả kịch tính nhẹ',
+            description: 'Pixar-style 3D animation, picnic park. Sumo points toward a friendly colorful educational diagram of a tummy showing digest process. Bin is looking at the tummy diagram with a surprised realization face.',
+            imagePrompt: 'Pixar-style 3D animation, picnic park. Chú hươu Sumo points toward a friendly colorful educational diagram of a happy tummy showing digest process. Bin is looking at the tummy diagram with a surprised realization face. Warm soft light, clean 3D illustration. IMPORTANT CHARACTER CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
+            videoPrompt: 'Duration: exactly 8 seconds. Vertical 9:16. Sumo explains the tummy digestive system while pointing to the diagram. Bin listens with growing concern, realizing that only eating one food makes his tummy work too hard. Dialogue: Sumo: "Nếu chỉ ăn một món yêu thích, cơ thể sẽ thiếu chất xơ và vitamin, bụng của Bin sẽ lười biếng và tiêu hóa rất vất vả đấy!" Bin: "A! Tớ không muốn bụng tớ bị đau đâu!"',
+            dialogue: [
+              { speaker: 'Sumo', text: 'Nếu chỉ ăn một món yêu thích, cơ thể sẽ thiếu chất xơ và vitamin, bụng của Bin sẽ lười biếng và tiêu hóa rất vất vả đấy!' },
+              { speaker: 'Bin', text: 'A! Tớ không muốn bụng tớ bị đau đâu!' }
+            ]
+          },
+          {
+            index: 3,
             title: 'Thử thách đĩa ăn cầu vồng',
             description: 'Pixar-style 3D animation, school picnic challenge. A large clean plate with rice, egg, vegetables, fruits.',
             imagePrompt: 'Pixar-style 3D animation, colorful school picnic challenge. A large clean plate sits on a picnic table. Bin excitedly chooses different foods and places them onto the plate: rice, egg, green vegetables and colorful tropical fruits. Chú hươu Sumo stands beside him like a friendly nutrition coach, smiling and guiding Bin. The plate gradually becomes colorful and balanced-looking. Bright sunlight, fun educational challenge, cinematic Pixar-quality 3D animation, vibrant but natural colors. IMPORTANT CHARACTER CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
@@ -1464,7 +1475,7 @@ app.get('/api/drama/scripts', requireDramaAccess, async (req, res) => {
             ]
           },
           {
-            index: 3,
+            index: 4,
             title: 'Sumo đưa gói Gạc Hươu Non',
             description: 'Pixar-style 3D animation, child nutrition scene. Sumo holds a pouch of Gạc Hươu Non Sumo, Bin looks curious.',
             imagePrompt: 'Pixar-style 3D animation, premium children\'s nutrition scene at a sunny school picnic. Bin sits beside a colorful picnic table while Chú hươu Sumo stands beside him holding one clearly visible pouch of GẠC HƯƠU NON SUMO. Keep the product packaging clean, premium and visually consistent. Around the product are five tropical fruit icons: orange, mango, guava, banana and passion fruit, together with simple Vitamin C, Zinc and fructooligosaccharide educational symbols. Bin looks curious and interested. Warm natural sunlight, premium children\'s nutrition advertising style, cinematic 3D animation. IMPORTANT CHARACTER AND PRODUCT CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Keep GẠC HƯƠU NON SUMO packaging visually consistent and unchanged. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
@@ -1478,7 +1489,7 @@ app.get('/api/drama/scripts', requireDramaAccess, async (req, res) => {
             ]
           },
           {
-            index: 4,
+            index: 5,
             title: 'Cú chốt gây tranh luận',
             description: 'Pixar-style 3D animation, ending picnic. Bin points to camera, Sumo stands beside smiling.',
             imagePrompt: 'Pixar-style 3D animation, beautiful sunny school picnic ending. Bin stands beside a colorful picnic table with a diverse plate of food. His favorite food is also visible beside the plate. Chú hươu Sumo stands next to Bin with a proud friendly smile. Bin points directly toward the camera with a playful challenging expression. Behind them are floating colorful food icons and a large glowing number "3". Several classmates look curious and excited. Cinematic golden sunlight, energetic educational children\'s content, high-quality Pixar-style 3D animation. IMPORTANT CHARACTER CONSISTENCY: Do not change the appearance, details, colors, clothing, proportions, facial features, accessories, antlers, ears, eyes, body shape, or any body parts of Bin and Chú hươu Sumo throughout the entire video. Keep both characters exactly identical in every scene. Chú hươu Sumo must always stand upright and walk ONLY on TWO LEGS.',
