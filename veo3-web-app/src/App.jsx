@@ -4191,27 +4191,7 @@ function App() {
 
   const uploadSingleFileToBackend = async (file) => {
     const paths = await uploadFilesLocally([file]);
-    const url = paths[0] || null;
-    if (url && user) {
-      try {
-        await addDoc(collection(db, 'tasks'), {
-          userId: user.uid,
-          userEmail: user.email,
-          prompt: 'Ảnh tải lên',
-          type: 'image',
-          status: 'completed',
-          mediaUrl: url,
-          error: null,
-          model: null,
-          aspectRatio: null,
-          referenceImages: [],
-          createdAt: Date.now()
-        });
-      } catch (error) {
-        console.error('Failed to save uploaded image to library:', error);
-      }
-    }
-    return url;
+    return paths[0] || null;
   };
 
   const handleStartFileSelect = (file) => {
