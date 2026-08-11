@@ -1388,26 +1388,26 @@ app.get('/api/drama/scripts', requireAdmin, async (req, res) => {
 app.post('/api/drama/scripts', requireAdmin, async (req, res) => {
   try {
     const topic = String(req.body?.topic || '').trim();
+    
+    // Auto-generate the full script content using Gemini on creation
+    const draft = await drama.generateDramaScript({ topic });
+    
     const ref = db.collection('drama_scripts').doc();
     const now = Date.now();
     const data = {
       userId: req.authUser.uid,
       userEmail: req.authUser.email,
       topic,
-      title: '',
-      characters: [],
-      baseImagePrompt: '',
-      scenes: [],
-      episodes: [],
+      ...drama.normalizeDramaScript(draft),
       status: 'draft',
       createdAt: now,
       updatedAt: now
     };
     await ref.set(data);
-    logger.info(`[Drama] Created script for ${req.authUser.email} (${topic || 'mẹ chồng nàng dâu'})`);
-    return res.status(201).json({ success: true, script: { id: ref.id, ...drama.normalizeDramaScript(data), updatedAt: now } });
+    logger.success(`[Drama] Created and generated script for ${req.authUser.email}: ${draft.title}`);
+    return res.status(201).json({ success: true, script: { id: ref.id, ...data } });
   } catch (error) {
-    logger.error('Drama script creation failed', error);
+    logger.error('Drama script creation and generation failed', error);
     return res.status(500).json({ error: error.message });
   }
 });

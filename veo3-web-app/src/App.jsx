@@ -2516,7 +2516,7 @@ function App() {
                   onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); createDramaScript(); } }}
                 />
                 <button type="button" className="glass-button" onClick={createDramaScript} disabled={dramaSaving} style={{ padding: '12px 18px', background: dramaSaving ? undefined : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', opacity: dramaSaving ? 0.5 : 1 }}>
-                  {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Plus size={17} />} Tạo kịch bản
+                  {dramaSaving ? <Loader size={17} className="spin-loader" /> : <Plus size={17} />} {dramaSaving ? 'Đang tạo bằng AI...' : 'Tạo kịch bản'}
                 </button>
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', margin: 0 }}>Tạo kịch bản trước, rồi bấm "Sinh kịch bản bằng AI" để AI viết nội dung. Sau đó duyệt và bấm "Tạo video".</p>
