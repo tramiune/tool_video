@@ -5029,34 +5029,6 @@ function App() {
             <img src="/zalo.svg" alt="Zalo" style={{ width: '20px', height: '20px' }} />
           </a>
 
-          {/* Tools Directory Button */}
-          <button
-            type="button"
-            onClick={() => {
-              window.location.hash = '#tools';
-              setIsToolsView(true);
-            }}
-            title="Danh sách công cụ AI"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '32px',
-              height: '32px',
-              padding: '0',
-              background: isToolsView ? 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)' : 'rgba(255,255,255,0.06)',
-              border: isToolsView ? 'none' : '1px solid rgba(255,255,255,0.12)',
-              borderRadius: '50%',
-              color: isToolsView ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseOver={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.borderColor = '#a78bfa'; e.currentTarget.style.color = '#a78bfa'; }}
-            onMouseOut={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = isToolsView ? 'transparent' : 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = isToolsView ? '#fff' : 'var(--text-secondary)'; }}
-          >
-            <LayoutGrid size={15} />
-          </button>
-
           {/* Avatar Dropdown Container */}
           <div style={{ position: 'relative' }} ref={userDropdownRef}>
             <div 
@@ -5257,6 +5229,43 @@ function App() {
               </div>
             )}
           </div>
+
+          {/* Tools Directory Button */}
+          <button
+            type="button"
+            onClick={() => {
+              window.location.hash = '#tools';
+              setIsToolsView(true);
+            }}
+            title="Danh sách công cụ AI"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '6px 14px',
+              background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+              border: 'none',
+              borderRadius: '20px',
+              color: '#fff',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease-in-out',
+              boxShadow: '0 0 14px rgba(139, 92, 246, 0.4)',
+              fontWeight: 'bold',
+              height: '32px'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+              e.currentTarget.style.boxShadow = '0 0 20px rgba(236, 72, 153, 0.6)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 0 14px rgba(139, 92, 246, 0.4)';
+            }}
+          >
+            <LayoutGrid size={14} />
+            <span style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.3px' }}>Công cụ AI</span>
+          </button>
         </div>
       </header>
 
