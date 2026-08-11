@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid } from 'lucide-react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid, ArrowUp, ArrowDown } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -416,6 +416,11 @@ function App() {
 
   const [isDramaView, setIsDramaView] = useState(false);
   const [isToolsView, setIsToolsView] = useState(false);
+  const [isMergeVideoView, setIsMergeVideoView] = useState(false);
+  const [mergeVideoFiles, setMergeVideoFiles] = useState([]); // Array of { id, file, name, previewUrl }
+  const [isMergingVideo, setIsMergingVideo] = useState(false);
+  const [mergedVideoUrl, setMergedVideoUrl] = useState(null);
+  const [mergeError, setMergeError] = useState(null);
   const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 73, y: window.innerHeight - 330 });
   const isDraggingToolsBtn = useRef(false);
   const toolsBtnDragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
@@ -565,6 +570,7 @@ function App() {
       const isHashAudio = hash === '#audio';
       const isHashDrama = hash === '#drama';
       const isHashTools = hash === '#tools';
+      const isHashMergeVideo = hash === '#merge-video';
       
       if (isHashAdmin || isHashAutoTool) {
         if (!user) {
@@ -595,12 +601,22 @@ function App() {
           return;
         }
       }
+
+      if (isHashMergeVideo) {
+        if (!user) {
+          window.location.hash = '';
+          setIsMergeVideoView(false);
+          return;
+        }
+      }
+
       setIsAdminView(isHashAdmin);
       setIsAutoToolView(isHashAutoTool);
       setIsTryOnView(isHashTryOn);
       setIsAudioView(isHashAudio);
       setIsDramaView(isHashDrama);
       setIsToolsView(isHashTools);
+      setIsMergeVideoView(isHashMergeVideo);
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
@@ -2692,6 +2708,69 @@ function App() {
             </div>
           </div>
 
+          {/* Card 1.5: Video Merge Tool */}
+          <div 
+            className="glass-panel" 
+            onClick={() => { window.location.hash = '#merge-video'; }}
+            style={{
+              padding: 0,
+              overflow: 'hidden',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              border: '1px solid rgba(139, 92, 246, 0.2)',
+              position: 'relative'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'translateY(-6px)';
+              e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.6)';
+              e.currentTarget.style.boxShadow = '0 12px 30px rgba(139, 92, 246, 0.15)';
+              const img = e.currentTarget.querySelector('.tool-img');
+              if (img) img.style.transform = 'scale(1.05)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.2)';
+              e.currentTarget.style.boxShadow = 'none';
+              const img = e.currentTarget.querySelector('.tool-img');
+              if (img) img.style.transform = 'scale(1)';
+            }}
+          >
+            <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(139, 92, 246, 0.15)' }}>
+              <img 
+                src="/video_merge_preview.jpg" 
+                alt="Video Merge Tool Preview" 
+                className="tool-img"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+              />
+            </div>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.25rem' }}>🎬</span>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#a78bfa' }}>Ghép Video AI</h3>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                Ghép nối các đoạn video ngắn thành một video hoàn chỉnh. Hỗ trợ thay đổi thứ tự, xem trước và xuất video chất lượng cao với âm thanh sắc nét.
+              </p>
+              <button 
+                type="button" 
+                className="glass-button"
+                style={{ 
+                  width: '100%', 
+                  padding: '12px', 
+                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                  border: 'none',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  marginTop: '10px'
+                }}
+              >
+                Trải nghiệm ngay
+              </button>
+            </div>
+          </div>
+
           {/* Card 2: Drama Tool */}
           <div 
             className="glass-panel" 
@@ -4112,6 +4191,322 @@ function App() {
     );
   };
 
+  const renderMergeVideoView = () => {
+    const handleFileChange = (e) => {
+      const selectedFiles = Array.from(e.target.files || []);
+      if (selectedFiles.length === 0) return;
+
+      const newItems = selectedFiles.map(file => ({
+        id: Math.random().toString(36).substr(2, 9),
+        file: file,
+        name: file.name,
+        previewUrl: URL.createObjectURL(file)
+      }));
+
+      setMergeVideoFiles(prev => [...prev, ...newItems]);
+      e.target.value = '';
+    };
+
+    const handleMoveUp = (index) => {
+      if (index === 0) return;
+      setMergeVideoFiles(prev => {
+        const copy = [...prev];
+        const temp = copy[index];
+        copy[index] = copy[index - 1];
+        copy[index - 1] = temp;
+        return copy;
+      });
+    };
+
+    const handleMoveDown = (index) => {
+      setMergeVideoFiles(prev => {
+        if (index === prev.length - 1) return prev;
+        const copy = [...prev];
+        const temp = copy[index];
+        copy[index] = copy[index + 1];
+        copy[index + 1] = temp;
+        return copy;
+      });
+    };
+
+    const handleRemoveFile = (id, previewUrl) => {
+      setMergeVideoFiles(prev => prev.filter(item => item.id !== id));
+      try {
+        URL.revokeObjectURL(previewUrl);
+      } catch (e) {}
+    };
+
+    const handleMergeVideos = async () => {
+      if (mergeVideoFiles.length < 2) {
+        alert("Cậu vui lòng chọn tối thiểu 2 video để thực hiện ghép nhé! 🥺");
+        return;
+      }
+
+      setIsMergingVideo(true);
+      setMergeError(null);
+      setMergedVideoUrl(null);
+
+      try {
+        const formData = new FormData();
+        mergeVideoFiles.forEach(item => {
+          formData.append('videos', item.file);
+        });
+
+        const token = await user.getIdToken();
+        const response = await fetch(`${API_BASE}/api/video/merge`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || data.message || `Lỗi server: ${response.status}`);
+        }
+
+        setMergedVideoUrl(data.url);
+      } catch (err) {
+        console.error(err);
+        setMergeError("Ghép video không thành công: " + err.message);
+      } finally {
+        setIsMergingVideo(false);
+      }
+    };
+
+    const handleReset = () => {
+      mergeVideoFiles.forEach(item => {
+        try { URL.revokeObjectURL(item.previewUrl); } catch (e) {}
+      });
+      setMergeVideoFiles([]);
+      setMergedVideoUrl(null);
+      setMergeError(null);
+    };
+
+    return (
+      <div className="container" style={{ maxWidth: '800px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.8rem' }}>🎬</span>
+              <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2rem)', fontWeight: '800', margin: 0, background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                Ghép Video AI
+              </h1>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px', margin: 0 }}>
+              Tải lên nhiều video ngắn, sắp xếp thứ tự và ghép chúng thành một sản phẩm hoàn thiện.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.hash = '#tools'; }}
+            className="glass-button"
+            style={{ width: '40px', height: '40px', padding: 0, borderRadius: '50%', flexShrink: 0 }}
+            title="Quay lại danh sách công cụ"
+          >
+            <ArrowLeft size={18} />
+          </button>
+        </div>
+
+        {/* Main Interface Layout */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Form Card */}
+          <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>📥</span> Bước 1: Tải lên video cần ghép
+            </h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed rgba(139, 92, 246, 0.3)', borderRadius: '12px', padding: '32px 16px', background: 'rgba(139, 92, 246, 0.02)', textAlign: 'center', position: 'relative', cursor: 'pointer', transition: 'all 0.2s' }}
+                 onMouseOver={(e) => { e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.6)'; e.currentTarget.style.background = 'rgba(139, 92, 246, 0.04)'; }}
+                 onMouseOut={(e) => { e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.3)'; e.currentTarget.style.background = 'rgba(139, 92, 246, 0.02)'; }}
+                 onClick={() => document.getElementById('merge-video-input').click()}
+            >
+              <input 
+                type="file" 
+                id="merge-video-input" 
+                multiple 
+                accept="video/*" 
+                onChange={handleFileChange} 
+                style={{ display: 'none' }} 
+              />
+              <span style={{ fontSize: '2.5rem', marginBottom: '10px' }}>🎥</span>
+              <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>Bấm vào đây để chọn video từ thiết bị</span>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Hỗ trợ chọn nhiều file cùng lúc</span>
+            </div>
+
+            {mergeVideoFiles.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
+                    Danh sách các clip ({mergeVideoFiles.length}):
+                  </span>
+                  <button 
+                    onClick={handleReset} 
+                    style={{ background: 'rgba(239, 68, 68, 0.12)', border: 'none', borderRadius: '6px', color: '#ef4444', fontSize: '0.75rem', fontWeight: 'bold', padding: '6px 12px', cursor: 'pointer' }}
+                  >
+                    Xóa tất cả
+                  </button>
+                </div>
+
+                {/* Video items list */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {mergeVideoFiles.map((item, index) => (
+                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px' }}>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 'bold', color: 'var(--text-secondary)', width: '20px' }}>
+                        #{index + 1}
+                      </span>
+                      
+                      {/* Video Thumbnail/Preview */}
+                      <video src={item.previewUrl} style={{ width: '60px', height: '45px', borderRadius: '4px', objectFit: 'cover', background: '#000' }} muted playsInline />
+
+                      {/* File Info */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                          {item.name}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                          {(item.file.size / (1024 * 1024)).toFixed(2)} MB
+                        </div>
+                      </div>
+
+                      {/* Reorder Buttons */}
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveUp(index)}
+                          disabled={index === 0}
+                          style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', color: '#fff', cursor: index === 0 ? 'not-allowed' : 'pointer', opacity: index === 0 ? 0.3 : 1 }}
+                        >
+                          <ArrowUp size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveDown(index)}
+                          disabled={index === mergeVideoFiles.length - 1}
+                          style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', color: '#fff', cursor: index === mergeVideoFiles.length - 1 ? 'not-allowed' : 'pointer', opacity: index === mergeVideoFiles.length - 1 ? 0.3 : 1 }}
+                        >
+                          <ArrowDown size={14} />
+                        </button>
+                      </div>
+
+                      {/* Remove Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFile(item.id, item.previewUrl)}
+                        style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '6px', color: '#ef4444', cursor: 'pointer' }}
+                        title="Xóa clip"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Merge Trigger Button */}
+          {mergeVideoFiles.length >= 2 && !mergedVideoUrl && (
+            <button
+              type="button"
+              onClick={handleMergeVideos}
+              disabled={isMergingVideo}
+              style={{
+                width: '100%',
+                padding: '16px',
+                background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+                border: 'none',
+                borderRadius: '12px',
+                color: '#fff',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.boxShadow = '0 0 25px rgba(236, 72, 153, 0.6)'; }}
+              onMouseOut={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 0 20px rgba(139, 92, 246, 0.4)'; }}
+            >
+              {isMergingVideo ? (
+                <>
+                  <span className="spin" style={{ width: '18px', height: '18px', border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />
+                  Đang ghép và xuất video... Cậu chờ xíu nhé... ☕
+                </>
+              ) : (
+                <>
+                  <span>⚡</span> Bắt đầu ghép & xuất video hoàn chỉnh
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Error Message */}
+          {mergeError && (
+            <div style={{ padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', color: '#f87171', fontSize: '0.85rem' }}>
+              {mergeError}
+            </div>
+          )}
+
+          {/* Export Output Panel */}
+          {mergedVideoUrl && (
+            <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.02)' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🎉</span> Xuất video thành công!
+              </h3>
+              
+              <video src={mergedVideoUrl} controls style={{ width: '100%', borderRadius: '12px', background: '#000', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }} />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <a 
+                  href={`${API_BASE}/api/download?url=${encodeURIComponent(mergedVideoUrl)}&filename=video_ghep_hoan_chinh.mp4`}
+                  download="video_ghep_hoan_chinh.mp4"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '14px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                    textDecoration: 'none',
+                    textAlign: 'center',
+                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  <Download size={16} /> Tải Video xuống
+                </a>
+                <button 
+                  onClick={handleReset}
+                  style={{
+                    padding: '14px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  Ghép tiếp video khác
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderTryOnView = () => {
     return (
       <div className="container" style={{ maxWidth: '800px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
@@ -5067,6 +5462,9 @@ function App() {
     }
     if (isDramaView) {
       return renderDramaView();
+    }
+    if (isMergeVideoView) {
+      return renderMergeVideoView();
     }
     return null;
   };

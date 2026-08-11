@@ -1698,6 +1698,76 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
   }
 });
 
+app.post('/api/video/merge', upload.array('videos', 15), async (req, res) => {
+  const tempFiles = [];
+  let listFilePath = null;
+  let outputFilePath = null;
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "Không tìm thấy video để ghép." });
+    }
+
+    const files = req.files;
+    files.forEach(f => tempFiles.push(f.path));
+
+    const listContent = files.map(f => `file '${f.path}'`).join('\n');
+    const uniqueId = uuidv4();
+    listFilePath = path.join(__dirname, `../uploads/list_${uniqueId}.txt`);
+    outputFilePath = path.join(__dirname, `../uploads/merged_${uniqueId}.mp4`);
+
+    fs.writeFileSync(listFilePath, listContent);
+
+    // Run ffmpeg concat demuxer
+    const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+    const args = [
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', listFilePath,
+      '-c', 'copy',
+      outputFilePath
+    ];
+
+    logger.info(`Stitching ${files.length} videos using ffmpeg...`);
+    
+    await new Promise((resolve, reject) => {
+      const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`FFmpeg exited with code ${code}: ${stderr}`));
+      });
+      child.on('error', (err) => {
+        reject(err);
+      });
+    });
+
+    // Upload the merged video to R2
+    const fileBuffer = fs.readFileSync(outputFilePath);
+    const fileName = `meo3/outputs/merged_${uniqueId}.mp4`;
+    logger.info(`Uploading merged video to R2: ${fileName}...`);
+    const r2Url = await uploadToR2(fileBuffer, fileName, 'video/mp4');
+
+    res.json({ success: true, url: r2Url });
+
+  } catch (err) {
+    logger.error('Video merge endpoint failed', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    tempFiles.forEach(p => {
+      try { fs.unlinkSync(p); } catch (e) {}
+    });
+    if (listFilePath) {
+      try { fs.unlinkSync(listFilePath); } catch (e) {}
+    }
+    if (outputFilePath) {
+      try { fs.unlinkSync(outputFilePath); } catch (e) {}
+    }
+  }
+});
+
 // Proxy download to force attachment headers (works on mobile, ported from ai_web3)
 // Only allows media from our own R2 bucket / audio upstream (prevents SSRF).
 const ALLOWED_DOWNLOAD_HOSTS = [
