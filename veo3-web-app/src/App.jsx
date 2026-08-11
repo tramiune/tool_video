@@ -416,7 +416,7 @@ function App() {
 
   const [isDramaView, setIsDramaView] = useState(false);
   const [isToolsView, setIsToolsView] = useState(false);
-  const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 160, y: window.innerHeight - 280 });
+  const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 62, y: window.innerHeight - 340 });
   const isDraggingToolsBtn = useRef(false);
   const toolsBtnDragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const hasDraggedToolsBtn = useRef(false);
@@ -623,9 +623,9 @@ function App() {
       let newY = toolsBtnDragStart.current.posY + deltaY;
       
       // Boundaries check (keep it inside viewport, above the bottom input area)
-      const btnWidth = 130;
-      const btnHeight = 44;
-      const bottomLimit = window.innerHeight - 220; // Clear the bottom 220px text input panel
+      const btnWidth = 42;
+      const btnHeight = 92;
+      const bottomLimit = window.innerHeight - 220 - btnHeight; // Clear the bottom 220px text input panel
       newX = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, newX));
       newY = Math.max(10, Math.min(bottomLimit, newY));
       
@@ -651,9 +651,9 @@ function App() {
     // Resize handler to keep button on-screen
     const handleResize = () => {
       setToolsBtnPosition(prev => {
-        const btnWidth = 130;
-        const btnHeight = 44;
-        const bottomLimit = window.innerHeight - 220;
+        const btnWidth = 42;
+        const btnHeight = 92;
+        const bottomLimit = window.innerHeight - 220 - btnHeight;
         const newX = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, prev.x));
         const newY = Math.max(10, Math.min(bottomLimit, prev.y));
         return { x: newX, y: newY };
@@ -1198,7 +1198,6 @@ function App() {
       <div
         onMouseDown={onMouseDown}
         onTouchStart={onTouchStart}
-        onClick={onClick}
         style={{
           position: 'fixed',
           left: `${toolsBtnPosition.x}px`,
@@ -1208,33 +1207,83 @@ function App() {
           userSelect: 'none',
           touchAction: 'none', // Prevents scrolling while dragging on mobile
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
           gap: '8px',
-          padding: '10px 18px',
-          background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-          borderRadius: '30px',
-          boxShadow: '0 0 20px rgba(139, 92, 246, 0.6), 0 4px 10px rgba(0,0,0,0.4)',
-          border: '1px solid rgba(255,255,255,0.2)',
-          color: '#fff',
-          transition: isDraggingToolsBtn.current ? 'none' : 'transform 0.2s, box-shadow 0.2s',
-          animation: 'pulse 3s infinite',
-          fontWeight: 'bold',
-          whiteSpace: 'nowrap'
-        }}
-        onMouseOver={(e) => {
-          if (!isDraggingToolsBtn.current) {
-            e.currentTarget.style.transform = 'scale(1.06)';
-            e.currentTarget.style.boxShadow = '0 0 25px rgba(236, 72, 153, 0.8), 0 6px 12px rgba(0,0,0,0.5)';
-          }
-        }}
-        onMouseOut={(e) => {
-          e.currentTarget.style.transform = 'scale(1)';
-          e.currentTarget.style.boxShadow = '0 0 20px rgba(139, 92, 246, 0.6), 0 4px 10px rgba(0,0,0,0.4)';
+          transition: isDraggingToolsBtn.current ? 'none' : 'transform 0.2s'
         }}
       >
-        <LayoutGrid size={15} style={{ pointerEvents: 'none' }} />
-        <span style={{ fontSize: '0.82rem', fontWeight: '800', letterSpacing: '0.4px', pointerEvents: 'none' }}>Công cụ AI</span>
+        {/* Zalo Floating Button (Top of Stack) */}
+        <a
+          href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Tham gia nhóm Zalo hỗ trợ"
+          onClick={(e) => {
+            if (hasDraggedToolsBtn.current) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '42px',
+            height: '42px',
+            borderRadius: '50%',
+            background: '#ffffff',
+            border: '1px solid rgba(0, 104, 255, 0.2)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            cursor: 'pointer',
+            transition: 'transform 0.2s',
+            zIndex: 99999
+          }}
+          onMouseOver={(e) => {
+            if (!isDraggingToolsBtn.current) {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.filter = 'drop-shadow(0 0 8px rgba(0, 104, 255, 0.5))';
+            }
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.filter = 'none';
+          }}
+        >
+          <img src="/zalo.svg" alt="Zalo" style={{ width: '24px', height: '24px', pointerEvents: 'none' }} />
+        </a>
+
+        {/* AI Tools Floating Button (Bottom of Stack) */}
+        <div
+          onClick={onClick}
+          title="Danh sách công cụ AI"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '42px',
+            height: '42px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+            boxShadow: '0 0 16px rgba(139, 92, 246, 0.5), 0 4px 10px rgba(0,0,0,0.3)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            color: '#fff',
+            cursor: 'pointer',
+            transition: 'transform 0.2s',
+            animation: 'pulse 3s infinite',
+            zIndex: 99999
+          }}
+          onMouseOver={(e) => {
+            if (!isDraggingToolsBtn.current) {
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          <LayoutGrid size={18} style={{ pointerEvents: 'none' }} />
+        </div>
       </div>
     );
   };
@@ -5162,35 +5211,7 @@ function App() {
             )}
           </div>
 
-          {/* Zalo Group Link */}
-          <a
-            href="https://zalo.me/g/2yqlehs4q8zwgvfvplyd"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Tham gia nhóm Zalo hỗ trợ"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '20px',
-              height: '20px',
-              borderRadius: '50%',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              marginRight: '2px',
-              textDecoration: 'none'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'scale(1.1)';
-              e.currentTarget.style.filter = 'drop-shadow(0 0 6px rgba(0, 104, 255, 0.6))';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.filter = 'none';
-            }}
-          >
-            <img src="/zalo.svg" alt="Zalo" style={{ width: '20px', height: '20px' }} />
-          </a>
+
 
           {/* Avatar Dropdown Container */}
           <div style={{ position: 'relative' }} ref={userDropdownRef}>
