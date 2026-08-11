@@ -2640,200 +2640,157 @@ function App() {
           </button>
         </div>
 
-        {/* Tools Directory Cards */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          gap: '24px',
-          marginTop: '10px'
-        }}>
-          
-          {/* Card 1: Audio Tool */}
-          <div 
-            className="glass-panel" 
-            onClick={() => { window.location.hash = '#audio'; }}
-            style={{
-              padding: 0,
-              overflow: 'hidden',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              border: '1px solid rgba(16, 185, 129, 0.2)',
-              position: 'relative'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'translateY(-6px)';
-              e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.6)';
-              e.currentTarget.style.boxShadow = '0 12px 30px rgba(16, 185, 129, 0.15)';
-              const img = e.currentTarget.querySelector('.tool-img');
-              if (img) img.style.transform = 'scale(1.05)';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.2)';
-              e.currentTarget.style.boxShadow = 'none';
-              const img = e.currentTarget.querySelector('.tool-img');
-              if (img) img.style.transform = 'scale(1)';
-            }}
-          >
-            <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(16, 185, 129, 0.15)' }}>
-              <img 
-                src="/audio_tool_preview.jpg" 
-                alt="Audio Tool Preview" 
-                className="tool-img"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
-              />
-            </div>
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '1.25rem' }}>🎙️</span>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#10b981' }}>Công cụ Audio AI</h3>
+        {/* Title: Công cụ chung */}
+        <div style={{ marginTop: '10px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#a78bfa', margin: '0 0 16px 0', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            🛠️ Công cụ chung
+          </h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+            {/* Simple Button 1: Audio Tool */}
+            <div 
+              className="glass-panel" 
+              onClick={() => { window.location.hash = '#audio'; }}
+              style={{
+                padding: '20px 24px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                background: 'rgba(16, 185, 129, 0.02)',
+                borderRadius: '12px'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.6)';
+                e.currentTarget.style.boxShadow = '0 8px 25px rgba(16, 185, 129, 0.15)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontSize: '2rem' }}>🎙️</span>
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, color: '#10b981' }}>Công cụ Audio AI</h3>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '4px 0 0 0' }}>Nhân bản giọng đọc AI tiếng Việt</p>
+                </div>
               </div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
-                Nhân bản giọng nói chuyên nghiệp tiếng Việt. Tải lên file ghi âm mẫu và tạo giọng nói chất lượng cao để ghép thoại cho video.
-              </p>
-              <button 
-                type="button" 
-                className="glass-button"
-                style={{ 
-                  width: '100%', 
-                  padding: '12px', 
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  border: 'none',
-                  color: '#fff',
-                  fontWeight: 'bold',
-                  marginTop: '10px'
-                }}
-              >
-                Trải nghiệm ngay
-              </button>
+              <span style={{ fontSize: '1.2rem', color: '#10b981' }}>➔</span>
+            </div>
+
+            {/* Simple Button 2: Video Merge Tool */}
+            <div 
+              className="glass-panel" 
+              onClick={() => { window.location.hash = '#merge-video'; }}
+              style={{
+                padding: '20px 24px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid rgba(139, 92, 246, 0.2)',
+                background: 'rgba(139, 92, 246, 0.02)',
+                borderRadius: '12px'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.6)';
+                e.currentTarget.style.boxShadow = '0 8px 25px rgba(139, 92, 246, 0.15)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.2)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontSize: '2rem' }}>🎬</span>
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, color: '#a78bfa' }}>Ghép Video AI</h3>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '4px 0 0 0' }}>Ghép nối các thước phim từ Thư viện</p>
+                </div>
+              </div>
+              <span style={{ fontSize: '1.2rem', color: '#a78bfa' }}>➔</span>
             </div>
           </div>
+        </div>
 
-          {/* Card 1.5: Video Merge Tool */}
-          <div 
-            className="glass-panel" 
-            onClick={() => { window.location.hash = '#merge-video'; }}
-            style={{
-              padding: 0,
-              overflow: 'hidden',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              border: '1px solid rgba(139, 92, 246, 0.2)',
-              position: 'relative'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'translateY(-6px)';
-              e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.6)';
-              e.currentTarget.style.boxShadow = '0 12px 30px rgba(139, 92, 246, 0.15)';
-              const img = e.currentTarget.querySelector('.tool-img');
-              if (img) img.style.transform = 'scale(1.05)';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.2)';
-              e.currentTarget.style.boxShadow = 'none';
-              const img = e.currentTarget.querySelector('.tool-img');
-              if (img) img.style.transform = 'scale(1)';
-            }}
-          >
-            <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(139, 92, 246, 0.15)' }}>
-              <img 
-                src="/video_merge_preview.jpg" 
-                alt="Video Merge Tool Preview" 
-                className="tool-img"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
-              />
-            </div>
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '1.25rem' }}>🎬</span>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#a78bfa' }}>Ghép Video AI</h3>
+        {/* Title: Các dạng kênh */}
+        <div style={{ marginTop: '20px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#f472b6', margin: '0 0 16px 0', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            📺 Các dạng kênh AI
+          </h2>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: '24px'
+          }}>
+            {/* Card 2: Drama Tool */}
+            <div 
+              className="glass-panel" 
+              onClick={() => { window.location.hash = '#drama'; }}
+              style={{
+                padding: 0,
+                overflow: 'hidden',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid rgba(236, 72, 153, 0.2)',
+                position: 'relative'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-6px)';
+                e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.6)';
+                e.currentTarget.style.boxShadow = '0 12px 30px rgba(236, 72, 153, 0.15)';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1.05)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.2)';
+                e.currentTarget.style.boxShadow = 'none';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1)';
+              }}
+            >
+              <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(236, 72, 153, 0.15)' }}>
+                <img 
+                  src="/drama_tool_preview.jpg" 
+                  alt="Drama Tool Preview" 
+                  className="tool-img"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+                />
               </div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
-                Ghép nối các đoạn video ngắn thành một video hoàn chỉnh. Hỗ trợ thay đổi thứ tự, xem trước và xuất video chất lượng cao với âm thanh sắc nét.
-              </p>
-              <button 
-                type="button" 
-                className="glass-button"
-                style={{ 
-                  width: '100%', 
-                  padding: '12px', 
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                  border: 'none',
-                  color: '#fff',
-                  fontWeight: 'bold',
-                  marginTop: '10px'
-                }}
-              >
-                Trải nghiệm ngay
-              </button>
-            </div>
-          </div>
-
-          {/* Card 2: Drama Tool */}
-          <div 
-            className="glass-panel" 
-            onClick={() => { window.location.hash = '#drama'; }}
-            style={{
-              padding: 0,
-              overflow: 'hidden',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              border: '1px solid rgba(236, 72, 153, 0.2)',
-              position: 'relative'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'translateY(-6px)';
-              e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.6)';
-              e.currentTarget.style.boxShadow = '0 12px 30px rgba(236, 72, 153, 0.15)';
-              const img = e.currentTarget.querySelector('.tool-img');
-              if (img) img.style.transform = 'scale(1.05)';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.2)';
-              e.currentTarget.style.boxShadow = 'none';
-              const img = e.currentTarget.querySelector('.tool-img');
-              if (img) img.style.transform = 'scale(1)';
-            }}
-          >
-            <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(236, 72, 153, 0.15)' }}>
-              <img 
-                src="/drama_tool_preview.jpg" 
-                alt="Drama Tool Preview" 
-                className="tool-img"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
-              />
-            </div>
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Clapperboard size={20} style={{ color: '#ec4899' }} />
-                <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#ec4899' }}>Xây Kênh Mẹ Chồng Nàng Dâu</h3>
+              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Clapperboard size={20} style={{ color: '#ec4899' }} />
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#ec4899' }}>Xây Kênh Mẹ Chồng Nàng Dâu</h3>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                  Công cụ tự động hóa xây kênh drama mẹ chồng nàng dâu bằng AI. Tạo kịch bản kịch tính, tự vẽ ảnh và dựng video 9:16 nhép miệng (Lip-Sync) giọng đọc cực hay.
+                </p>
+                <button 
+                  type="button" 
+                  className="glass-button"
+                  style={{ 
+                    width: '100%', 
+                    padding: '12px', 
+                    background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+                    border: 'none',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                    marginTop: '10px'
+                  }}
+                >
+                  Trải nghiệm ngay
+                </button>
               </div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
-                Công cụ tự động hóa xây kênh drama mẹ chồng nàng dâu bằng AI. Tạo kịch bản kịch tính, tự vẽ ảnh và dựng video 9:16 nhép miệng (Lip-Sync) giọng đọc cực hay.
-              </p>
-              <button 
-                type="button" 
-                className="glass-button"
-                style={{ 
-                  width: '100%', 
-                  padding: '12px', 
-                  background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
-                  border: 'none',
-                  color: '#fff',
-                  fontWeight: 'bold',
-                  marginTop: '10px'
-                }}
-              >
-                Trải nghiệm ngay
-              </button>
             </div>
           </div>
 
