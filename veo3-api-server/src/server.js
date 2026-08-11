@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const https = require('https');
 const { Server: SocketIOServer } = require('socket.io');
 const multer = require('multer');
 const fs = require('fs');
@@ -1703,15 +1704,72 @@ app.post('/api/video/merge', upload.array('videos', 15), async (req, res) => {
   let listFilePath = null;
   let outputFilePath = null;
   try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: "Không tìm thấy video để ghép." });
+    let items = [];
+    if (req.body.items) {
+      try {
+        items = JSON.parse(req.body.items);
+      } catch (e) {
+        return res.status(400).json({ error: "Tham số items không hợp lệ." });
+      }
     }
 
-    const files = req.files;
+    const files = req.files || [];
     files.forEach(f => tempFiles.push(f.path));
 
-    const listContent = files.map(f => `file '${f.path}'`).join('\n');
+    if (items.length === 0) {
+      if (files.length === 0) {
+        return res.status(400).json({ error: "Không tìm thấy video để ghép." });
+      }
+      items = files.map((f, idx) => ({ type: 'local', index: idx }));
+    }
+
+    const filePathsToMerge = [];
     const uniqueId = uuidv4();
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type === 'local') {
+        const file = files[item.index];
+        if (!file) {
+          throw new Error(`Không tìm thấy file local ở chỉ mục ${item.index}`);
+        }
+        filePathsToMerge.push(file.path);
+      } else if (item.type === 'remote') {
+        if (!item.url) {
+          throw new Error("Thiếu URL của video remote");
+        }
+        const tempDest = path.join(__dirname, `../uploads/remote_${uniqueId}_${i}.mp4`);
+        logger.info(`Downloading remote video to merge: ${item.url} -> ${tempDest}`);
+        
+        await new Promise((resolve, reject) => {
+          const fileStream = fs.createWriteStream(tempDest);
+          const client = item.url.startsWith('https') ? https : http;
+          client.get(item.url, (response) => {
+            if (response.statusCode !== 200) {
+              reject(new Error(`Tải file thất bại: HTTP status ${response.statusCode}`));
+              return;
+            }
+            response.pipe(fileStream);
+            fileStream.on('finish', () => {
+              fileStream.close();
+              resolve();
+            });
+          }).on('error', (err) => {
+            fs.unlink(tempDest, () => {});
+            reject(err);
+          });
+        });
+
+        filePathsToMerge.push(tempDest);
+        tempFiles.push(tempDest);
+      }
+    }
+
+    if (filePathsToMerge.length < 2) {
+      return res.status(400).json({ error: "Cần tối thiểu 2 video để ghép." });
+    }
+
+    const listContent = filePathsToMerge.map(p => `file '${p}'`).join('\n');
     listFilePath = path.join(__dirname, `../uploads/list_${uniqueId}.txt`);
     outputFilePath = path.join(__dirname, `../uploads/merged_${uniqueId}.mp4`);
 
@@ -1727,7 +1785,7 @@ app.post('/api/video/merge', upload.array('videos', 15), async (req, res) => {
       outputFilePath
     ];
 
-    logger.info(`Stitching ${files.length} videos using ffmpeg...`);
+    logger.info(`Stitching ${filePathsToMerge.length} videos using ffmpeg...`);
     
     await new Promise((resolve, reject) => {
       const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });

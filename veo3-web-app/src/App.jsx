@@ -4198,6 +4198,7 @@ function App() {
 
       const newItems = selectedFiles.map(file => ({
         id: Math.random().toString(36).substr(2, 9),
+        type: 'local',
         file: file,
         name: file.name,
         previewUrl: URL.createObjectURL(file)
@@ -4205,6 +4206,17 @@ function App() {
 
       setMergeVideoFiles(prev => [...prev, ...newItems]);
       e.target.value = '';
+    };
+
+    const handleSelectFromLibrary = (videoTask) => {
+      const newItem = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'remote',
+        name: `Thư viện: ${videoTask.prompt ? videoTask.prompt.substring(0, 30) + '...' : 'Video #' + videoTask.id.substring(0, 5)}`,
+        url: videoTask.mediaUrl,
+        previewUrl: videoTask.mediaUrl
+      };
+      setMergeVideoFiles(prev => [...prev, newItem]);
     };
 
     const handleMoveUp = (index) => {
@@ -4229,11 +4241,13 @@ function App() {
       });
     };
 
-    const handleRemoveFile = (id, previewUrl) => {
-      setMergeVideoFiles(prev => prev.filter(item => item.id !== id));
-      try {
-        URL.revokeObjectURL(previewUrl);
-      } catch (e) {}
+    const handleRemoveFile = (item) => {
+      setMergeVideoFiles(prev => prev.filter(x => x.id !== item.id));
+      if (item.type === 'local') {
+        try {
+          URL.revokeObjectURL(item.previewUrl);
+        } catch (e) {}
+      }
     };
 
     const handleMergeVideos = async () => {
@@ -4248,9 +4262,20 @@ function App() {
 
       try {
         const formData = new FormData();
+        const itemsMetadata = [];
+        let localIndex = 0;
+
         mergeVideoFiles.forEach(item => {
-          formData.append('videos', item.file);
+          if (item.type === 'local') {
+            formData.append('videos', item.file);
+            itemsMetadata.push({ type: 'local', index: localIndex });
+            localIndex++;
+          } else if (item.type === 'remote') {
+            itemsMetadata.push({ type: 'remote', url: item.url });
+          }
         });
+
+        formData.append('items', JSON.stringify(itemsMetadata));
 
         const token = await user.getIdToken();
         const response = await fetch(`${API_BASE}/api/video/merge`, {
@@ -4277,15 +4302,19 @@ function App() {
 
     const handleReset = () => {
       mergeVideoFiles.forEach(item => {
-        try { URL.revokeObjectURL(item.previewUrl); } catch (e) {}
+        if (item.type === 'local') {
+          try { URL.revokeObjectURL(item.previewUrl); } catch (e) {}
+        }
       });
       setMergeVideoFiles([]);
       setMergedVideoUrl(null);
       setMergeError(null);
     };
 
+    const completedVideos = tasks.filter(t => t.type === 'video' && t.status === 'completed' && t.mediaUrl);
+
     return (
-      <div className="container" style={{ maxWidth: '800px', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
+      <div className="container" style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '28px', minHeight: '100vh', color: '#fff' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -4296,7 +4325,7 @@ function App() {
               </h1>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px', margin: 0 }}>
-              Tải lên nhiều video ngắn, sắp xếp thứ tự và ghép chúng thành một sản phẩm hoàn thiện.
+              Ghép nối nhiều video ngắn từ thiết bị hoặc trực tiếp từ Thư viện của bạn thành một video hoàn thiện.
             </p>
           </div>
           <button
@@ -4312,10 +4341,60 @@ function App() {
 
         {/* Main Interface Layout */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Select from Library Section */}
+          {completedVideos.length > 0 && (
+            <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🗂️</span> Bước 1: Chọn từ Thư viện video của bạn
+              </h3>
+              <div style={{ display: 'flex', gap: '14px', overflowX: 'auto', paddingBottom: '8px' }} className="custom-scrollbar">
+                {completedVideos.map(item => (
+                  <div key={item.id} style={{ flex: '0 0 160px', width: '160px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <video 
+                      src={item.mediaUrl} 
+                      style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: '6px', background: '#000', cursor: 'pointer' }} 
+                      muted 
+                      playsInline 
+                      onMouseEnter={e => e.currentTarget.play().catch(()=>{})} 
+                      onMouseLeave={e => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} 
+                    />
+                    <div style={{ fontSize: '0.75rem', color: '#fff', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', lineHeight: '1.3', fontStyle: 'italic' }}>
+                      {item.prompt || "Video không tên"}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectFromLibrary(item)}
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        background: 'rgba(139, 92, 246, 0.15)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#a78bfa',
+                        fontSize: '0.72rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseOver={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.3)'; }}
+                      onMouseOut={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.15)'; }}
+                    >
+                      <Plus size={12} /> Thêm vào hàng ghép
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Form Card */}
           <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>📥</span> Bước 1: Tải lên video cần ghép
+              <span>📥</span> Hoặc: Tải lên video từ thiết bị
             </h3>
             
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed rgba(139, 92, 246, 0.3)', borderRadius: '12px', padding: '32px 16px', background: 'rgba(139, 92, 246, 0.02)', textAlign: 'center', position: 'relative', cursor: 'pointer', transition: 'all 0.2s' }}
@@ -4340,7 +4419,7 @@ function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
-                    Danh sách các clip ({mergeVideoFiles.length}):
+                    Danh sách các clip cần ghép ({mergeVideoFiles.length}):
                   </span>
                   <button 
                     onClick={handleReset} 
@@ -4367,7 +4446,7 @@ function App() {
                           {item.name}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                          {(item.file.size / (1024 * 1024)).toFixed(2)} MB
+                          {item.type === 'local' ? `${(item.file.size / (1024 * 1024)).toFixed(2)} MB` : 'Từ Thư viện AI'}
                         </div>
                       </div>
 
@@ -4394,7 +4473,7 @@ function App() {
                       {/* Remove Button */}
                       <button
                         type="button"
-                        onClick={() => handleRemoveFile(item.id, item.previewUrl)}
+                        onClick={() => handleRemoveFile(item)}
                         style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '6px', color: '#ef4444', cursor: 'pointer' }}
                         title="Xóa clip"
                       >
