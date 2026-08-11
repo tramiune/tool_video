@@ -2511,10 +2511,10 @@ function App() {
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Clapperboard size={20} style={{ color: '#ec4899' }} />
-                <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#ec4899' }}>Công cụ Phim Drama</h3>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#ec4899' }}>Xây Kênh Mẹ Chồng Nàng Dâu</h3>
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
-                Tạo kịch bản kịch tính và xuất video phim ngắn hoàn chỉnh dạng dọc 9:16 có nhép miệng (Lip-Sync) và thoại tiếng Việt tự động bằng AI.
+                Công cụ tự động hóa xây kênh drama mẹ chồng nàng dâu bằng AI. Tạo kịch bản kịch tính, tự vẽ ảnh và dựng video 9:16 nhép miệng (Lip-Sync) giọng đọc cực hay.
               </p>
               <button 
                 type="button" 
