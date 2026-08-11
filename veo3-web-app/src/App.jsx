@@ -2517,23 +2517,7 @@ function App() {
                       className="glass-input"
                       style={{ flex: 1, minWidth: '140px' }}
                     />
-                    <select
-                      value={character.voiceIndex ?? characterIndex}
-                      onChange={(event) => setDramaScript(current => {
-                        const characters = [...current.characters];
-                        characters[characterIndex] = { ...characters[characterIndex], voiceIndex: Number(event.target.value) };
-                        return { ...current, characters };
-                      })}
-                      className="glass-input"
-                      style={{ flex: 1, minWidth: '160px' }}
-                      title="Giọng đọc tiếng Việt cho nhân vật"
-                    >
-                      {dramaVoices.map((voice, voiceIndex) => (
-                        <option key={voiceIndex} value={voiceIndex} style={{ color: '#111' }}>
-                          {voice.name} ({voiceIndex})
-                        </option>
-                      ))}
-                    </select>
+
                   </div>
                   <textarea
                     value={character.description}
