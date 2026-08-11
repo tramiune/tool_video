@@ -416,6 +416,10 @@ function App() {
 
   const [isDramaView, setIsDramaView] = useState(false);
   const [isToolsView, setIsToolsView] = useState(false);
+  const [toolsBtnPosition, setToolsBtnPosition] = useState({ x: window.innerWidth - 160, y: window.innerHeight - 100 });
+  const isDraggingToolsBtn = useRef(false);
+  const toolsBtnDragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+  const hasDraggedToolsBtn = useRef(false);
   const [dramaScripts, setDramaScripts] = useState([]);
   const [dramaScriptsLoading, setDramaScriptsLoading] = useState(false);
   const [dramaScript, setDramaScript] = useState(null);
@@ -602,6 +606,67 @@ function App() {
     handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [user, userProfileLoaded, currentUserIsAdmin, currentUserHasDramaAccess]);
+
+  // Handle dragging for the floating Tools button
+  useEffect(() => {
+    const handleMove = (clientX, clientY) => {
+      if (!isDraggingToolsBtn.current) return;
+      const deltaX = clientX - toolsBtnDragStart.current.x;
+      const deltaY = clientY - toolsBtnDragStart.current.y;
+      
+      if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+        hasDraggedToolsBtn.current = true;
+      }
+      
+      // Calculate new position
+      let newX = toolsBtnDragStart.current.posX + deltaX;
+      let newY = toolsBtnDragStart.current.posY + deltaY;
+      
+      // Boundaries check (keep it inside viewport)
+      const btnWidth = 130;
+      const btnHeight = 44;
+      newX = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, newX));
+      newY = Math.max(10, Math.min(window.innerHeight - btnHeight - 10, newY));
+      
+      setToolsBtnPosition({ x: newX, y: newY });
+    };
+
+    const onMouseMove = (e) => handleMove(e.clientX, e.clientY);
+    const onTouchMove = (e) => {
+      if (e.touches && e.touches[0]) {
+        handleMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+
+    const onEnd = () => {
+      isDraggingToolsBtn.current = false;
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchend', onEnd);
+    
+    // Resize handler to keep button on-screen
+    const handleResize = () => {
+      setToolsBtnPosition(prev => {
+        const btnWidth = 130;
+        const btnHeight = 44;
+        const newX = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, prev.x));
+        const newY = Math.max(10, Math.min(window.innerHeight - btnHeight - 10, prev.y));
+        return { x: newX, y: newY };
+      });
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAutoToolView || !user || !userProfileLoaded || !currentUserIsAdmin) return;
@@ -1082,6 +1147,94 @@ function App() {
       console.error(err);
       alert("Lỗi hủy giao dịch: " + err.message);
     }
+  };
+
+  const renderFloatingToolsButton = () => {
+    // Only render if user is logged in, profile loaded, and not currently on the Tools view
+    if (!user || !userProfileLoaded || isToolsView) return null;
+
+    const onMouseDown = (e) => {
+      // Only handle left clicks
+      if (e.button !== 0) return;
+      isDraggingToolsBtn.current = true;
+      toolsBtnDragStart.current = {
+        x: e.clientX,
+        y: e.clientY,
+        posX: toolsBtnPosition.x,
+        posY: toolsBtnPosition.y
+      };
+      hasDraggedToolsBtn.current = false;
+      e.preventDefault();
+    };
+
+    const onTouchStart = (e) => {
+      if (e.touches && e.touches[0]) {
+        isDraggingToolsBtn.current = true;
+        toolsBtnDragStart.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+          posX: toolsBtnPosition.x,
+          posY: toolsBtnPosition.y
+        };
+        hasDraggedToolsBtn.current = false;
+      }
+    };
+
+    const onClick = (e) => {
+      if (hasDraggedToolsBtn.current) {
+        // Prevent action if it was dragged
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      // Otherwise navigate to tools
+      window.location.hash = '#tools';
+      setIsToolsView(true);
+    };
+
+    return (
+      <div
+        onMouseDown={onMouseDown}
+        onTouchStart={onTouchStart}
+        onClick={onClick}
+        style={{
+          position: 'fixed',
+          left: `${toolsBtnPosition.x}px`,
+          top: `${toolsBtnPosition.y}px`,
+          zIndex: 99999,
+          cursor: 'grab',
+          userSelect: 'none',
+          touchAction: 'none', // Prevents scrolling while dragging on mobile
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          padding: '10px 18px',
+          background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+          borderRadius: '30px',
+          boxShadow: '0 0 20px rgba(139, 92, 246, 0.6), 0 4px 10px rgba(0,0,0,0.4)',
+          border: '1px solid rgba(255,255,255,0.2)',
+          color: '#fff',
+          transition: isDraggingToolsBtn.current ? 'none' : 'transform 0.2s, box-shadow 0.2s',
+          animation: 'pulse 3s infinite',
+          fontWeight: 'bold',
+          whiteSpace: 'nowrap'
+        }}
+        onMouseOver={(e) => {
+          if (!isDraggingToolsBtn.current) {
+            e.currentTarget.style.transform = 'scale(1.06)';
+            e.currentTarget.style.boxShadow = '0 0 25px rgba(236, 72, 153, 0.8), 0 6px 12px rgba(0,0,0,0.5)';
+          }
+        }}
+        onMouseOut={(e) => {
+          e.currentTarget.style.transform = 'scale(1)';
+          e.currentTarget.style.boxShadow = '0 0 20px rgba(139, 92, 246, 0.6), 0 4px 10px rgba(0,0,0,0.4)';
+        }}
+      >
+        <LayoutGrid size={15} style={{ pointerEvents: 'none' }} />
+        <span style={{ fontSize: '0.82rem', fontWeight: '800', letterSpacing: '0.4px', pointerEvents: 'none' }}>Công cụ AI</span>
+      </div>
+    );
   };
 
   const renderAdminView = () => {
@@ -4864,38 +5017,46 @@ function App() {
     );
   }
 
-  if (isAdminView) {
-    return renderAdminView();
-  }
+  const getSubView = () => {
+    if (isAdminView) {
+      return renderAdminView();
+    }
+    if (isAutoToolView) {
+      if (userProfileLoaded && currentUserIsAdmin) return renderAutoToolView();
+      return <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'var(--text-secondary)' }}>Đang xác thực quyền quản trị...</div>;
+    }
+    if (isTryOnView) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '32px', maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{ flex: '1 1 0', minWidth: 0 }}>
+            {renderTryOnView()}
+          </div>
+          <div className="tryon-ba-panel" style={{ display: 'none', flex: `0 0 ${tryonToolType === 'tryon' ? '540px' : '450px'}`, position: 'sticky', top: '40px', paddingTop: '40px' }}>
+            <BeforeAfterPanel toolType={tryonToolType} />
+          </div>
+        </div>
+      );
+    }
+    if (isToolsView) {
+      return renderToolsView();
+    }
+    if (isAudioView) {
+      return renderAudioView();
+    }
+    if (isDramaView) {
+      return renderDramaView();
+    }
+    return null;
+  };
 
-  if (isAutoToolView) {
-    if (userProfileLoaded && currentUserIsAdmin) return renderAutoToolView();
-    return <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'var(--text-secondary)' }}>Đang xác thực quyền quản trị...</div>;
-  }
-
-  if (isTryOnView) {
+  const subView = getSubView();
+  if (subView) {
     return (
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '32px', maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{ flex: '1 1 0', minWidth: 0 }}>
-          {renderTryOnView()}
-        </div>
-        <div className="tryon-ba-panel" style={{ display: 'none', flex: `0 0 ${tryonToolType === 'tryon' ? '540px' : '450px'}`, position: 'sticky', top: '40px', paddingTop: '40px' }}>
-          <BeforeAfterPanel toolType={tryonToolType} />
-        </div>
-      </div>
+      <>
+        {subView}
+        {renderFloatingToolsButton()}
+      </>
     );
-  }
-
-  if (isToolsView) {
-    return renderToolsView();
-  }
-
-  if (isAudioView) {
-    return renderAudioView();
-  }
-
-  if (isDramaView) {
-    return renderDramaView();
   }
 
   const RATIOS = [
@@ -4969,7 +5130,6 @@ function App() {
             {userTier !== 'premium_169k' && (
               <button 
                 type="button"
-                className="header-upgrade-btn"
                 style={{
                   background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
                   border: 'none',
@@ -4995,7 +5155,7 @@ function App() {
                   e.currentTarget.style.boxShadow = '0 0 12px rgba(139, 92, 246, 0.4)';
                 }}
               >
-                <span style={{ display: 'inline-block', transform: 'scale(1.1)' }}>⚡</span> <span className="mobile-hide-text">Nâng cấp</span>
+                <span style={{ display: 'inline-block', transform: 'scale(1.1)' }}>⚡</span> Nâng cấp
               </button>
             )}
           </div>
@@ -5231,43 +5391,7 @@ function App() {
             )}
           </div>
 
-          {/* Tools Directory Button */}
-          <button
-            type="button"
-            className="header-tool-btn"
-            onClick={() => {
-              window.location.hash = '#tools';
-              setIsToolsView(true);
-            }}
-            title="Danh sách công cụ AI"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              padding: '6px 14px',
-              background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-              border: 'none',
-              borderRadius: '20px',
-              color: '#fff',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease-in-out',
-              boxShadow: '0 0 14px rgba(139, 92, 246, 0.4)',
-              fontWeight: 'bold',
-              height: '32px'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.boxShadow = '0 0 20px rgba(236, 72, 153, 0.6)';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 0 14px rgba(139, 92, 246, 0.4)';
-            }}
-          >
-            <LayoutGrid size={14} />
-            <span className="mobile-hide-text" style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.3px' }}>Công cụ AI</span>
-          </button>
+
         </div>
       </header>
 
@@ -6318,6 +6442,7 @@ function App() {
           </div>
         </div>
       )}
+      {renderFloatingToolsButton()}
     </div>
   );
 }

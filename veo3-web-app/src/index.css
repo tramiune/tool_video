@@ -824,25 +824,7 @@ body {
     font-size: 1.54rem;
   }
 
-  .mobile-hide-text {
-    display: none !important;
-  }
 
-  .header-tool-btn {
-    width: 32px !important;
-    height: 32px !important;
-    padding: 0 !important;
-    border-radius: 50% !important;
-    justify-content: center !important;
-  }
-
-  .header-upgrade-btn {
-    padding: 0 !important;
-    width: 32px !important;
-    height: 32px !important;
-    border-radius: 50% !important;
-    justify-content: center !important;
-  }
 
   /* ---- Gallery ---- */
   .gallery-layout {
