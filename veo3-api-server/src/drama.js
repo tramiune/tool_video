@@ -110,6 +110,7 @@ async function generateDramaScript({ topic }) {
       `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình đó), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
       'Mỗi cảnh là một clip 8 giây, lời thoại phải đọc được trong ~7 giây, tự nhiên, đời thường, đúng giọng từng nhân vật.',
       'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH & VỊ TRÍ NHÂN VẬT:',
+      '- Cảnh 1 (Scene 1) PHẢI chứa đầy đủ tất cả các nhân vật trong characters cùng xuất hiện trong một khung hình (ví dụ: mô tả rõ cả Huy, Lan và bà mẹ đều đứng trong phòng khách). Mô tả chi tiết ngoại hình và trang phục của họ ngay trong Cảnh 1.',
       '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, PHẢI mô tả rõ ràng vị trí đứng của từng nhân vật (ví dụ: "Huy is standing on the left, Lan is standing on the right"). Giữ nguyên vị trí trái/phải này nhất quán xuyên suốt các cảnh.',
       '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ].join('\n'),
@@ -563,6 +564,9 @@ function buildScenePrompt(job, scene, mediaType) {
     }
     if (characterLines.length > 0) {
       parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
+      if (scene.index === 0) {
+        parts.push('Important: All of the listed characters MUST be present and visible together in this single image.');
+      }
     }
     parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
   } else {
