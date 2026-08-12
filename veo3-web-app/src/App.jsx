@@ -3338,7 +3338,30 @@ function App() {
                         </span>
                       </div>
                       {episode.finalUrl && (
-                        <video controls src={episode.finalUrl} style={{ width: '100%', borderRadius: '12px', maxHeight: '420px', background: '#000' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <video controls src={episode.finalUrl} style={{ width: '100%', borderRadius: '12px', maxHeight: '420px', background: '#000' }} />
+                          <button
+                            type="button"
+                            className="glass-button"
+                            onClick={() => handleDownload(episode.finalUrl, `tap_${episode.number || 'hoan_chinh'}.mp4`)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                              padding: '10px 14px',
+                              background: 'rgba(52,211,153,0.12)',
+                              border: '1px solid rgba(52,211,153,0.3)',
+                              color: '#34d399',
+                              borderRadius: '10px',
+                              fontWeight: 'bold',
+                              fontSize: '0.8rem',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Download size={14} /> Tải video Tập {episode.number || ''}
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -3347,9 +3370,32 @@ function App() {
             )}
 
             {dramaJob?.finalUrl && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
-                <label style={{ color: '#a78bfa', fontSize: '0.85rem', fontWeight: 'bold' }}>Tác phẩm hoàn chỉnh (Full Video)</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
+                <label style={{ color: channelType === 'sumo' ? '#f59e0b' : '#a78bfa', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                  Tác phẩm hoàn chỉnh (Full Video)
+                </label>
                 <video controls src={dramaJob.finalUrl} style={{ width: '100%', borderRadius: '12px', maxHeight: '420px', background: '#000' }} />
+                <button
+                  type="button"
+                  className="glass-button"
+                  onClick={() => handleDownload(dramaJob.finalUrl, `${channelType === 'sumo' ? 'sumo' : 'drama'}_tap_${dramaJob.episodeNumber || 1}.mp4`)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px 18px',
+                    background: channelType === 'sumo' ? 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)' : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+                    color: '#fff',
+                    borderRadius: '10px',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    marginTop: '4px'
+                  }}
+                >
+                  <Download size={16} /> Tải video hoàn chỉnh
+                </button>
               </div>
             )}
           </section>
