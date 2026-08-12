@@ -118,16 +118,24 @@ class BrowserManager {
           '--allow-insecure-localhost',
           '--ignore-certificate-errors',
           '--mute-audio',
-          '--no-activate',
-          '--start-minimized',
-          '--window-position=-2000,-2000',
           '--disable-gpu',
           'about:blank'
         ];
 
         if (process.env.HEADLESS === 'true') {
           logger.info(`[${this.label}] Launching Chrome in HEADLESS mode to prevent window focus issues`);
-          chromeArgs.push('--headless=new');
+          chromeArgs.push(
+            '--headless=new',
+            '--no-activate',
+            '--start-minimized',
+            '--window-position=-2000,-2000'
+          );
+        } else {
+          logger.info(`[${this.label}] Launching Chrome in HEADFUL mode for manual user interaction`);
+          chromeArgs.push(
+            '--window-position=100,100',
+            '--window-size=1280,900'
+          );
         }
         
         const { spawn } = require('child_process');
