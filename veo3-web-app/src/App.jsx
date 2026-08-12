@@ -2855,6 +2855,259 @@ function App() {
                 </button>
               </div>
             </div>
+
+            {/* Card 4: Fashion Transformation (Thời trang Biến hình) - View Only */}
+            <div 
+              className="glass-panel" 
+              style={{
+                padding: 0,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid rgba(168, 85, 247, 0.2)',
+                position: 'relative'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-6px)';
+                e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.6)';
+                e.currentTarget.style.boxShadow = '0 12px 30px rgba(168, 85, 247, 0.15)';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1.05)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.2)';
+                e.currentTarget.style.boxShadow = 'none';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1)';
+              }}
+            >
+              <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(168, 85, 247, 0.15)' }}>
+                <img 
+                  src="/transform_preview.jpg" 
+                  alt="Thời trang biến hình" 
+                  className="tool-img"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+                />
+              </div>
+              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.25rem' }}>👗</span>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#a855f7' }}>Thời Trang Biến Hình AI</h3>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                  Biến hình ảo diệu từ trang phục ngủ, mặc nhà sang các bộ đầm dạ tiệc lộng lẫy phong cách hoạt hình 3D Pixar, tạo clip Before/After triệu view.
+                </p>
+                <button 
+                  type="button" 
+                  disabled
+                  className="glass-button"
+                  style={{ 
+                    width: '100%', 
+                    padding: '12px', 
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px dashed rgba(168, 85, 247, 0.3)',
+                    color: 'rgba(255, 255, 255, 0.4)',
+                    fontWeight: 'bold',
+                    marginTop: '10px',
+                    cursor: 'not-allowed'
+                  }}
+                >
+                  Sắp ra mắt
+                </button>
+              </div>
+            </div>
+
+            {/* Card 5: Accessories & Bags (Giày Dép - Túi Xách) - View Only */}
+            <div 
+              className="glass-panel" 
+              style={{
+                padding: 0,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid rgba(249, 115, 22, 0.2)',
+                position: 'relative'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-6px)';
+                e.currentTarget.style.borderColor = 'rgba(249, 115, 22, 0.6)';
+                e.currentTarget.style.boxShadow = '0 12px 30px rgba(249, 115, 22, 0.15)';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1.05)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'rgba(249, 115, 22, 0.2)';
+                e.currentTarget.style.boxShadow = 'none';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1)';
+              }}
+            >
+              <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(249, 115, 22, 0.15)' }}>
+                <img 
+                  src="/accessory_preview.jpg" 
+                  alt="Giày dép túi xách" 
+                  className="tool-img"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+                />
+              </div>
+              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.25rem' }}>👜</span>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#f97316' }}>Giày Dép - Túi Xách AI</h3>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                  Chỉ cần cung cấp 1 ảnh sản phẩm túi xách, giày dép hoặc đồng hồ để tạo ra hàng loạt các video quảng bá POV 3D cận cảnh, lifestyle ấn tượng.
+                </p>
+                <button 
+                  type="button" 
+                  disabled
+                  className="glass-button"
+                  style={{ 
+                    width: '100%', 
+                    padding: '12px', 
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px dashed rgba(249, 115, 22, 0.3)',
+                    color: 'rgba(255, 255, 255, 0.4)',
+                    fontWeight: 'bold',
+                    marginTop: '10px',
+                    cursor: 'not-allowed'
+                  }}
+                >
+                  Sắp ra mắt
+                </button>
+              </div>
+            </div>
+
+            {/* Card 6: Home Appliances Showroom (Gia dụng Kho Xưởng) - View Only */}
+            <div 
+              className="glass-panel" 
+              style={{
+                padding: 0,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+                position: 'relative'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-6px)';
+                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.6)';
+                e.currentTarget.style.boxShadow = '0 12px 30px rgba(59, 130, 246, 0.15)';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1.05)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.2)';
+                e.currentTarget.style.boxShadow = 'none';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1)';
+              }}
+            >
+              <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(59, 130, 246, 0.15)' }}>
+                <img 
+                  src="/appliances_preview.jpg" 
+                  alt="Gia dụng kho xưởng" 
+                  className="tool-img"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+                />
+              </div>
+              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.25rem' }}>📺</span>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#3b82f6' }}>Gia Dụng Kho Xưởng AI</h3>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                  Tự động lên kịch bản, lồng tiếng và sinh video giới thiệu review đồ gia dụng tại kho xưởng, cửa hàng, tủ bếp với bối cảnh chân thực 3D.
+                </p>
+                <button 
+                  type="button" 
+                  disabled
+                  className="glass-button"
+                  style={{ 
+                    width: '100%', 
+                    padding: '12px', 
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px dashed rgba(59, 130, 246, 0.3)',
+                    color: 'rgba(255, 255, 255, 0.4)',
+                    fontWeight: 'bold',
+                    marginTop: '10px',
+                    cursor: 'not-allowed'
+                  }}
+                >
+                  Sắp ra mắt
+                </button>
+              </div>
+            </div>
+
+            {/* Card 7: Snacks & Drinks (Ăn vặt & Đồ uống) - View Only */}
+            <div 
+              className="glass-panel" 
+              style={{
+                padding: 0,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                border: '1px solid rgba(236, 72, 153, 0.2)',
+                position: 'relative'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-6px)';
+                e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.6)';
+                e.currentTarget.style.boxShadow = '0 12px 30px rgba(236, 72, 153, 0.15)';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1.05)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.2)';
+                e.currentTarget.style.boxShadow = 'none';
+                const img = e.currentTarget.querySelector('.tool-img');
+                if (img) img.style.transform = 'scale(1)';
+              }}
+            >
+              <div style={{ width: '100%', aspectRatio: '16/9', overflow: 'hidden', borderBottom: '1px solid rgba(236, 72, 153, 0.15)' }}>
+                <img 
+                  src="/snacks_preview.jpg" 
+                  alt="Ăn vặt đồ uống" 
+                  className="tool-img"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+                />
+              </div>
+              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.25rem' }}>🧋</span>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0, color: '#ec4899' }}>Ăn Vặt & Đồ Uống AI</h3>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: '1.5', margin: 0, flex: 1 }}>
+                  Tạo video review ẩm thực hấp dẫn từ POV cầm cốc trà sữa, mở hộp thức ăn vặt bốc khói, nhai giòn rụm kích thích giác quan.
+                </p>
+                <button 
+                  type="button" 
+                  disabled
+                  className="glass-button"
+                  style={{ 
+                    width: '100%', 
+                    padding: '12px', 
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px dashed rgba(236, 72, 153, 0.3)',
+                    color: 'rgba(255, 255, 255, 0.4)',
+                    fontWeight: 'bold',
+                    marginTop: '10px',
+                    cursor: 'not-allowed'
+                  }}
+                >
+                  Sắp ra mắt
+                </button>
+              </div>
+            </div>
+
           </div>
 
         </div>
