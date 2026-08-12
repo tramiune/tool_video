@@ -383,6 +383,20 @@ function App() {
   const [copiedText, setCopiedText] = useState(false);
   const [userProfileLoaded, setUserProfileLoaded] = useState(false);
   const [activeLightboxMedia, setActiveLightboxMedia] = useState(null); // null or { type, mediaUrl, prompt }
+
+  useEffect(() => {
+    if (showPricingModal) {
+      window.fbq?.('track', 'AddToCart', {
+        content_name: 'Bảng Giá Dịch Vụ meo3',
+        content_category: 'Pricing Plans'
+      });
+      window.ttq?.track('AddToCart', {
+        content_name: 'Bảng Giá Dịch Vụ meo3',
+        content_category: 'Pricing Plans',
+        content_type: 'product'
+      });
+    }
+  }, [showPricingModal]);
   
   const [isTryOnView, setIsTryOnView] = useState(false);
   const [tryonPersonFile, setTryonPersonFile] = useState(null);
@@ -648,6 +662,25 @@ function App() {
       setIsDramaView(isHashDrama || isHashSumo);
       setIsToolsView(isHashTools);
       setIsMergeVideoView(isHashMergeVideo);
+
+      if (hash && hash !== '') {
+        const viewName = isHashAdmin ? 'Quản trị' :
+                         isHashAutoTool ? 'Tự động tạo video' :
+                         isHashTryOn ? 'Thay đồ hàng loạt (Try-On)' :
+                         isHashAudio ? 'Dựng Audio & Lồng tiếng' :
+                         isHashDrama ? 'Kênh Mẹ Chồng Nàng Dâu' :
+                         isHashSumo ? 'Kênh Gạc Hươu Sumo' :
+                         isHashMergeVideo ? 'Ghép nối video' :
+                         isHashTools ? 'Danh mục công cụ AI' : 'Trang chủ';
+        window.fbq?.('track', 'ViewContent', {
+          content_name: viewName,
+          content_category: 'AI Tools Platform'
+        });
+        window.ttq?.track('ViewContent', {
+          content_name: viewName,
+          content_category: 'AI Tools Platform'
+        });
+      }
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
