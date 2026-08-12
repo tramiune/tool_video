@@ -542,6 +542,20 @@ function App() {
               content_name: previousPendingPayment.tier,
               order_id: transactionId
             });
+            window.ttq?.track('CompletePayment', {
+              value: Number(previousPendingPayment.amount || 0),
+              currency: 'VND',
+              content_name: previousPendingPayment.tier,
+              content_type: 'product',
+              contents: [
+                {
+                  content_id: previousPendingPayment.tier,
+                  content_name: previousPendingPayment.tier,
+                  quantity: 1,
+                  price: Number(previousPendingPayment.amount || 0)
+                }
+              ]
+            });
             localStorage.setItem(storageKey, '1');
           }
         }
@@ -1035,6 +1049,20 @@ function App() {
         currency: 'VND',
         content_name: tierKey
       });
+      window.ttq?.track('InitiateCheckout', {
+        value: getUpgradeCost(tierKey),
+        currency: 'VND',
+        content_name: tierKey,
+        content_type: 'product',
+        contents: [
+          {
+            content_id: tierKey,
+            content_name: tierKey,
+            quantity: 1,
+            price: getUpgradeCost(tierKey)
+          }
+        ]
+      });
       return;
     }
     
@@ -1055,6 +1083,20 @@ function App() {
         value: getUpgradeCost(tierKey),
         currency: 'VND',
         content_name: tierKey
+      });
+      window.ttq?.track('InitiateCheckout', {
+        value: getUpgradeCost(tierKey),
+        currency: 'VND',
+        content_name: tierKey,
+        content_type: 'product',
+        contents: [
+          {
+            content_id: tierKey,
+            content_name: tierKey,
+            quantity: 1,
+            price: getUpgradeCost(tierKey)
+          }
+        ]
       });
     } catch (e) {
       console.error("Failed to generate payment intent:", e);
