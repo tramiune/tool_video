@@ -950,6 +950,8 @@ class ApiClient {
   }
 }
 
+const useSingleProfile = process.env.SINGLE_PROFILE === 'true';
+
 const videoApiClient = new ApiClient({
   label: 'video',
   browserManager,
@@ -959,13 +961,13 @@ const videoApiClient = new ApiClient({
 const videoApiClient2 = new ApiClient({
   label: 'video2',
   browserManager: browserManager.video2,
-  cookieFile: config.VIDEO2_COOKIE_FILE
+  cookieFile: useSingleProfile ? config.COOKIE_FILE : config.VIDEO2_COOKIE_FILE
 });
 
 const imageApiClient = new ApiClient({
   label: 'image',
-  browserManager,
-  cookieFile: config.COOKIE_FILE
+  browserManager: browserManager.image || browserManager,
+  cookieFile: useSingleProfile ? config.COOKIE_FILE : config.IMAGE_COOKIE_FILE
 });
 
 videoApiClient.image = imageApiClient;

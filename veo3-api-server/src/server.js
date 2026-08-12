@@ -264,7 +264,8 @@ const videoScheduler = new PerUserVideoScheduler({
 let videoClientRR = 0;
 function getVideoClients() {
   const list = [apiClient];
-  if (fs.existsSync(config.VIDEO2_COOKIE_FILE) && fs.existsSync(config.VIDEO2_USER_DATA_DIR)) {
+  const useSingleProfile = process.env.SINGLE_PROFILE === 'true';
+  if (!useSingleProfile && fs.existsSync(config.VIDEO2_COOKIE_FILE) && fs.existsSync(config.VIDEO2_USER_DATA_DIR)) {
     list.push(apiClient.video2);
   }
   return list;
