@@ -2231,12 +2231,32 @@ app.get('/api/audio/jobs', async (req, res) => {
               ? match.outputUrl
               : `${audioClient.BASE_URL}${match.outputUrl}`;
           }
-          if (status !== data.status || outputUrl !== data.outputUrl) {
-            try {
-              await db.collection('audio_tasks').doc(d.id).update({ status, outputUrl, updatedAt: Date.now() });
-            } catch (e) {}
-          }
         }
+      }
+
+      if ((status === 'SUCCESS' || status === 'COMPLETED') && outputUrl && !outputUrl.includes('r2.dev')) {
+        try {
+          logger.info(`[Audio] Upstream job ${data.jobUid} finished, uploading output to R2...`);
+          const fetchRes = await fetch(outputUrl);
+          const arrayBuffer = await fetchRes.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const contentType = fetchRes.headers.get('content-type') || 'audio/mpeg';
+          const key = `meo3/audio/${data.jobUid}.mp3`;
+          const r2Url = await uploadToR2(buffer, key, contentType);
+          outputUrl = r2Url;
+          status = 'COMPLETED';
+          logger.success(`[Audio] Uploaded job ${data.jobUid} to R2: ${r2Url}`);
+          
+          try {
+            await db.collection('audio_tasks').doc(d.id).update({ status, outputUrl, updatedAt: Date.now() });
+          } catch (e) {}
+        } catch (uploadErr) {
+          logger.error(`[Audio] Failed to upload job ${data.jobUid} to R2:`, uploadErr);
+        }
+      } else if (status !== data.status || outputUrl !== data.outputUrl) {
+        try {
+          await db.collection('audio_tasks').doc(d.id).update({ status, outputUrl, updatedAt: Date.now() });
+        } catch (e) {}
       }
 
       return {

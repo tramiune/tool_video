@@ -4596,7 +4596,24 @@ function App() {
                       {j.status === 'COMPLETED' && j.outputUrl ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <audio controls src={j.outputUrl} style={{ height: '36px', maxWidth: '200px' }} />
-                          <a href={j.outputUrl} target="_blank" rel="noopener noreferrer" download style={{ color: '#10b981', fontSize: '0.75rem', whiteSpace: 'nowrap', textDecoration: 'none', fontWeight: '500' }}>⬇ Tải về</a>
+                          <button
+                            onClick={() => handleDownload(j.outputUrl, `audio_${j.id}.mp3`)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#10b981',
+                              fontSize: '0.75rem',
+                              whiteSpace: 'nowrap',
+                              cursor: 'pointer',
+                              fontWeight: '600',
+                              padding: '2px 6px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            ⬇ Tải về
+                          </button>
                         </div>
                       ) : j.status === 'FAILED' ? (
                         <span style={{ color: '#f87171', fontSize: '0.75rem' }}>Thất bại</span>
