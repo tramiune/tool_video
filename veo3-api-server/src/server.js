@@ -563,16 +563,19 @@ app.post('/api/track/login', async (req, res) => {
   const userAgent = req.headers['user-agent'] || 'unknown';
   const platform = /iphone|ipad|ipod/i.test(userAgent) ? 'iOS' : /android/i.test(userAgent) ? 'Android' : 'Desktop';
 
+  const isGuest = !email || email === 'no-email';
   const sourceName = source ? source.toUpperCase() : 'TIKTOK';
+  const userType = isGuest ? '(DÙNG THỬ ẨN DANH)' : '';
+
   logger.info(`[Tracking] ${sourceName} user logged in successfully: uid=${uid}, email=${email}, name=${displayName}`);
-  logTikTokEvent('login_success', ip, uid, { email, displayName, platform, source });
+  logTikTokEvent(isGuest ? 'login_guest_success' : 'login_success', ip, uid, { email, displayName, platform, source });
 
   try {
     const lines = [
-      `🔑 <b>USER ${sourceName} ĐĂNG NHẬP THÀNH CÔNG</b>`,
+      `🔑 <b>USER ${sourceName} ${userType} ĐĂNG NHẬP THÀNH CÔNG</b>`,
       `👤 User ID: <code>${uid}</code>`,
-      `📧 Email: <code>${email}</code>`,
-      `📛 Tên: <b>${displayName}</b>`,
+      `📧 Email: <code>${email || 'Khách dùng thử'}</code>`,
+      `📛 Tên: <b>${displayName || 'Khách dùng thử'}</b>`,
       `💻 Thiết bị: <b>${platform}</b>`,
       `📡 IP: <code>${ip}</code>`
     ];
