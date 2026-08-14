@@ -451,7 +451,25 @@ const videoBrowser2 = useSingleProfile ? videoBrowser : new BrowserManager({
   targetUrl: config.VIDEO2_TARGET_URL
 });
 
+const videoBrowser3 = useSingleProfile ? videoBrowser : new BrowserManager({
+  label: 'video3',
+  debugPort: config.VIDEO3_DEBUG_PORT,
+  userDataDir: config.VIDEO3_USER_DATA_DIR,
+  cookieFile: config.VIDEO3_COOKIE_FILE,
+  targetUrl: config.VIDEO3_TARGET_URL
+});
+
+const videoBrowser4 = useSingleProfile ? videoBrowser : new BrowserManager({
+  label: 'video4',
+  debugPort: config.VIDEO4_DEBUG_PORT,
+  userDataDir: config.VIDEO4_USER_DATA_DIR,
+  cookieFile: config.VIDEO4_COOKIE_FILE,
+  targetUrl: config.VIDEO4_TARGET_URL
+});
+
 // Backwards-compatible default export = video browser (existing code relies on it)
 videoBrowser.image = imageBrowser;
 videoBrowser.video2 = videoBrowser2;
+videoBrowser.video3 = videoBrowser3;
+videoBrowser.video4 = videoBrowser4;
 module.exports = videoBrowser;

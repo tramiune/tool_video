@@ -32,6 +32,18 @@ module.exports = {
   VIDEO2_DEBUG_PORT: 9224,
   VIDEO2_TARGET_URL: 'https://labs.google/fx/vi/tools/flow',
 
+  // 3rd Google account for video generation (port 9225) - load-balances with other video nicks
+  VIDEO3_COOKIE_FILE: path.join(ROOT_DIR, 'cookies_video3.json'),
+  VIDEO3_USER_DATA_DIR: path.join(os.homedir(), 'Veo3Data', '.api-chrome-profile-video3'),
+  VIDEO3_DEBUG_PORT: 9225,
+  VIDEO3_TARGET_URL: 'https://labs.google/fx/vi/tools/flow',
+
+  // 4th Google account for video generation (port 9226) - load-balances with other video nicks
+  VIDEO4_COOKIE_FILE: path.join(ROOT_DIR, 'cookies_video4.json'),
+  VIDEO4_USER_DATA_DIR: path.join(os.homedir(), 'Veo3Data', '.api-chrome-profile-video4'),
+  VIDEO4_DEBUG_PORT: 9226,
+  VIDEO4_TARGET_URL: 'https://labs.google/fx/vi/tools/flow',
+
   // Browser path resolution (Mac/Windows default search)
   getBrowserPath: () => {
     if (process.env.BRAVE_PATH) return process.env.BRAVE_PATH;

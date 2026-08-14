@@ -5893,11 +5893,11 @@ function App() {
     const usage = getTodayUsage();
 
     if (activeTab === 'video') {
-      // Free tier: chỉ được làm 3 video duy nhất toàn đời (all-time)
+      // Free tier: chỉ được làm 1 video duy nhất toàn đời (all-time)
       if (activeUserTier === 'free') {
         const allTimeVideos = getAllTimeVideoCount();
-        if (allTimeVideos >= 3) {
-          setLimitError({ type: 'video', limit: 3, current: allTimeVideos, isAllTime: true });
+        if (allTimeVideos >= 1) {
+          setLimitError({ type: 'video', limit: 1, current: allTimeVideos, isAllTime: true });
           return;
         }
       } else if (usage.videos >= currentLimits.videos) {
@@ -5907,11 +5907,11 @@ function App() {
     }
 
     if (activeTab === 'image') {
-      // Free tier: chỉ được làm 3 ảnh duy nhất toàn đời (all-time)
+      // Free tier: chỉ được làm 1 ảnh duy nhất toàn đời (all-time)
       if (activeUserTier === 'free') {
         const allTimeImages = getAllTimeImageCount();
-        if (allTimeImages >= 3) {
-          setLimitError({ type: 'image', limit: 3, current: allTimeImages, isAllTime: true });
+        if (allTimeImages >= 1) {
+          setLimitError({ type: 'image', limit: 1, current: allTimeImages, isAllTime: true });
           return;
         }
       } else if (usage.images >= currentLimits.images) {

@@ -537,22 +537,7 @@ app.get('/api/track/redirect', async (req, res) => {
   // Log event in local file (always)
   logTikTokEvent(isInApp ? 'land_webview' : 'land', ip, null, { ref, platform, referrer });
 
-  // Only alert Telegram if they successfully got out of the webview into a real browser
-  if (!isInApp) {
-    try {
-      const lines = [
-        '📱 <b>USER VƯỢT GATE THÀNH CÔNG</b>',
-        `🏷️ Nguồn: <b>${ref || 'Tiktok Ads'}</b>`,
-        `💻 Hệ điều hành: <b>${platform}</b>`,
-        `🌐 Trình duyệt: <code>${userAgent.substring(0, 100)}...</code>`,
-        `📡 IP: <code>${ip}</code>`,
-        `🔗 Referrer: <code>${referrer.substring(0, 150)}...</code>`
-      ];
-      await telegram.sendMessage(lines.join('\n'));
-    } catch (e) {
-      logger.error('Failed to send telegram redirect tracking:', e.message);
-    }
-  }
+
 
   res.json({ success: true });
 });
@@ -3195,16 +3180,13 @@ startCookieSyncListener().then(() => {
   browserManager.initialize().catch(err => {
     logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
   });
-  if (fs.existsSync(config.IMAGE_USER_DATA_DIR)) {
+  const useSingleProfile = process.env.SINGLE_PROFILE === 'true';
+  if (!useSingleProfile) {
     browserManager.image.initialize().catch(err => {
-      logger.warn(`Initial image browser startup warning: ${err.message}. It will retry on the first API call.`);
+      logger.warn(`Initial image browser startup warning: ${err.message}.`);
     });
-  }
-
-  // Warm up the 2nd video nick if its profile exists (login captured on first request)
-  if (fs.existsSync(config.VIDEO2_USER_DATA_DIR)) {
     browserManager.video2.initialize().catch(err => {
-      logger.warn(`Initial video2 browser startup warning: ${err.message}. It will retry on the first API call.`);
+      logger.warn(`Initial video2 browser startup warning: ${err.message}.`);
     });
   }
 

@@ -965,6 +965,18 @@ const videoApiClient2 = new ApiClient({
   cookieFile: useSingleProfile ? config.COOKIE_FILE : config.VIDEO2_COOKIE_FILE
 });
 
+const videoApiClient3 = new ApiClient({
+  label: 'video3',
+  browserManager: browserManager.video3,
+  cookieFile: useSingleProfile ? config.COOKIE_FILE : config.VIDEO3_COOKIE_FILE
+});
+
+const videoApiClient4 = new ApiClient({
+  label: 'video4',
+  browserManager: browserManager.video4,
+  cookieFile: useSingleProfile ? config.COOKIE_FILE : config.VIDEO4_COOKIE_FILE
+});
+
 const imageApiClient = new ApiClient({
   label: 'image',
   browserManager: browserManager.image || browserManager,
@@ -973,4 +985,6 @@ const imageApiClient = new ApiClient({
 
 videoApiClient.image = imageApiClient;
 videoApiClient.video2 = videoApiClient2;
+videoApiClient.video3 = videoApiClient3;
+videoApiClient.video4 = videoApiClient4;
 module.exports = videoApiClient;
