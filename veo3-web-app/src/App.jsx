@@ -5600,6 +5600,7 @@ function App() {
         const trackKey = `tracked_login_${currentUser.uid}`;
         if (!sessionStorage.getItem(trackKey)) {
           sessionStorage.setItem(trackKey, 'true');
+          const source = sessionStorage.getItem('webview_source') || 'other';
           fetch(`${API_BASE}/api/track/login`, {
             method: 'POST',
             headers: {
@@ -5608,7 +5609,8 @@ function App() {
             body: JSON.stringify({
               uid: currentUser.uid,
               email: currentUser.email || 'no-email',
-              displayName: currentUser.displayName || 'no-name'
+              displayName: currentUser.displayName || 'no-name',
+              source
             })
           }).catch(err => console.error('Failed to send tracking login:', err));
         }

@@ -551,17 +551,18 @@ app.get('/api/track/redirect', async (req, res) => {
 });
 
 app.post('/api/track/login', async (req, res) => {
-  const { uid, email, displayName } = req.body;
+  const { uid, email, displayName, source } = req.body;
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   const userAgent = req.headers['user-agent'] || 'unknown';
   const platform = /iphone|ipad|ipod/i.test(userAgent) ? 'iOS' : /android/i.test(userAgent) ? 'Android' : 'Desktop';
 
-  logger.info(`[Tracking] TikTok user logged in successfully: uid=${uid}, email=${email}, name=${displayName}`);
-  logTikTokEvent('login_success', ip, uid, { email, displayName, platform });
+  const sourceName = source ? source.toUpperCase() : 'TIKTOK';
+  logger.info(`[Tracking] ${sourceName} user logged in successfully: uid=${uid}, email=${email}, name=${displayName}`);
+  logTikTokEvent('login_success', ip, uid, { email, displayName, platform, source });
 
   try {
     const lines = [
-      '🔑 <b>USER TIKTOK ĐĂNG NHẬP THÀNH CÔNG</b>',
+      `🔑 <b>USER ${sourceName} ĐĂNG NHẬP THÀNH CÔNG</b>`,
       `👤 User ID: <code>${uid}</code>`,
       `📧 Email: <code>${email}</code>`,
       `📛 Tên: <b>${displayName}</b>`,
