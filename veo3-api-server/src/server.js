@@ -530,21 +530,28 @@ app.get('/api/track/redirect', async (req, res) => {
   const platform = /iphone|ipad|ipod/i.test(userAgent) ? 'iOS' : /android/i.test(userAgent) ? 'Android' : 'Desktop';
   const referrer = req.headers['referer'] || 'unknown';
 
-  logger.info(`[Tracking] User redirected successfully from in-app webview: ref=${ref}, IP=${ip}, Platform=${platform}`);
-  logTikTokEvent('land', ip, null, { ref, platform, referrer });
+  const isInApp = /FBAN|FBAV|Instagram|Messenger|TikTok|Zalo/i.test(userAgent);
 
-  try {
-    const lines = [
-      '📱 <b>USER VƯỢT GATE THÀNH CÔNG</b>',
-      `🏷️ Nguồn: <b>${ref || 'Tiktok Ads'}</b>`,
-      `💻 Hệ điều hành: <b>${platform}</b>`,
-      `🌐 Trình duyệt: <code>${userAgent.substring(0, 100)}...</code>`,
-      `📡 IP: <code>${ip}</code>`,
-      `🔗 Referrer: <code>${referrer.substring(0, 150)}...</code>`
-    ];
-    await telegram.sendMessage(lines.join('\n'));
-  } catch (e) {
-    logger.error('Failed to send telegram redirect tracking:', e.message);
+  logger.info(`[Tracking] User hit redirect route: ref=${ref}, IP=${ip}, Platform=${platform}, isInApp=${isInApp}`);
+  
+  // Log event in local file (always)
+  logTikTokEvent(isInApp ? 'land_webview' : 'land', ip, null, { ref, platform, referrer });
+
+  // Only alert Telegram if they successfully got out of the webview into a real browser
+  if (!isInApp) {
+    try {
+      const lines = [
+        '📱 <b>USER VƯỢT GATE THÀNH CÔNG</b>',
+        `🏷️ Nguồn: <b>${ref || 'Tiktok Ads'}</b>`,
+        `💻 Hệ điều hành: <b>${platform}</b>`,
+        `🌐 Trình duyệt: <code>${userAgent.substring(0, 100)}...</code>`,
+        `📡 IP: <code>${ip}</code>`,
+        `🔗 Referrer: <code>${referrer.substring(0, 150)}...</code>`
+      ];
+      await telegram.sendMessage(lines.join('\n'));
+    } catch (e) {
+      logger.error('Failed to send telegram redirect tracking:', e.message);
+    }
   }
 
   res.json({ success: true });
