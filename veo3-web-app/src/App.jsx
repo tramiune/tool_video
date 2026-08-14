@@ -401,10 +401,13 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
-    if (ref === 'tiktok_webview' && !sessionStorage.getItem('tracked_redirect')) {
-      sessionStorage.setItem('tracked_redirect', 'true');
-      fetch(`${API_BASE}/api/track/redirect?ref=tiktok_webview`)
-        .catch(err => console.error('Failed to send tracking redirect:', err));
+    if (ref === 'tiktok_webview') {
+      sessionStorage.setItem('is_from_tiktok', 'true');
+      if (!sessionStorage.getItem('tracked_redirect')) {
+        sessionStorage.setItem('tracked_redirect', 'true');
+        fetch(`${API_BASE}/api/track/redirect?ref=tiktok_webview`)
+          .catch(err => console.error('Failed to send tracking redirect:', err));
+      }
     }
   }, []);
   
@@ -5566,6 +5569,24 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+
+      if (currentUser && sessionStorage.getItem('is_from_tiktok') === 'true') {
+        const trackKey = `tracked_login_${currentUser.uid}`;
+        if (!sessionStorage.getItem(trackKey)) {
+          sessionStorage.setItem(trackKey, 'true');
+          fetch(`${API_BASE}/api/track/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              uid: currentUser.uid,
+              email: currentUser.email || 'no-email',
+              displayName: currentUser.displayName || 'no-name'
+            })
+          }).catch(err => console.error('Failed to send tracking login:', err));
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
