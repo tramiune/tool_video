@@ -1,10 +1,10 @@
 {
   "summary": {
-    "land": 7,
+    "land": 27,
     "click_login": 1,
     "click_login_facebook": 2,
-    "login_success": 2,
-    "generate_video_facebook": 2,
+    "login_success": 3,
+    "generate_video_facebook": 3,
     "click_login_tiktok": 1,
     "open_pricing_facebook": 1
   },
@@ -13,7 +13,16 @@
       "116.96.46.201",
       "42.114.32.156",
       "2001:ee0:4756:e800:b016:803c:caf:a88",
-      "2402:800:61a6:e3d2:a45f:5742:379a:d7d4"
+      "2402:800:61a6:e3d2:a45f:5742:379a:d7d4",
+      "113.185.45.168",
+      "2402:800:6119:9c30:98c9:2c2:6156:d146",
+      "51.79.155.15",
+      "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "2402:800:61c3:f67b:7590:f44f:a90c:1835",
+      "2402:800:6119:c9c1:248e:6df3:4917:3e5e",
+      "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
+      "2402:800:6232:4961:ebdb:20d:50b0:64d5",
+      "125.212.159.80"
     ],
     "click_login": [
       "116.96.46.201"
@@ -23,10 +32,12 @@
     ],
     "login_success": [
       "QsJESmhCTveKFVmcyjs5hYdJryB2",
-      "z1URSBTtbKRz8FvQ7RrglY2bG5I3"
+      "z1URSBTtbKRz8FvQ7RrglY2bG5I3",
+      "U0cf8nM7wMOdLloUOSwBvf90zrV2"
     ],
     "generate_video_facebook": [
-      "QsJESmhCTveKFVmcyjs5hYdJryB2"
+      "QsJESmhCTveKFVmcyjs5hYdJryB2",
+      "U0cf8nM7wMOdLloUOSwBvf90zrV2"
     ],
     "click_login_tiktok": [
       "2001:ee0:4756:e800:b016:803c:caf:a88"
@@ -36,6 +47,248 @@
     ]
   },
   "recentLogs": [
+    {
+      "timestamp": "2026-08-14T04:27:08.437Z",
+      "eventName": "land",
+      "ip": "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:27:03.941Z",
+      "eventName": "land",
+      "ip": "125.212.159.80",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:27:03.736Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:c9c1:248e:6df3:4917:3e5e",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:59.899Z",
+      "eventName": "land",
+      "ip": "113.185.45.168",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:54.707Z",
+      "eventName": "land",
+      "ip": "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:50.669Z",
+      "eventName": "generate_video_facebook",
+      "ip": "51.79.155.15",
+      "uid": "U0cf8nM7wMOdLloUOSwBvf90zrV2",
+      "metadata": {
+        "prompt": "Ultra realistic cinematic 9:16 video, 8 seconds duration. Inside Shop Chú Ba Tư, a warm Vietnamese men's fashion boutique.\n\nKeep the same fixed character Chú Ba Tư: elderly Vietnamese man, salt-and-pepper hair, black rectangular glasses, light mustache, friendly face, wearing a blue polo shirt and brown trousers.\n\nA young male customer stands beside him looking at a black long sleeve silk shirt with elegant white flowing wave patterns. Chú Ba Tư holds the shirt naturally, looks at the customer first, not the camera. He studies the customer's style like a real experienced shop owner.\n\nDialogue Vietnamese:\nKhách: \"Chú ơi, con thấy áo này đẹp mà không biết mặc có hợp không.\"\nChú Ba Tư: \"Để chú nhìn thử dáng người con, chọn áo phải hợp với mình mới mặc lâu được.\"\n\nChú Ba Tư speaks with a warm elderly Vietnamese male voice, clear pronunciation, natural breathing, realistic pauses.\n\nCamera: handheld documentary style, medium shot, natural facial expressions.\nAudio: quiet boutique ambience, soft emotional background music.\n\nNegative:\ndifferent Chú Ba Tư, face change, outfit change, character inconsistency, fake smile, advertisement acting, robotic voice, bad lip sync, unclear Vietnamese speech, distorted hands, extra fingers, blurry, cartoon, watermark, subtitles, text overlay",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:44.706Z",
+      "eventName": "land",
+      "ip": "2402:800:6232:4961:ebdb:20d:50b0:64d5",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:43.294Z",
+      "eventName": "land",
+      "ip": "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:43.280Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:9c30:98c9:2c2:6156:d146",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:35.759Z",
+      "eventName": "land",
+      "ip": "2402:800:61c3:f67b:7590:f44f:a90c:1835",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:33.333Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:26:08.277Z",
+      "eventName": "land",
+      "ip": "2001:ee0:4756:e800:b016:803c:caf:a88",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:49.926Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:9c30:98c9:2c2:6156:d146",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:44.245Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:c9c1:248e:6df3:4917:3e5e",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:36.171Z",
+      "eventName": "land",
+      "ip": "2402:800:61c3:f67b:7590:f44f:a90c:1835",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:33.018Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:31.623Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:9c30:98c9:2c2:6156:d146",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:31.547Z",
+      "eventName": "login_success",
+      "ip": "51.79.155.15",
+      "uid": "U0cf8nM7wMOdLloUOSwBvf90zrV2",
+      "metadata": {
+        "email": "nguyenhieuuminh2021@gmail.com",
+        "displayName": "Hiếu Nguyễn",
+        "platform": "Android",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:28.704Z",
+      "eventName": "land",
+      "ip": "51.79.155.15",
+      "uid": null,
+      "metadata": {
+        "ref": "facebook_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:23.975Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:9c30:98c9:2c2:6156:d146",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:25:13.212Z",
+      "eventName": "land",
+      "ip": "113.185.45.168",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:24:20.351Z",
+      "eventName": "land",
+      "ip": "2001:ee0:4756:e800:b016:803c:caf:a88",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
     {
       "timestamp": "2026-08-14T04:23:55.543Z",
       "eventName": "login_success",

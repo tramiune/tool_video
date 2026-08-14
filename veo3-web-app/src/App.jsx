@@ -6128,38 +6128,40 @@ function App() {
             <span>Đăng nhập bằng Google</span>
           </button>
 
-          {/* Anonymous Trial Button */}
-          <button 
-            type="button"
-            onClick={handleAnonymousLogin} 
-            style={{ 
-              width: '100%', 
-              justifyContent: 'center',
-              marginTop: '16px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              color: '#fff',
-              padding: '12px 24px',
-              borderRadius: '12px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'background 0.2s, border-color 0.2s'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-            }}
-          >
-            <Sparkles size={18} color="#a78bfa" />
-            <span>Trải nghiệm dùng thử ngay</span>
-          </button>
+          {/* Anonymous Trial Button (Only show to TikTok visitors) */}
+          {(sessionStorage.getItem('webview_source') === 'tiktok' || /tiktok/i.test(window.location.search) || /TikTok/i.test(navigator.userAgent)) && (
+            <button 
+              type="button"
+              onClick={handleAnonymousLogin} 
+              style={{ 
+                width: '100%', 
+                justifyContent: 'center',
+                marginTop: '16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                color: '#fff',
+                padding: '12px 24px',
+                borderRadius: '12px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'background 0.2s, border-color 0.2s'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+              }}
+            >
+              <Sparkles size={18} color="#a78bfa" />
+              <span>Trải nghiệm dùng thử ngay</span>
+            </button>
+          )}
         </div>
       </div>
     );
