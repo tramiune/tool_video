@@ -420,13 +420,24 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
+    const utmSource = params.get('utm_source');
+    
+    let source = null;
     if (ref && ref.endsWith('_webview')) {
-      const source = ref.replace('_webview', '');
+      source = ref.replace('_webview', '');
+    } else if (utmSource) {
+      if (/tiktok/i.test(utmSource)) source = 'tiktok';
+      else if (/facebook|fb/i.test(utmSource)) source = 'facebook';
+      else if (/zalo/i.test(utmSource)) source = 'zalo';
+      else source = utmSource.toLowerCase();
+    }
+
+    if (source) {
       sessionStorage.setItem('is_from_tiktok', 'true');
       sessionStorage.setItem('webview_source', source);
       if (!sessionStorage.getItem('tracked_redirect')) {
         sessionStorage.setItem('tracked_redirect', 'true');
-        fetch(`${API_BASE}/api/track/redirect?ref=${ref}`)
+        fetch(`${API_BASE}/api/track/redirect?ref=${source}_webview`)
           .catch(err => console.error('Failed to send tracking redirect:', err));
       }
     }
