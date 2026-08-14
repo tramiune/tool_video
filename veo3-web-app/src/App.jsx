@@ -435,8 +435,8 @@ function App() {
     if (source) {
       sessionStorage.setItem('is_from_tiktok', 'true');
       sessionStorage.setItem('webview_source', source);
-      if (!sessionStorage.getItem('tracked_redirect')) {
-        sessionStorage.setItem('tracked_redirect', 'true');
+      if (!localStorage.getItem('tracked_redirect')) {
+        localStorage.setItem('tracked_redirect', 'true');
         fetch(`${API_BASE}/api/track/redirect?ref=${source}_webview`)
           .catch(err => console.error('Failed to send tracking redirect:', err));
       }
@@ -5609,8 +5609,8 @@ function App() {
 
       if (currentUser && sessionStorage.getItem('is_from_tiktok') === 'true') {
         const trackKey = `tracked_login_${currentUser.uid}`;
-        if (!sessionStorage.getItem(trackKey)) {
-          sessionStorage.setItem(trackKey, 'true');
+        if (!localStorage.getItem(trackKey)) {
+          localStorage.setItem(trackKey, 'true');
           const source = sessionStorage.getItem('webview_source') || 'other';
           fetch(`${API_BASE}/api/track/login`, {
             method: 'POST',
