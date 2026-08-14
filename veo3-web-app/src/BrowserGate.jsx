@@ -3,6 +3,17 @@ import { Check, Copy, ExternalLink } from 'lucide-react';
 import { isInAppUserAgent } from './browserSupport';
 
 const getWebviewSource = () => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const utm = params.get('utm_source');
+    if (utm) {
+      if (/tiktok/i.test(utm)) return 'tiktok';
+      if (/facebook|fb/i.test(utm)) return 'facebook';
+      if (/zalo/i.test(utm)) return 'zalo';
+      return utm.toLowerCase();
+    }
+  } catch (e) {}
+
   const ua = navigator.userAgent || navigator.vendor || window.opera || '';
   if (/TikTok/i.test(ua)) return 'tiktok';
   if (/FBAN|FBAV|Instagram|Messenger/i.test(ua)) return 'facebook';
