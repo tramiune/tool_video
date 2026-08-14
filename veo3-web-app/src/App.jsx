@@ -12,15 +12,16 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 const trackTikTokEvent = (eventName, metadata = {}) => {
   if (sessionStorage.getItem('is_from_tiktok') === 'true') {
     const authUser = auth.currentUser;
+    const source = sessionStorage.getItem('webview_source') || 'other';
     fetch(`${API_BASE}/api/track/tiktok-event`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        eventName,
+        eventName: `${eventName}_${source}`,
         uid: authUser ? authUser.uid : null,
-        metadata
+        metadata: { ...metadata, source }
       })
     }).catch(err => console.error('[Tracking] Failed to track TikTok event:', err));
   }
@@ -419,11 +420,13 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
-    if (ref === 'tiktok_webview') {
+    if (ref && ref.endsWith('_webview')) {
+      const source = ref.replace('_webview', '');
       sessionStorage.setItem('is_from_tiktok', 'true');
+      sessionStorage.setItem('webview_source', source);
       if (!sessionStorage.getItem('tracked_redirect')) {
         sessionStorage.setItem('tracked_redirect', 'true');
-        fetch(`${API_BASE}/api/track/redirect?ref=tiktok_webview`)
+        fetch(`${API_BASE}/api/track/redirect?ref=${ref}`)
           .catch(err => console.error('Failed to send tracking redirect:', err));
       }
     }

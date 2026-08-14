@@ -2,11 +2,20 @@ import { useEffect, useState } from 'react';
 import { Check, Copy, ExternalLink } from 'lucide-react';
 import { isInAppUserAgent } from './browserSupport';
 
+const getWebviewSource = () => {
+  const ua = navigator.userAgent || navigator.vendor || window.opera || '';
+  if (/TikTok/i.test(ua)) return 'tiktok';
+  if (/FBAN|FBAV|Instagram|Messenger/i.test(ua)) return 'facebook';
+  if (/Zalo/i.test(ua)) return 'zalo';
+  return 'other';
+};
+
 const copyCurrentUrl = async () => {
   let currentUrl = window.location.href;
   try {
     const urlObj = new URL(currentUrl);
-    urlObj.searchParams.set('ref', 'tiktok_webview');
+    const source = getWebviewSource();
+    urlObj.searchParams.set('ref', `${source}_webview`);
     currentUrl = urlObj.toString();
   } catch (e) {}
 
@@ -55,7 +64,8 @@ export default function BrowserGate() {
     let targetUrl = window.location.href;
     try {
       const urlObj = new URL(targetUrl);
-      urlObj.searchParams.set('ref', 'tiktok_webview');
+      const source = getWebviewSource();
+      urlObj.searchParams.set('ref', `${source}_webview`);
       targetUrl = urlObj.toString();
     } catch (e) {}
 
