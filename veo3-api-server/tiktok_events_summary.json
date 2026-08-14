@@ -1,17 +1,165 @@
 {
   "summary": {
-    "land": 3,
-    "click_login": 1
+    "land": 7,
+    "click_login": 1,
+    "click_login_facebook": 2,
+    "login_success": 2,
+    "generate_video_facebook": 2,
+    "click_login_tiktok": 1,
+    "open_pricing_facebook": 1
   },
   "uniqueUsers": {
     "land": [
-      "116.96.46.201"
+      "116.96.46.201",
+      "42.114.32.156",
+      "2001:ee0:4756:e800:b016:803c:caf:a88",
+      "2402:800:61a6:e3d2:a45f:5742:379a:d7d4"
     ],
     "click_login": [
       "116.96.46.201"
+    ],
+    "click_login_facebook": [
+      "42.114.32.156"
+    ],
+    "login_success": [
+      "QsJESmhCTveKFVmcyjs5hYdJryB2",
+      "z1URSBTtbKRz8FvQ7RrglY2bG5I3"
+    ],
+    "generate_video_facebook": [
+      "QsJESmhCTveKFVmcyjs5hYdJryB2"
+    ],
+    "click_login_tiktok": [
+      "2001:ee0:4756:e800:b016:803c:caf:a88"
+    ],
+    "open_pricing_facebook": [
+      "QsJESmhCTveKFVmcyjs5hYdJryB2"
     ]
   },
   "recentLogs": [
+    {
+      "timestamp": "2026-08-14T04:23:55.543Z",
+      "eventName": "login_success",
+      "ip": "2402:800:61a6:e3d2:a45f:5742:379a:d7d4",
+      "uid": "z1URSBTtbKRz8FvQ7RrglY2bG5I3",
+      "metadata": {
+        "email": "nguyenxuannghia082024@gmail.com",
+        "displayName": "Nghĩa Nguyễn",
+        "platform": "Desktop",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:23:55.233Z",
+      "eventName": "land",
+      "ip": "2402:800:61a6:e3d2:a45f:5742:379a:d7d4",
+      "uid": null,
+      "metadata": {
+        "ref": "facebook_webview",
+        "platform": "Desktop",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:23:40.904Z",
+      "eventName": "open_pricing_facebook",
+      "ip": "42.114.32.156",
+      "uid": "QsJESmhCTveKFVmcyjs5hYdJryB2",
+      "metadata": {
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:23:37.884Z",
+      "eventName": "generate_video_facebook",
+      "ip": "42.114.32.156",
+      "uid": "QsJESmhCTveKFVmcyjs5hYdJryB2",
+      "metadata": {
+        "prompt": "I Want You Back” dance challenge",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:22:12.835Z",
+      "eventName": "click_login_tiktok",
+      "ip": "2001:ee0:4756:e800:b016:803c:caf:a88",
+      "uid": null,
+      "metadata": {
+        "source": "tiktok"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:22:03.336Z",
+      "eventName": "land",
+      "ip": "2001:ee0:4756:e800:b016:803c:caf:a88",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:17:22.473Z",
+      "eventName": "generate_video_facebook",
+      "ip": "42.114.32.156",
+      "uid": "QsJESmhCTveKFVmcyjs5hYdJryB2",
+      "metadata": {
+        "prompt": "I Want You Back” dance challenge",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:15:12.557Z",
+      "eventName": "login_success",
+      "ip": "42.114.32.156",
+      "uid": "QsJESmhCTveKFVmcyjs5hYdJryB2",
+      "metadata": {
+        "email": "nguyensinhtinh1989hn@gmail.com",
+        "displayName": "Chuột Vàng Vlog",
+        "platform": "Desktop",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:15:00.270Z",
+      "eventName": "click_login_facebook",
+      "ip": "42.114.32.156",
+      "uid": null,
+      "metadata": {
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:14:47.362Z",
+      "eventName": "click_login_facebook",
+      "ip": "42.114.32.156",
+      "uid": null,
+      "metadata": {
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:14:43.637Z",
+      "eventName": "land",
+      "ip": "42.114.32.156",
+      "uid": null,
+      "metadata": {
+        "ref": "facebook_webview",
+        "platform": "Desktop",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:13:45.694Z",
+      "eventName": "land",
+      "ip": "116.96.46.201",
+      "uid": null,
+      "metadata": {
+        "ref": "facebook_webview",
+        "platform": "iOS",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
     {
       "timestamp": "2026-08-14T04:07:49.932Z",
       "eventName": "land",

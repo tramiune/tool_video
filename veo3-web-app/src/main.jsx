@@ -5,9 +5,7 @@ import BrowserGate from './BrowserGate.jsx'
 import SupportedApp from './SupportedApp.jsx'
 import { isSupportedBrowser } from './browserSupport.js'
 
-const rootContent = isSupportedBrowser()
-  ? <SupportedApp />
-  : <BrowserGate />
+const rootContent = <SupportedApp />
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
