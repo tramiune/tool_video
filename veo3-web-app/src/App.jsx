@@ -6128,8 +6128,11 @@ function App() {
             <span>Đăng nhập bằng Google</span>
           </button>
 
-          {/* Anonymous Trial Button (Only show to TikTok visitors) */}
-          {(sessionStorage.getItem('webview_source') === 'tiktok' || /tiktok/i.test(window.location.search) || /TikTok/i.test(navigator.userAgent)) && (
+          {/* Anonymous Trial Button (Only show to TikTok/Facebook visitors) */}
+          {(sessionStorage.getItem('webview_source') === 'tiktok' || 
+            sessionStorage.getItem('webview_source') === 'facebook' || 
+            /tiktok|facebook|fb/i.test(window.location.search) || 
+            /TikTok|FBAN|FBAV|Instagram|Messenger/i.test(navigator.userAgent)) && (
             <button 
               type="button"
               onClick={handleAnonymousLogin} 

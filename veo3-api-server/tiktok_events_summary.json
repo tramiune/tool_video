@@ -1,12 +1,12 @@
 {
   "summary": {
-    "land": 27,
+    "land": 69,
     "click_login": 1,
     "click_login_facebook": 2,
     "login_success": 3,
-    "generate_video_facebook": 3,
+    "generate_video_facebook": 7,
     "click_login_tiktok": 1,
-    "open_pricing_facebook": 1
+    "open_pricing_facebook": 4
   },
   "uniqueUsers": {
     "land": [
@@ -22,7 +22,20 @@
       "2402:800:6119:c9c1:248e:6df3:4917:3e5e",
       "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
       "2402:800:6232:4961:ebdb:20d:50b0:64d5",
-      "125.212.159.80"
+      "125.212.159.80",
+      "2001:ee0:56b0:3940:2074:3ef7:2f68:db62",
+      "2001:ee0:4d17:7930:806:d93e:58ee:dfec",
+      "103.199.32.174",
+      "2402:800:6216:dc15:5dd7:63db:532b:580b",
+      "2402:800:620e:a03f:b051:ecde:f9bd:3cb9",
+      "2401:d800:51a1:9acf:de45:4906:a645:ad18",
+      "113.188.97.104",
+      "2402:800:61ea:174e:41e8:5913:fe94:cd8b",
+      "113.172.245.71",
+      "171.249.38.17",
+      "113.167.225.45",
+      "171.250.161.115",
+      "14.255.31.205"
     ],
     "click_login": [
       "116.96.46.201"
@@ -37,16 +50,547 @@
     ],
     "generate_video_facebook": [
       "QsJESmhCTveKFVmcyjs5hYdJryB2",
-      "U0cf8nM7wMOdLloUOSwBvf90zrV2"
+      "U0cf8nM7wMOdLloUOSwBvf90zrV2",
+      "z1URSBTtbKRz8FvQ7RrglY2bG5I3"
     ],
     "click_login_tiktok": [
       "2001:ee0:4756:e800:b016:803c:caf:a88"
     ],
     "open_pricing_facebook": [
-      "QsJESmhCTveKFVmcyjs5hYdJryB2"
+      "QsJESmhCTveKFVmcyjs5hYdJryB2",
+      "U0cf8nM7wMOdLloUOSwBvf90zrV2"
     ]
   },
   "recentLogs": [
+    {
+      "timestamp": "2026-08-14T04:35:10.620Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:35:00.040Z",
+      "eventName": "land",
+      "ip": "2001:ee0:56b0:3940:2074:3ef7:2f68:db62",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:34:25.483Z",
+      "eventName": "land",
+      "ip": "2401:d800:51a1:9acf:de45:4906:a645:ad18",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:34:16.374Z",
+      "eventName": "land",
+      "ip": "2402:800:61ea:174e:41e8:5913:fe94:cd8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:34:14.346Z",
+      "eventName": "land",
+      "ip": "2402:800:6216:dc15:5dd7:63db:532b:580b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:34:08.011Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:c9c1:248e:6df3:4917:3e5e",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:34:01.683Z",
+      "eventName": "land",
+      "ip": "14.255.31.205",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:33:49.756Z",
+      "eventName": "land",
+      "ip": "2402:800:61c3:f67b:7590:f44f:a90c:1835",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:33:49.545Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:33:24.112Z",
+      "eventName": "land",
+      "ip": "113.167.225.45",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:33:16.647Z",
+      "eventName": "land",
+      "ip": "2402:800:61ea:174e:41e8:5913:fe94:cd8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:33:09.289Z",
+      "eventName": "land",
+      "ip": "171.250.161.115",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:32:57.957Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:c9c1:248e:6df3:4917:3e5e",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:32:38.826Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:32:14.426Z",
+      "eventName": "land",
+      "ip": "113.167.225.45",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:32:14.203Z",
+      "eventName": "land",
+      "ip": "171.249.38.17",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:32:12.026Z",
+      "eventName": "land",
+      "ip": "113.172.245.71",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:32:11.066Z",
+      "eventName": "land",
+      "ip": "2402:800:6216:dc15:5dd7:63db:532b:580b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:32:06.486Z",
+      "eventName": "land",
+      "ip": "2402:800:61ea:174e:41e8:5913:fe94:cd8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:53.928Z",
+      "eventName": "land",
+      "ip": "2401:d800:51a1:9acf:de45:4906:a645:ad18",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:48.742Z",
+      "eventName": "generate_video_facebook",
+      "ip": "2402:800:61a6:e3d2:a45f:5742:379a:d7d4",
+      "uid": "z1URSBTtbKRz8FvQ7RrglY2bG5I3",
+      "metadata": {
+        "prompt": "{\"scene\":53,\"duration_seconds\":8,\"prompt\":\"Adult female platypus description: dense brown fur, broad bill, webbed feet, flat tail. Brown-green river water surrounds her body as she swims, pebbles and plants below, ultra-realistic, 16:9.\"}",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:46.095Z",
+      "eventName": "generate_video_facebook",
+      "ip": "2402:800:61a6:e3d2:a45f:5742:379a:d7d4",
+      "uid": "z1URSBTtbKRz8FvQ7RrglY2bG5I3",
+      "metadata": {
+        "prompt": "{\"scene\":52,\"duration_seconds\":8,\"prompt\":\"Underwater river scene with soft sunlight beams breaking through the surface, suspended particles, calm brown-green water, natural documentary beauty, 16:9.\"}",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:36.395Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:c9c1:248e:6df3:4917:3e5e",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:27.572Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:18.104Z",
+      "eventName": "land",
+      "ip": "113.188.97.104",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:08.307Z",
+      "eventName": "land",
+      "ip": "2402:800:61c3:f67b:7590:f44f:a90c:1835",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:03.964Z",
+      "eventName": "land",
+      "ip": "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:31:01.516Z",
+      "eventName": "land",
+      "ip": "2402:800:620e:a03f:b051:ecde:f9bd:3cb9",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:56.157Z",
+      "eventName": "land",
+      "ip": "2401:d800:51a1:9acf:de45:4906:a645:ad18",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:50.661Z",
+      "eventName": "land",
+      "ip": "2402:800:620e:a03f:b051:ecde:f9bd:3cb9",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:50.317Z",
+      "eventName": "land",
+      "ip": "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:43.635Z",
+      "eventName": "generate_video_facebook",
+      "ip": "2402:800:61a6:e3d2:a45f:5742:379a:d7d4",
+      "uid": "z1URSBTtbKRz8FvQ7RrglY2bG5I3",
+      "metadata": {
+        "prompt": "{\"scene\":51,\"duration_seconds\":8,\"prompt\":\"Adult female platypus description: brown waterproof fur, broad bill, webbed feet, flat tail, graceful underwater movement. Underwater view as she begins swimming through brown-green river water, cinematic realism, 16:9.\"}",
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:39.674Z",
+      "eventName": "land",
+      "ip": "2402:800:6216:dc15:5dd7:63db:532b:580b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:37.290Z",
+      "eventName": "land",
+      "ip": "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:37.034Z",
+      "eventName": "land",
+      "ip": "2402:800:6119:c9c1:248e:6df3:4917:3e5e",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:23.731Z",
+      "eventName": "land",
+      "ip": "2401:d800:422:cf2d:c86c:3dff:fe5a:1d8b",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:23.488Z",
+      "eventName": "open_pricing_facebook",
+      "ip": "51.79.155.15",
+      "uid": "U0cf8nM7wMOdLloUOSwBvf90zrV2",
+      "metadata": {
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:30:16.933Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:29:32.617Z",
+      "eventName": "land",
+      "ip": "116.96.46.201",
+      "uid": null,
+      "metadata": {
+        "ref": "facebook_webview",
+        "platform": "iOS",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:29:16.403Z",
+      "eventName": "land",
+      "ip": "103.199.32.174",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:29:10.274Z",
+      "eventName": "open_pricing_facebook",
+      "ip": "51.79.155.15",
+      "uid": "U0cf8nM7wMOdLloUOSwBvf90zrV2",
+      "metadata": {
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:29:05.755Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:29:01.785Z",
+      "eventName": "land",
+      "ip": "2001:ee0:4d17:7930:806:d93e:58ee:dfec",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:28:57.385Z",
+      "eventName": "land",
+      "ip": "2402:800:61c3:f67b:7590:f44f:a90c:1835",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:28:37.837Z",
+      "eventName": "open_pricing_facebook",
+      "ip": "51.79.155.15",
+      "uid": "U0cf8nM7wMOdLloUOSwBvf90zrV2",
+      "metadata": {
+        "source": "facebook"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:27:56.715Z",
+      "eventName": "land",
+      "ip": "2402:800:61c3:f67b:7590:f44f:a90c:1835",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:27:54.615Z",
+      "eventName": "land",
+      "ip": "2404:3a00:4:51cc:4cf1:6afb:dc0:4f2d",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:27:46.874Z",
+      "eventName": "land",
+      "ip": "2001:ee0:56b0:3940:2074:3ef7:2f68:db62",
+      "uid": null,
+      "metadata": {
+        "ref": "tiktok_webview",
+        "platform": "Android",
+        "referrer": "https://meo3.cloud/"
+      }
+    },
+    {
+      "timestamp": "2026-08-14T04:27:41.557Z",
+      "eventName": "generate_video_facebook",
+      "ip": "51.79.155.15",
+      "uid": "U0cf8nM7wMOdLloUOSwBvf90zrV2",
+      "metadata": {
+        "prompt": "Ultra realistic cinematic 9:16 video, 8 seconds duration. Continue the same scene, same characters, same Shop Chú Ba Tư.\n\nChú Ba Tư gently touches the black silk shirt fabric, slowly rubbing the material between his fingers. His expression becomes thoughtful and sincere, like someone with many years selling clothes.\n\nDialogue Vietnamese:\nChú Ba Tư:\n\"Áo đẹp không chỉ nằm ở cái nhìn đầu tiên. Quan trọng là mặc lên người có thấy thoải mái hay không.\"\n\nThe customer listens carefully and looks at the shirt with interest.\n\nChú Ba Tư voice: warm elderly Vietnamese male voice, calm, emotional, clear and natural.\n\nCamera: close-up of fabric texture, then close-up of Chú Ba Tư's eyes and expression.\nAudio: soft fabric movement, realistic shop sounds.\n\nNegative:\ndifferent person, changed shirt pattern, wrong product, emotionless face, forced acting, robotic voice, poor lip sync, unnatural movement, distorted hands, blurry, low quality, watermark, subtitles",
+        "source": "facebook"
+      }
+    },
     {
       "timestamp": "2026-08-14T04:27:08.437Z",
       "eventName": "land",
