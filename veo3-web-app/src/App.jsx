@@ -397,6 +397,16 @@ function App() {
       });
     }
   }, [showPricingModal]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref === 'tiktok_webview' && !sessionStorage.getItem('tracked_redirect')) {
+      sessionStorage.setItem('tracked_redirect', 'true');
+      fetch(`${API_BASE}/api/track/redirect?ref=tiktok_webview`)
+        .catch(err => console.error('Failed to send tracking redirect:', err));
+    }
+  }, []);
   
   const [isTryOnView, setIsTryOnView] = useState(false);
   const [tryonPersonFile, setTryonPersonFile] = useState(null);

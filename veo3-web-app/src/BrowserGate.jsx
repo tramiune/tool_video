@@ -3,7 +3,13 @@ import { Check, Copy, ExternalLink } from 'lucide-react';
 import { isInAppUserAgent } from './browserSupport';
 
 const copyCurrentUrl = async () => {
-  const currentUrl = window.location.href;
+  let currentUrl = window.location.href;
+  try {
+    const urlObj = new URL(currentUrl);
+    urlObj.searchParams.set('ref', 'tiktok_webview');
+    currentUrl = urlObj.toString();
+  } catch (e) {}
+
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(currentUrl);
     return;
@@ -46,20 +52,26 @@ export default function BrowserGate() {
   };
 
   const handleOpenBrowser = () => {
-    const currentUrl = window.location.href;
+    let targetUrl = window.location.href;
+    try {
+      const urlObj = new URL(targetUrl);
+      urlObj.searchParams.set('ref', 'tiktok_webview');
+      targetUrl = urlObj.toString();
+    } catch (e) {}
+
     void copyCurrentUrl().catch(() => {});
 
     if (isAndroid) {
-      const parsed = new URL(currentUrl);
+      const parsed = new URL(targetUrl);
       const intent = `intent://${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`
         + `#Intent;scheme=${parsed.protocol.replace(':', '')};package=com.android.chrome;`
-        + `S.browser_fallback_url=${encodeURIComponent(currentUrl)};end`;
+        + `S.browser_fallback_url=${encodeURIComponent(targetUrl)};end`;
       window.location.assign(intent);
       return;
     }
 
     if (isIOS) {
-      const withoutProtocol = currentUrl.replace(/^https?:\/\//, '');
+      const withoutProtocol = targetUrl.replace(/^https?:\/\//, '');
       const safariWindow = window.open(`x-safari-https://${withoutProtocol}`, '_blank');
       if (!safariWindow) window.location.assign(`googlechromes://${withoutProtocol}`);
       return;

@@ -466,6 +466,31 @@ app.get('/api/user-info', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get('/api/track/redirect', async (req, res) => {
+  const { ref } = req.query;
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  const platform = /iphone|ipad|ipod/i.test(userAgent) ? 'iOS' : /android/i.test(userAgent) ? 'Android' : 'Desktop';
+  const referrer = req.headers['referer'] || 'unknown';
+
+  logger.info(`[Tracking] User redirected successfully from in-app webview: ref=${ref}, IP=${ip}, Platform=${platform}`);
+
+  try {
+    const lines = [
+      '📱 <b>USER VƯỢT GATE THÀNH CÔNG</b>',
+      `🏷️ Nguồn: <b>${ref || 'Tiktok Ads'}</b>`,
+      `💻 Hệ điều hành: <b>${platform}</b>`,
+      `🌐 Trình duyệt: <code>${userAgent.substring(0, 100)}...</code>`,
+      `📡 IP: <code>${ip}</code>`,
+      `🔗 Referrer: <code>${referrer.substring(0, 150)}...</code>`
+    ];
+    await telegram.sendMessage(lines.join('\n'));
+  } catch (e) {
+    logger.error('Failed to send telegram redirect tracking:', e.message);
+  }
+
+  res.json({ success: true });
+});
 
 // Set Cookies dynamically
 app.post('/api/set-cookies', async (req, res) => {
