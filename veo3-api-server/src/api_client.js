@@ -12,6 +12,7 @@ const LABS_BASE = 'https://labs.google';
 const IMAGE_MODELS = {
   nano_banana_pro: 'GEM_PIX_2',
   nano_banana_2: 'NARWHAL',
+  nano_banana_2_lite: 'HARBOR_SEAL',
   imagen_4: 'IMAGEN_3_5',
   imagen_4_ref: 'R2I'
 };

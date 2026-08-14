@@ -6017,6 +6017,34 @@ function App() {
             Tạo ảnh và video AI chuyên nghiệp với nền tảng Cloud mạnh mẽ.
           </p>
 
+          {/* In-app Browser warning for TikTok/Facebook ads */}
+          {/FBAN|FBAV|Instagram|TikTok|Messenger|Line|Zalo/i.test(navigator.userAgent || navigator.vendor || window.opera) && (
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              borderRadius: '16px',
+              padding: '16px',
+              marginBottom: '24px',
+              textAlign: 'left',
+              color: '#fde047',
+              fontSize: '0.85rem',
+              lineHeight: '1.5',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', color: '#fbbf24' }}>
+                <span>⚠️ LƯU Ý KHI CHẠY TRÊN TIKTOK / FACEBOOK:</span>
+              </div>
+              <p style={{ margin: 0 }}>
+                Trình duyệt mặc định của TikTok/Facebook bị Google chặn không cho đăng nhập Google.
+              </p>
+              <p style={{ margin: 0, fontWeight: 'bold', color: '#fff' }}>
+                👉 Để đăng nhập và thanh toán thành công, vui lòng bấm vào nút ba chấm (...) ở góc trên cùng bên phải và chọn "Mở bằng trình duyệt" (hoặc "Open in Safari / Chrome") nhé!
+              </p>
+            </div>
+          )}
+
           {/* Premium Google Button */}
           <button className="google-btn-premium" onClick={handleLogin} style={{ width: '100%', justifyContent: 'center' }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
