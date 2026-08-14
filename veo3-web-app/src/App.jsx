@@ -9,6 +9,23 @@ import BeforeAfterPanel from './BeforeAfterPanel';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
+const trackTikTokEvent = (eventName, metadata = {}) => {
+  if (sessionStorage.getItem('is_from_tiktok') === 'true') {
+    const authUser = auth.currentUser;
+    fetch(`${API_BASE}/api/track/tiktok-event`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        eventName,
+        uid: authUser ? authUser.uid : null,
+        metadata
+      })
+    }).catch(err => console.error('[Tracking] Failed to track TikTok event:', err));
+  }
+};
+
 const APP_VERSION = 'v2.5.1';
 const TASK_RETRY_LIMIT = 3;
 
@@ -386,6 +403,7 @@ function App() {
 
   useEffect(() => {
     if (showPricingModal) {
+      trackTikTokEvent('open_pricing');
       window.fbq?.('track', 'AddToCart', {
         content_name: 'Bảng Giá Dịch Vụ meo3',
         content_category: 'Pricing Plans'
@@ -1086,9 +1104,11 @@ function App() {
   const handleSelectTierForPay = async (tierKey) => {
     if (!user) return;
     setQrLoading(true);
+    trackTikTokEvent('select_tier', { tier: tierKey, cost: getUpgradeCost(tierKey) });
     
     // Nếu đã có giao dịch đang chờ trùng với gói đang chọn thì tái sử dụng, không sinh code mới
     if (pendingPayment && pendingPayment.tier === tierKey && pendingPayment.code) {
+      trackTikTokEvent('open_payment_qr', { tier: tierKey, cost: getUpgradeCost(tierKey) });
       setSelectedTierForPay(tierKey);
       window.fbq?.('track', 'InitiateCheckout', {
         value: getUpgradeCost(tierKey),
@@ -1125,6 +1145,7 @@ function App() {
         }
       }, { merge: true });
       setSelectedTierForPay(tierKey);
+      trackTikTokEvent('open_payment_qr', { tier: tierKey, cost: getUpgradeCost(tierKey) });
       window.fbq?.('track', 'InitiateCheckout', {
         value: getUpgradeCost(tierKey),
         currency: 'VND',
@@ -4302,6 +4323,7 @@ function App() {
 
       const data = await res.json();
       console.log("VTON Task created:", data);
+      trackTikTokEvent('generate_tryon', { toolType: tryonToolType });
       
       // Reset files & description
       setTryonPersonFile(null);
@@ -4387,6 +4409,7 @@ function App() {
         return;
       }
       if (data.jobUid) {
+        trackTikTokEvent('generate_audio');
         setAudioUsage(prev => ({ ...prev, used: data.used }));
         setAudioText('');
         await loadAudioJobs();
@@ -5628,6 +5651,7 @@ function App() {
   }, [user]);
 
   const handleLogin = async () => {
+    trackTikTokEvent('click_login');
     try {
       const result = await signInWithPopup(auth, googleProvider);
       // Init session on server (anti-account-sharing)
@@ -5951,6 +5975,7 @@ function App() {
         createdAt: Date.now()
       });
       console.log("Task successfully written to Firestore! Doc ID:", docRef.id);
+      trackTikTokEvent(activeTab === 'video' ? 'generate_video' : 'generate_image', { prompt: currentPrompt.trim() });
 
       // Clear form (keep start/end frames so user can send again)
       setPrompt('');

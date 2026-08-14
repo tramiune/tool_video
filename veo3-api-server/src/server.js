@@ -466,6 +466,63 @@ app.get('/api/user-info', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+const TIKTOK_LOG_FILE = path.join(__dirname, '../tiktok_events_summary.json');
+
+// Initialize log file if it doesn't exist
+if (!fs.existsSync(TIKTOK_LOG_FILE)) {
+  fs.writeFileSync(TIKTOK_LOG_FILE, JSON.stringify({
+    summary: {},
+    uniqueUsers: {},
+    recentLogs: []
+  }, null, 2));
+}
+
+function logTikTokEvent(eventName, ip, uid, metadata = {}) {
+  try {
+    let data = { summary: {}, uniqueUsers: {}, recentLogs: [] };
+    try {
+      const content = fs.readFileSync(TIKTOK_LOG_FILE, 'utf8');
+      data = JSON.parse(content);
+    } catch (e) {
+      logger.error('Failed to parse tiktok log file, resetting:', e.message);
+    }
+
+    if (!data.summary) data.summary = {};
+    if (!data.uniqueUsers) data.uniqueUsers = {};
+    if (!data.recentLogs) data.recentLogs = [];
+
+    // Increment summary count
+    data.summary[eventName] = (data.summary[eventName] || 0) + 1;
+
+    // Track unique user identifier
+    const userIdentifier = uid || ip || 'unknown';
+    if (!data.uniqueUsers[eventName]) {
+      data.uniqueUsers[eventName] = [];
+    }
+    if (!data.uniqueUsers[eventName].includes(userIdentifier)) {
+      data.uniqueUsers[eventName].push(userIdentifier);
+    }
+
+    // Append to logs
+    data.recentLogs.unshift({
+      timestamp: new Date().toISOString(),
+      eventName,
+      ip,
+      uid,
+      metadata
+    });
+
+    if (data.recentLogs.length > 1000) {
+      data.recentLogs = data.recentLogs.slice(0, 1000);
+    }
+
+    fs.writeFileSync(TIKTOK_LOG_FILE, JSON.stringify(data, null, 2));
+  } catch (err) {
+    logger.error('Failed to write tiktok event log:', err.message);
+  }
+}
+
 app.get('/api/track/redirect', async (req, res) => {
   const { ref } = req.query;
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
@@ -474,6 +531,7 @@ app.get('/api/track/redirect', async (req, res) => {
   const referrer = req.headers['referer'] || 'unknown';
 
   logger.info(`[Tracking] User redirected successfully from in-app webview: ref=${ref}, IP=${ip}, Platform=${platform}`);
+  logTikTokEvent('land', ip, null, { ref, platform, referrer });
 
   try {
     const lines = [
@@ -499,6 +557,7 @@ app.post('/api/track/login', async (req, res) => {
   const platform = /iphone|ipad|ipod/i.test(userAgent) ? 'iOS' : /android/i.test(userAgent) ? 'Android' : 'Desktop';
 
   logger.info(`[Tracking] TikTok user logged in successfully: uid=${uid}, email=${email}, name=${displayName}`);
+  logTikTokEvent('login_success', ip, uid, { email, displayName, platform });
 
   try {
     const lines = [
@@ -515,6 +574,126 @@ app.post('/api/track/login', async (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+app.post('/api/track/tiktok-event', async (req, res) => {
+  const { eventName, uid, metadata } = req.body;
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  logTikTokEvent(eventName, ip, uid, metadata);
+  res.json({ success: true });
+});
+
+app.get('/tiktok-report', (req, res) => {
+  try {
+    if (!fs.existsSync(TIKTOK_LOG_FILE)) {
+      return res.send('<h1 style="font-family: sans-serif; text-align: center; margin-top: 100px; color: #475569;">Chưa có dữ liệu sự kiện TikTok nào được ghi nhận.</h1>');
+    }
+    const data = JSON.parse(fs.readFileSync(TIKTOK_LOG_FILE, 'utf8'));
+    
+    // Build event list rows
+    const events = Object.keys(data.summary || {}).map(name => {
+      const total = data.summary[name] || 0;
+      const unique = data.uniqueUsers[name] ? data.uniqueUsers[name].length : 0;
+      return `
+        <tr>
+          <td><strong>${name}</strong></td>
+          <td>${total}</td>
+          <td>${unique}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const recentRows = (data.recentLogs || []).slice(0, 100).map(log => {
+      return `
+        <tr>
+          <td>${new Date(log.timestamp).toLocaleString('vi-VN')}</td>
+          <td><span class="badge">${log.eventName}</span></td>
+          <td><code>${log.ip}</code></td>
+          <td><code>${log.uid || '-'}</code></td>
+          <td><pre>${JSON.stringify(log.metadata || {})}</pre></td>
+        </tr>
+      `;
+    }).join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>TikTok Ads Funnel Report</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 24px; }
+          .container { max-width: 1000px; margin: 0 auto; }
+          h1 { color: #f1f5f9; border-bottom: 1px solid #334155; padding-bottom: 12px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #1e293b; border-radius: 8px; overflow: hidden; }
+          th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #334155; }
+          th { background: #334155; color: #cbd5e1; font-weight: 600; }
+          tr:hover { background: rgba(255, 255, 255, 0.02); }
+          .badge { background: #3b82f6; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+          pre { margin: 0; font-size: 0.8rem; color: #94a3b8; max-width: 400px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+          .summary-card { display: flex; gap: 16px; margin-bottom: 24px; }
+          .card { background: #1e293b; padding: 20px; border-radius: 8px; flex: 1; border: 1px solid #334155; }
+          .card h3 { margin: 0 0 8px 0; color: #94a3b8; font-size: 0.9rem; }
+          .card p { margin: 0; font-size: 1.8rem; font-weight: bold; color: #38bdf8; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>📊 Báo cáo phễu quảng cáo TikTok Ads (meo3)</h1>
+          
+          <div class="summary-card">
+            <div class="card">
+              <h3>Lượt click vào web (Land)</h3>
+              <p>${data.summary['land'] || 0} (${data.uniqueUsers['land'] ? data.uniqueUsers['land'].length : 0} unique)</p>
+            </div>
+            <div class="card">
+              <h3>Bấm nút Đăng nhập</h3>
+              <p>${data.summary['click_login'] || 0} (${data.uniqueUsers['click_login'] ? data.uniqueUsers['click_login'].length : 0} unique)</p>
+            </div>
+            <div class="card">
+              <h3>Đăng nhập thành công</h3>
+              <p>${data.summary['login_success'] || 0} (${data.uniqueUsers['login_success'] ? data.uniqueUsers['login_success'].length : 0} unique)</p>
+            </div>
+          </div>
+
+          <h2>📌 Thống kê số lượng sự kiện</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Tên sự kiện</th>
+                <th>Tổng số lượt bấm (Clicks)</th>
+                <th>Số người duy nhất (Unique)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${events}
+            </tbody>
+          </table>
+
+          <h2 style="margin-top: 40px;">🕒 100 Sự kiện gần đây nhất</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Thời gian</th>
+                <th>Sự kiện</th>
+                <th>Địa chỉ IP</th>
+                <th>User ID (Firebase)</th>
+                <th>Chi tiết dữ liệu</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recentRows}
+            </tbody>
+          </table>
+        </div>
+      </body>
+      </html>
+    `;
+    res.send(html);
+  } catch (err) {
+    res.status(500).send('Error rendering report: ' + err.message);
+  }
 });
 
 // Set Cookies dynamically
