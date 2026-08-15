@@ -252,7 +252,8 @@ class ApiClient {
       headers,
       responseType: 'text',
       followRedirect: false,
-      throwHttpErrors: false
+      throwHttpErrors: false,
+      timeout: { request: 30000 }
     };
 
     if (body) {
@@ -298,7 +299,8 @@ class ApiClient {
       method,
       headers,
       responseType: 'json',
-      throwHttpErrors: false
+      throwHttpErrors: false,
+      timeout: { request: 30000 }
     };
 
     if (body) {
