@@ -265,8 +265,13 @@ let videoClientRR = 0;
 function getVideoClients() {
   const list = [apiClient];
   const useSingleProfile = process.env.SINGLE_PROFILE === 'true';
-  if (!useSingleProfile && fs.existsSync(config.VIDEO2_COOKIE_FILE) && fs.existsSync(config.VIDEO2_USER_DATA_DIR)) {
-    list.push(apiClient.video2);
+  if (!useSingleProfile) {
+    if (fs.existsSync(config.VIDEO2_COOKIE_FILE) && fs.existsSync(config.VIDEO2_USER_DATA_DIR)) {
+      list.push(apiClient.video2);
+    }
+    if (fs.existsSync(config.VIDEO3_COOKIE_FILE) && fs.existsSync(config.VIDEO3_USER_DATA_DIR)) {
+      list.push(apiClient.video3);
+    }
   }
   return list;
 }
@@ -3187,6 +3192,9 @@ startCookieSyncListener().then(() => {
     });
     browserManager.video2.initialize().catch(err => {
       logger.warn(`Initial video2 browser startup warning: ${err.message}.`);
+    });
+    browserManager.video3.initialize().catch(err => {
+      logger.warn(`Initial video3 browser startup warning: ${err.message}.`);
     });
   }
 
