@@ -272,6 +272,9 @@ function getVideoClients() {
     if (fs.existsSync(config.VIDEO3_COOKIE_FILE) && fs.existsSync(config.VIDEO3_USER_DATA_DIR)) {
       list.push(apiClient.video3);
     }
+    if (fs.existsSync(config.VIDEO4_COOKIE_FILE) && fs.existsSync(config.VIDEO4_USER_DATA_DIR)) {
+      list.push(apiClient.video4);
+    }
   }
   return list;
 }
@@ -3195,6 +3198,9 @@ startCookieSyncListener().then(() => {
     });
     browserManager.video3.initialize().catch(err => {
       logger.warn(`Initial video3 browser startup warning: ${err.message}.`);
+    });
+    browserManager.video4.initialize().catch(err => {
+      logger.warn(`Initial video4 browser startup warning: ${err.message}.`);
     });
   }
 
