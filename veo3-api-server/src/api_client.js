@@ -980,8 +980,8 @@ const videoApiClient4 = new ApiClient({
 });
 
 const imageApiClient = new ApiClient({
-  label: 'image',
-  browserManager: browserManager.image || browserManager,
+  label: useSingleProfile ? 'video' : 'image',
+  browserManager: useSingleProfile ? browserManager : (browserManager.image || browserManager),
   cookieFile: useSingleProfile ? config.COOKIE_FILE : config.IMAGE_COOKIE_FILE
 });
 
