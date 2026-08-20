@@ -14,6 +14,16 @@ class CaptchaService extends EventEmitter {
 
     io.on('connection', (socket) => {
       logger.info(`Extension connected: ${socket.id}`);
+      
+      this.connectedClients.set(socket.id, {
+        socket,
+        browserType: 'chrome', // Default to chrome to bypass the find condition if client:ready is never sent
+        userAgent: '',
+        secChUa: '',
+        secChUaPlatform: '"Windows"',
+        secChUaMobile: '?0'
+      });
+
 
       socket.on('client:ready', (data) => {
         const client = this.connectedClients.get(socket.id);

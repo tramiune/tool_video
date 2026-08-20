@@ -2693,7 +2693,23 @@ async function runImageTask(taskId) {
   try {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
-    logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
+    
+    // GFLOW-CLI FALLBACK RE-ENABLED BY USER REQUEST
+    const { generateImageViaGflow } = require('./gflow_fallback');
+    logger.info(`[Image] Starting task execution via gflow: ${taskId}`);
+    
+    const gflowUrl = await generateImageViaGflow({
+      ...task,
+      id: taskId,
+    });
+    
+    task.status = 'completed';
+    await task.docRef.update({ status: 'completed', mediaUrl: gflowUrl, via: 'gflow' });
+    logger.success(`[Image] Task ${taskId} completed via gflow! URL: ${gflowUrl}`);
+    return;
+    // END GFLOW-CLI FALLBACK
+    
+        logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
 
     // Upload reference images if any (supports array task.referenceImages)
     let promptMapping = '';
@@ -2804,15 +2820,18 @@ async function runImageTask(taskId) {
         try {
           if (attempt > 1) logger.info(`[Image] Download retry ${attempt}/3 for ${taskId}...`);
 
-          logger.info(`Downloading image via browser context (attempt ${attempt}/3)...`);
-          const bufferArray = await imageBrowser.page.evaluate(async (url) => {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-            const buffer = await res.arrayBuffer();
-            return Array.from(new Uint8Array(buffer));
-          }, targetUrl);
+          logger.info(`Downloading image via got-scraping (attempt ${attempt}/3)...`);
+          const { gotScraping } = await import('got-scraping');
+          const token = await imageClient.browserManager.getOAuthToken();
+          const response = await gotScraping({
+            url: targetUrl,
+            responseType: 'buffer',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          const buffer = response.body;
           
-          const buffer = Buffer.from(bufferArray);
           const fileName = `meo3/images/${taskId}_${Date.now()}.jpg`;
           const r2Url = await uploadToR2(buffer, fileName, 'image/jpeg');
           
@@ -2898,6 +2917,25 @@ async function runVideoTask(taskId) {
   try {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
+    
+    // GFLOW-CLI FALLBACK RE-ENABLED BY USER REQUEST
+    const { generateVideoViaGflow } = require('./gflow_fallback');
+    logger.info(`[Video] Starting task execution via gflow: ${taskId}`);
+    
+    const gflowUrl = await generateVideoViaGflow({
+      ...task,
+      id: taskId,
+    });
+    
+    task.status = 'completed';
+    await task.docRef.update({ status: 'completed', mediaUrl: gflowUrl, via: 'gflow' });
+    logger.success(`[Video] Task ${taskId} completed via gflow! URL: ${gflowUrl}`);
+    return;
+    // END GFLOW-CLI FALLBACK
+    
+        
+    
+
     const vc = nextVideoClient();
     logger.info(`[Video] Starting task execution: ${taskId} via nick ${vc.label} (active workers: ${videoScheduler.activeCount}, user workers: ${videoScheduler.activeForUser(task.userId || 'anonymous')})`);
 
@@ -2987,15 +3025,18 @@ async function runVideoTask(taskId) {
           try {
             if (attempt > 1) logger.info(`[Video] Download retry ${attempt}/3 for ${taskId}...`);
 
-            logger.info(`Downloading video via browser context (attempt ${attempt}/3)...`);
-            const bufferArray = await vc.browserManager.page.evaluate(async (url) => {
-              const res = await fetch(url);
-              if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-              const buffer = await res.arrayBuffer();
-              return Array.from(new Uint8Array(buffer));
-            }, downloadUrl);
+            logger.info(`Downloading video via got-scraping (attempt ${attempt}/3)...`);
+            const { gotScraping } = await import('got-scraping');
+            const token = await vc.browserManager.getOAuthToken();
+            const response = await gotScraping({
+              url: downloadUrl,
+              responseType: 'buffer',
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            const buffer = response.body;
 
-            const buffer = Buffer.from(bufferArray);
             const fileName = `meo3/videos/${taskId}_${Date.now()}.mp4`;
             logger.info(`Uploading video to R2 as ${fileName} (Size: ${buffer.length} bytes)...`);
             const r2Url = await uploadToR2(buffer, fileName, 'video/mp4');

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const https = require('https');
@@ -7,6 +8,8 @@ const { logger } = require('./utils');
 const config = require('./config');
 
 puppeteer.use(StealthPlugin());
+
+let lastRefreshPageEmittedAt = 0;
 
 class BrowserManager {
   constructor(options = {}) {
@@ -29,6 +32,13 @@ class BrowserManager {
       while (this.isLaunching) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
+      return;
+    }
+
+    // In SINGLE_PROFILE mode, we rely entirely on the user's personal Chrome extension
+    // via WebSocket for token capture and captcha solving. No background browser needed.
+    if (process.env.SINGLE_PROFILE === 'true') {
+      logger.info(`[${this.label}] SINGLE_PROFILE mode: skipping Puppeteer browser launch (using personal Chrome extension only)`);
       return;
     }
 
@@ -292,6 +302,21 @@ class BrowserManager {
 
   async refreshSession() {
     if (!this.page) return;
+
+    // If SINGLE_PROFILE is enabled, we rely on the user's personal Chrome extension to capture 
+    // OAuth tokens and extract/sync cookies. Navigating the background browser to labs.google 
+    // at the same time causes Google to detect concurrent sessions and force logouts on both sides.
+    const useSingleProfile = process.env.SINGLE_PROFILE === 'true';
+    if (useSingleProfile) {
+      logger.info(`[${this.label}] refreshSession bypassed (relying on personal Chrome extension sync)`);
+      if (this.page.url() !== 'about:blank') {
+        try {
+          await this.page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 10000 });
+        } catch (e) {}
+      }
+      return true;
+    }
+
     logger.info(`[${this.label}] Navigating browser to trigger session refresh: ${this.targetUrl}`);
     try {
       await this.page.goto(this.targetUrl, { waitUntil: 'load', timeout: 30000 });
@@ -337,33 +362,40 @@ class BrowserManager {
 
   async getOAuthToken() {
     await this.initialize();
-    
-    // Check if token is available and validate it
-    if (this.oauthToken) {
-      const isValid = await this.validateToken(this.oauthToken);
-      if (isValid) {
-        return this.oauthToken;
-      }
-      logger.warn('Token in cache is invalid or expired. Attempting token capture/refresh...');
-    }
 
-    // Attempt 1: Reload via Puppeteer session
-    await this.refreshSession();
-
+    // ── Strategy 1: Cached ya29 Bearer token ──
     if (this.oauthToken) {
       const isValid = await this.validateToken(this.oauthToken);
       if (isValid) return this.oauthToken;
+      logger.warn('Cached ya29 token invalid or expired. Attempting refresh...');
+      this.oauthToken = null;
     }
 
-    // Attempt 2: Request active Chrome Extension client to reload tab and capture fresh token
+    // ── Strategy 2: Reload via Puppeteer session (bypassed in SINGLE_PROFILE mode) ──
+    await this.refreshSession();
+    if (this.oauthToken) {
+      const isValid = await this.validateToken(this.oauthToken);
+      if (isValid) return this.oauthToken;
+      this.oauthToken = null;
+    }
+
+    // ── Strategy 3: Request Chrome Extension to capture fresh ya29 token ──
     try {
       const captchaService = require('./captcha_service');
       if (captchaService && captchaService.io) {
-        captchaService.io.emit('refresh_flow_page');
-        logger.info('Emitted refresh_flow_page to Chrome Extension to capture fresh ya29 token');
-        
-        // Wait up to 6 seconds for token capture from Extension socket
-        for (let i = 0; i < 12; i++) {
+        const now = Date.now();
+        const timeSinceLastRefresh = now - lastRefreshPageEmittedAt;
+        const shouldRefresh = !this.oauthToken || timeSinceLastRefresh > 300000;
+        if (shouldRefresh) {
+          lastRefreshPageEmittedAt = now;
+          captchaService.io.emit('refresh_flow_page');
+          logger.info('Emitted refresh_flow_page to Chrome Extension to capture fresh ya29 token');
+        } else {
+          const waitSec = Math.round((300000 - timeSinceLastRefresh) / 1000);
+          logger.info(`Skipped emitting refresh_flow_page (rate-limit active, ~${waitSec}s remaining)`);
+        }
+        // Wait up to 15 seconds for token capture from Extension socket
+        for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 500));
           if (this.oauthToken) {
             const isValid = await this.validateToken(this.oauthToken);
@@ -375,9 +407,7 @@ class BrowserManager {
       logger.warn('Extension token capture fallback warning:', extErr.message);
     }
 
-    if (this.oauthToken) {
-      return this.oauthToken;
-    }
+    if (this.oauthToken) return this.oauthToken;
 
     throw new Error('Failed to capture Google ya29 OAuth token. Please ensure cookies.json is valid and labs.google is accessible.');
   }
@@ -407,6 +437,65 @@ class BrowserManager {
         req.destroy();
         resolve(false);
       });
+      req.end();
+    });
+  }
+
+  // ─── SAPISID HASH AUTH ──────────────────────────────────────────────────────
+  // Computes Google's SAPISIDHASH header from the SAPISID cookie.
+  // Format: "SAPISIDHASH {timestamp}_{SHA1(timestamp + " " + SAPISID + " " + origin)}"
+  // This is how Chrome itself authenticates to Google's internal APIs — no ya29 needed!
+  getSapisidHash(origin = 'https://labs.google') {
+    try {
+      const cookiesRaw = fs.readFileSync(this.cookieFile, 'utf-8');
+      const cookies = JSON.parse(cookiesRaw);
+      // Try multiple cookie names in priority order
+      const sapisidCookie = cookies.find(c =>
+        c.name === '__Secure-3PAPISID' ||
+        c.name === 'SAPISID' ||
+        c.name === '__Secure-1PAPISID'
+      );
+      if (!sapisidCookie) {
+        logger.debug('SAPISID cookie not found in cookies.json');
+        return null;
+      }
+      const sapisid = sapisidCookie.value;
+      const timestamp = Math.floor(Date.now() / 1000);
+      const hashInput = `${timestamp} ${sapisid} ${origin}`;
+      const hash = crypto.createHash('sha1').update(hashInput).digest('hex');
+      const authHeader = `SAPISIDHASH ${timestamp}_${hash}`;
+      logger.debug(`Computed SAPISIDHASH from cookie ${sapisidCookie.name}`);
+      return authHeader;
+    } catch (e) {
+      logger.debug('getSapisidHash error:', e.message);
+      return null;
+    }
+  }
+
+  // Quick validation: call credits endpoint with SAPISID hash
+  validateSapisidHash(authHeader) {
+    return new Promise((resolve) => {
+      const url = `https://aisandbox-pa.googleapis.com/v1/credits?key=${config.API_KEY}`;
+      const req = https.request(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': authHeader,
+          'Accept': '*/*',
+          'Origin': 'https://labs.google',
+          'Referer': 'https://labs.google/'
+        },
+        timeout: 5000
+      }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          const ok = res.statusCode === 200;
+          if (ok) logger.success('SAPISIDHASH validated successfully — no ya29 needed!');
+          resolve(ok);
+        });
+      });
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
       req.end();
     });
   }

@@ -52,20 +52,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'RELOAD_FLOW_TAB') {
     const FLOW_URL = 'https://labs.google/fx/vi/tools/flow';
     chrome.tabs.query({ url: "https://labs.google/*" }, (tabs) => {
-      // Close all existing labs.google tabs
-      const tabIds = (tabs || []).map(t => t.id);
-      const closeAndOpen = () => {
+      if (tabs && tabs.length > 0) {
+        // Reload the existing tab in-place — do NOT close/reopen
+        // (closing creates a disconnect/reconnect loop that Google flags as unusual activity)
+        chrome.tabs.reload(tabs[0].id, {}, () => {
+          console.log('[VEO3-BG] Reloaded existing Google Flow tab:', tabs[0].id);
+        });
+      } else {
+        // No existing tab — open a new one
         chrome.tabs.create({ url: FLOW_URL, active: false }, (newTab) => {
           console.log('[VEO3-BG] Opened new Google Flow tab:', newTab.id);
         });
-      };
-      if (tabIds.length > 0) {
-        chrome.tabs.remove(tabIds, () => {
-          console.log('[VEO3-BG] Closed', tabIds.length, 'old Google Flow tab(s). Opening fresh tab...');
-          closeAndOpen();
-        });
-      } else {
-        closeAndOpen();
       }
     });
     sendResponse({ ok: true });

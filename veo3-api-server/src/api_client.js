@@ -246,6 +246,7 @@ class ApiClient {
     const url = `${LABS_BASE}${endpoint}`;
     logger.debug(`Labs HTTP Request: ${method} ${url}`);
 
+    const proxyUrl = process.env.PROXY_URL || null;
     const options = {
       url,
       method,
@@ -253,7 +254,8 @@ class ApiClient {
       responseType: 'text',
       followRedirect: false,
       throwHttpErrors: false,
-      timeout: { request: 30000 }
+      timeout: { request: 30000 },
+      ...(proxyUrl ? { proxyUrl } : {})
     };
 
     if (body) {
@@ -278,7 +280,17 @@ class ApiClient {
     return { status: 200, body: parsedBody };
   }
 
-  // Base HTTP request to Google aisandbox-pa backend using ya29 Bearer OAuth token
+  // Get SAPISID hash for labs.google TRPC calls — computed directly from cookie, no tab reload needed
+  _getLabsAuthHeader() {
+    try {
+      const sapisidHeader = this.browserManager.getSapisidHash('https://labs.google');
+      if (sapisidHeader) return sapisidHeader;
+    } catch (e) {}
+    // Fallback: use cookie string only (no auth header) — labs.google accepts cookie-only auth
+    return null;
+  }
+
+  // Base HTTP request to Google aisandbox-pa backend — requires ya29 Bearer OAuth token
   async _apiRequest(method, endpoint, body = null) {
     const { gotScraping } = await import('got-scraping');
     const token = await this.browserManager.getOAuthToken();
@@ -294,13 +306,15 @@ class ApiClient {
     const url = `${API_BASE}${endpoint}`;
     logger.debug(`API Gateway Request: ${method} ${url}`);
 
+    const proxyUrl = process.env.PROXY_URL || null;
     const options = {
       url,
       method,
       headers,
       responseType: 'json',
       throwHttpErrors: false,
-      timeout: { request: 30000 }
+      timeout: { request: 30000 },
+      ...(proxyUrl ? { proxyUrl } : {})
     };
 
     if (body) {
@@ -415,7 +429,7 @@ class ApiClient {
 
   _resolveVideoModelKey(model, genType, aspectRatio, userTier, durationSeconds) {
     // Force the use of veo_3_1_lite (Lower Priority) as requested
-    const forcedModel = 'veo_3_1_lite';
+    const forcedModel = model;
     const modelFamily = VIDEO_MODEL_KEYS[forcedModel];
     if (!modelFamily) throw new Error(`Unknown video model family: ${forcedModel}`);
 
@@ -444,9 +458,7 @@ class ApiClient {
     }
 
     // Force lower priority suffix for Google Flow compatibility
-    if (resolvedKey && !resolvedKey.endsWith('_low_priority')) {
-      resolvedKey = `${resolvedKey}_low_priority`;
-    }
+    // removed low_priority
     return resolvedKey;
   }
 

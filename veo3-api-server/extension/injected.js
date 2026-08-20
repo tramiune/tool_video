@@ -48,6 +48,23 @@
     };
   } catch (e) {}
 
+  // Proactively trigger a trpc call to capture the ya29 token.
+  // Uses XMLHttpRequest so it goes through the browser's native auth headers
+  // but the response is intercepted by the fetch override above via a dummy fetch.
+  async function triggerTokenCapture() {
+    try {
+      // Make a lightweight GET to the trpc endpoint — the browser will attach
+      // the session cookie, and the page's own JS will fire a fetch with Authorization header
+      // which our fetch interceptor above will catch.
+      const res = await window.__origFetch
+        ? window.__origFetch('https://labs.google/fx/api/trpc/project.searchUserProjects?batch=1&input=%7B%7D', { credentials: 'include' })
+        : fetch('https://labs.google/fx/api/trpc/project.searchUserProjects?batch=1&input=%7B%7D', { credentials: 'include' });
+      log('Token capture fetch done, status:', res.status);
+    } catch (e) {
+      log('Token capture fetch error (ignored):', e.message);
+    }
+  }
+
   // Setup UI elements (Countdown / badge status)
   function createStyle() {
     const style = document.createElement('style');
@@ -268,6 +285,9 @@
       window.addEventListener('message', handleCookiesResponse);
       window.postMessage({ type: 'VEO3_EXTRACT_COOKIES_REQUEST' }, '*');
 
+      // After page settles, trigger a token capture automatically
+      setTimeout(() => triggerTokenCapture(), 1500);
+
       startKeepAliveCheck();
     });
 
@@ -315,9 +335,15 @@
     });
 
     // Handle server-triggered page refresh command
+    // First try to capture token without reloading; only reload if that fails
     socket.on('refresh_flow_page', () => {
-      log('Received refresh_flow_page command from server. Requesting tab reload via extension background...');
-      window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
+      log('Received refresh_flow_page — attempting token capture without reload first...');
+      triggerTokenCapture().then(() => {
+        log('Token capture triggered after refresh_flow_page signal');
+      }).catch(() => {
+        log('Token capture failed — falling back to tab reload');
+        window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
+      });
     });
 
     // Local safety interval to reload Google Flow tab (every 30 minutes)
