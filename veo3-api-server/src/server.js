@@ -178,6 +178,26 @@ const extensionBridge = {
     });
   },
 
+  isPending(id) {
+    return _extPending.has(id);
+  },
+
+  cancel(id, reason = 'Task cancelled by user') {
+    if (_extPending.has(id)) {
+      const pending = _extPending.get(id);
+      clearTimeout(pending.timer);
+      _extPending.delete(id);
+      if (this.connected) {
+        try {
+          _extSocket.send(JSON.stringify({ type: 'TASK_CANCEL', id }));
+        } catch (_) {}
+      }
+      pending.reject(new Error(reason));
+      return true;
+    }
+    return false;
+  },
+
   getToken(timeoutMs = 10000) {
     if (!this.connected) return Promise.reject(new Error('Extension bridge not connected'));
     const id = `tok_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -2848,7 +2868,11 @@ function startFirestoreListener() {
             delete tasks[taskId];
             const imgIdx = imageQueue.indexOf(taskId);
             if (imgIdx >= 0) imageQueue.splice(imgIdx, 1);
-            logger.info(`[Task] Task removed/cancelled from queue: ${taskId}`);
+            logger.info(`[Task] Task removed from queue: ${taskId}`);
+          }
+          if (extensionBridge.isPending(taskId)) {
+            extensionBridge.cancel(taskId, 'Task was deleted/cancelled by user');
+            logger.info(`[Task] Active task ${taskId} cancelled in extensionBridge, slot freed immediately`);
           }
         }
       });
@@ -2930,6 +2954,10 @@ async function runImageTask(taskId) {
         task.media = finalMedia;
         return;
       } catch (e) {
+        if (e.message?.includes('cancel') || e.message?.includes('deleted')) {
+          logger.info(`[Image] Task ${taskId} cancelled cleanly.`);
+          return;
+        }
         logger.error(`[Image] Extension Bridge failed for ${taskId}: ${e.message}`);
         throw e;
       }
@@ -3202,6 +3230,10 @@ async function runVideoTask(taskId) {
         task.media = finalMedia;
         return;
       } catch (e) {
+        if (e.message?.includes('cancel') || e.message?.includes('deleted')) {
+          logger.info(`[Video] Task ${taskId} cancelled cleanly.`);
+          return;
+        }
         logger.error(`[Video] Extension Bridge failed for ${taskId}: ${e.message}`);
         throw e;
       }
