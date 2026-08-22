@@ -551,6 +551,9 @@ function isRetryableTaskFailure(task) {
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true); // same-origin / non-browser requests
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
     const allowed = [
       'http://localhost:3456',
       'https://api.meo3.cloud',
@@ -559,7 +562,9 @@ app.use(cors({
     ];
     if (allowed.includes(origin)) return callback(null, true);
     return callback(null, false); // don't set CORS headers → browser blocks
-  }
+  },
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-session-token']
 }));
 app.use(express.json());
 
