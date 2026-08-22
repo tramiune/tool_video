@@ -131,7 +131,7 @@ async function imageInputToBase64(imgInput) {
 const extensionBridge = {
   get connected() { return _extSocket && _extSocket.readyState === 1; },
 
-  async generateVideo(task, timeoutMs = 360000) {
+  async generateVideo(task, timeoutMs = 660000) {
     if (!this.connected) return Promise.reject(new Error('Flow Extension chưa kết nối'));
     const id = task.id || `vid_${Date.now()}`;
     const startImgB64 = await imageInputToBase64(task.startImage || task.referenceImages?.[0] || null);
@@ -139,7 +139,7 @@ const extensionBridge = {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         _extPending.delete(id);
-        reject(new Error('Extension video generation timeout (6 phút)'));
+        reject(new Error('Extension video generation timeout (10 phút)'));
       }, timeoutMs);
       _extPending.set(id, { resolve, reject, timer });
       _extSocket.send(JSON.stringify({
