@@ -37,11 +37,6 @@ class BrowserManager {
 
     // In SINGLE_PROFILE mode, we rely entirely on the user's personal Chrome extension
     // via WebSocket for token capture and captcha solving. No background browser needed.
-    if (process.env.SINGLE_PROFILE === 'true') {
-      logger.info(`[${this.label}] SINGLE_PROFILE mode: skipping Puppeteer browser launch (using personal Chrome extension only)`);
-      return;
-    }
-
     this.isLaunching = true;
     try {
       const browserPath = config.getBrowserPath();
@@ -104,8 +99,17 @@ class BrowserManager {
           '--disable-dev-shm-usage'
         ]
       };
+      if (process.env.PROXY_URL) {
+        launchOptions.args.push(`--proxy-server=${process.env.PROXY_URL}`);
+      }
 
 
+
+      if (process.env.SINGLE_PROFILE === 'true') {
+        logger.info(`[${this.label}] SINGLE_PROFILE mode: skipping background browser spawn, using personal Chrome extension bridge.`);
+        this.isLaunching = false;
+        return;
+      }
 
       if (!this.browser && (isLinux || process.platform === 'darwin')) {
         logger.info(`[${this.label}] Spawning Google Chrome process manually via spawn to load extension from profile...`);
@@ -131,6 +135,9 @@ class BrowserManager {
           '--disable-gpu',
           'about:blank'
         ];
+        if (process.env.PROXY_URL) {
+          chromeArgs.push(`--proxy-server=${process.env.PROXY_URL}`);
+        }
 
         if (process.env.HEADLESS === 'true') {
           logger.info(`[${this.label}] Launching Chrome in HEADLESS mode to prevent window focus issues`);
@@ -306,20 +313,17 @@ class BrowserManager {
     // If SINGLE_PROFILE is enabled, we rely on the user's personal Chrome extension to capture 
     // OAuth tokens and extract/sync cookies. Navigating the background browser to labs.google 
     // at the same time causes Google to detect concurrent sessions and force logouts on both sides.
-    const useSingleProfile = process.env.SINGLE_PROFILE === 'true';
-    if (useSingleProfile) {
-      logger.info(`[${this.label}] refreshSession bypassed (relying on personal Chrome extension sync)`);
-      if (this.page.url() !== 'about:blank') {
-        try {
-          await this.page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 10000 });
-        } catch (e) {}
-      }
-      return true;
-    }
-
     logger.info(`[${this.label}] Navigating browser to trigger session refresh: ${this.targetUrl}`);
     try {
       await this.page.goto(this.targetUrl, { waitUntil: 'load', timeout: 30000 });
+      // Force trigger a fetch to expose the ya29 token to the network interceptor
+      try {
+        await this.page.evaluate(() => {
+          setTimeout(() => {
+            fetch('https://labs.google/fx/api/trpc/project.searchUserProjects?batch=1&input=%7B%7D', { credentials: 'include' }).catch(() => {});
+          }, 3000);
+        });
+      } catch (e) {}
       
       // Wait a moment for network requests to start
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -381,6 +385,20 @@ class BrowserManager {
 
     // ── Strategy 3: Request Chrome Extension to capture fresh ya29 token ──
     try {
+      if (global.extensionBridge && global.extensionBridge.connected) {
+        logger.info('[Bridge] Requesting token from Chrome extension via WebSocket bridge...');
+        try {
+          const tok = await global.extensionBridge.getToken(5000);
+          if (tok) {
+            this.oauthToken = tok;
+            this.tokenCapturedAt = Date.now();
+            return tok;
+          }
+        } catch (bridgeErr) {
+          logger.warn(`[Bridge] Failed to get token from extension: ${bridgeErr.message}`);
+        }
+      }
+
       const captchaService = require('./captcha_service');
       if (captchaService && captchaService.io) {
         const now = Date.now();

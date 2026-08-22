@@ -6623,6 +6623,14 @@ function App() {
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         "{task.prompt}"
                       </div>
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="tab-btn"
+                        style={{ fontSize: '0.7rem', padding: '4px 10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '6px', marginTop: '4px', cursor: 'pointer' }}
+                        title="Hủy task này"
+                      >
+                        🗑️ Hủy / Xóa
+                      </button>
                     </>
                   )}
                 </div>

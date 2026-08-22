@@ -31,6 +31,198 @@ const io = new SocketIOServer(server, {
   }
 });
 
+// ── Extension Bridge WebSocket Server ────────────────────────────────────────
+// Chrome extension kết nối tới đây để nhận lệnh download ảnh
+const { WebSocketServer } = require('ws');
+const EXTENSION_WS_PORT = parseInt(process.env.EXTENSION_WS_PORT || '7788', 10);
+const _extWss = new WebSocketServer({ port: EXTENSION_WS_PORT });
+let _extSocket = null; // chỉ giữ 1 kết nối extension tại 1 thời điểm
+const _extPending = new Map(); // id → { resolve, reject, timer }
+
+_extWss.on('connection', (ws) => {
+  _extSocket = ws;
+  logger.success(`[Bridge] Chrome extension connected on port ${EXTENSION_WS_PORT}`);
+
+  ws.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
+
+    if (msg.type === 'TOKEN_SYNC' && msg.token) {
+      browserManager.oauthToken = msg.token;
+      browserManager.tokenCapturedAt = Date.now();
+      logger.success(`[Bridge] Received OAuth token sync from Chrome extension (len: ${msg.token.length})`);
+      return;
+    }
+
+    if (msg.type === 'TOKEN_RESULT' && _extPending.has(msg.id)) {
+      const { resolve, reject, timer } = _extPending.get(msg.id);
+      _extPending.delete(msg.id);
+      clearTimeout(timer);
+      if (msg.ok && msg.token) {
+        browserManager.oauthToken = msg.token;
+        browserManager.tokenCapturedAt = Date.now();
+        resolve(msg.token);
+      } else {
+        reject(new Error(msg.error || 'Extension has no OAuth token'));
+      }
+      return;
+    }
+
+    if (msg.type === 'CAPTCHA_RESULT' && _extPending.has(msg.id)) {
+      const { resolve, reject, timer } = _extPending.get(msg.id);
+      _extPending.delete(msg.id);
+      clearTimeout(timer);
+      if (msg.ok && msg.token) resolve(msg.token);
+      else reject(new Error(msg.error || 'Extension failed to solve captcha'));
+      return;
+    }
+
+    if ((msg.type === 'TASK_RESULT' || msg.type === 'IMAGE_RESULT') && _extPending.has(msg.id)) {
+      const { resolve, reject, timer } = _extPending.get(msg.id);
+      _extPending.delete(msg.id);
+      clearTimeout(timer);
+      if (msg.ok && msg.base64) {
+        resolve({
+          buffer: Buffer.from(msg.base64, 'base64'),
+          mediaId: msg.mediaId,
+          downloadUrl: msg.downloadUrl
+        });
+      } else {
+        reject(new Error(msg.error || 'Extension trả về lỗi'));
+      }
+    }
+  });
+
+  ws.on('close', () => {
+    if (_extSocket === ws) _extSocket = null;
+    logger.warn('[Bridge] Chrome extension disconnected');
+  });
+  ws.on('error', () => {});
+});
+
+async function imageInputToBase64(imgInput) {
+  if (!imgInput) return null;
+  if (typeof imgInput === 'string') {
+    if (imgInput.startsWith('data:image')) return imgInput;
+    if (fs.existsSync(imgInput)) {
+      try {
+        const buf = fs.readFileSync(imgInput);
+        return `data:image/jpeg;base64,${buf.toString('base64')}`;
+      } catch (_) {}
+    }
+    if (imgInput.startsWith('http://') || imgInput.startsWith('https://')) {
+      try {
+        const fetch = (await import('node-fetch')).default || global.fetch;
+        const res = await fetch(imgInput);
+        if (res.ok) {
+          const ab = await res.arrayBuffer();
+          const buf = Buffer.from(ab);
+          const ct = res.headers.get('content-type') || 'image/jpeg';
+          return `data:${ct};base64,${buf.toString('base64')}`;
+        }
+      } catch (e) {
+        logger.warn(`Failed to fetch image URL to base64: ${e.message}`);
+      }
+    }
+  }
+  return imgInput;
+}
+
+const extensionBridge = {
+  get connected() { return _extSocket && _extSocket.readyState === 1; },
+
+  async generateVideo(task, timeoutMs = 360000) {
+    if (!this.connected) return Promise.reject(new Error('Flow Extension chưa kết nối'));
+    const id = task.id || `vid_${Date.now()}`;
+    const startImgB64 = await imageInputToBase64(task.startImage || task.referenceImages?.[0] || null);
+    const endImgB64 = await imageInputToBase64(task.endImage || task.referenceImages?.[1] || null);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        _extPending.delete(id);
+        reject(new Error('Extension video generation timeout (6 phút)'));
+      }, timeoutMs);
+      _extPending.set(id, { resolve, reject, timer });
+      _extSocket.send(JSON.stringify({
+        type: 'TASK_GENERATE_VIDEO',
+        id,
+        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
+        prompt: task.prompt,
+        model: task.model || 'veo_3_1_t2v_lite_low_priority',
+        aspectRatio: task.aspectRatio || '9:16',
+        startImage: startImgB64,
+        endImage: endImgB64
+      }));
+    });
+  },
+
+  async generateImage(task, timeoutMs = 120000) {
+    if (!this.connected) return Promise.reject(new Error('Flow Extension chưa kết nối'));
+    const id = task.id || `img_${Date.now()}`;
+    const rawRef = task.referenceImage || task.referenceImages?.[0] || null;
+    const refBase64 = await imageInputToBase64(rawRef);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        _extPending.delete(id);
+        reject(new Error('Extension image generation timeout (2 phút)'));
+      }, timeoutMs);
+      _extPending.set(id, { resolve, reject, timer });
+      _extSocket.send(JSON.stringify({
+        type: 'TASK_GENERATE_IMAGE',
+        id,
+        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
+        prompt: task.prompt,
+        model: task.model || 'HARBOR_SEAL',
+        aspectRatio: task.aspectRatio || '1:1',
+        referenceImage: refBase64
+      }));
+    });
+  },
+
+  getToken(timeoutMs = 10000) {
+    if (!this.connected) return Promise.reject(new Error('Extension bridge not connected'));
+    const id = `tok_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        _extPending.delete(id);
+        reject(new Error('Extension bridge token timeout'));
+      }, timeoutMs);
+      _extPending.set(id, { resolve, reject, timer });
+      _extSocket.send(JSON.stringify({ type: 'GET_TOKEN', id }));
+    });
+  },
+
+  solveCaptcha(action = 'IMAGE_GENERATION', timeoutMs = 25000) {
+    if (!this.connected) return Promise.reject(new Error('Extension bridge not connected'));
+    const id = `cap_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        _extPending.delete(id);
+        reject(new Error('Extension bridge captcha timeout'));
+      }, timeoutMs);
+      _extPending.set(id, { resolve, reject, timer });
+      _extSocket.send(JSON.stringify({ type: 'SOLVE_CAPTCHA', id, action }));
+    });
+  },
+
+  downloadImage(mediaId, prompt = '', targetUrl = null, timeoutMs = 30000) {
+    if (!this.connected) return Promise.reject(new Error('Extension bridge not connected'));
+    const id = `img_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        _extPending.delete(id);
+        reject(new Error('Extension bridge timeout'));
+      }, timeoutMs);
+      _extPending.set(id, { resolve, reject, timer });
+      _extSocket.send(JSON.stringify({ type: 'DOWNLOAD_IMAGE', id, mediaId, prompt, targetUrl }));
+    });
+  }
+};
+global.extensionBridge = extensionBridge;
+
+logger.info(`[Bridge] WebSocket server listening on ws://localhost:${EXTENSION_WS_PORT}`);
+
+
+
 // Stream server logs to all connected WebSocket clients (dashboard UI)
 logger.onLog((logData) => {
   io.emit('server_log', logData);
@@ -136,7 +328,7 @@ const imageQuotaExhaustedModels = new Set();
 
 function isThrottleError(error) {
   const raw = [error?.code, error?.message, error].filter(Boolean).map(String).join(' | ');
-  return /RESOURCE_EXHAUSTED|USER_REQUESTS_THROTTLED|\b429\b|quota/i.test(raw);
+  return /RESOURCE_EXHAUSTED|USER_REQUESTS_THROTTLED|\b429\b|quota|UNUSUAL_ACTIVITY|reCAPTCHA evaluation failed/i.test(raw);
 }
 
 function isDailyQuotaError(error) {
@@ -2645,6 +2837,14 @@ function startFirestoreListener() {
               drainImageQueue();
             }
           }
+        } else if (change.type === 'removed') {
+          const taskId = change.doc.id;
+          if (tasks[taskId]) {
+            delete tasks[taskId];
+            const imgIdx = imageQueue.indexOf(taskId);
+            if (imgIdx >= 0) imageQueue.splice(imgIdx, 1);
+            logger.info(`[Task] Task removed/cancelled from queue: ${taskId}`);
+          }
         }
       });
     }, (error) => {
@@ -2693,23 +2893,44 @@ async function runImageTask(taskId) {
   try {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
-    
-    // GFLOW-CLI FALLBACK RE-ENABLED BY USER REQUEST
-    const { generateImageViaGflow } = require('./gflow_fallback');
-    logger.info(`[Image] Starting task execution via gflow: ${taskId}`);
-    
-    const gflowUrl = await generateImageViaGflow({
-      ...task,
-      id: taskId,
-    });
-    
-    task.status = 'completed';
-    await task.docRef.update({ status: 'completed', mediaUrl: gflowUrl, via: 'gflow' });
-    logger.success(`[Image] Task ${taskId} completed via gflow! URL: ${gflowUrl}`);
-    return;
-    // END GFLOW-CLI FALLBACK
-    
-        logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
+
+    // Ưu tiên chạy qua Flow Extension Bridge (100% Chrome cá nhân, không dùng CDP/Puppeteer)
+    if (extensionBridge.connected) {
+      logger.info(`[Image] Dispatching task ${taskId} to Flow Extension Bridge...`);
+      try {
+        const result = await extensionBridge.generateImage({
+          id: taskId,
+          prompt: task.prompt,
+          model: task.model || 'nano_banana_pro',
+          aspectRatio: task.aspectRatio || '1:1',
+          referenceImages: task.referenceImages || (task.referenceImage ? [task.referenceImage] : [])
+        });
+
+        const fileName = `meo3/images/${taskId}_${Date.now()}.jpg`;
+        const r2Url = await uploadToR2(result.buffer, fileName, 'image/jpeg');
+        logger.success(`[Image] Task ${taskId} completed via Extension Bridge → ${r2Url}`);
+
+        const finalMedia = [{ mediaId: result.mediaId || taskId, status: 'success', url: r2Url }];
+        await task.docRef.update({
+          status: 'completed',
+          mediaUrl: r2Url,
+          media: finalMedia,
+          progress: '100%',
+          completedAt: Date.now(),
+          error: null,
+          errorCode: null
+        });
+        task.status = 'completed';
+        task.mediaUrl = r2Url;
+        task.media = finalMedia;
+        return;
+      } catch (e) {
+        logger.error(`[Image] Extension Bridge failed for ${taskId}: ${e.message}`);
+        throw e;
+      }
+    }
+
+    logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
 
     // Upload reference images if any (supports array task.referenceImages)
     let promptMapping = '';
@@ -2742,11 +2963,11 @@ async function runImageTask(taskId) {
 
     const finalPrompt = task.prompt + (promptMapping ? `\n\nIMPORTANT REFERENCE MAPPING:${promptMapping}` : '');
 
-    let chosenModel = task.model || 'imagen_4';
-    let imageModels = ['imagen_4', 'nano_banana_pro', 'nano_banana_2', 'nano_banana_2_lite'];
+    let chosenModel = task.model || 'nano_banana_pro';
+    let imageModels = ['nano_banana_pro', 'nano_banana_2', 'nano_banana_2_lite'];
     if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
-      chosenModel = 'imagen_4_ref';
-      imageModels = ['imagen_4_ref', 'imagen_4', 'nano_banana_pro', 'nano_banana_2', 'nano_banana_2_lite'];
+      chosenModel = 'nano_banana_pro';
+      imageModels = ['nano_banana_pro', 'nano_banana_2', 'nano_banana_2_lite'];
     }
     // Ensure the chosen model is tried first, then fallbacks (skip models that
     // already exhausted their daily quota so we don't waste attempts).
@@ -2814,36 +3035,62 @@ async function runImageTask(taskId) {
         }
       }
 
-      // Tải và Upload R2 thông qua Puppeteer để tránh 403 Forbidden (with retry)
+      // Download image: thử extension bridge trước, fallback về CDP nếu extension offline
       let lastImgErr = null;
+
+      // Thử Extension Bridge (nhanh hơn, không cần CDP)
+      if (extensionBridge.connected) {
+        try {
+          logger.info(`[Image] Trying extension bridge download for ${name}...`);
+          const buffer = await extensionBridge.downloadImage(name, task.prompt, targetUrl, 30000);
+          const fileName = `meo3/images/${taskId}_${Date.now()}.jpg`;
+          const r2Url = await uploadToR2(buffer, fileName, 'image/jpeg');
+          finalMedia.push({ mediaId: name, status: 'success', url: r2Url });
+          logger.success(`[Image] Extension bridge download OK → ${r2Url}`);
+          continue; // next item
+        } catch (e) {
+          logger.warn(`[Image] Extension bridge failed: ${e.message}, falling back to CDP...`);
+        }
+      }
+
+      // Fallback: CDP <img> element capture + got-scraping (cũ)
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           if (attempt > 1) logger.info(`[Image] Download retry ${attempt}/3 for ${taskId}...`);
+          logger.info(`[Image] Capturing URL via <img> CDP (attempt ${attempt}/3)...`);
 
-          logger.info(`Downloading image via got-scraping (attempt ${attempt}/3)...`);
+          // Capture the signed flow-content.google URL via CDP element interception
+          const signedUrl = await imageClient._captureImageUrlViaElement(name);
+          if (!signedUrl) throw new Error('Could not capture image URL via <img> element');
+
+          logger.info(`[Image] Downloading captured URL via got-scraping...`);
           const { gotScraping } = await import('got-scraping');
           const token = await imageClient.browserManager.getOAuthToken();
           const response = await gotScraping({
-            url: targetUrl,
+            url: signedUrl,
             responseType: 'buffer',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
+            followRedirect: true,
+            timeout: { request: 20000 },
+            headers: { 'Authorization': `Bearer ${token}` }
           });
+
+          if (response.statusCode !== 200) {
+            throw new Error(`HTTP ${response.statusCode}`);
+          }
+
           const buffer = response.body;
-          
           const fileName = `meo3/images/${taskId}_${Date.now()}.jpg`;
           const r2Url = await uploadToR2(buffer, fileName, 'image/jpeg');
-          
           finalMedia.push({ mediaId: name, status: 'success', url: r2Url });
           lastImgErr = null;
           break;
         } catch (e) {
           lastImgErr = e;
           logger.warn(`[Image] Download attempt ${attempt}/3 failed: ${e.message}`);
-          if (attempt < 3) await sleep(2000 * attempt);
+          if (attempt < 3) await sleep(3000 * attempt);
         }
       }
+
 
       if (lastImgErr) {
         const failure = getFriendlyTaskFailure({
@@ -2917,24 +3164,43 @@ async function runVideoTask(taskId) {
   try {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
-    
-    // GFLOW-CLI FALLBACK RE-ENABLED BY USER REQUEST
-    const { generateVideoViaGflow } = require('./gflow_fallback');
-    logger.info(`[Video] Starting task execution via gflow: ${taskId}`);
-    
-    const gflowUrl = await generateVideoViaGflow({
-      ...task,
-      id: taskId,
-    });
-    
-    task.status = 'completed';
-    await task.docRef.update({ status: 'completed', mediaUrl: gflowUrl, via: 'gflow' });
-    logger.success(`[Video] Task ${taskId} completed via gflow! URL: ${gflowUrl}`);
-    return;
-    // END GFLOW-CLI FALLBACK
-    
-        
-    
+
+    // Ưu tiên chạy qua Flow Extension Bridge (100% Chrome cá nhân, không dùng CDP/Puppeteer)
+    if (extensionBridge.connected) {
+      logger.info(`[Video] Dispatching task ${taskId} to Flow Extension Bridge (model: veo_3_1_t2v_lite_low_priority)...`);
+      try {
+        const result = await extensionBridge.generateVideo({
+          id: taskId,
+          prompt: task.prompt,
+          model: 'veo_3_1_t2v_lite_low_priority',
+          aspectRatio: task.aspectRatio || '9:16',
+          startImage: task.startImage,
+          endImage: task.endImage
+        });
+
+        const fileName = `meo3/videos/${taskId}_${Date.now()}.mp4`;
+        const r2Url = await uploadToR2(result.buffer, fileName, 'video/mp4');
+        logger.success(`[Video] Task ${taskId} completed via Extension Bridge → ${r2Url}`);
+
+        const finalMedia = [{ mediaId: result.mediaId || taskId, status: 'success', url: r2Url }];
+        await task.docRef.update({
+          status: 'completed',
+          mediaUrl: r2Url,
+          media: finalMedia,
+          progress: '100%',
+          completedAt: Date.now(),
+          error: null,
+          errorCode: null
+        });
+        task.status = 'completed';
+        task.mediaUrl = r2Url;
+        task.media = finalMedia;
+        return;
+      } catch (e) {
+        logger.error(`[Video] Extension Bridge failed for ${taskId}: ${e.message}`);
+        throw e;
+      }
+    }
 
     const vc = nextVideoClient();
     logger.info(`[Video] Starting task execution: ${taskId} via nick ${vc.label} (active workers: ${videoScheduler.activeCount}, user workers: ${videoScheduler.activeForUser(task.userId || 'anonymous')})`);

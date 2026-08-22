@@ -337,13 +337,8 @@
     // Handle server-triggered page refresh command
     // First try to capture token without reloading; only reload if that fails
     socket.on('refresh_flow_page', () => {
-      log('Received refresh_flow_page — attempting token capture without reload first...');
-      triggerTokenCapture().then(() => {
-        log('Token capture triggered after refresh_flow_page signal');
-      }).catch(() => {
-        log('Token capture failed — falling back to tab reload');
-        window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
-      });
+      log('Received refresh_flow_page — FORCING TAB RELOAD to reliably capture ya29 token...');
+      window.postMessage({ type: 'VEO3_RELOAD_TAB_REQUEST' }, '*');
     });
 
     // Local safety interval to reload Google Flow tab (every 30 minutes)

@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "Meo3 Dashboard",
+  "version": "1.0.0",
+  "description": "Tạo video & ảnh từ Google Flow Labs trực tiếp trong browser",
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "tabs",
+    "cookies",
+    "webRequest",
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://labs.google/*",
+    "https://*.google.com/*",
+    "https://flow-content.google/*",
+    "https://aisandbox-pa.googleapis.com/*",
+    "https://*.googleusercontent.com/*",
+    "https://*.googleapis.com/*",
+    "http://localhost/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Meo3 Dashboard",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://labs.google/*",
+        "https://aisandbox-pa.googleapis.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "interceptor.js"
+      ],
+      "matches": [
+        "https://labs.google/*"
+      ]
+    }
+  ]
+}

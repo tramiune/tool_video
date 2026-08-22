@@ -167,19 +167,35 @@ class CaptchaService extends EventEmitter {
     throw new Error('CDP captcha token invalid/too short');
   }
 
-  // Request captcha solving via Chrome extension
+  // Request captcha solving via Chrome extension or bridge
   async solveCaptcha(action = 'IMAGE_GENERATION', timeoutMs = 45000, browserManager = null) {
     await this._acquireLock();
 
     try {
-      let client = this._pickClient();
-      if (!client) {
-        // CDP fallback: solve captcha directly in the Puppeteer page (no extension required)
-        return await this._solveViaCdp(action, timeoutMs, browserManager);
+      // 1. Prioritize Extension Bridge WebSocket (runs in user's active personal Chrome labs.google tab)
+      if (global.extensionBridge && global.extensionBridge.connected) {
+        logger.info(`[Bridge] Requesting reCAPTCHA solve from Chrome Extension (action: ${action})...`);
+        try {
+          const token = await global.extensionBridge.solveCaptcha(action, Math.min(timeoutMs, 25000));
+          if (token && token.length > 50) {
+            logger.success(`[Bridge] reCAPTCHA solved via Chrome Extension! (token len: ${token.length})`);
+            return token;
+          }
+        } catch (bridgeErr) {
+          logger.warn(`[Bridge] Extension captcha solve failed: ${bridgeErr.message}, trying fallbacks...`);
+        }
       }
 
-      const requestId = `req_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-      logger.info(`Requesting reCAPTCHA token (action: ${action}, client: ${client.socket.id.substring(0, 6)})`);
+      // 2. Fallback: CDP Puppeteer page if available
+      const bm = browserManager || require('./browser_manager');
+      if (bm && bm.page) {
+        return await this._solveViaCdp(action, timeoutMs, bm);
+      }
+
+      const client = this._pickClient();
+      if (!client) {
+        throw new Error('No Chrome extension connected to solve reCAPTCHA');
+      }
 
       return await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {

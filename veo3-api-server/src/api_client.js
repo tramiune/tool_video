@@ -458,7 +458,7 @@ class ApiClient {
     }
 
     // Force lower priority suffix for Google Flow compatibility
-    // removed low_priority
+    if (resolvedKey && !resolvedKey.endsWith("_low_priority")) { resolvedKey = resolvedKey + "_low_priority"; }
     return resolvedKey;
   }
 
@@ -875,6 +875,75 @@ class ApiClient {
           }
         } catch (err) {
           logger.warn(`Video element capture error: ${err.message}`);
+        } finally {
+          if (cdp) { try { await cdp.detach(); } catch(e){} }
+          if (page) { try { await page.close(); } catch(e){} }
+        }
+      }
+      return null;
+    } finally {
+      releaseDownloadSlot();
+    }
+  }
+
+  async _captureImageUrlViaElement(mediaId) {
+    await acquireDownloadSlot();
+    try {
+      const browser = this.browserManager.browser;
+      if (!browser) throw new Error('No browser context available');
+
+      const redirectUrl = `${LABS_BASE}/fx/api/trpc/media.getMediaUrlRedirect?name=${mediaId}&mediaUrlType=MEDIA_URL_TYPE_IMAGE`;
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) logger.info(`Retrying image element capture (attempt ${attempt}/3)...`);
+        let page = null;
+        let cdp = null;
+        try {
+          page = await browser.newPage();
+
+          // Inherit cookies from the main page
+          if (this.browserManager.page) {
+            const cookies = await this.browserManager.page.cookies();
+            if (cookies.length > 0) await page.setCookie(...cookies);
+          }
+
+          cdp = await page.target().createCDPSession();
+          await cdp.send('Network.enable');
+
+          const captured = { url: null };
+          const onResponse = (event) => {
+            const url = event.response?.url || '';
+            if (url.includes('flow-content.google/image') && !captured.url) {
+              captured.url = url;
+            }
+          };
+          cdp.on('Network.responseReceived', onResponse);
+
+          // Load the flow base page for first-party cookie context, then inject a
+          // hidden <img> that follows the redirect to the signed flow-content URL.
+          await page.goto(`${LABS_BASE}/fx/vi/tools/flow`, { waitUntil: 'domcontentloaded' });
+          await page.evaluate((src) => {
+            const img = document.createElement('img');
+            img.style.position = 'fixed';
+            img.style.left = '-9999px';
+            img.crossOrigin = 'use-credentials';
+            img.src = src;
+            document.body.appendChild(img);
+          }, redirectUrl);
+
+          // Wait up to 20s for the image request to be intercepted
+          let waited = 0;
+          while (!captured.url && waited < 20000) {
+            await new Promise(r => setTimeout(r, 400));
+            waited += 400;
+          }
+
+          if (captured.url) {
+            logger.success(`Captured image URL via <img> element: ${captured.url.substring(0, 60)}...`);
+            return captured.url;
+          }
+        } catch (err) {
+          logger.warn(`Image element capture error: ${err.message}`);
         } finally {
           if (cdp) { try { await cdp.detach(); } catch(e){} }
           if (page) { try { await page.close(); } catch(e){} }

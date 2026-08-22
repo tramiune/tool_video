@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Meo3 Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+  <span class="header-title">🎬 Meo3</span>
+  <div id="tokenStatus" class="status-dot">Đang kết nối...</div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="video">📹 Video</button>
+  <button class="tab-btn" data-tab="image">🖼️ Ảnh</button>
+  <button class="tab-btn" data-tab="list">📋 Danh sách</button>
+</div>
+
+<!-- TAB VIDEO -->
+<div id="tab-video" class="tab-content">
+  <div class="mode-toggle">
+    <button class="mode-btn active" data-mode="single" data-group="video">Đơn lẻ</button>
+    <button class="mode-btn" data-mode="batch" data-group="video">Batch</button>
+  </div>
+
+  <div id="videoSingle">
+    <label class="label">Prompt</label>
+    <textarea id="videoPrompt" rows="3" placeholder="Mô tả video cần tạo..." class="input"></textarea>
+  </div>
+  <div id="videoBatch" class="hidden">
+    <label class="label">Nhiều prompt (mỗi dòng 1 prompt)</label>
+    <textarea id="videoBatchPrompts" rows="5" placeholder="Prompt 1&#10;Prompt 2&#10;Prompt 3..." class="input"></textarea>
+  </div>
+
+  <div class="row2">
+    <div>
+      <label class="label">Ảnh Start</label>
+      <div class="upload-box" data-trigger="startImageInput">
+        <div id="startImagePreview" class="upload-placeholder">📷 Upload</div>
+      </div>
+      <input type="file" id="startImageInput" accept="image/*" class="hidden">
+    </div>
+    <div>
+      <label class="label">Ảnh End</label>
+      <div class="upload-box" data-trigger="endImageInput">
+        <div id="endImagePreview" class="upload-placeholder">📷 Upload</div>
+      </div>
+      <input type="file" id="endImageInput" accept="image/*" class="hidden">
+    </div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <label class="label">Ratio</label>
+      <select id="videoRatio" class="select">
+        <option value="VIDEO_ASPECT_RATIO_PORTRAIT">9:16 Dọc</option>
+        <option value="VIDEO_ASPECT_RATIO_LANDSCAPE">16:9 Ngang</option>
+        <option value="VIDEO_ASPECT_RATIO_SQUARE">1:1 Vuông</option>
+      </select>
+    </div>
+    <div>
+      <label class="label">Model</label>
+      <select id="videoModel" class="select">
+        <option value="auto">Tự động</option>
+        <option value="veo_3_1_i2v_lite_low_priority">Veo 3.1 i2v Lite</option>
+        <option value="veo_3_1_t2v_lite_low_priority">Veo 3.1 t2v Lite</option>
+      </select>
+    </div>
+  </div>
+
+  <button id="btnCreateVideo" class="btn btn-blue">▶ Tạo Video</button>
+  <div id="videoStatus" class="status-msg hidden"></div>
+</div>
+
+<!-- TAB IMAGE -->
+<div id="tab-image" class="tab-content hidden">
+  <div class="mode-toggle">
+    <button class="mode-btn active" data-mode="single" data-group="image">Đơn lẻ</button>
+    <button class="mode-btn" data-mode="batch" data-group="image">Batch</button>
+  </div>
+
+  <div id="imageSingle">
+    <label class="label">Prompt</label>
+    <textarea id="imagePrompt" rows="3" placeholder="Mô tả ảnh cần tạo..." class="input"></textarea>
+  </div>
+  <div id="imageBatch" class="hidden">
+    <label class="label">Nhiều prompt (mỗi dòng 1 prompt)</label>
+    <textarea id="imageBatchPrompts" rows="5" placeholder="Prompt 1&#10;Prompt 2&#10;Prompt 3..." class="input"></textarea>
+  </div>
+
+  <div>
+    <label class="label">Ảnh tham chiếu (tùy chọn)</label>
+    <div class="upload-box" data-trigger="refImageInput">
+      <div id="refImagePreview" class="upload-placeholder">📷 Upload ảnh tham chiếu</div>
+    </div>
+    <input type="file" id="refImageInput" accept="image/*" class="hidden">
+  </div>
+
+  <div>
+    <label class="label">Model</label>
+    <select id="imageModel" class="select">
+      <option value="nano_banana_pro">Imagen Pro</option>
+      <option value="nano_banana_2">Imagen 2</option>
+      <option value="nano_banana_2_lite">Imagen 2 Lite</option>
+    </select>
+  </div>
+
+  <button id="btnCreateImage" class="btn btn-purple">🎨 Tạo Ảnh</button>
+  <div id="imageStatus" class="status-msg hidden"></div>
+</div>
+
+<!-- TAB LIST -->
+<div id="tab-list" class="tab-content hidden">
+  <div class="filter-row">
+    <button class="filter-btn active" data-filter="all">Tất cả</button>
+    <button class="filter-btn" data-filter="video">Video</button>
+    <button class="filter-btn" data-filter="image">Ảnh</button>
+    <button class="filter-btn" data-filter="processing">Đang chạy</button>
+    <button class="filter-btn" data-filter="done">Xong</button>
+    <button class="filter-btn" data-filter="failed">Lỗi</button>
+  </div>
+  <div class="list-header">
+    <span id="taskCount" class="task-count">0 tasks</span>
+    <button id="btnRefresh" class="btn-link">↻ Làm mới</button>
+  </div>
+  <div id="taskList"></div>
+</div>
+
+<script src="sidepanel.js"></script>
+</body>
+</html>

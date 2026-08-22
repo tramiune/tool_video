@@ -6,13 +6,16 @@ node_modules/
 .DS_Store
 dist/
 # Sensitive: Google session cookies + temp uploads
-veo3-api-server/cookies.json
-veo3-api-server/cookies_image.json
+veo3-api-server/cookies*.json
 veo3-api-server/.audio_cookies.json
 veo3-api-server/.token_cache.json
 veo3-api-server/uploads/
 veo3-api-server/*_tmp.js
 veo3-api-server/deploy_rules.js
+veo3-api-server/patch_*.js
+veo3-api-server/revert_*.js
+veo3-api-server/*.log
+veo3-api-server/tiktok_events_summary.json
 
 # Secrets (API keys, service accounts)
 .env

@@ -3,8 +3,8 @@ const VIDEO_LIMITS_BY_TIER = Object.freeze({
   hocvien: 1,
   basic_69k: 1,
   standard_99k: 1,
-  premium_169k: 2,
-  premium_199k: 2
+  premium_169k: 1,
+  premium_199k: 1
 });
 
 class UserVideoLimitProvider {
