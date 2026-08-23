@@ -68,20 +68,19 @@ class UserVideoLimitProvider {
 }
 
 class PerUserVideoScheduler {
-  constructor({ globalLimit, getUserId, getUserLimit, runTask, onError = () => {} }) {
+  constructor({ globalLimit, getUserId, getUserLimit, runTask, onError = () => {}, delayMs = 15000 }) {
     this.globalLimit = Math.max(1, Number(globalLimit) || 1);
     this.getUserId = getUserId;
     this.getUserLimit = getUserLimit;
     this.runTask = runTask;
     this.onError = onError;
+    this.delayMs = delayMs;
     this.queue = [];
     this.queuedIds = new Set();
     this.activeIds = new Set();
     this.rerunIds = new Set();
     this.activeByUser = new Map();
     this.draining = false;
-    this.lastSubmitTime = 0;
-    this.submitDelayMs = 6000; // 6 seconds delay between consecutive video submissions
   }
 
   get activeCount() {
@@ -120,21 +119,12 @@ class PerUserVideoScheduler {
         const selection = await this.findEligibleTask();
         if (!selection) break;
 
-        // Enforce global submit delay to avoid 403 / unusual activity
-        const now = Date.now();
-        const timeSinceLast = now - this.lastSubmitTime;
-        if (timeSinceLast < this.submitDelayMs) {
-          const waitTime = this.submitDelayMs - timeSinceLast;
-          setTimeout(() => this.scheduleDrain(), waitTime);
-          break; // Stop draining, let setTimeout resume it later
-        }
-        this.lastSubmitTime = Date.now();
-
         const [taskId] = this.queue.splice(selection.index, 1);
         this.queuedIds.delete(taskId);
         this.activeIds.add(taskId);
         this.activeByUser.set(selection.userId, this.activeForUser(selection.userId) + 1);
 
+        // Run the task concurrently
         Promise.resolve()
           .then(() => this.runTask(taskId))
           .catch(error => this.onError(error, taskId))
@@ -149,6 +139,11 @@ class PerUserVideoScheduler {
             }
             this.scheduleDrain();
           });
+
+        // Delay between dispatches (like a conveyor belt) to avoid API spam/403
+        if (this.delayMs > 0 && (this.queue.length > 0 || this.activeCount < this.globalLimit)) {
+          await new Promise(resolve => setTimeout(resolve, this.delayMs));
+        }
       }
     } finally {
       this.draining = false;
