@@ -80,6 +80,8 @@ class PerUserVideoScheduler {
     this.rerunIds = new Set();
     this.activeByUser = new Map();
     this.draining = false;
+    this.lastSubmitTime = 0;
+    this.submitDelayMs = 6000; // 6 seconds delay between consecutive video submissions
   }
 
   get activeCount() {
@@ -117,6 +119,16 @@ class PerUserVideoScheduler {
       while (this.activeCount < this.globalLimit && this.queue.length > 0) {
         const selection = await this.findEligibleTask();
         if (!selection) break;
+
+        // Enforce global submit delay to avoid 403 / unusual activity
+        const now = Date.now();
+        const timeSinceLast = now - this.lastSubmitTime;
+        if (timeSinceLast < this.submitDelayMs) {
+          const waitTime = this.submitDelayMs - timeSinceLast;
+          setTimeout(() => this.scheduleDrain(), waitTime);
+          break; // Stop draining, let setTimeout resume it later
+        }
+        this.lastSubmitTime = Date.now();
 
         const [taskId] = this.queue.splice(selection.index, 1);
         this.queuedIds.delete(taskId);
