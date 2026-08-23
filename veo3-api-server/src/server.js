@@ -590,7 +590,7 @@ app.use(cors({
     return callback(null, false); // don't set CORS headers → browser blocks
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-session-token']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-session-token', 'x-api-key']
 }));
 app.use(express.json());
 
