@@ -2864,16 +2864,21 @@ function startFirestoreListener() {
           }
         } else if (change.type === 'removed') {
           const taskId = change.doc.id;
-          if (tasks[taskId]) {
-            delete tasks[taskId];
-            const imgIdx = imageQueue.indexOf(taskId);
-            if (imgIdx >= 0) imageQueue.splice(imgIdx, 1);
-            logger.info(`[Task] Task removed from queue: ${taskId}`);
-          }
-          if (extensionBridge.isPending(taskId)) {
-            extensionBridge.cancel(taskId, 'Task was deleted/cancelled by user');
-            logger.info(`[Task] Active task ${taskId} cancelled in extensionBridge, slot freed immediately`);
-          }
+          // Check if document was genuinely deleted from Firestore (not just changed status from pending to processing)
+          db.collection('tasks').doc(taskId).get().then(snap => {
+            if (!snap.exists) {
+              if (tasks[taskId]) {
+                delete tasks[taskId];
+                const imgIdx = imageQueue.indexOf(taskId);
+                if (imgIdx >= 0) imageQueue.splice(imgIdx, 1);
+                logger.info(`[Task] Genuinely deleted task removed from queue: ${taskId}`);
+              }
+              if (extensionBridge.isPending(taskId)) {
+                extensionBridge.cancel(taskId, 'Task was deleted/cancelled by user');
+                logger.info(`[Task] Active task ${taskId} cancelled in extensionBridge because document was deleted`);
+              }
+            }
+          }).catch(() => {});
         }
       });
     }, (error) => {
