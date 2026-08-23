@@ -5878,6 +5878,17 @@ function App() {
     if (e) e.preventDefault();
     if (!prompt.trim() || !user || isSubmitting) return;
 
+    // Giới hạn số lượng task đang chờ của 1 user (tối đa 10)
+    const userActiveTasks = tasks.filter(t => 
+      t.userId === user.uid && 
+      (t.status === 'pending' || t.status === 'processing' || t.status === 'queued')
+    ).length;
+
+    if (userActiveTasks >= 10) {
+      alert("Bạn chỉ được xếp hàng tối đa 10 video cùng lúc. Vui lòng đợi các video cũ chạy xong nhé!");
+      return;
+    }
+
     // Limit checking
     const limits = {
       free: { videos: Infinity, images: Infinity },
