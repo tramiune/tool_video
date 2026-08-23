@@ -96,6 +96,12 @@ _extWss.on('connection', (ws) => {
   ws.on('close', () => {
     if (_extSocket === ws) _extSocket = null;
     logger.warn('[Bridge] Chrome extension disconnected');
+    // Reject all pending tasks when connection is lost
+    for (const [id, pending] of _extPending.entries()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('Extension disconnected during generation'));
+      _extPending.delete(id);
+    }
   });
   ws.on('error', () => {});
 });
@@ -2888,27 +2894,15 @@ function startFirestoreListener() {
 
 // ─── IMAGE WORKER (concurrent) ──────────────────────────────────────────────
 
-let lastImageSubmitTime = 0;
-const IMAGE_SUBMIT_DELAY_MS = 6000;
-
 function drainImageQueue() {
-  if (activeImageWorkers >= IMAGE_CONCURRENCY || imageQueue.length === 0) return;
-
-  const now = Date.now();
-  const timeSinceLast = now - lastImageSubmitTime;
-  if (timeSinceLast < IMAGE_SUBMIT_DELAY_MS) {
-    const waitTime = IMAGE_SUBMIT_DELAY_MS - timeSinceLast;
-    setTimeout(() => drainImageQueue(), waitTime);
-    return;
+  while (activeImageWorkers < IMAGE_CONCURRENCY && imageQueue.length > 0) {
+    const taskId = imageQueue.shift();
+    activeImageWorkers++;
+    runImageTask(taskId).finally(() => {
+      activeImageWorkers--;
+      drainImageQueue(); // pick next task when a slot frees up
+    });
   }
-  
-  lastImageSubmitTime = Date.now();
-  const taskId = imageQueue.shift();
-  activeImageWorkers++;
-  runImageTask(taskId).finally(() => {
-    activeImageWorkers--;
-    drainImageQueue(); // pick next task when a slot frees up
-  });
 }
 
 // Helper function to process image input (downloads URLs or uploads file paths)
