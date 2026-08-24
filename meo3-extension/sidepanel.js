@@ -155,10 +155,11 @@ async function createVideo() {
     const startImageMediaId = await uploadFile('startImageData');
     const endImageMediaId   = await uploadFile('endImageData');
     const aspectRatio = document.getElementById('videoRatio').value;
+    const videoModel = document.getElementById('videoModel')?.value || 'veo_3_1_lite_low_priority';
 
     for (let i = 0; i < prompts.length; i++) {
       statusEl.textContent = `Đang gửi ${i + 1}/${prompts.length}...`;
-      const res = await sendMsg({ type: 'GENERATE_VIDEO', payload: { prompt: prompts[i], startImageMediaId, endImageMediaId, aspectRatio } });
+      const res = await sendMsg({ type: 'GENERATE_VIDEO', payload: { prompt: prompts[i], startImageMediaId, endImageMediaId, aspectRatio, videoModel } });
       if (res.error) throw new Error(res.error);
       extractAndSaveTasks(res.result, prompts[i], 'video');
     }

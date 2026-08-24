@@ -216,7 +216,7 @@ async function uploadImage(fileBytes, projectId, token) {
 }
 
 // ── Generate video ───────────────────────────────────
-async function generateVideo({ prompt, startImageMediaId, endImageMediaId, aspectRatio, projectId, token }) {
+async function generateVideo({ prompt, startImageMediaId, endImageMediaId, aspectRatio, videoModel, projectId, token }) {
   const hasStart = !!startImageMediaId;
   const hasEnd   = !!endImageMediaId;
 
@@ -224,10 +224,20 @@ async function generateVideo({ prompt, startImageMediaId, endImageMediaId, aspec
   if (hasStart && hasEnd) genType = 'f2v';
   else if (hasStart) genType = 'i2v';
 
-  let modelKey;
-  if (genType === 't2v') modelKey = 'veo_3_1_t2v_lite_low_priority';
-  else if (genType === 'f2v') modelKey = 'veo_3_1_interpolation_lite_low_priority';
-  else modelKey = 'veo_3_1_i2v_lite_low_priority';
+  const baseModel = videoModel || 'veo_3_1_lite_low_priority';
+  let modelKey = baseModel;
+
+  if (baseModel.includes('low_priority')) {
+    if (genType === 't2v') modelKey = 'veo_3_1_t2v_lite_low_priority';
+    else if (genType === 'f2v') modelKey = 'veo_3_1_interpolation_lite_low_priority';
+    else modelKey = 'veo_3_1_i2v_lite_low_priority';
+  } else if (baseModel === 'abra') {
+    modelKey = 'abra';
+  } else {
+    if (genType === 't2v') modelKey = baseModel;
+    else if (genType === 'f2v') modelKey = baseModel.replace('veo_3_1_', 'veo_3_1_interpolation_');
+    else modelKey = baseModel.replace('veo_3_1_', 'veo_3_1_i2v_');
+  }
 
   const ratioMap = {
     'VIDEO_ASPECT_RATIO_PORTRAIT':  'VIDEO_ASPECT_RATIO_PORTRAIT',
