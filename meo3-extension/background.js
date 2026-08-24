@@ -142,58 +142,45 @@ async function getOrCreateProject(token) {
   const allTabs = await chrome.tabs.query({});
   const tabs = allTabs.filter(t => t.url && t.url.includes('labs.google'));
   for (const tab of tabs) {
-    const match = tab.url?.match(/\/project\/([a-f0-9-]{36})/i);
-    if (match && match[1]) {
+    const match = tab.url?.match(/\/project\/([a-f0-9-]{36})/);
+    if (match) {
       await chrome.storage.local.set({ projectId: match[1] });
       return match[1];
     }
   }
 
-  // 2. Lấy danh sách project tươi mới từ tài khoản hiện tại
-  try {
-    const input = JSON.stringify({ json: { pageSize: 20, toolName: TOOL_NAME, cursor: null } });
-    const listRes = await fetch(`${LABS_BASE}/fx/api/trpc/project.searchUserProjects?input=${encodeURIComponent(input)}`, {
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      credentials: 'include'
-    });
-    if (listRes.ok) {
-      const data = await listRes.json();
-      const projects = data?.result?.data?.json?.projects || [];
-      if (projects.length > 0) {
-        const pid = projects[0].id || projects[0].name;
-        if (pid) {
-          await chrome.storage.local.set({ projectId: pid });
-          return pid;
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[Meo3] searchUserProjects error:', e);
-  }
-
-  // 3. Tạo project mới nếu nick chưa có project nào
-  try {
-    const createRes = await fetch(`${LABS_BASE}/fx/api/trpc/project.createProject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      credentials: 'include',
-      body: JSON.stringify({ json: { projectTitle: 'Meo3 Studio', toolName: TOOL_NAME } })
-    });
-    if (createRes.ok) {
-      const cdata = await createRes.json();
-      const pid = cdata?.result?.data?.json?.id || cdata?.result?.data?.json?.name;
-      if (pid) {
-        await chrome.storage.local.set({ projectId: pid });
-        return pid;
-      }
-    }
-  } catch (e) {
-    console.warn('[Meo3] createProject error:', e);
-  }
-
-  // 4. Fallback cuối cùng: dùng cached ID nếu có
+  // 2. Fallback: dùng cached ID
   const stored = await chrome.storage.local.get(['projectId']);
-  return stored.projectId || null;
+  if (stored.projectId) return stored.projectId;
+
+  // 3. Fallback: lấy project đầu tiên từ API
+  const input = JSON.stringify({ json: { pageSize: 20, toolName: TOOL_NAME, cursor: null } });
+  const listRes = await fetch(`${LABS_BASE}/fx/api/trpc/project.searchUserProjects?input=${encodeURIComponent(input)}`, {
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    credentials: 'include'
+  });
+  if (listRes.ok) {
+    const data = await listRes.json();
+    const projects = data?.result?.data?.json?.projects || [];
+    if (projects.length > 0) {
+      const pid = projects[0].id || projects[0].name;
+      await chrome.storage.local.set({ projectId: pid });
+      return pid;
+    }
+  }
+
+  // 4. Tạo project mới nếu không có gì
+  const createRes = await fetch(`${LABS_BASE}/fx/api/trpc/project.createProject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    credentials: 'include',
+    body: JSON.stringify({ json: { projectTitle: 'Meo3 Dashboard', toolName: TOOL_NAME } })
+  });
+  if (!createRes.ok) throw new Error(`Create project failed: ${createRes.status}`);
+  const cdata = await createRes.json();
+  const pid = cdata?.result?.data?.json?.id || cdata?.result?.data?.json?.name;
+  if (pid) await chrome.storage.local.set({ projectId: pid });
+  return pid;
 }
 
 
@@ -229,7 +216,7 @@ async function uploadImage(fileBytes, projectId, token) {
 }
 
 // ── Generate video ───────────────────────────────────
-async function generateVideo({ prompt, startImageMediaId, endImageMediaId, aspectRatio, videoModel, projectId, token }) {
+async function generateVideo({ prompt, startImageMediaId, endImageMediaId, aspectRatio, projectId, token }) {
   const hasStart = !!startImageMediaId;
   const hasEnd   = !!endImageMediaId;
 
@@ -237,20 +224,10 @@ async function generateVideo({ prompt, startImageMediaId, endImageMediaId, aspec
   if (hasStart && hasEnd) genType = 'f2v';
   else if (hasStart) genType = 'i2v';
 
-  const baseModel = videoModel || 'veo_3_1_lite_low_priority';
-  let modelKey = baseModel;
-
-  if (baseModel.includes('low_priority')) {
-    if (genType === 't2v') modelKey = 'veo_3_1_t2v_lite_low_priority';
-    else if (genType === 'f2v') modelKey = 'veo_3_1_interpolation_lite_low_priority';
-    else modelKey = 'veo_3_1_i2v_lite_low_priority';
-  } else if (baseModel === 'abra') {
-    modelKey = 'abra';
-  } else {
-    if (genType === 't2v') modelKey = baseModel;
-    else if (genType === 'f2v') modelKey = baseModel.replace('veo_3_1_', 'veo_3_1_interpolation_');
-    else modelKey = baseModel.replace('veo_3_1_', 'veo_3_1_i2v_');
-  }
+  let modelKey;
+  if (genType === 't2v') modelKey = 'veo_3_1_t2v_lite_low_priority';
+  else if (genType === 'f2v') modelKey = 'veo_3_1_interpolation_lite_low_priority';
+  else modelKey = 'veo_3_1_i2v_lite_low_priority';
 
   const ratioMap = {
     'VIDEO_ASPECT_RATIO_PORTRAIT':  'VIDEO_ASPECT_RATIO_PORTRAIT',

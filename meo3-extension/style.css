@@ -96,3 +96,11 @@ button.task-dl {
   font-weight: 500;
 }
 button.task-dl:hover { background: #1557b0; }
+
+/* Drama Studio Custom Styles */
+.drama-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+.drama-scene-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; font-size: 11px; }
+.drama-scene-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-weight: 700; color: #1e293b; }
+.drama-scene-voice { color: #2563eb; font-style: italic; margin-bottom: 4px; line-height: 1.3; }
+.drama-scene-prompt { color: #475569; font-size: 10.5px; background: #fff; padding: 4px 6px; border-radius: 4px; border: 1px dashed #cbd5e1; }
+.drama-scene-status { margin-top: 4px; font-size: 10px; font-weight: 600; }

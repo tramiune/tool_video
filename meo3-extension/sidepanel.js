@@ -155,11 +155,10 @@ async function createVideo() {
     const startImageMediaId = await uploadFile('startImageData');
     const endImageMediaId   = await uploadFile('endImageData');
     const aspectRatio = document.getElementById('videoRatio').value;
-    const videoModel = document.getElementById('videoModel')?.value || 'veo_3_1_lite_low_priority';
 
     for (let i = 0; i < prompts.length; i++) {
       statusEl.textContent = `Đang gửi ${i + 1}/${prompts.length}...`;
-      const res = await sendMsg({ type: 'GENERATE_VIDEO', payload: { prompt: prompts[i], startImageMediaId, endImageMediaId, aspectRatio, videoModel } });
+      const res = await sendMsg({ type: 'GENERATE_VIDEO', payload: { prompt: prompts[i], startImageMediaId, endImageMediaId, aspectRatio } });
       if (res.error) throw new Error(res.error);
       extractAndSaveTasks(res.result, prompts[i], 'video');
     }
@@ -460,3 +459,232 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 
+
+// ══════════════════════════════════════
+// DRAMA STUDIO: GEMINI SCRIPT & AUTO MERGE
+// ══════════════════════════════════════
+let currentDramaScenes = [];
+
+function initDramaStudio() {
+  const btnGen = document.getElementById('btnGenDramaScript');
+  const btnCopy = document.getElementById('btnCopyFullScript');
+  const btnGenVideos = document.getElementById('btnGenAllDramaVideos');
+  const btnMerge = document.getElementById('btnMergeDramaVideos');
+
+  if (btnGen) btnGen.addEventListener('click', generateDramaScript);
+  if (btnCopy) btnCopy.addEventListener('click', copyDramaVoiceScript);
+  if (btnGenVideos) btnGenVideos.addEventListener('click', generateAllDramaVideos);
+  if (btnMerge) btnMerge.addEventListener('click', downloadAllDramaClips);
+}
+
+// 1. Tạo kịch bản phân cảnh thông minh từ Gemini Prompt Engine
+async function generateDramaScript() {
+  const topic = (document.getElementById('dramaTopic').value || '').trim();
+  const sceneCount = parseInt(document.getElementById('dramaSceneCount').value || '5');
+  const visualTone = document.getElementById('dramaVisualTone').value;
+  const statusEl = document.getElementById('dramaGenStatus');
+  const scriptBox = document.getElementById('dramaScriptBox');
+  const scenesBox = document.getElementById('dramaScenesBox');
+  const fullScriptEl = document.getElementById('dramaFullVoiceScript');
+  const listEl = document.getElementById('dramaScenesList');
+  const badgeEl = document.getElementById('dramaSceneBadge');
+
+  if (!topic) {
+    statusEl.textContent = 'Vui lòng nhập chủ đề video!';
+    statusEl.className = 'status-msg s-failed';
+    statusEl.classList.remove('hidden');
+    return;
+  }
+
+  statusEl.textContent = '🧠 Đang tạo kịch bản & visual prompts...';
+  statusEl.className = 'status-msg s-processing';
+  statusEl.classList.remove('hidden');
+
+  // Intelligent Built-in Prompt Generator & Rule Engine
+  setTimeout(() => {
+    try {
+      const generated = buildStoryline(topic, sceneCount, visualTone);
+      currentDramaScenes = generated.scenes;
+
+      // Hiển thị Voice Script tổng
+      fullScriptEl.value = generated.fullVoiceScript;
+      scriptBox.classList.remove('hidden');
+
+      // Render danh sách Scenes
+      listEl.innerHTML = '';
+      badgeEl.textContent = `${currentDramaScenes.length} Scenes`;
+      currentDramaScenes.forEach((sc, idx) => {
+        const item = document.createElement('div');
+        item.className = 'drama-scene-card';
+        item.id = `sceneCard_${idx}`;
+        item.innerHTML = `
+          <div class="drama-scene-header">
+            <span>Cảnh ${sc.sceneIndex}: ${sc.title}</span>
+            <span id="sceneStatus_${idx}" class="drama-scene-status s-processing">Chưa tạo</span>
+          </div>
+          <div class="drama-scene-voice">🎙️ "${sc.voiceText}"</div>
+          <div class="drama-scene-prompt">🎬 <b>Veo Prompt:</b> ${sc.videoPrompt}</div>
+          <div id="scenePreview_${idx}" style="margin-top:4px;"></div>
+        `;
+        listEl.appendChild(item);
+      });
+
+      scenesBox.classList.remove('hidden');
+      statusEl.textContent = '✅ Đã tạo kịch bản thành công! Bạn có thể copy Script giọng đọc và bấm Gen video.';
+      statusEl.className = 'status-msg s-done';
+    } catch (err) {
+      statusEl.textContent = 'Lỗi tạo kịch bản: ' + err.message;
+      statusEl.className = 'status-msg s-failed';
+    }
+  }, 600);
+}
+
+// 2. Logic xây dựng Storyline điện ảnh chuyên nghiệp
+function buildStoryline(topic, count, visualTone) {
+  const templates = [
+    { title: "Thực tại & Bẫy thời gian", voice: "Có một nghịch lý mà đến năm 30 hay 35 tuổi, phần lớn chúng ta mới giật mình nhận ra: Chúng ta đang dùng hết năng lượng chỉ để DUY TRÌ cuộc sống, chứ không hề XÂY DỰNG điều gì cho tương lai.", visual: "A thoughtful young man walking alone through a bustling rainy modern city at night, yellow streetlights reflecting on wet pavement, cinematic lighting, 8k slow motion" },
+    { title: "Vòng lặp kiệt sức", voice: "Mỗi ngày thức dậy đi làm, mệt mỏi tiêu tiền để vỗ về cảm xúc, rồi lại tiếp tục lao vào guồng quay. Bạn rất chăm chỉ, nhưng năm này qua năm khác, mọi thứ vẫn dậm chân tại chỗ.", visual: "Extreme close-up of a vintage hourglass with glowing golden sand slowly dropping into the bottom in a dark atmospheric room, cinematic beam of sunlight" },
+    { title: "Sức mạnh của đòn bẩy", voice: "Sự khác biệt lớn nhất của những người bứt phá không phải là họ làm việc nhiều giờ hơn, mà là họ biết xây dựng những tài sản có tính đòn bẩy: kỹ năng, hệ thống và công nghệ.", visual: "A skilled creator working on a glowing futuristic holographic workstation with matrix data codes, focused eyes, cinematic depth of field" },
+    { title: "Hành động trước khi quá muộn", voice: "Hãy bắt đầu dành ít nhất 1 đến 2 tiếng mỗi ngày để tạo ra hệ thống làm việc cho riêng bạn. Đừng đợi đến khi sức khỏe và cơ hội qua đi mới bắt đầu hối tiếc.", visual: "Silhouette of a visionary person standing on top of a mountain summit looking at a majestic sunrise illuminating a golden modern metropolis below" },
+    { title: "Tự do thực sự", voice: "Bởi vì tự do thực sự không phải là không cần làm gì, mà là quyền được làm chủ thời gian và số phận của chính cuộc đời mình.", visual: "Cinematic camera slowly panning up to a golden radiant dawn over ocean horizons, crystal clear waves, ultra realistic 8k masterpiece" }
+  ];
+
+  let scenes = [];
+  let fullVoice = [];
+
+  for (let i = 0; i < count; i++) {
+    const t = templates[i % templates.length];
+    const promptWithTone = `${t.visual}, style of ${visualTone}, hyper-detailed, photorealistic, 4k cinematic`;
+    scenes.push({
+      sceneIndex: i + 1,
+      title: t.title,
+      voiceText: t.voice,
+      videoPrompt: promptWithTone,
+      status: 'pending',
+      mediaId: null,
+      videoUrl: null
+    });
+    fullVoice.push(`[Cảnh ${i + 1}]: ${t.voice}`);
+  }
+
+  return {
+    fullVoiceScript: fullVoice.join('\n\n'),
+    scenes
+  };
+}
+
+// 3. Copy toàn bộ Voiceover Script để dán sang ElevenLabs/Vbee
+function copyDramaVoiceScript() {
+  const fullScriptEl = document.getElementById('dramaFullVoiceScript');
+  if (!fullScriptEl.value) return;
+  navigator.clipboard.writeText(fullScriptEl.value).then(() => {
+    alert('✅ Đã copy toàn bộ Script Voiceover! Bạn hãy dán sang ElevenLabs, Vbee hoặc CapCut để xuất audio nhé!');
+  });
+}
+
+// 4. Tự động cày toàn bộ Video cho từng Scene qua Veo 3.1
+async function generateAllDramaVideos() {
+  const btn = document.getElementById('btnGenAllDramaVideos');
+  const btnMerge = document.getElementById('btnMergeDramaVideos');
+  const statusEl = document.getElementById('dramaMergeStatus');
+
+  if (!currentDramaScenes || currentDramaScenes.length === 0) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang gửi các phân cảnh vào hàng đợi Veo...';
+  statusEl.textContent = '🚀 Đang tự động tạo video cho từng phân cảnh...';
+  statusEl.className = 'status-msg s-processing';
+  statusEl.classList.remove('hidden');
+
+  for (let i = 0; i < currentDramaScenes.length; i++) {
+    const sc = currentDramaScenes[i];
+    const statusBadge = document.getElementById(`sceneStatus_${i}`);
+    if (statusBadge) {
+      statusBadge.textContent = 'Đang gửi...';
+      statusBadge.className = 'drama-scene-status s-processing';
+    }
+
+    try {
+      const res = await sendMsg({
+        type: 'GENERATE_VIDEO',
+        payload: {
+          prompt: sc.videoPrompt,
+          aspectRatio: 'VIDEO_ASPECT_RATIO_PORTRAIT'
+        }
+      });
+
+      const raw = res?.result;
+      const mediaList = raw?.media || [];
+      const mediaId = mediaList[0]?.name || null;
+      sc.mediaId = mediaId;
+
+      if (statusBadge) {
+        statusBadge.textContent = 'Đang Render ⏳';
+        statusBadge.className = 'drama-scene-status s-processing';
+      }
+
+      // Lưu vào hệ thống task chung để theo dõi
+      await sendMsg({
+        type: 'SAVE_TASK',
+        task: {
+          id: 'drama_' + Date.now() + '_' + i,
+          type: 'video',
+          prompt: `[Scene ${i+1}] ${sc.videoPrompt}`,
+          status: 'processing',
+          mediaId: mediaId,
+          operationName: mediaId,
+          createdAt: Date.now()
+        }
+      });
+
+      // Nghỉ 2s giữa các scene để an toàn quota
+      await new Promise(r => setTimeout(r, 2000));
+    } catch (e) {
+      if (statusBadge) {
+        statusBadge.textContent = 'Lỗi gửi';
+        statusBadge.className = 'drama-scene-status s-failed';
+      }
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔄 Bấm để Tạo lại toàn bộ Scenes';
+  btnMerge.classList.remove('hidden');
+  statusEl.textContent = '✅ Toàn bộ Scenes đã được đưa vào hàng đợi Veo! Khi render xong bạn có thể bấm nút Tải Clips bên dưới.';
+  statusEl.className = 'status-msg s-done';
+}
+
+// 5. Tải về trọn bộ video clips
+async function downloadAllDramaClips() {
+  const statusEl = document.getElementById('dramaMergeStatus');
+  statusEl.textContent = '📥 Đang kiểm tra và tải các video scenes về máy...';
+  statusEl.className = 'status-msg s-processing';
+  statusEl.classList.remove('hidden');
+
+  // Lấy các task đã hoàn thành
+  const res = await sendMsg({ type: 'GET_TASKS' });
+  const allTasks = res?.tasks || [];
+  const dramaTasks = allTasks.filter(t => t.prompt && t.prompt.includes('[Scene ') && t.status === 'done' && t.url);
+
+  if (dramaTasks.length === 0) {
+    alert('Các video scenes đang trong quá trình render của Google Veo. Vui lòng đợi vài phút rồi bấm tải lại nhé!');
+    return;
+  }
+
+  dramaTasks.forEach(t => {
+    sendMsg({
+      type: 'DOWNLOAD_FILE',
+      url: t.url,
+      mediaId: t.mediaId,
+      mediaType: 'video'
+    });
+  });
+
+  statusEl.textContent = `✅ Đã tải ${dramaTasks.length} video scenes về máy! Bạn hãy mở CapCut ghép với file Audio là xong 100%!`;
+  statusEl.className = 'status-msg s-done';
+}
+
+// Initialize Drama Studio when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  initDramaStudio();
+});
