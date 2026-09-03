@@ -1046,7 +1046,7 @@ function App() {
       free: 0,
       basic_69k: 69000,
       standard_99k: 99000,
-      premium_169k: 199000
+      premium_169k: 299000
     };
 
     const currentPrice = prices[userTier] || 0;
@@ -1639,7 +1639,7 @@ function App() {
                               <option value="free">Free</option>
                               <option value="hocvien">Học viên (30 ảnh/ngày)</option>
                               <option value="basic_69k">Basic (69k)</option>
-                              <option value="premium_169k">Premium (199k)</option>
+                              <option value="premium_169k">Premium (299k)</option>
                             </select>
                           </td>
                           <td data-label="Hạn dùng" style={{ padding: '14px 8px', color: isUserExpired ? '#ef4444' : 'var(--text-secondary)' }}>
@@ -1745,8 +1745,8 @@ function App() {
                 >
                   <option value="30000">30,000đ (Bù Basic)</option>
                   <option value="69000">69,000đ (Gói Cơ bản)</option>
-                  <option value="199000">199,000đ (Gói Premium)</option>
-                  <option value="100000">100,000đ (Bù Basic &rarr; Premium)</option>
+                  <option value="299000">299,000đ (Gói Premium)</option>
+                  <option value="230000">230,000đ (Bù Basic &rarr; Premium)</option>
                 </select>
               </div>
 
@@ -7347,7 +7347,7 @@ function App() {
                 {userTier === 'premium_169k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#fbbf24', color: '#16161a', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
                 <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Premium</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#fbbf24' }}>199k</span>
+                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#fbbf24' }}>299k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
