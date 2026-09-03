@@ -3564,19 +3564,8 @@ startCookieSyncListener().then(() => {
   // Run cleanup once per day at 23:50 server time
   scheduleDailyCleanup(23, 50);
 
-  // Initialize Browser Manager on start so it is warmed up
-  browserManager.initialize().catch(err => {
-    logger.warn(`Initial browser startup warning: ${err.message}. It will retry on the first API call.`);
-  });
-  const useSingleProfile = process.env.SINGLE_PROFILE === 'true';
-  if (!useSingleProfile) {
-    browserManager.image.initialize().catch(err => {
-      logger.warn(`Initial image browser startup warning: ${err.message}.`);
-    });
-    browserManager.video2.initialize().catch(err => {
-      logger.warn(`Initial video2 browser startup warning: ${err.message}.`);
-    });
-  }
+  // Background Chrome spawning is disabled: using Flow Extension Bridge (Port 7788) on user's main Chrome
+  logger.info('[Browser] Puppeteer background Chrome auto-spawn disabled (Flow Extension Bridge mode)');
 
   // Schedule automatic 30-minute Google Flow tab refresh to keep session + cookies alive
   const THIRTY_MINUTES_MS = 30 * 60 * 1000;

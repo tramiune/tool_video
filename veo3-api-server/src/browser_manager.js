@@ -27,6 +27,9 @@ class BrowserManager {
   }
 
   async initialize() {
+    if (process.env.NO_PUPPETEER_CHROME === 'true') {
+      return;
+    }
     if (this.browser) return;
     if (this.isLaunching) {
       while (this.isLaunching) {
