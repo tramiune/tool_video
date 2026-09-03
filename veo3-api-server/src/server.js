@@ -77,7 +77,7 @@ _extWss.on('connection', (ws) => {
       return;
     }
 
-    if ((msg.type === 'TASK_RESULT' || msg.type === 'IMAGE_RESULT') && _extPending.has(msg.id)) {
+    if ((msg.type === 'TASK_RESULT' || msg.type === 'IMAGE_RESULT' || msg.type === 'VIDEO_RESULT') && _extPending.has(msg.id)) {
       const { resolve, reject, timer } = _extPending.get(msg.id);
       _extPending.delete(msg.id);
       clearTimeout(timer);
