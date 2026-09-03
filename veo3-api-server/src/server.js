@@ -47,6 +47,11 @@ _extWss.on('connection', (ws) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
+    if (msg.type === 'BRIDGE_LOG' && msg.message) {
+      logger.info(`[Extension Bridge] ${msg.message}`);
+      return;
+    }
+
     if (msg.type === 'TOKEN_SYNC' && msg.token) {
       browserManager.oauthToken = msg.token;
       browserManager.tokenCapturedAt = Date.now();
