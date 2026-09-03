@@ -86,12 +86,38 @@ _extWss.on('connection', (ws) => {
       const { resolve, reject, timer } = _extPending.get(msg.id);
       _extPending.delete(msg.id);
       clearTimeout(timer);
-      if (msg.ok && msg.base64) {
-        resolve({
-          buffer: Buffer.from(msg.base64, 'base64'),
-          mediaId: msg.mediaId,
-          downloadUrl: msg.downloadUrl
-        });
+      if (msg.ok && (msg.base64 || msg.filePath)) {
+        let buffer = null;
+        if (msg.filePath) {
+          try {
+            if (fs.existsSync(msg.filePath)) {
+              buffer = fs.readFileSync(msg.filePath);
+              logger.success(`[Bridge] Đã đọc video từ file máy tính: ${msg.filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+              try {
+                fs.unlinkSync(msg.filePath);
+                logger.info(`[Bridge] Đã dọn dẹp xoá file tạm trên máy: ${msg.filePath}`);
+              } catch (delErr) {
+                logger.warn(`[Bridge] Không thể xoá file tạm: ${delErr.message}`);
+              }
+            } else {
+              logger.error(`[Bridge] File không tồn tại trên đường dẫn: ${msg.filePath}`);
+            }
+          } catch (readErr) {
+            logger.error(`[Bridge] Lỗi đọc file video: ${readErr.message}`);
+          }
+        } else if (msg.base64) {
+          buffer = Buffer.from(msg.base64, 'base64');
+        }
+
+        if (buffer && buffer.length > 0) {
+          resolve({
+            buffer,
+            mediaId: msg.mediaId,
+            downloadUrl: msg.downloadUrl
+          });
+        } else {
+          reject(new Error(msg.error || 'Video buffer rỗng hoặc không thể đọc file'));
+        }
       } else {
         reject(new Error(msg.error || 'Extension trả về lỗi'));
       }
