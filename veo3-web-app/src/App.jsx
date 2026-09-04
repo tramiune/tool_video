@@ -156,7 +156,11 @@ const createEmptyDramaScene = () => ({
   title: '',
   description: '',
   imagePrompt: '',
+  endImagePrompt: '',
   videoPrompt: '',
+  startImageUrl: '',
+  imageUrl: '',
+  endImageUrl: '',
   dialogue: [{ speaker: '', text: '' }]
 });
 
@@ -180,12 +184,19 @@ const normalizeDramaScript = (script) => {
       title: scene.title || '',
       description: scene.description || '',
       imagePrompt: scene.imagePrompt || '',
+      endImagePrompt: scene.endImagePrompt || '',
       videoPrompt: scene.videoPrompt || '',
-      imageUrl: scene.imageUrl || '',
+      imageUrl: scene.imageUrl || scene.startImageUrl || '',
+      startImageUrl: scene.startImageUrl || scene.imageUrl || '',
+      endImageUrl: scene.endImageUrl || '',
       videoUrl: scene.videoUrl || '',
       imageTaskId: scene.imageTaskId || '',
+      startImageTaskId: scene.startImageTaskId || scene.imageTaskId || '',
+      endImageTaskId: scene.endImageTaskId || '',
       videoTaskId: scene.videoTaskId || '',
       imageStatus: scene.imageStatus || '',
+      startImageStatus: scene.startImageStatus || scene.imageStatus || '',
+      endImageStatus: scene.endImageStatus || '',
       videoStatus: scene.videoStatus || '',
       dialogue: Array.isArray(scene.dialogue) ? scene.dialogue.map(line => ({
         speaker: line.speaker || '',
@@ -2742,7 +2753,7 @@ function App() {
   useEffect(() => {
     if (!user || !dramaScript?.id) return;
     const processingScenes = (dramaScript.scenes || []).some(scene =>
-      scene.imageStatus === 'processing' || scene.videoStatus === 'processing'
+      scene.imageStatus === 'processing' || scene.startImageStatus === 'processing' || scene.endImageStatus === 'processing' || scene.videoStatus === 'processing'
     );
     if (!processingScenes) return;
     let cancelled = false;
@@ -2766,17 +2777,23 @@ function App() {
             return {
               ...scene,
               imageUrl: remoteScene.imageUrl || scene.imageUrl,
+              startImageUrl: remoteScene.startImageUrl || scene.startImageUrl || remoteScene.imageUrl || scene.imageUrl,
+              endImageUrl: remoteScene.endImageUrl || scene.endImageUrl,
               videoUrl: remoteScene.videoUrl || scene.videoUrl,
               imageTaskId: remoteScene.imageTaskId || scene.imageTaskId,
+              startImageTaskId: remoteScene.startImageTaskId || scene.startImageTaskId,
+              endImageTaskId: remoteScene.endImageTaskId || scene.endImageTaskId,
               videoTaskId: remoteScene.videoTaskId || scene.videoTaskId,
               imageStatus: remoteScene.imageStatus || scene.imageStatus,
+              startImageStatus: remoteScene.startImageStatus || scene.startImageStatus,
+              endImageStatus: remoteScene.endImageStatus || scene.endImageStatus,
               videoStatus: remoteScene.videoStatus || scene.videoStatus
             };
           });
           return { ...current, scenes: mergedScenes, updatedAt: normalized.updatedAt };
         });
         const stillProcessing = (normalized.scenes || []).some(scene =>
-          scene.imageStatus === 'processing' || scene.videoStatus === 'processing'
+          scene.imageStatus === 'processing' || scene.startImageStatus === 'processing' || scene.endImageStatus === 'processing' || scene.videoStatus === 'processing'
         );
         if (!stillProcessing && interval) {
           clearInterval(interval);
@@ -3432,7 +3449,7 @@ function App() {
                               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Cảnh {index + 1}: {scene?.title || ''}</span>
                             </span>
                             <span style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>
-                              {isDone ? 'xong' : isFailed ? 'lỗi' : scene?.imageUrl ? 'video...' : 'ảnh...'}
+                              {isDone ? 'xong' : isFailed ? 'lỗi' : scene?.videoUrl ? 'xong' : scene?.endImageUrl ? 'video...' : (scene?.startImageUrl || scene?.imageUrl) ? 'ảnh cuối...' : 'ảnh đầu...'}
                             </span>
                           </div>
                         );
@@ -3637,7 +3654,18 @@ function App() {
                       scenes[sceneIndex] = { ...scenes[sceneIndex], imagePrompt: event.target.value };
                       return { ...current, scenes };
                     })}
-                    placeholder="Prompt ảnh gốc của cảnh (tiếng Anh)"
+                    placeholder="Prompt ảnh bắt đầu của cảnh (Start Frame tiếng Anh)"
+                    className="glass-input"
+                    rows={2}
+                  />
+                  <textarea
+                    value={scene.endImagePrompt || ''}
+                    onChange={(event) => setDramaScript(current => {
+                      const scenes = [...current.scenes];
+                      scenes[sceneIndex] = { ...scenes[sceneIndex], endImagePrompt: event.target.value };
+                      return { ...current, scenes };
+                    })}
+                    placeholder="Prompt ảnh kết thúc của cảnh (End Frame tiếng Anh - mô tả biểu cảm/tư thế phản ứng kết thúc thoại)"
                     className="glass-input"
                     rows={2}
                   />
@@ -3648,36 +3676,53 @@ function App() {
                       scenes[sceneIndex] = { ...scenes[sceneIndex], videoPrompt: event.target.value };
                       return { ...current, scenes };
                     })}
-                    placeholder="Prompt video: mô tả chuyển động/hành động của clip 8 giây (tiếng Anh)"
+                    placeholder="Prompt video: mô tả chuyển động mượt mà từ Start Frame đến End Frame (tiếng Anh)"
                     className="glass-input"
                     rows={2}
                   />
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                    {scene.imageUrl && (
-                      <div style={{ flex: '1 1 160px', minWidth: '140px' }}>
-                        <label style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
-                          Ảnh cảnh {scene.imageStatus === 'processing' ? '(đang tạo...)' : scene.imageStatus === 'failed' ? '(lỗi)' : ''}
-                        </label>
-                        <img src={scene.imageUrl} alt={`Cảnh ${sceneIndex + 1}`} style={{ width: '100%', borderRadius: '10px', marginTop: '4px', border: '1px solid rgba(255,255,255,0.08)', opacity: scene.imageStatus === 'processing' ? 0.55 : 1 }} />
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    {(scene.startImageUrl || scene.imageUrl) && (
+                      <div style={{ flex: '1 1 140px', minWidth: '120px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                          <span style={{ color: '#60a5fa', fontSize: '0.74rem', fontWeight: 600 }}>🖼️ Khung đầu (Start)</span>
+                          {(scene.startImageStatus === 'processing' || scene.imageStatus === 'processing') && <Loader size={12} className="spin-loader" style={{ color: '#fbbf24' }} />}
+                        </div>
+                        <img src={scene.startImageUrl || scene.imageUrl} alt={`Cảnh ${sceneIndex + 1} - Start`} style={{ width: '100%', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.3)', opacity: (scene.startImageStatus === 'processing' || scene.imageStatus === 'processing') ? 0.55 : 1 }} />
+                      </div>
+                    )}
+                    {scene.endImageUrl && (
+                      <div style={{ flex: '1 1 140px', minWidth: '120px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                          <span style={{ color: '#a78bfa', fontSize: '0.74rem', fontWeight: 600 }}>🏁 Khung cuối (End)</span>
+                          {scene.endImageStatus === 'processing' && <Loader size={12} className="spin-loader" style={{ color: '#fbbf24' }} />}
+                        </div>
+                        <img src={scene.endImageUrl} alt={`Cảnh ${sceneIndex + 1} - End`} style={{ width: '100%', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.3)', opacity: scene.endImageStatus === 'processing' ? 0.55 : 1 }} />
                       </div>
                     )}
                     {scene.videoUrl && (
-                      <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
-                        <label style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
-                          Clip cảnh {scene.videoStatus === 'processing' ? '(đang tạo...)' : scene.videoStatus === 'failed' ? '(lỗi)' : ''}
-                        </label>
-                        <video controls src={scene.videoUrl} style={{ width: '100%', borderRadius: '10px', marginTop: '4px', maxHeight: '240px', background: '#000' }} />
+                      <div style={{ flex: '1 1 200px', minWidth: '160px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                          <span style={{ color: '#34d399', fontSize: '0.74rem', fontWeight: 600 }}>🎬 Clip 8s (Start ➔ End)</span>
+                          {scene.videoStatus === 'processing' && <Loader size={12} className="spin-loader" style={{ color: '#fbbf24' }} />}
+                        </div>
+                        <video controls src={scene.videoUrl} style={{ width: '100%', borderRadius: '8px', maxHeight: '220px', background: '#000', border: '1px solid rgba(52,211,153,0.3)' }} />
                       </div>
                     )}
-                    {(scene.imageStatus === 'processing' || scene.videoStatus === 'processing') && (
+                    {(scene.imageStatus === 'processing' || scene.startImageStatus === 'processing' || scene.endImageStatus === 'processing' || scene.videoStatus === 'processing') && (
                       <div style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontSize: '0.8rem' }}>
                         <Loader size={16} className="spin-loader" />
-                        {scene.imageStatus === 'processing' ? 'Đang tạo ảnh cảnh...' : 'Đang tạo video cảnh...'}
+                        {scene.startImageStatus === 'processing' || scene.imageStatus === 'processing' ? 'Đang tạo ảnh bắt đầu...' :
+                         scene.endImageStatus === 'processing' ? 'Đang tạo ảnh kết thúc (I2I)...' : 'Đang tạo video clip 8s...'}
                       </div>
                     )}
-                    {scene.imageStatus === 'failed' && (
+                    {(scene.imageStatus === 'failed' || scene.startImageStatus === 'failed') && (
                       <div style={{ flex: '1 1 100%', color: '#f87171', fontSize: '0.78rem' }}>
-                        Tạo ảnh thất bại. Vui lòng thử lại.
+                        Tạo ảnh bắt đầu thất bại. Vui lòng thử lại.
+                      </div>
+                    )}
+                    {scene.endImageStatus === 'failed' && (
+                      <div style={{ flex: '1 1 100%', color: '#f87171', fontSize: '0.78rem' }}>
+                        Tạo ảnh kết thúc thất bại. Vui lòng thử lại.
                       </div>
                     )}
                     {scene.videoStatus === 'failed' && (

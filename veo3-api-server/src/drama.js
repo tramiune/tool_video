@@ -121,16 +121,16 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       '- Cảnh 5 (Quảng cáo sản phẩm): Bin tò mò làm sao để luôn đủ chất khi đi học/kén ăn. Sumo giới thiệu GẠC HƯƠU NON SUMO (nhung hươu cô đặc, Vitamin C, Kẽm, FOS, và 5 loại quả nhiệt đới: cam, xoài, ổi, chuối, chanh dây) như một bảo bối năng lượng tiện lợi, thơm ngon cho bé.',
       '- Cảnh 6 (Kết thúc & Tương tác): Bin thay đổi suy nghĩ, tạo dáng đáng yêu cùng Sumo. Bin hướng về camera đố khán giả một câu hỏi vui nhộn liên quan đến chủ đề để kích thích người xem bình luận dưới video.',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
-      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
+      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
       '- title: tiêu đề kịch bản hoạt hình, ngắn gọn, sáng tạo, thu hút trẻ em (tiếng Việt).',
       '- characters: đúng 3 nhân vật như yêu cầu, kèm vai trò và mô tả chi tiết ngoại hình.',
       '- baseImagePrompt: mô tả bối cảnh sáng tạo đã chọn + phong cách hoạt hình 3D Pixar, vertical 9:16.',
-      `- scenes: đúng 6 cảnh theo cấu trúc trên. Mỗi cảnh có title, description (mô tả cảnh bằng tiếng Anh), imagePrompt (prompt vẽ ảnh tiếng Anh mô tả bối cảnh tĩnh, nhân vật Bin đứng yên bên trái, Sumo đứng yên bên phải mặc áo choàng đỏ nơ đỏ), videoPrompt (prompt tiếng Anh cho clip 8s mô tả chuyển động cơ thể nhẹ nhàng và mấp máy miệng khi nói thoại), và dialogue (mảng thoại tiếng Việt, mỗi cảnh chỉ được chứa đúng 1 câu thoại duy nhất của nhân vật chính trong cảnh đó, dài từ 25-35 từ để khớp 8 giây).`,
+      `- scenes: đúng 6 cảnh theo cấu trúc trên. Mỗi cảnh có title, description (mô tả cảnh bằng tiếng Anh), imagePrompt (prompt vẽ ảnh tiếng Anh mô tả khung hình BẮT ĐẦU: bối cảnh tĩnh, nhân vật Bin đứng yên bên trái, Sumo đứng yên bên phải mặc áo choàng đỏ nơ đỏ), endImagePrompt (prompt vẽ ảnh tiếng Anh mô tả khung hình KẾT THÚC của cảnh sau 8s thoại, biểu cảm phản ứng và tư thế mới của các nhân vật, giữ nguyên góc máy và bối cảnh để làm frame đầu cho cảnh tiếp theo), videoPrompt (prompt tiếng Anh cho clip 8s mô tả chuyển động cơ thể mượt mà từ khung bắt đầu đến khung kết thúc và mấp máy miệng khi nói thoại), và dialogue (mảng thoại tiếng Việt, mỗi cảnh chỉ được chứa đúng 1 câu thoại duy nhất của nhân vật chính trong cảnh đó, dài từ 25-35 từ để khớp 8 giây).`,
       'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH, VỊ TRÍ NHÂN VẬT & HIỂN THỊ CHỮ:',
       '- Cảnh 1 (Scene 1) PHẢI mô tả rõ cả bé Bin, chú hươu Sumo (mặc áo choàng đỏ nơ đỏ) và bạn bè. Mô tả chi tiết ngoại hình của họ ngay trong Cảnh 1.',
       '- Vị trí nhân vật: Giữ vị trí tương đối của các nhân vật (ví dụ Bin bên trái, Sumo bên phải) một cách nhất quán để người xem dễ theo dõi.',
-      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ ràng vị trí và hành động tự nhiên của nhân vật bằng tiếng Anh (ví dụ: "Bin is on the left side, Sumo is on the right side. Sumo is a friendly deer character wearing a red cape and a red bowtie on his neck, standing upright on two legs. Characters interact naturally with expressive acting, natural lip movements, and gestures"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
-      '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
+      '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ ràng vị trí và hành động tự nhiên của nhân vật bằng tiếng Anh (ví dụ: "Bin is on the left side, Sumo is on the right side. Sumo is a friendly deer character wearing a red cape and a red bowtie on his neck, standing upright on two legs. Characters interact naturally with expressive acting, natural lip movements, and gestures"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
+      '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
       '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ];
   } else {
@@ -145,19 +145,19 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       themePrompt,
       'Kịch bản phải đánh trúng cảm xúc, có kịch tính, nhiều mâu thuẫn và cao trào, kiểu nội dung "mẹ chồng nàng dâu" hoặc drama gia đình dễ gây tranh cãi.',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
-      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
+      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
       '- title: tiêu đề kịch bản, ngắn gọn, gây tò mò (tiếng Việt).',
       '- characters: 3 nhân vật, mỗi người có role (vd: "con dâu", "mẹ chồng", "chồng") và description ngắn.',
       '- baseImagePrompt: prompt tiếng Anh mô tả khung cảnh gốc + phong cách hình ảnh chung (vd: "A 3D Pixar-style modern Vietnamese house, cinematic lighting..."), vertical 9:16.',
-      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình đó), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
+      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình BẮT ĐẦU của cảnh), endImagePrompt (prompt tiếng Anh mô tả khung hình KẾT THÚC của cảnh sau 8s thoại, biểu cảm phản ứng và tư thế mới của các nhân vật, giữ nguyên góc máy và bối cảnh để làm frame đầu cho cảnh kế tiếp), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây nối từ start frame sang end frame), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
       '- YÊU CẦU QUAN TRỌNG VỀ THOẠI (DIALOGUE):',
       '  * Bắt buộc cảnh nào cũng phải có thoại. Mảng dialogue của mỗi cảnh chỉ được phép chứa đúng 1 câu thoại duy nhất của 1 nhân vật (1 người nói duy nhất mỗi cảnh, không có đối thoại qua lại trong cùng 1 cảnh).',
       '  * Mỗi câu thoại phải đủ dài để đọc/nói chậm rãi trong khoảng 7 đến 8 giây (độ dài kịch bản thoại khoảng 25-35 từ tiếng Việt), diễn đạt sâu sắc, kịch tính, tránh thoại ngắn cụt lủn.',
       'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH, VỊ TRÍ NHÂN VẬT & HIỂN THỊ CHỮ:',
       '- Cảnh 1 (Scene 1) PHẢI chứa đầy đủ tất cả các nhân vật trong characters cùng xuất hiện trong một khung hình (ví dụ: mô tả rõ cả Huy, Lan và bà mẹ đều đứng trong phòng khách). Mô tả chi tiết ngoại hình và trang phục của họ ngay trong Cảnh 1.',
       '- Vị trí nhân vật: Giữ vị trí tương đối của các nhân vật (ví dụ Huy bên trái, Lan bên phải) một cách nhất quán xuyên suốt các cảnh.',
-      '- Trong baseImagePrompt, imagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ ràng vị trí và hành động tự nhiên của nhân vật bằng tiếng Anh (ví dụ: "Huy is on the left side, Lan is on the right side. Characters talk with natural facial expressions, emotions, and subtle gestures matching the dramatic dialogue"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
-      '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
+      '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ ràng vị trí và hành động tự nhiên của nhân vật bằng tiếng Anh (ví dụ: "Huy is on the left side, Lan is on the right side. Characters talk with natural facial expressions, emotions, and subtle gestures matching the dramatic dialogue"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
+      '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
       '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ];
   }
@@ -192,6 +192,7 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       title: String(scene?.title || `Cảnh ${index + 1}`).trim().slice(0, 160),
       description: String(scene?.description || '').trim().slice(0, 3000),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
+      endImagePrompt: String(scene?.endImagePrompt || '').trim().slice(0, 3000),
       videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
       dialogue: Array.isArray(scene?.dialogue) ? scene.dialogue.slice(0, 4).map(line => ({
         speaker: String(line?.speaker || '').trim().slice(0, 120),
@@ -220,12 +221,19 @@ function normalizeDramaScript(raw) {
       title: String(scene?.title || `Cảnh ${index + 1}`).trim().slice(0, 160),
       description: String(scene?.description || '').trim().slice(0, 3000),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
+      endImagePrompt: String(scene?.endImagePrompt || '').trim().slice(0, 3000),
       videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
-      imageUrl: scene?.imageUrl || null,
+      imageUrl: scene?.imageUrl || scene?.startImageUrl || null,
+      startImageUrl: scene?.startImageUrl || scene?.imageUrl || null,
+      endImageUrl: scene?.endImageUrl || null,
       videoUrl: scene?.videoUrl || null,
       imageTaskId: scene?.imageTaskId || null,
+      startImageTaskId: scene?.startImageTaskId || scene?.imageTaskId || null,
+      endImageTaskId: scene?.endImageTaskId || null,
       videoTaskId: scene?.videoTaskId || null,
       imageStatus: scene?.imageStatus || null,
+      startImageStatus: scene?.startImageStatus || scene?.imageStatus || null,
+      endImageStatus: scene?.endImageStatus || null,
       videoStatus: scene?.videoStatus || null,
       dialogue: Array.isArray(scene?.dialogue) ? scene.dialogue.slice(0, 4).map(line => ({
         speaker: String(line?.speaker || '').trim().slice(0, 120),
@@ -405,25 +413,26 @@ async function runDramaJob(jobId) {
     const clipPaths = [];
 
     try {
-      // Combined Phase 1 & 2: Process scenes sequentially.
-      // Scene 1 generates a still image via AI.
-      // Scenes N (N > 1) extract the last frame of Scene N-1 video as their still image.
-      // All scene videos are generated with startImage = scene still, endImage = null.
+      // Process scenes sequentially with Start-to-End frame chaining:
+      // - Scene 1 (index 0): startImage is generated via AI.
+      // - Scene N (index > 0): startImage is the endImage of Scene N-1 (chained).
+      // - Each scene's endImage is generated via Image-to-Image using its startImage as reference.
+      // - Each scene's video is generated with startImage and endImage.
       for (let index = 0; index < job.scenes.length; index++) {
         failedSceneIndex = index;
         snapshot = await jobRef.get();
         job = snapshot.data();
         if (job.status === 'failed') {
-          logger.info(`[Drama] Job ${jobId} aborted in step 1 of scene ${index + 1} due to cancellation.`);
+          logger.info(`[Drama] Job ${jobId} aborted in scene ${index + 1} due to cancellation.`);
           return;
         }
         let scene = job.scenes[index];
 
         // 1. Get or generate the start image for this scene
-        let imageUrl = scene.imageUrl;
-        const imgExists = await checkUrlExists(imageUrl);
-        if (!imageUrl || !imgExists) {
-          imageUrl = null; // force regeneration if missing or deleted
+        let startImageUrl = scene.startImageUrl || scene.imageUrl;
+        const startImgExists = await checkUrlExists(startImageUrl);
+        if (!startImageUrl || !startImgExists) {
+          startImageUrl = null;
           if (index === 0) {
             // Scene 1: Generate initial still image
             const referenceImages = [];
@@ -446,7 +455,7 @@ async function runDramaJob(jobId) {
               job: { ...job, characters: job.characters || [] },
               sceneIndex: index,
               taskType: 'image',
-              prompt: buildScenePrompt(job, scene, 'image'),
+              prompt: buildScenePrompt(job, scene, 'startImage'),
               extraTaskData: {
                 userId: job.userId,
                 email: job.userEmail || null,
@@ -461,55 +470,122 @@ async function runDramaJob(jobId) {
                 createdAt: Date.now()
               },
               timeoutMs: IMAGE_TIMEOUT_MS,
-              stageStatus: 'image_processing',
+              stageStatus: 'start_image_processing',
               progressUpdate: {
                 status: 'generating',
                 currentScene: index + 1,
-                progress: Math.round(((index * 2) / (job.scenes.length * 2)) * 100)
+                progress: Math.round(((index * 3) / totalSteps) * 100)
               }
             });
-            imageUrl = imageResult.url;
-            scene.imageUrl = imageUrl;
-            await updateScene(jobRef, index, { imageUrl, status: 'image_completed' }, {
-              progress: Math.round(((index * 2 + 0.5) / (job.scenes.length * 2)) * 100)
+            startImageUrl = imageResult.url;
+            scene.startImageUrl = startImageUrl;
+            scene.imageUrl = startImageUrl;
+            await updateScene(jobRef, index, {
+              startImageUrl,
+              imageUrl: startImageUrl,
+              startImageStatus: 'completed',
+              imageStatus: 'completed',
+              status: 'start_image_completed'
+            }, {
+              progress: Math.round(((index * 3 + 0.8) / totalSteps) * 100)
             });
           } else {
-            // Scene N (N > 1): Extract last frame from previous scene's video
+            // Scene N (N > 0): Start image chained from endImage of previous scene!
             const prevScene = job.scenes[index - 1];
-            if (!prevScene || !prevScene.videoUrl) {
-              throw new Error(`Cảnh ${index} chưa có video để trích xuất frame cuối`);
+            startImageUrl = prevScene?.endImageUrl || prevScene?.imageUrl || null;
+            if (!startImageUrl && prevScene?.videoUrl) {
+              // Fallback: extract last frame from previous video if endImageUrl is missing
+              logger.info(`[Drama] Extracting last frame from scene ${index} video: ${prevScene.videoUrl}`);
+              const prevVideoPath = path.join(tempDir, `prev-clip-${index}.mp4`);
+              const lastFramePath = path.join(tempDir, `last-frame-${index}.png`);
+              await downloadFile(prevScene.videoUrl, prevVideoPath);
+              await runFfmpeg([
+                '-y',
+                '-sseof', '-0.1',
+                '-i', prevVideoPath,
+                '-vframes', '1',
+                '-q:v', '2',
+                lastFramePath
+              ]);
+              const lastFrameBuffer = await fsp.readFile(lastFramePath);
+              startImageUrl = await uploadToR2(lastFrameBuffer, `meo3/images/${jobId}_scene_${index + 1}_start_image.png`, 'image/png');
             }
-            logger.info(`[Drama] Extracting last frame from scene ${index} video: ${prevScene.videoUrl}`);
-            const prevVideoPath = path.join(tempDir, `prev-clip-${index}.mp4`);
-            const lastFramePath = path.join(tempDir, `last-frame-${index}.png`);
-            
-            await downloadFile(prevScene.videoUrl, prevVideoPath);
-            await runFfmpeg([
-              '-y',
-              '-sseof', '-0.1',
-              '-i', prevVideoPath,
-              '-vframes', '1',
-              '-q:v', '2',
-              lastFramePath
-            ]);
-            
-            const lastFrameBuffer = await fsp.readFile(lastFramePath);
-            imageUrl = await uploadToR2(lastFrameBuffer, `meo3/images/${jobId}_scene_${index + 1}_image.png`, 'image/png');
-            scene.imageUrl = imageUrl;
-            await updateScene(jobRef, index, { imageUrl, status: 'image_completed' }, {
-              progress: Math.round(((index * 2 + 0.5) / (job.scenes.length * 2)) * 100)
+            if (!startImageUrl) {
+              throw new Error(`Cảnh ${index} chưa có ảnh kết thúc hoặc video để làm ảnh bắt đầu cho cảnh ${index + 1}`);
+            }
+            scene.startImageUrl = startImageUrl;
+            scene.imageUrl = startImageUrl;
+            await updateScene(jobRef, index, {
+              startImageUrl,
+              imageUrl: startImageUrl,
+              startImageStatus: 'completed',
+              imageStatus: 'completed',
+              status: 'start_image_completed'
+            }, {
+              progress: Math.round(((index * 3 + 0.8) / totalSteps) * 100)
             });
-            logger.success(`[Drama] Scene ${index + 1} image extracted and uploaded: ${imageUrl}`);
+            logger.success(`[Drama] Scene ${index + 1} startImage chained from Scene ${index}: ${startImageUrl}`);
           }
         }
 
-        // 2. Generate video for this scene
+        // 2. Generate End Image for this scene via I2I referencing startImageUrl
         snapshot = await jobRef.get();
         job = snapshot.data();
         if (job.status === 'failed') {
-          logger.info(`[Drama] Job ${jobId} aborted in step 2 of scene ${index + 1} due to cancellation.`);
+          logger.info(`[Drama] Job ${jobId} aborted before end image of scene ${index + 1} due to cancellation.`);
           return;
         }
+        scene = job.scenes[index];
+        let endImageUrl = scene.endImageUrl;
+        const endImgExists = await checkUrlExists(endImageUrl);
+        if (!endImageUrl || !endImgExists) {
+          const endImageResult = await runChildTaskWithRetry({
+            jobRef,
+            job: { ...job, characters: job.characters || [] },
+            sceneIndex: index,
+            taskType: 'image',
+            prompt: buildScenePrompt(job, scene, 'endImage'),
+            extraTaskData: {
+              userId: job.userId,
+              email: job.userEmail || null,
+              type: 'image',
+              status: 'pending',
+              aspectRatio: '9:16',
+              model: 'nano_banana_2',
+              count: 1,
+              referenceImages: [startImageUrl],
+              dramaJobId: jobId,
+              sceneIndex: index,
+              createdAt: Date.now()
+            },
+            timeoutMs: IMAGE_TIMEOUT_MS,
+            stageStatus: 'end_image_processing',
+            progressUpdate: {
+              status: 'generating',
+              currentScene: index + 1,
+              progress: Math.round(((index * 3 + 1) / totalSteps) * 100)
+            }
+          });
+          endImageUrl = endImageResult.url;
+          scene.endImageUrl = endImageUrl;
+          await updateScene(jobRef, index, {
+            endImageUrl,
+            endImageStatus: 'completed',
+            status: 'end_image_completed'
+          }, {
+            progress: Math.round(((index * 3 + 1.8) / totalSteps) * 100)
+          });
+          logger.success(`[Drama] Scene ${index + 1} endImage generated via I2I: ${endImageUrl}`);
+        }
+
+        // 3. Generate Video for this scene with startImage & endImage attached
+        snapshot = await jobRef.get();
+        job = snapshot.data();
+        if (job.status === 'failed') {
+          logger.info(`[Drama] Job ${jobId} aborted before video of scene ${index + 1} due to cancellation.`);
+          return;
+        }
+        scene = job.scenes[index];
         let videoUrl = scene.videoUrl;
         const vidExists = await checkUrlExists(videoUrl);
         if (!videoUrl || !vidExists) {
@@ -528,8 +604,8 @@ async function runDramaJob(jobId) {
               model: 'veo_3_1_lite',
               count: 1,
               durationSeconds: 8,
-              startImage: imageUrl,
-              endImage: null,
+              startImage: startImageUrl,
+              endImage: endImageUrl,
               dramaJobId: jobId,
               sceneIndex: index,
               createdAt: Date.now()
@@ -539,13 +615,18 @@ async function runDramaJob(jobId) {
             progressUpdate: {
               status: 'generating',
               currentScene: index + 1,
-              progress: Math.round(((index * 2 + 1) / (job.scenes.length * 2)) * 100)
+              progress: Math.round(((index * 3 + 2) / totalSteps) * 100)
             }
           });
           scene.videoUrl = videoResult.url;
-          await updateScene(jobRef, index, { videoUrl: videoResult.url, status: 'video_completed' }, {
-            progress: Math.round(((index * 2 + 2) / (job.scenes.length * 2)) * 100)
+          await updateScene(jobRef, index, {
+            videoUrl: videoResult.url,
+            videoStatus: 'completed',
+            status: 'video_completed'
+          }, {
+            progress: Math.round(((index * 3 + 2.8) / totalSteps) * 100)
           });
+          logger.success(`[Drama] Scene ${index + 1} video generated: ${videoResult.url}`);
         }
       }
 
@@ -688,7 +769,8 @@ function buildScenePrompt(job, scene, mediaType) {
   }).join('\n');
 
   const parts = [];
-  if (mediaType === 'image') {
+  const normalizedType = String(mediaType || '').toLowerCase();
+  if (normalizedType === 'image' || normalizedType === 'startimage' || normalizedType === 'start_image') {
     parts.push(String(scene.imagePrompt || scene.description || '').trim());
     if (baseImagePrompt) {
       parts.push(`Setting (keep identical in every frame): ${baseImagePrompt}`);
@@ -699,6 +781,20 @@ function buildScenePrompt(job, scene, mediaType) {
         parts.push('Important: All of the listed characters MUST be present and visible together in this single image.');
       }
     }
+    parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
+  } else if (normalizedType === 'endimage' || normalizedType === 'end_image') {
+    const endPrompt = String(scene.endImagePrompt || '').trim() || String(scene.videoPrompt || scene.description || '').trim();
+    parts.push(endPrompt);
+    if (baseImagePrompt) {
+      parts.push(`Setting (keep identical in every frame): ${baseImagePrompt}`);
+    }
+    if (characterLines.length > 0) {
+      parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
+    }
+    if (dialogueLines) {
+      parts.push(`Ending keyframe after this dialogue:\n${dialogueLines}`);
+    }
+    parts.push('Important: This is the END FRAME of the 8-second scene. Preserve the EXACT SAME characters, faces, clothes, camera angle, and background as the reference start image. Only depict updated emotional reactions, facial expressions, and postures at the conclusion of the line.');
     parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
   } else {
     parts.push(String(scene.videoPrompt || scene.description || '').trim());
@@ -712,7 +808,7 @@ function buildScenePrompt(job, scene, mediaType) {
       parts.push(`Important: Character Dialogues (make sure their lips move/talk and their expressions match this dialogue):\n${dialogueLines}`);
     }
     parts.push('Important: Characters talk with natural facial expressions, emotions, and subtle gestures matching the dialogue.');
-    parts.push('Create one coherent 8-second vertical clip. Photorealistic Vietnamese family drama, natural movement.');
+    parts.push('Create one coherent 8-second vertical clip smoothly transitioning from the start frame to the end frame. Photorealistic Vietnamese family drama, natural movement.');
   }
   return parts.join('\n');
 }
@@ -733,25 +829,43 @@ async function startSceneMedia({
   const scene = script.scenes[sceneIndex];
   if (!scene) throw new Error(`Cảnh ${sceneIndex + 1} không tồn tại`);
 
-  const taskId = sceneTaskId(scriptRef.id, sceneIndex, mediaType);
+  const rawType = String(mediaType || '').toLowerCase();
+  const normalizedType = (rawType === 'startimage' || rawType === 'start_image')
+    ? 'startImage'
+    : (rawType === 'endimage' || rawType === 'end_image')
+      ? 'endImage'
+      : (rawType === 'video')
+        ? 'video'
+        : 'image';
 
-  if (mediaType === 'video' && !scene.imageUrl) {
-    throw new Error('Cảnh chưa có ảnh. Vui lòng tạo ảnh cho cảnh này trước.');
+  const taskId = sceneTaskId(scriptRef.id, sceneIndex, normalizedType);
+
+  if (normalizedType === 'video' && !scene.imageUrl && !scene.startImageUrl) {
+    throw new Error('Cảnh chưa có ảnh bắt đầu. Vui lòng tạo ảnh cho cảnh này trước.');
+  }
+  if (normalizedType === 'endImage' && !scene.imageUrl && !scene.startImageUrl) {
+    throw new Error('Cảnh chưa có ảnh bắt đầu. Vui lòng tạo ảnh bắt đầu trước khi tạo ảnh kết thúc.');
   }
 
-  await updateScene(scriptRef, sceneIndex, {
-    [`${mediaType}TaskId`]: taskId,
-    [`${mediaType}Status`]: 'processing',
-    status: `${mediaType}_processing`,
+  const updateFields = {
+    [`${normalizedType}TaskId`]: taskId,
+    [`${normalizedType}Status`]: 'processing',
+    status: `${normalizedType}_processing`,
     error: null
-  });
+  };
+  if (normalizedType === 'image' || normalizedType === 'startImage') {
+    updateFields.imageTaskId = taskId;
+    updateFields.imageStatus = 'processing';
+  }
 
-  generateSceneMedia({ scriptRef, script, sceneIndex, mediaType, userId, userEmail })
+  await updateScene(scriptRef, sceneIndex, updateFields);
+
+  generateSceneMedia({ scriptRef, script, sceneIndex, mediaType: normalizedType, userId, userEmail })
     .catch((error) => {
-      logger.error(`[Drama] Scene ${sceneIndex + 1} ${mediaType} failed: ${error.message}`);
+      logger.error(`[Drama] Scene ${sceneIndex + 1} ${normalizedType} failed: ${error.message}`);
     });
 
-  return { taskId, mediaType, status: 'processing' };
+  return { taskId, mediaType: normalizedType, status: 'processing' };
 }
 
 async function generateSceneMedia({
@@ -766,8 +880,10 @@ async function generateSceneMedia({
     baseImagePrompt: script.baseImagePrompt || ''
   };
 
+  const rawType = String(mediaType || '').toLowerCase();
+
   try {
-    if (mediaType === 'image') {
+    if (rawType === 'image' || rawType === 'startimage' || rawType === 'start_image') {
       const referenceImages = [];
       if (script.channelType === 'sumo') {
         referenceImages.push(
@@ -788,7 +904,7 @@ async function generateSceneMedia({
         job,
         sceneIndex,
         taskType: 'image',
-        prompt: buildScenePrompt(job, scene, 'image'),
+        prompt: buildScenePrompt(job, scene, 'startImage'),
         extraTaskData: {
           userId,
           email: userEmail || null,
@@ -803,15 +919,54 @@ async function generateSceneMedia({
           createdAt: Date.now()
         },
         timeoutMs: IMAGE_TIMEOUT_MS,
-        stageStatus: 'image_processing'
+        stageStatus: 'start_image_processing'
       });
       await updateScene(scriptRef, sceneIndex, {
         imageUrl: imageResult.url,
+        startImageUrl: imageResult.url,
         imageStatus: 'completed',
-        status: 'completed'
+        startImageStatus: 'completed',
+        status: 'start_image_completed'
       });
-      return { url: imageResult.url, taskId: imageResult.taskId, mediaType };
+      return { url: imageResult.url, taskId: imageResult.taskId, mediaType: 'startImage' };
     }
+
+    if (rawType === 'endimage' || rawType === 'end_image') {
+      const startImg = scene.startImageUrl || scene.imageUrl;
+      if (!startImg) {
+        throw new Error('Cần có ảnh bắt đầu trước khi tạo ảnh kết thúc.');
+      }
+
+      const endImageResult = await runChildTaskWithRetry({
+        jobRef: scriptRef,
+        job,
+        sceneIndex,
+        taskType: 'image',
+        prompt: buildScenePrompt(job, scene, 'endImage'),
+        extraTaskData: {
+          userId,
+          email: userEmail || null,
+          type: 'image',
+          status: 'pending',
+          aspectRatio: '9:16',
+          model: 'nano_banana_2',
+          count: 1,
+          referenceImages: [startImg],
+          dramaScriptId: scriptRef.id,
+          sceneIndex,
+          createdAt: Date.now()
+        },
+        timeoutMs: IMAGE_TIMEOUT_MS,
+        stageStatus: 'end_image_processing'
+      });
+      await updateScene(scriptRef, sceneIndex, {
+        endImageUrl: endImageResult.url,
+        endImageStatus: 'completed',
+        status: 'end_image_completed'
+      });
+      return { url: endImageResult.url, taskId: endImageResult.taskId, mediaType: 'endImage' };
+    }
+
     const videoResult = await runChildTaskWithRetry({
       jobRef: scriptRef,
       job,
@@ -827,8 +982,8 @@ async function generateSceneMedia({
         model: 'veo_3_1_lite',
         count: 1,
         durationSeconds: 8,
-        startImage: scene.imageUrl,
-        endImage: null,
+        startImage: scene.startImageUrl || scene.imageUrl,
+        endImage: scene.endImageUrl || null,
         dramaScriptId: scriptRef.id,
         sceneIndex,
         createdAt: Date.now()
@@ -841,7 +996,7 @@ async function generateSceneMedia({
       videoStatus: 'completed',
       status: 'completed'
     });
-    return { url: videoResult.url, taskId: videoResult.taskId, mediaType };
+    return { url: videoResult.url, taskId: videoResult.taskId, mediaType: 'video' };
   } catch (error) {
     await updateScene(scriptRef, sceneIndex, {
       [`${mediaType}Status`]: 'failed',

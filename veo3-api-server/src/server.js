@@ -2141,10 +2141,15 @@ app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => 
           title: scene.title,
           description: scene.description,
           imagePrompt: scene.imagePrompt,
+          endImagePrompt: scene.endImagePrompt || '',
           videoPrompt: scene.videoPrompt,
           dialogue: scene.dialogue,
+          imageUrl: scene.imageUrl || scene.startImageUrl || null,
+          startImageUrl: scene.startImageUrl || scene.imageUrl || null,
+          endImageUrl: scene.endImageUrl || null,
           imageTaskId: scene.imageTaskId || null,
-          imageUrl: scene.imageUrl || null,
+          startImageTaskId: scene.startImageTaskId || null,
+          endImageTaskId: scene.endImageTaskId || null,
           videoTaskId: scene.videoTaskId || null,
           videoUrl: scene.videoUrl || null,
           audioStatus: null,
@@ -2175,8 +2180,9 @@ app.post('/api/drama/scripts/:id/scenes/:sceneIndex/:mediaType', requireDramaAcc
   try {
     const sceneIndex = Number(req.params.sceneIndex);
     const mediaType = String(req.params.mediaType || '').toLowerCase();
-    if (mediaType !== 'image' && mediaType !== 'video') {
-      return res.status(400).json({ error: 'mediaType must be "image" or "video"' });
+    const validMediaTypes = ['image', 'startimage', 'start_image', 'endimage', 'end_image', 'video'];
+    if (!validMediaTypes.includes(mediaType)) {
+      return res.status(400).json({ error: 'mediaType must be "image", "startImage", "endImage", or "video"' });
     }
 
     const scriptRef = db.collection('drama_scripts').doc(req.params.id);
