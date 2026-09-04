@@ -459,7 +459,7 @@ async function runDramaJob(jobId) {
               jobRef,
               job: { ...job, characters: job.characters || [] },
               sceneIndex: index,
-              taskType: 'image',
+              taskType: 'startImage',
               prompt: buildScenePrompt(job, scene, 'startImage'),
               extraTaskData: {
                 userId: job.userId,
@@ -548,7 +548,7 @@ async function runDramaJob(jobId) {
             jobRef,
             job: { ...job, characters: job.characters || [] },
             sceneIndex: index,
-            taskType: 'image',
+            taskType: 'endImage',
             prompt: buildScenePrompt(job, scene, 'endImage'),
             extraTaskData: {
               userId: job.userId,
@@ -936,7 +936,7 @@ async function generateSceneMedia({
         jobRef: scriptRef,
         job,
         sceneIndex,
-        taskType: 'image',
+        taskType: 'startImage',
         prompt: buildScenePrompt(job, scene, 'startImage'),
         extraTaskData: {
           userId,
@@ -974,7 +974,7 @@ async function generateSceneMedia({
         jobRef: scriptRef,
         job,
         sceneIndex,
-        taskType: 'image',
+        taskType: 'endImage',
         prompt: buildScenePrompt(job, scene, 'endImage'),
         extraTaskData: {
           userId,

@@ -3733,6 +3733,38 @@ function App() {
                     )}
                   </div>
 
+                  {/* Per-scene media actions */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="glass-button"
+                      onClick={() => handleDramaSceneMedia(sceneIndex, 'startImage')}
+                      disabled={dramaSceneBusy[`${sceneIndex}:startImage`] || isJobRunning}
+                      style={{ fontSize: '0.74rem', padding: '6px 12px', background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa' }}
+                    >
+                      {dramaSceneBusy[`${sceneIndex}:startImage`] ? <Loader size={12} className="spin-loader" /> : <Sparkles size={12} />} {scene.startImageUrl || scene.imageUrl ? 'Sinh lại ảnh đầu' : 'Tạo ảnh đầu'}
+                    </button>
+                    <button
+                      type="button"
+                      className="glass-button"
+                      onClick={() => handleDramaSceneMedia(sceneIndex, 'endImage')}
+                      disabled={dramaSceneBusy[`${sceneIndex}:endImage`] || !(scene.startImageUrl || scene.imageUrl) || isJobRunning}
+                      style={{ fontSize: '0.74rem', padding: '6px 12px', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa', opacity: !(scene.startImageUrl || scene.imageUrl) ? 0.4 : 1 }}
+                      title={!(scene.startImageUrl || scene.imageUrl) ? "Cần có ảnh đầu trước khi tạo ảnh cuối" : ""}
+                    >
+                      {dramaSceneBusy[`${sceneIndex}:endImage`] ? <Loader size={12} className="spin-loader" /> : <Sparkles size={12} />} {scene.endImageUrl ? 'Sinh lại ảnh cuối' : 'Tạo ảnh cuối (I2I)'}
+                    </button>
+                    <button
+                      type="button"
+                      className="glass-button"
+                      onClick={() => handleDramaSceneMedia(sceneIndex, 'video')}
+                      disabled={dramaSceneBusy[`${sceneIndex}:video`] || !(scene.startImageUrl || scene.imageUrl) || isJobRunning}
+                      style={{ fontSize: '0.74rem', padding: '6px 12px', background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)', color: '#34d399', opacity: !(scene.startImageUrl || scene.imageUrl) ? 0.4 : 1 }}
+                    >
+                      {dramaSceneBusy[`${sceneIndex}:video`] ? <Loader size={12} className="spin-loader" /> : <Video size={12} />} {scene.videoUrl ? 'Sinh lại video' : 'Tạo video cảnh này'}
+                    </button>
+                  </div>
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <label style={{ color: 'var(--text-secondary)', fontSize: '0.74rem' }}>Lời thoại</label>
                     {(Array.isArray(scene.dialogue) ? scene.dialogue : []).map((line, lineIndex) => (

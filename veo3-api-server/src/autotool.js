@@ -335,7 +335,20 @@ async function runChildTaskWithRetry({
     const doc = existing?.exists ? existing.data() : null;
 
     if (doc && doc.status === 'completed' && doc.mediaUrl) {
-      await updateScene(jobRef, sceneIndex, { [`${taskType}Url`]: doc.mediaUrl, status: 'completed' });
+      const updates = { [`${taskType}Url`]: doc.mediaUrl, status: 'completed' };
+      if (taskType === 'startImage' || taskType === 'image') {
+        updates.imageUrl = doc.mediaUrl;
+        updates.startImageUrl = doc.mediaUrl;
+        updates.startImageStatus = 'completed';
+        updates.imageStatus = 'completed';
+      } else if (taskType === 'endImage') {
+        updates.endImageUrl = doc.mediaUrl;
+        updates.endImageStatus = 'completed';
+      } else if (taskType === 'video') {
+        updates.videoUrl = doc.mediaUrl;
+        updates.videoStatus = 'completed';
+      }
+      await updateScene(jobRef, sceneIndex, updates);
       return { url: doc.mediaUrl, attempts: attempt, taskId };
     }
 
@@ -353,7 +366,7 @@ async function runChildTaskWithRetry({
         logger.warn(`[AutoTool] Scene ${sceneIndex + 1} ${taskType} bị từ chối nội dung. Viết lại prompt...`);
         try {
           currentPrompt = await rewritePrompt({
-            mediaType: taskType,
+            mediaType: String(taskType).toLowerCase().includes('video') ? 'video' : 'image',
             originalPrompt: currentPrompt,
             failure: [lastFailure.errorCode, lastFailure.error].filter(Boolean).join(' | '),
             characters: job.characters || [],
@@ -380,11 +393,24 @@ async function runChildTaskWithRetry({
       await taskRef.update({ prompt: currentPrompt }).catch(() => {});
     }
 
-    await updateScene(jobRef, sceneIndex, {
+    const sceneUpdates = {
       [`${taskType}TaskId`]: taskId,
       status: stageStatus,
       error: null
-    }, progressUpdate);
+    };
+    if (taskType === 'startImage' || taskType === 'image') {
+      sceneUpdates.startImageTaskId = taskId;
+      sceneUpdates.imageTaskId = taskId;
+      sceneUpdates.startImageStatus = 'processing';
+      sceneUpdates.imageStatus = 'processing';
+    } else if (taskType === 'endImage') {
+      sceneUpdates.endImageTaskId = taskId;
+      sceneUpdates.endImageStatus = 'processing';
+    } else if (taskType === 'video') {
+      sceneUpdates.videoTaskId = taskId;
+      sceneUpdates.videoStatus = 'processing';
+    }
+    await updateScene(jobRef, sceneIndex, sceneUpdates, progressUpdate);
 
     try {
       const url = await waitForTask(taskRef, timeoutMs);
@@ -410,7 +436,7 @@ async function runChildTaskWithRetry({
         logger.warn(`[AutoTool] Scene ${sceneIndex + 1} ${taskType} bị từ chối nội dung: ${String(failure.error).slice(0, 120)}. Viết lại prompt...`);
         try {
           currentPrompt = await rewritePrompt({
-            mediaType: taskType,
+            mediaType: String(taskType).toLowerCase().includes('video') ? 'video' : 'image',
             originalPrompt: currentPrompt,
             failure: [failure.errorCode, failure.error].filter(Boolean).join(' | '),
             characters: job.characters || [],
