@@ -132,7 +132,8 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       '  * Tạo chiều sâu khung hình (Foreground / Midground / Background), nhân vật hướng mắt và tương tác sinh động với nhau hoặc tương tác với đồ vật trong phòng thay vì đứng đơ quay mặt ra trước camera.',
       '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ ràng tư thế tự nhiên cụ thể của từng nhân vật bằng tiếng Anh (ví dụ: "Bin is sitting cross-legged on the colorful playmat examining a toy, while Sumo stands naturally beside him gesturing playfully..."). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
       '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
-      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes) để đảm bảo video ghép lại không bị giật, nhảy hình.'
+      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes) để đảm bảo video ghép lại không bị giật, nhảy hình.',
+      '- KHUNG HÌNH ĐƠN (Single Shot Only): Toàn bộ imagePrompt và endImagePrompt chỉ mô tả một bức ảnh đơn lẻ duy nhất (single unified camera shot, full bleed 9:16). Tuyệt đối KHÔNG viết prompt dạng chuỗi khung hình, không phân chia frame (no split screen, no collage, no panels, no triptych, no sequence).'
     ];
   } else {
     const themePrompt = inputTopic 
@@ -163,7 +164,8 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       '- Giữ tính liên tục của bối cảnh & nhân vật (Spatial Continuity): Giữ nguyên căn phòng, đồ đạc nội thất, phong cách trang phục và diện mạo của các nhân vật qua các cảnh.',
       '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ tư thế tự nhiên cụ thể của từng người bằng tiếng Anh (ví dụ: "The mother is sitting sternly on the sofa holding a teacup, while Lan stands nervously near the dining table holding a plate, and Huy leans against the doorway looking conflicted"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
       '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
-      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes) để đảm bảo video ghép lại không bị giật, nhảy hình.'
+      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes) để đảm bảo video ghép lại không bị giật, nhảy hình.',
+      '- KHUNG HÌNH ĐƠN (Single Shot Only): Toàn bộ imagePrompt và endImagePrompt chỉ mô tả một bức ảnh đơn lẻ duy nhất (single unified camera shot, full bleed 9:16). Tuyệt đối KHÔNG viết prompt dạng chuỗi khung hình, không phân chia frame (no split screen, no collage, no panels, no triptych, no sequence).'
     ];
   }
 
@@ -779,12 +781,7 @@ function getCharacterPositionLabel(job, scene, speakerName) {
 function buildScenePrompt(job, scene, mediaType) {
   const baseImagePrompt = String(job.baseImagePrompt || '').trim();
   const characters = Array.isArray(job.characters) ? job.characters.filter(c => String(c.name || '').trim()) : [];
-  const characterLines = characters.map(character => {
-    const role = String(character.role || '').trim();
-    const description = String(character.description || '').trim();
-    const name = String(character.name || '').trim();
-    return `- ${name}${role ? ` (${role})` : ''}${description ? `: ${description}` : ''}`;
-  });
+  const characterNames = characters.map(c => c.name).join(', ');
 
   const dialogues = Array.isArray(scene.dialogue) ? scene.dialogue : [];
   const dialogueLines = dialogues.map(line => {
@@ -794,54 +791,53 @@ function buildScenePrompt(job, scene, mediaType) {
 
   const parts = [];
   const normalizedType = String(mediaType || '').toLowerCase();
-  if (normalizedType === 'image' || normalizedType === 'startimage' || normalizedType === 'start_image') {
+  const isImageTask = normalizedType === 'image' || normalizedType === 'startimage' || normalizedType === 'start_image';
+  const isEndImageTask = normalizedType === 'endimage' || normalizedType === 'end_image';
+
+  if (isImageTask) {
     parts.push(String(scene.imagePrompt || scene.description || '').trim());
     if (baseImagePrompt) {
-      parts.push(`Setting (keep identical in every frame): ${baseImagePrompt}`);
+      parts.push(`Environment: ${baseImagePrompt}`);
     }
-    if (characterLines.length > 0) {
-      parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
-      if (scene.index === 0) {
-        parts.push('Important: All of the listed characters MUST be present and visible together in this single image.');
-      }
+    if (characterNames) {
+      parts.push(`Characters in scene: ${characterNames}. All characters must appear together in this room.`);
     }
-    parts.push('Cinematic staging: Characters have natural, varied postures with depth (e.g. one sitting comfortably on sofa/chair, one standing or leaning near table/counter, interacting naturally with props or room setting). NEVER pose characters standing in a stiff lineup side-by-side.');
+    parts.push('Cinematic staging: Characters have natural, varied postures with depth across the room (e.g. one seated comfortably, others standing or leaning naturally near furniture, interacting naturally). No stiff lineup.');
     if (job.channelType === 'sumo') {
-      parts.push('Vertical 9:16 composition. 3D Pixar animated film style, vibrant, expressive, cute.');
+      parts.push('3D Pixar animated film style, vibrant, expressive, cute.');
     } else {
-      parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
+      parts.push('Photorealistic cinematic Vietnamese family drama.');
     }
-  } else if (normalizedType === 'endimage' || normalizedType === 'end_image') {
+    // Anti-split, anti-collage, anti-triptych guard
+    parts.push('Single unified vertical 9:16 shot. Full-bleed photograph. ABSOLUTELY NO split screen, NO multi-panel, NO collage, NO triptych, NO comic strip, NO storyboard sequence, NO duplicate characters, NO borders.');
+  } else if (isEndImageTask) {
     const endPrompt = String(scene.endImagePrompt || '').trim() || String(scene.videoPrompt || scene.description || '').trim();
     parts.push(endPrompt);
     if (baseImagePrompt) {
-      parts.push(`Setting (keep identical in every frame): ${baseImagePrompt}`);
+      parts.push(`Environment: ${baseImagePrompt}`);
     }
-    if (characterLines.length > 0) {
-      parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
-    }
-    if (dialogueLines) {
-      parts.push(`Ending keyframe after this dialogue:\n${dialogueLines}`);
-    }
-    parts.push('Important: This is the END FRAME of the 8-second scene. Preserve the EXACT SAME characters, faces, clothes, camera angle, and background as the reference start image. Only depict updated emotional reactions, facial expressions, and postures at the conclusion of the line.');
+    parts.push('Depict the updated emotional reaction, facial expressions, and natural body postures of the characters at this moment. Maintain identical faces, clothing, and room setting as the reference image.');
     if (job.channelType === 'sumo') {
-      parts.push('Vertical 9:16 composition. 3D Pixar animated film style, vibrant, expressive, cute.');
+      parts.push('3D Pixar animated film style, vibrant, expressive, cute.');
     } else {
-      parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
+      parts.push('Photorealistic cinematic Vietnamese family drama.');
     }
+    // Anti-split, anti-collage, anti-triptych guard
+    parts.push('Single unified vertical 9:16 shot. Full-bleed photograph. ABSOLUTELY NO split screen, NO multi-panel, NO collage, NO triptych, NO comic strip, NO storyboard sequence, NO duplicate characters, NO borders.');
   } else {
+    // Video prompt
     parts.push(String(scene.videoPrompt || scene.description || '').trim());
     if (baseImagePrompt) {
-      parts.push(`Setting (keep identical in every frame): ${baseImagePrompt}`);
+      parts.push(`Environment: ${baseImagePrompt}`);
     }
-    if (characterLines.length > 0) {
-      parts.push(`Recurring characters (keep their face, body, clothing and appearance EXACTLY identical across all scenes):\n${characterLines.join('\n')}`);
+    if (characterNames) {
+      parts.push(`Characters: ${characterNames}`);
     }
     if (dialogueLines) {
-      parts.push(`Important: Character Dialogues (make sure their lips move/talk and their expressions match this dialogue):\n${dialogueLines}`);
+      parts.push(`Character Dialogues (speaking with natural lip movement matching this line):\n${dialogueLines}`);
     }
-    parts.push('Important: Characters talk with natural facial expressions, emotions, and subtle gestures matching the dialogue.');
-    parts.push('Create one coherent 8-second vertical clip smoothly transitioning from the start frame to the end frame. Natural cinematic movement with depth, avoid stiff lineup posing.');
+    parts.push('Characters talk with expressive, natural facial emotions and subtle gestures.');
+    parts.push('One coherent 8-second continuous vertical 9:16 video clip smoothly transitioning from start frame to end frame. Locked static camera, smooth cinematic depth, no camera cuts, no split screen.');
   }
   return parts.join('\n');
 }
