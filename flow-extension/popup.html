@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Flow Studio Pro</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  body { width: 280px; background: #0f172a; color: #f8fafc; padding: 16px; }
+  .header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .logo { font-size: 24px; }
+  .title { font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .version { font-size: 11px; color: #94a3b8; }
+  .btn-group { display: flex; flex-direction: column; gap: 10px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px 14px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+  .btn-primary { background: linear-gradient(135deg, #2563eb, #3b82f6); color: #fff; box-shadow: 0 4px 12px rgba(37,99,235,0.3); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37,99,235,0.4); }
+  .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
+  .btn-secondary:hover { background: #334155; color: #fff; }
+  .status-box { margin-top: 14px; padding: 8px 10px; background: rgba(30,41,59,0.7); border-radius: 6px; font-size: 11px; color: #94a3b8; display: flex; align-items: center; justify-content: space-between; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">⚡</div>
+    <div>
+      <div class="title">Flow Studio Pro</div>
+      <div class="version">AI Video & Image Automation v4.0</div>
+    </div>
+  </div>
+
+  <div class="btn-group">
+    <button id="btnSidepanel" class="btn btn-primary">
+      📌 Mở SidePanel (Thanh Bên)
+    </button>
+    <button id="btnFullTab" class="btn btn-secondary">
+      🖥️ Mở Dashboard Toàn Màn Hình
+    </button>
+    <button id="btnOpenFlow" class="btn btn-secondary">
+      🌐 Mở Google Flow Labs
+    </button>
+  </div>
+
+  <div class="status-box">
+    <span>Lõi Google Veo 3.1 & Imagen</span>
+    <span class="status-dot"></span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

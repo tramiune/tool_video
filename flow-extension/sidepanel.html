@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow Studio</title>
+  <style>
+    :root {
+      --bg: #0a0e1a; --surface: #131929; --surface2: #1a2236;
+      --border: #252d44; --text: #e8ecf4; --text2: #8b95b0;
+      --accent: #6c5ce7; --accent2: #a29bfe;
+      --green: #00d68f; --green-bg: #0d2e23;
+      --yellow: #ffd43b; --yellow-bg: #2e2a0d;
+      --red: #ff6b6b; --blue: #339af0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .logo { font-size: 20px; font-weight: 800; }
+    .logo span { color: var(--accent2); }
+    .conn-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); padding: 5px 12px; border-radius: 20px; background: var(--surface2); }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+    .conn-dot.ok { background: var(--green); }
+
+    .tabs { display: flex; padding: 0 28px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .tab { padding: 12px 22px; font-size: 13px; font-weight: 600; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+    .main { padding: 24px 28px; max-width: 1200px; margin: 0 auto; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin-bottom: 18px; }
+    .card-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-input, .form-textarea { width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; font-family: inherit; outline: none; margin-bottom: 14px; }
+    .form-input:focus, .form-textarea:focus { border-color: var(--accent); }
+    .form-textarea { height: 100px; resize: vertical; }
+
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; border-radius: 8px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; color: white; font-family: inherit; transition: all 0.15s; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); }
+    .btn-primary:hover:not(:disabled) { background: #5a4bd6; }
+    .btn-green { background: #0ca678; }
+    .btn-green:hover:not(:disabled) { background: #099268; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    .project-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .info-item { background: var(--bg); border-radius: 8px; padding: 12px 14px; }
+    .info-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; text-transform: uppercase; }
+    .info-value { font-size: 14px; font-weight: 700; }
+    .info-value.accent { color: var(--accent2); }
+    .info-value.green { color: var(--green); }
+
+    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .poll-control { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); }
+    .poll-control input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+
+    .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .video-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; transition: border-color 0.15s; }
+    .video-card:hover { border-color: var(--accent); }
+    .v-prompt { font-size: 13px; font-weight: 600; margin-bottom: 8px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .v-id { font-family: monospace; font-size: 10px; color: var(--text2); margin-bottom: 10px; word-break: break-all; }
+    .v-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+    .v-tag { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }
+    .v-tag.model { background: #1e1b4b; color: var(--accent2); }
+    .v-tag.res { background: #1a2744; color: var(--blue); }
+    .v-tag.done { background: var(--green-bg); color: var(--green); }
+    .v-tag.pending { background: var(--yellow-bg); color: var(--yellow); }
+    .v-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+    .status-msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-top: 10px; }
+    .status-msg.ok { background: var(--green-bg); color: var(--green); }
+    .status-msg.err { background: #3d0d0d; color: var(--red); }
+    .status-msg.loading { background: #0d1f3d; color: var(--blue); }
+
+    .empty-state { text-align: center; padding: 50px 20px; color: var(--text2); }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; animation: slideIn 0.3s ease; min-width: 260px; }
+    .toast.success { background: #0d3321; color: var(--green); border: 1px solid #155d3a; }
+    .toast.error { background: #3d0d0d; color: var(--red); border: 1px solid #5c1a1a; }
+    .toast.info { background: #0d1f3d; color: var(--blue); border: 1px solid #1a3a5c; }
+    @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Batch Queue Styles */
+    .progress-bar-bg { width: 100%; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin: 12px 0; border: 1px solid var(--border); }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); width: 0%; transition: width 0.3s; }
+    .queue-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .queue-stat { padding: 6px 12px; border-radius: 6px; background: var(--bg); font-size: 12px; font-weight: 600; border: 1px solid var(--border); }
+    .queue-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; gap: 12px; }
+    .queue-item.running { border-color: var(--accent); background: rgba(108, 92, 231, 0.08); }
+    .queue-item.success { border-color: rgba(0, 214, 143, 0.4); }
+    .queue-item.error { border-color: rgba(255, 107, 107, 0.4); }
+    .worker-tag { font-size: 11px; padding: 3px 7px; border-radius: 4px; font-weight: 700; }
+    .worker-1 { background: rgba(108, 92, 231, 0.2); color: var(--accent2); border: 1px solid rgba(108, 92, 231, 0.4); }
+    .worker-2 { background: rgba(0, 214, 143, 0.2); color: var(--green); border: 1px solid rgba(0, 214, 143, 0.4); }
+  
+    .btn-delete-vid { background:rgba(239,68,68,0.2); color:#ef4444; border:1px solid rgba(239,68,68,0.3); }
+    .btn-delete-vid:hover { background:#ef4444 !important; color:#fff !important; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">⚡ Flow <span>Studio</span></div>
+  <div style="display:flex; align-items:center; gap:8px;">
+    <div id="toolServerStatus" style="font-size:11px; padding:3px 8px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid var(--border); display:flex; align-items:center; gap:5px;" title="Kết nối tới tool_video server (port 7788)">
+      <div id="toolServerDot" style="width:7px; height:7px; border-radius:50%; background:var(--text2);"></div>
+      <span id="toolServerText" style="color:var(--text2);">Server: 7788</span>
+    </div>
+    <div class="conn-status" style="cursor:pointer;" title="Chạy trực tiếp trên Extension">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="connText">Đang kết nối...</span>
+      <span style="font-size:11px; margin-left:4px;">⚙️</span>
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="create" >📝 Tạo Video</div>
+  <div class="tab" data-tab="batch" >⚡ Hàng Đợi Video</div>
+  <div class="tab" data-tab="image" >🎨 Tạo Ảnh</div>
+  <div class="tab" data-tab="batch-image" >⚡ Hàng Đợi Ảnh</div>
+  <div class="tab" data-tab="click-ui" style="background: rgba(0, 214, 143, 0.12); color: var(--green); border: 1px solid rgba(0, 214, 143, 0.35);">🖱️ Auto Click UI</div>
+  <div class="tab" data-tab="library" >📚 Thư Viện</div>
+</div>
+
+<div class="main">
+  <!-- TAB: Tạo Video Đơn Lẻ -->
+  <div class="panel active" id="panel-create">
+    <div class="card">
+      <div class="card-title">🎬 Tạo Video Mới</div>
+      <label class="form-label">Project ID</label>
+      <input class="form-input" id="projectId" value="345ceb94-bd8b-4069-b995-41e510f5972e">
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div>
+          <label class="form-label">📐 Tỉ Lệ Khung Hình</label>
+          <select class="form-input" id="aspectRatio" style="margin-bottom:0;">
+            <option value="VIDEO_ASPECT_RATIO_PORTRAIT">📱 Dọc 9:16 (TikTok / Reels / Shorts)</option>
+            <option value="VIDEO_ASPECT_RATIO_LANDSCAPE" selected>📺 Ngang 16:9 (YouTube / Chuẩn)</option>
+            <option value="VIDEO_ASPECT_RATIO_SQUARE">⏹️ Vuông 1:1 (Instagram)</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">🤖 Model Video</label>
+          <select class="form-input" id="videoModel" style="margin-bottom:0;">
+            <option value="veo_3_1_t2v_lite_low_priority" selected>Veo 3.1 Lite (Ưu tiên thấp - Tiết kiệm)</option>
+            <option value="veo_3_1_lite">Veo 3.1 Lite (Chuẩn)</option>
+            <option value="veo_3_1_fast">Veo 3.1 Fast (Nhanh)</option>
+            <option value="veo_3_1_quality">Veo 3.1 Quality (Chất lượng cao)</option>
+            <option value="abra">Omni Flash (Hỗ trợ duration)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div>
+          <label class="form-label">🖼️ Ảnh Đầu Vào (Start Frame - Tuỳ chọn)</label>
+          <div style="display:flex; gap:6px;">
+            <input class="form-input" id="startImage" placeholder="Dán Link URL ảnh hoặc Media ID..." style="margin-bottom:0; flex:1;">
+            <input type="file" id="startFile" accept="image/*" style="display:none;" >
+            <button class="btn btn-sm" type="button" style="background:var(--border);" id="btnSelectStartFile" title="Chọn file từ máy">📁</button>
+          </div>
+        </div>
+        <div>
+          <label class="form-label">🏁 Ảnh Kết Thúc (End Frame - Tuỳ chọn)</label>
+          <div style="display:flex; gap:6px;">
+            <input class="form-input" id="endImage" placeholder="Dán Link URL ảnh hoặc Media ID..." style="margin-bottom:0; flex:1;">
+            <input type="file" id="endFile" accept="image/*" style="display:none;" >
+            <button class="btn btn-sm" type="button" style="background:var(--border);" id="btnSelectEndFile" title="Chọn file từ máy">📁</button>
+          </div>
+        </div>
+      </div>
+
+      <label class="form-label">Prompt Mô Tả</label>
+      <textarea class="form-textarea" id="promptInput" placeholder="Mô tả chuyển động, nội dung video bạn muốn tạo..."></textarea>
+      <button class="btn btn-primary" id="btnCreate" >🚀 Gửi Tạo Video</button>
+      <div id="createStatus"></div>
+    </div>
+  </div>
+
+  <!-- TAB: Hàng Đợi 2 Luồng (Batch Queue) -->
+  <div class="panel" id="panel-batch">
+    <div class="card">
+      <div class="card-title">⚡ Hàng Đợi Tạo Video Tự Động (2 Luồng Song Song)</div>
+
+      <div style="display:grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div>
+          <label class="form-label">Project ID</label>
+          <input class="form-input" id="batchProjectId" value="345ceb94-bd8b-4069-b995-41e510f5972e" style="margin-bottom:0;">
+        </div>
+        <div>
+          <label class="form-label">📐 Tỉ Lệ Mặc Định</label>
+          <select class="form-input" id="batchAspectRatio" style="margin-bottom:0;">
+            <option value="VIDEO_ASPECT_RATIO_PORTRAIT">📱 Dọc 9:16</option>
+            <option value="VIDEO_ASPECT_RATIO_LANDSCAPE" selected>📺 Ngang 16:9</option>
+            <option value="VIDEO_ASPECT_RATIO_SQUARE">⏹️ Vuông 1:1</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">🤖 Model</label>
+          <select class="form-input" id="batchModel" style="margin-bottom:0;">
+            <option value="veo_3_1_t2v_lite_low_priority" selected>Veo 3.1 Lite (LP)</option>
+            <option value="veo_3_1_lite">Veo 3.1 Lite</option>
+            <option value="veo_3_1_fast">Veo 3.1 Fast</option>
+            <option value="veo_3_1_quality">Veo 3.1 Quality</option>
+            <option value="abra">Omni Flash</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">⏱️ Giãn Cách (Delay)</label>
+          <select class="form-input" id="batchDelay" style="margin-bottom:0;">
+            <option value="1000">1 Giây (Siêu Tốc ⚡)</option>
+            <option value="2000">2 Giây (Khuyên Dùng 🚀)</option>
+            <option value="3000">3 Giây (Cân Bằng)</option>
+            <option value="5000">5 Giây (An Toàn Quota)</option>
+            <option value="random_6_10" selected>🎲 Random 6-10 Giây (An Toàn Nhất)</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="form-label">📋 Danh Sách Prompts & Ảnh (Mỗi dòng 1 video)</label>
+      <div style="font-size:11px; color:var(--text2); margin-bottom:6px;">
+        💡 Hỗ trợ: <code>Prompt</code> HOẶC <code>Link_Start_Image | Prompt</code> HOẶC <code>Link_Start_Image | Prompt | Link_End_Image</code>
+      </div>
+      <textarea class="form-textarea" id="batchInput" style="height:140px; font-family:monospace; font-size:12px;" placeholder="Ví dụ:
+con mèo nhảy múa trong phòng khách
+https://images.unsplash.com/.../cat.jpg | con mèo bay lên vũ trụ
+https://example.com/start.png | người chạy trên bãi biển hoàng hôn | https://example.com/end.png"></textarea>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+        <button class="btn btn-primary" id="btnStartBatch" >🚀 Bắt Đầu Chạy Hàng Đợi</button>
+        <button class="btn btn-sm" id="btnRetryFailed" style="background:#49260a; color:var(--yellow); border:1px solid rgba(255,212,59,0.4); display:none;" >🔄 Thử Lại Task Lỗi</button>
+        <button class="btn btn-sm" id="btnPauseBatch" style="background:var(--yellow-bg); color:var(--yellow); border:1px solid rgba(255,212,59,0.3); display:none;" >⏸️ Tạm Dừng</button>
+        <button class="btn btn-sm" style="background:var(--border);" id="btnClearBatch">🗑️ Xoá Hàng Đợi</button>
+      </div>
+
+      <!-- Queue Progress & Stats -->
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="queueProgressFill"></div>
+      </div>
+
+      <div class="queue-stats" id="queueStats">
+        <div class="queue-stat">📊 Tổng: <span id="statTotal" style="color:var(--text); font-weight:700;">0</span></div>
+        <div class="queue-stat">⏳ Chờ: <span id="statPending" style="color:var(--text2); font-weight:700;">0</span></div>
+        <div class="queue-stat">⚡ Đang xử lý: <span id="statRunning" style="color:var(--accent2); font-weight:700;">0</span></div>
+        <div class="queue-stat">✅ Thành công: <span id="statSuccess" style="color:var(--green); font-weight:700;">0</span></div>
+        <div class="queue-stat">❌ Lỗi: <span id="statError" style="color:var(--red); font-weight:700;">0</span></div>
+      </div>
+
+      <!-- Queue Task List -->
+      <div id="queueTaskList" style="max-height:360px; overflow-y:auto; margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- TAB: Tạo Ảnh (Image Studio) -->
+  <div class="panel" id="panel-image">
+    <div class="card">
+      <div class="card-title">🎨 Tạo Ảnh AI (Imagen / Nano Banana)</div>
+      <label class="form-label">Project ID</label>
+      <input class="form-input" id="imageProjectId" value="345ceb94-bd8b-4069-b995-41e510f5972e">
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div>
+          <label class="form-label">📐 Tỉ Lệ Khung Hình</label>
+          <select class="form-input" id="imageAspect" style="margin-bottom:0;">
+            <option value="IMAGE_ASPECT_RATIO_LANDSCAPE" selected>📺 Ngang 16:9</option>
+            <option value="IMAGE_ASPECT_RATIO_PORTRAIT">📱 Dọc 9:16 (Story / Phone)</option>
+            <option value="IMAGE_ASPECT_RATIO_SQUARE">⏹️ Vuông 1:1 (Avatar / Post)</option>
+            <option value="IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE">🖼️ Ngang 4:3</option>
+            <option value="IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR">📱 Dọc 3:4</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">🤖 Model Ảnh</label>
+          <select class="form-input" id="imageModel" style="margin-bottom:0;">
+            <option value="NARWHAL" selected>Nano Banana 2 (NARWHAL - Siêu nét)</option>
+            <option value="IMAGEN_3_5">Imagen 3.5 (Chuẩn Google)</option>
+            <option value="GEM_PIX_2">Gemini Pix 2</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label class="form-label">🖼️ Ảnh Tham Chiếu (Reference Image / Image-to-Image - Tuỳ chọn)</label>
+        <div style="display:flex; gap:6px;">
+          <input class="form-input" id="refImage" placeholder="Dán Link URL ảnh hoặc Media ID..." style="margin-bottom:0; flex:1;">
+          <input type="file" id="refFile" accept="image/*" style="display:none;" >
+          <button class="btn btn-sm" type="button" style="background:var(--border);" id="btnSelectRefFile" title="Chọn file từ máy">📁</button>
+        </div>
+      </div>
+
+      <label class="form-label">Prompt Mô Tả Ảnh</label>
+      <textarea class="form-textarea" id="imagePromptInput" placeholder="Mô tả bức ảnh bạn muốn tạo..."></textarea>
+      
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <button class="btn btn-primary" id="btnCreateImage" >🚀 Gửi Tạo Ảnh</button>
+      </div>
+      
+      <div id="imageCreateStatus"></div>
+      <div id="imageResult" style="margin-top:14px;"></div>
+    </div>
+  </div>
+
+  <!-- TAB: Hàng Đợi Ảnh (Batch Image Queue) -->
+  <div class="panel" id="panel-batch-image">
+    <div class="card">
+      <div class="card-title">⚡ Hàng Đợi Tạo Ảnh Hàng Loạt (Batch Images)</div>
+      <label class="form-label">Project ID</label>
+      <input class="form-input" id="batchImageProjectId" value="345ceb94-bd8b-4069-b995-41e510f5972e">
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:10px; margin-bottom:12px;">
+        <div>
+          <label class="form-label">📐 Tỉ Lệ Mặc Định</label>
+          <select class="form-input" id="batchImageAspect" style="margin-bottom:0;">
+            <option value="IMAGE_ASPECT_RATIO_LANDSCAPE" selected>📺 Ngang 16:9</option>
+            <option value="IMAGE_ASPECT_RATIO_PORTRAIT">📱 Dọc 9:16</option>
+            <option value="IMAGE_ASPECT_RATIO_SQUARE">⏹️ Vuông 1:1</option>
+            <option value="IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE">🖼️ Ngang 4:3</option>
+            <option value="IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR">📱 Dọc 3:4</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">🤖 Model Mặc Định</label>
+          <select class="form-input" id="batchImageModel" style="margin-bottom:0;">
+            <option value="NARWHAL" selected>Nano Banana 2 (NARWHAL)</option>
+            <option value="IMAGEN_3_5">Imagen 3.5</option>
+            <option value="GEM_PIX_2">Gemini Pix 2</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">⏱️ Giãn Cách (Delay)</label>
+          <select class="form-input" id="batchImageDelay" style="margin-bottom:0;">
+            <option value="1000">1 Giây (Siêu Tốc ⚡)</option>
+            <option value="2000">2 Giây (Khuyên Dùng 🚀)</option>
+            <option value="3000">3 Giây</option>
+            <option value="5000">5 Giây</option>
+            <option value="random_6_10" selected>🎲 Random 6-10 Giây (An Toàn Nhất)</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="form-label">Danh Sách Prompts Tạo Ảnh (Mỗi dòng 1 ảnh, hỗ trợ: Prompt HOẶC URL_Anh_Tham_Chieu | Prompt)</label>
+      <textarea class="form-textarea" id="batchImageInput" style="height:140px;" placeholder="Ví dụ:
+Một chú mèo phi hành gia trong không gian
+https://example.com/character.png | Nhân vật này đang uống cà phê
+Chiếc xe thể thao màu đỏ chạy ven biển hoàng hôn"></textarea>
+
+      <!-- Queue Controls -->
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+        <button class="btn btn-primary" id="btnStartBatchImage" >🚀 Bắt Đầu Tạo Hàng Loạt</button>
+        <button class="btn btn-danger" id="btnStopBatchImage"  disabled>🛑 Dừng Lại</button>
+        <button class="btn" id="btnRetryBatchImage" style="background:var(--accent2); color:#fff;" >🔄 Thử Lại Task Lỗi</button>
+        <button class="btn" style="background:var(--surface2);" id="btnClearBatchImage">🗑️ Xoá Hàng Đợi</button>
+      </div>
+
+      <!-- Queue Progress & Stats -->
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="imageQueueProgressFill"></div>
+      </div>
+
+      <div class="queue-stats" id="imageQueueStats">
+        <div class="queue-stat">📊 Tổng: <span id="imgStatTotal" style="color:var(--text); font-weight:700;">0</span></div>
+        <div class="queue-stat">⏳ Chờ: <span id="imgStatPending" style="color:var(--text2); font-weight:700;">0</span></div>
+        <div class="queue-stat">⚡ Đang xử lý: <span id="imgStatRunning" style="color:var(--accent2); font-weight:700;">0</span></div>
+        <div class="queue-stat">✅ Thành công: <span id="imgStatSuccess" style="color:var(--green); font-weight:700;">0</span></div>
+        <div class="queue-stat">❌ Lỗi: <span id="imgStatError" style="color:var(--red); font-weight:700;">0</span></div>
+      </div>
+
+      <!-- Queue Task List -->
+      <div id="imageQueueTaskList" style="max-height:450px; overflow-y:auto; margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- TAB: Thư Viện -->
+  <div class="panel" id="panel-library">
+    <div class="card">
+      <div class="card-title">📂 Project Videos & Images</div>
+      <label class="form-label">Project ID</label>
+      <div style="display:flex; gap:10px;">
+        <input class="form-input" id="projectId2" value="345ceb94-bd8b-4069-b995-41e510f5972e" style="margin-bottom:0;">
+        <button class="btn btn-primary" id="btnFetch" >🔍 Lấy Video</button>
+      </div>
+      <div id="projectInfo"></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="poll-control">
+        <input type="checkbox" id="autoPoll" checked >
+        <label for="autoPoll" style="cursor:pointer;">Auto refresh mỗi 10s</label>
+        <span id="countdown" style="color:var(--accent2); font-weight:700;">(10s)</span>
+      </div>
+      <div id="lastUpdate" style="font-size:11px; color:var(--text2);"></div>
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <input class="form-input" id="promptFilter" placeholder="🔍 Lọc theo prompt / timestamp..."  style="margin-bottom:0;">
+    </div>
+
+    <div id="videoGrid" class="video-grid"></div>
+  </div>
+
+  <!-- TAB: Auto Click UI Video (Đơn Lẻ & Hàng Loạt) -->
+  <div class="panel" id="panel-click-ui">
+    <!-- Card 1: Tạo đơn lẻ -->
+    <div class="card">
+      <div class="card-title">🖱️ Tạo Video Bằng Click UI Trực Tiếp</div>
+      <p style="font-size:11px; color:var(--text2); margin-bottom:12px; line-height:1.5;">
+        💡 Extension sẽ tự động <b>chọn Mode Video, Tỉ lệ 9:16, 8s, x1, Veo 3.1 Lite (Ưu tiên thấp)</b>, gõ prompt và click nút Tạo trực tiếp trên tab Flow!
+      </p>
+
+      <!-- Cấu hình mặc định -->
+      <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+        <div style="font-size:11px; font-weight:700; color:var(--accent2); margin-bottom:8px;">⚙️ Cấu Hình Mặc Định Khi Click:</div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:11px;">
+          <div>
+            <label class="form-label" style="font-size:10px;">📐 Tỉ Lệ</label>
+            <select class="form-input" id="uiConfigRatio" style="font-size:11px; padding:4px 8px; margin-bottom:0;">
+              <option value="9:16" selected>📱 Dọc 9:16 (Mặc định)</option>
+              <option value="16:9">📺 Ngang 16:9</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:10px;">⏱️ Thời Lượng</label>
+            <select class="form-input" id="uiConfigDuration" style="font-size:11px; padding:4px 8px; margin-bottom:0;">
+              <option value="8s" selected>8s (Mặc định)</option>
+              <option value="4s">4s</option>
+              <option value="6s">6s</option>
+              <option value="10s">10s</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:10px;">🔢 Số Lượng (Count)</label>
+            <select class="form-input" id="uiConfigCount" style="font-size:11px; padding:4px 8px; margin-bottom:0;">
+              <option value="x1" selected>x1 (Mặc định)</option>
+              <option value="x2">x2</option>
+              <option value="x3">x4</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:10px;">🤖 Model</label>
+            <select class="form-input" id="uiConfigModel" style="font-size:11px; padding:4px 8px; margin-bottom:0;">
+              <option value="veo_3_1_lite_low_priority" selected>Veo 3.1 Lite (Ưu tiên thấp)</option>
+              <option value="veo_3_1_lite">Veo 3.1 Lite</option>
+            </select>
+          </div>
+          <div style="grid-column: span 2;">
+            <label class="form-label" style="font-size:10px;">🎞️ Chế Độ Video</label>
+            <select class="form-input" id="uiConfigMode" style="font-size:11px; padding:4px 8px; margin-bottom:0;">
+              <option value="prompt" selected>📝 Text to Video (Chỉ dùng Prompt)</option>
+              <option value="frames">🖼️ Khung hình (Bắt đầu / Kết thúc - I2V)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Khung Hình: Ảnh Đầu Vào (Bắt đầu) & Ảnh Kết Thúc (Kết thúc) -->
+      <div id="uiFrameInputsBox" style="display:none; background:var(--bg); border:1px solid var(--accent); border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+        <div style="font-size:11px; font-weight:700; color:var(--accent2); margin-bottom:8px;">🖼️ Cấu hình Khung Hình (Bắt đầu & Kết thúc):</div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+          <div>
+            <label class="form-label" style="font-size:10px;">🟢 Ảnh Bắt Đầu (Start Frame)</label>
+            <div style="display:flex; gap:4px;">
+              <input class="form-input" id="uiStartImage" placeholder="Tên ảnh (vd: 2.jpg) / Media ID..." style="font-size:11px; margin-bottom:0; flex:1;">
+              <input type="file" id="uiStartFile" accept="image/*" style="display:none;">
+              <button class="btn btn-sm" type="button" id="btnSelectUiStartFile" style="background:var(--border); padding:4px 8px;" title="Chọn file từ máy">📁</button>
+            </div>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:10px;">🔴 Ảnh Kết Thúc (End Frame - Tuỳ chọn)</label>
+            <div style="display:flex; gap:4px;">
+              <input class="form-input" id="uiEndImage" placeholder="Tên ảnh / Media ID..." style="font-size:11px; margin-bottom:0; flex:1;">
+              <input type="file" id="uiEndFile" accept="image/*" style="display:none;">
+              <button class="btn btn-sm" type="button" id="btnSelectUiEndFile" style="background:var(--border); padding:4px 8px;" title="Chọn file từ máy">📁</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:6px; display:flex; justify-content:flex-end;">
+          <button class="btn btn-sm" type="button" id="btnRenameFlowImageToUuid" style="font-size:10px; padding:3px 8px; background:var(--surface2);" title="Đặt tên ảnh trên Flow thành mã UUID">🏷️ Gán mã UUID này làm tên hiển thị trên Flow</button>
+        </div>
+
+        <!-- Danh sách ảnh trong project -->
+        <div style="margin-top:10px; border-top:1px dashed var(--border); padding-top:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:10px; color:var(--text2); font-weight:600;">💡 Mẹo: Nhập <b>1</b> để chọn ảnh mới nhất (hoặc <b>2</b>, <b>3</b>...)</span>
+            <button class="btn btn-sm" type="button" id="btnLoadProjectImages" style="font-size:9px; padding:2px 6px; background:var(--surface2);">🔄 Xem ảnh project</button>
+          </div>
+          <div id="uiProjectImagesList" style="display:flex; flex-direction:column; gap:4px; max-height:110px; overflow-y:auto; font-size:11px;"></div>
+        </div>
+      </div>
+
+      <label class="form-label">📝 Nội dung Prompt</label>
+      <textarea class="form-textarea" id="uiPromptInput" placeholder="Nhập mô tả video... Ví dụ: Cinematic shot of a futuristic cyberpunk city at night with neon lights, 4k"></textarea>
+
+      <button class="btn btn-green" id="btnUiSubmitSingle" style="width:100%;">
+        🚀 Config & Click Tạo Trên Tab Flow
+      </button>
+      <div id="uiSingleResult" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- Card 2: Tạo hàng loạt (Batch Auto Click) -->
+    <div class="card">
+      <div class="card-title">⚡ Auto Click Hàng Loạt (Batch Queue)</div>
+      <p style="font-size:11px; color:var(--text2); margin-bottom:12px; line-height:1.5;">
+        Hỗ trợ 1 prompt/dòng (Text to Video) HOẶC kèm ảnh (Khung hình):<br>
+        • <code>prompt</code><br>
+        • <code>ten_anh_bat_dau | prompt</code> (Ví dụ: <code>2.jpg | A girl walking in the room</code>)<br>
+        • <code>ten_anh_bat_dau | ten_anh_ket_thuc | prompt</code>
+      </p>
+
+      <div style="margin-bottom:12px;">
+        <label class="form-label">⏱️ Nghỉ giữa các lần click</label>
+        <select class="form-input" id="uiClickDelay" style="margin-bottom:0;">
+          <option value="3000">3 giây</option>
+          <option value="5000" selected>5 giây (Khuyên dùng)</option>
+          <option value="8000">8 giây</option>
+          <option value="12000">12 giây</option>
+          <option value="15000">15 giây</option>
+        </select>
+      </div>
+
+      <label class="form-label">📋 Danh Sách Prompts / Khung Hình (1 task / dòng)</label>
+      <textarea class="form-textarea" id="uiBatchPromptInput" style="height:140px; font-family:monospace; font-size:12px;" placeholder="Ví dụ:
+Cinematic shot of a majestic tiger in snow
+2.jpg | Cô gái mỉm cười nhẹ nhàng nhìn vào máy quay
+start.jpg | end.jpg | Chuyển cảnh từ ngày sang đêm"></textarea>
+
+      <div style="display:flex; gap:10px; margin-bottom:14px;">
+        <button class="btn btn-primary" id="btnUiStartBatch" style="flex:1;">⚡ Bắt Đầu Auto Click Hàng Loạt</button>
+        <button class="btn btn-danger" id="btnUiStopBatch" style="display:none;">🛑 Dừng</button>
+      </div>
+
+      <!-- Tiến trình Batch -->
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="uiQueueProgressFill"></div></div>
+      <div class="queue-stats">
+        <div class="queue-stat">Tổng: <span id="uiStatTotal" style="color:var(--text);">0</span></div>
+        <div class="queue-stat">⏳ Chờ: <span id="uiStatPending" style="color:var(--text2);">0</span></div>
+        <div class="queue-stat">⚡ Đang chạy: <span id="uiStatRunning" style="color:var(--accent2);">0</span></div>
+        <div class="queue-stat">✅ Đã Click: <span id="uiStatSuccess" style="color:var(--green);">0</span></div>
+        <div class="queue-stat">❌ Lỗi: <span id="uiStatError" style="color:var(--red);">0</span></div>
+      </div>
+
+      <div id="uiBatchQueueList" style="max-height:350px; overflow-y:auto; margin-top:10px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Live Activity Log Console (Nhật Ký Tiến Trình Trực Tiếp) -->
+<div id="liveActivityConsole" style="position:sticky; bottom:0; z-index:90; background:#0d1117; border-top:2px solid var(--accent); padding:8px 12px; box-shadow: 0 -4px 15px rgba(0,0,0,0.4);">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+    <div style="font-size:11px; font-weight:700; color:var(--accent2); display:flex; align-items:center; gap:6px;">
+      <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green);"></span>
+      <span>📜 Tiến Trình Thực Hiện (Live Logs)</span>
+    </div>
+    <div style="display:flex; gap:6px;">
+      <button class="btn btn-sm" type="button" id="btnClearLiveLog" style="font-size:9px; padding:1px 6px; background:var(--surface2);">🧹 Xoá</button>
+      <button class="btn btn-sm" type="button" id="btnToggleLiveLog" style="font-size:9px; padding:1px 6px; background:var(--surface2);">Thu gọn ▼</button>
+    </div>
+  </div>
+  <div id="liveLogList" style="max-height:130px; min-height:55px; overflow-y:auto; font-family:monospace; font-size:11px; display:flex; flex-direction:column; gap:4px; background:#05070a; border-radius:6px; padding:6px 8px; border:1px solid rgba(255,255,255,0.08); color:#cbd5e1; scroll-behavior:smooth;">
+    <div style="color:var(--text2); font-style:italic;">Đang chờ lệnh tạo video từ bạn hoặc từ tool_video...</div>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow Studio Pro — Video Creator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #070913;
+      --surface: #0f1424;
+      --surface2: #161e33;
+      --surface3: #1f2945;
+      --border: #232d4b;
+      --border-focus: #4f46e5;
+      --text: #f1f5f9;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%);
+      --accent2: #38bdf8;
+      --green: #10b981;
+      --green-bg: rgba(16, 185, 129, 0.12);
+      --yellow: #f59e0b;
+      --yellow-bg: rgba(245, 158, 11, 0.12);
+      --red: #ef4444;
+      --blue: #0ea5e9;
+      --card-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Modern Glass Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      background: rgba(15, 20, 36, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo-container { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: var(--accent-gradient);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+    .logo-text { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+    .logo-text span { background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+    .conn-status {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 12px; font-weight: 600; color: var(--text2);
+      padding: 5px 12px; border-radius: 20px;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+    /* Main Container */
+    .main { padding: 24px; max-width: 1000px; margin: 0 auto; }
+    
+    /* Elegant Studio Card */
+    .studio-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--card-shadow);
+      padding: 24px;
+      position: relative;
+    }
+
+    /* Section Steps Badge */
+    .step-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px;
+      background: var(--accent); color: white;
+      border-radius: 50%; font-size: 11px; font-weight: 800;
+      margin-right: 6px;
+    }
+    .step-title {
+      display: flex; align-items: center;
+      font-size: 13px; font-weight: 700;
+      color: var(--text); margin-bottom: 8px;
+    }
+
+    /* Form Fields */
+    .form-input, .form-textarea, .form-select {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    .form-input:focus, .form-textarea:focus, .form-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+      background: var(--bg);
+    }
+    .form-textarea { resize: none; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      padding: 10px 18px; border-radius: 10px; border: none;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      font-family: inherit; transition: all 0.2s ease;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--accent-gradient);
+      color: white;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(99, 102, 241, 0.5);
+    }
+    .btn-green {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+    .btn-green:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5);
+    }
+    .btn-outline {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover:not(:disabled) {
+      background: var(--surface3);
+      border-color: var(--text3);
+    }
+    .btn-sm { padding: 6px 12px; font-size: 11px; border-radius: 8px; }
+
+    /* Section Boxes */
+    .section-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+
+    /* Progress bar */
+    .progress-bar-bg {
+      width: 100%; height: 6px;
+      background: var(--surface3);
+      border-radius: 99px; overflow: hidden;
+      margin-top: 6px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent-gradient);
+      width: 0%; transition: width 0.3s ease;
+    }
+
+    /* Status Msg */
+    .status-msg {
+      padding: 10px 14px; border-radius: 10px;
+      font-size: 12px; font-weight: 600; margin-top: 12px;
+    }
+    .status-msg.ok { background: var(--green-bg); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+    .status-msg.err { background: rgba(239,68,68,0.12); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+    .status-msg.loading { background: rgba(14,165,233,0.12); color: var(--blue); border: 1px solid rgba(14,165,233,0.3); }
+
+    /* Toasts */
+    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: var(--card-shadow); animation: slideIn 0.3s ease; min-width: 260px; }
+    .toast.success { background: #064e3b; color: #a7f3d0; border: 1px solid #059669; }
+    .toast.error { background: #7f1d1d; color: #fecaca; border: 1px solid #dc2626; }
+    .toast.info { background: #0c4a6e; color: #bae6fd; border: 1px solid #0284c7; }
+    @keyframes slideIn { from { transform: translateX(60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo-container">
+    <div class="logo-icon">⚡</div>
+    <div class="logo-text">Flow <span>Studio Pro</span></div>
+  </div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <button class="btn btn-sm btn-outline" id="btnOpenFullTab">🖥️ Màn Hình Lớn</button>
+    <div class="conn-status" id="connStatus">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="connText">Flow API Ready ✅</span>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="studio-card">
+
+    <!-- HEADER TITLE & EPISODE MANAGER -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <div>
+        <h1 style="font-size:18px; font-weight:800; letter-spacing:-0.4px;">🎬 Studio Sản Xuất Video Dài (10 - 20 Phút)</h1>
+        <p style="font-size:12px; color:var(--text2);">Tự động sinh kịch bản thuyết minh liền mạch & Ghép video tự động từ ảnh</p>
+      </div>
+      <button class="btn btn-sm btn-primary" id="btnNewEpisode">➕ Soạn Tập Mới</button>
+    </div>
+
+    <!-- KHỐI 1: QUẢN LÝ DỰ ÁN & GEMINI API KEY (SERVERLESS) -->
+    <div class="section-box" style="margin-bottom:16px;">
+      <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr; gap:12px; align-items:center;">
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">📁 LỊCH SỬ CÁC TẬP</label>
+          <select class="form-select" id="finHistorySelect" style="font-size:12px; padding:6px 10px;">
+            <option value="">-- Chọn tập cũ để xem lại / vẽ tiếp --</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">🔑 FLOW PROJECT ID</label>
+          <input class="form-input" id="finProjectId" value="345ceb94-bd8b-4069-b995-41e510f5972e" style="font-size:11px; padding:6px 10px; font-family:monospace;" placeholder="Tự động đồng bộ với tab Flow...">
+        </div>
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--accent2); display:block; margin-bottom:4px;">✨ GEMINI API KEY (MIỄN PHÍ)</label>
+          <input type="password" class="form-input" id="finGeminiApiKey" style="font-size:11px; padding:6px 10px; font-family:monospace;" placeholder="Dán mã AIzaSy... (Tùy chọn)">
+        </div>
+      </div>
+    </div>
+
+    <!-- KHỐI 2: CHỌN NHÂN VẬT CHÍNH CỐ ĐỊNH -->
+    <div class="section-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div class="step-title" style="margin-bottom:0;">
+          <span class="step-badge">1</span>
+          <span>Nhân Vật Chính Cố Định (Brand Avatar)</span>
+        </div>
+        <span id="finCharSaveBadge" style="font-size:11px; font-weight:700; color:var(--text2); background:var(--surface3); padding:3px 8px; border-radius:6px;">Chưa chọn nhân vật</span>
+      </div>
+
+      <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
+        <!-- Avatar Preview Box -->
+        <div id="finCharPreviewBox" style="width:68px; height:68px; border-radius:12px; border:2px dashed var(--border); background:var(--bg); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; cursor:pointer;" title="Bấm để chọn ảnh từ máy">
+          <span id="finCharNoImg" style="font-size:10px; color:var(--text3); text-align:center; font-weight:600;">🖼️ Chọn ảnh</span>
+          <img id="finCharImg" src="" style="width:100%; height:100%; object-fit:cover; display:none;">
+        </div>
+
+        <!-- Input & Select File Button -->
+        <div style="flex:1;">
+          <div style="display:flex; gap:8px; margin-bottom:4px;">
+            <input class="form-input" id="finCharInput" placeholder="Chọn ảnh từ máy tính hoặc dán mã mediaId/link ảnh..." style="height:36px; flex:1;">
+            <input type="file" id="finCharFile" accept="image/*" style="display:none;">
+            <button class="btn btn-sm btn-outline" id="btnBrowseCharFile" type="button" style="font-weight:700; height:36px; padding:0 14px;">📁 Thư Viện Máy</button>
+          </div>
+          <div style="font-size:11px; color:var(--text3);">
+            💡 Có thể dùng ảnh chụp thật bất kỳ rồi bấm <b>"Đổi Sang Style 2D"</b> hoặc chọn ảnh hoạt họa sẵn rồi bấm <b>"Xác Nhận & Lưu"</b>.
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 Nút hành động cho nhân vật -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        <button class="btn btn-sm btn-outline" id="btnStyleChar" type="button" style="background:linear-gradient(135deg, rgba(14,165,233,0.15), rgba(99,102,241,0.15)); border-color:rgba(99,102,241,0.3); color:var(--accent2); font-weight:700; padding:9px;">
+          ✨ 1. Đổi Sang Style Video (2D Infographic)
+        </button>
+        <button class="btn btn-sm btn-green" id="btnConfirmChar" type="button" style="font-weight:700; padding:9px;">
+          💾 2. Xác Nhận & Lưu Nhân Vật Này
+        </button>
+      </div>
+    </div>
+
+    <!-- KHỐI 3: CHỦ ĐỀ & THIẾT LẬP VIDEO -->
+    <div class="section-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div class="step-title" style="margin-bottom:0;">
+          <span class="step-badge">2</span>
+          <span>Chủ Đề Tài Chính & Thời Lượng Video</span>
+        </div>
+        <button class="btn btn-sm btn-outline" id="btnRandomFinTopic" style="color:var(--yellow); border-color:rgba(245,158,11,0.3); font-weight:700; padding:3px 10px;">
+          🎲 AI Gợi Ý Chủ Đề Triệu View
+        </button>
+      </div>
+
+      <textarea class="form-textarea" id="finTopic" style="height:48px; margin-bottom:12px; font-size:13px;" placeholder="Nhập chủ đề tài chính (hoặc bấm nút Gợi Ý bên trên để AI tự chọn chủ đề viral nhất)..."></textarea>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1.5fr 1fr 1fr; gap:10px; margin-bottom:8px;">
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">⏱️ THỜI LƯỢNG (PHÚT)</label>
+          <input type="number" class="form-input" id="finDurationMinutes" value="10" min="1" max="120" step="1" style="margin-bottom:0;" placeholder="VD: 10">
+        </div>
+
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">🖼️ SỐ ẢNH MONG MUỐN</label>
+          <input type="number" class="form-input" id="finImageCountInput" value="40" min="1" max="500" step="1" style="margin-bottom:0;" placeholder="VD: 40">
+        </div>
+
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">🎙️ GIỌNG ĐỌC AIDANCING</label>
+          <select class="form-select" id="finTtsVoiceSelect" style="margin-bottom:0;">
+            <option value="0" selected>🎙️ [1] Giọng Adam (Mặc định)</option>
+            <option value="1">🎙️ [2] Trung Caha - Rõ ràng, Chắc chắn</option>
+            <option value="2">🎙️ [3] Kiều Linh</option>
+            <option value="3">🎙️ [4] Tùng Đặng - Trầm, Ấm áp</option>
+            <option value="4">🎙️ [5] Hạnh - Mượt mà, Rõ ràng</option>
+            <option value="5">🎙️ [6] Tùng Đặng - Ấm áp, Điềm tĩnh</option>
+            <option value="6">🎙️ [7] Ngân Nguyễn</option>
+            <option value="7">🎙️ [8] Triều Dương - Trầm, Điềm tĩnh</option>
+            <option value="8">🎙️ [9] Như - Điềm tĩnh, Tự tin</option>
+            <option value="9">🎙️ [10] Mai - Tự nhiên, Tươi sáng</option>
+            <option value="10">🎙️ [11] Hải Ly - Trầm, Nghiêm túc</option>
+            <option value="11">🎙️ [12] Tuyết - Sắc nét, Trang trọng</option>
+            <option value="12">🎙️ [13] Hiền - Ấm áp, Trầm</option>
+            <option value="13">🎙️ [14] Ninh Đôn - Trầm, Ấm áp</option>
+            <option value="14">🎙️ [15] Sơn Trần - Thoải mái, Đối thoại</option>
+            <option value="15">🎙️ [16] Tuấn - Thân thiện, Điềm tĩnh</option>
+            <option value="19">🎙️ [20] Đức - Rõ ràng, Điềm tĩnh</option>
+            <option value="20">🎙️ [21] Quang Nguyễn - Ấm áp, Sôi nổi</option>
+            <option value="22">🎙️ [23] Trang - Rõ ràng, Mượt mà</option>
+            <option value="23">🎙️ [24] Hùng Trần - Trầm, Điềm tĩnh</option>
+            <option value="25">🎙️ [26] Anh - Ấm áp, Điềm tĩnh</option>
+            <option value="26">🎙️ [27] Hoàng Đặng - Trầm, Mượt mà</option>
+            <option value="28">🎙️ [29] Ngân - Rộn ràng</option>
+            <option value="29">🎙️ [30] Dũng - Trầm, Vang vọng</option>
+            <option value="30">🎙️ [31] Sang Trương - Trầm, Điềm tĩnh</option>
+            <option value="33">🎙️ [34] Thảo - Nhẹ nhàng, Điềm tĩnh</option>
+            <option value="34">🎙️ [35] Hào - Ấm áp, Dịu dàng</option>
+            <option value="35">🎙️ [36] My - Nhẹ nhàng, Ấm áp</option>
+            <option value="36">🎙️ [37] Liam - Ấm áp</option>
+            <option value="37">🎙️ [38] Thanh - Rõ ràng, Ổn định</option>
+            <option value="38">🎙️ [39] Giang - Ấm áp, Tự tin</option>
+            <option value="39">🎙️ [40] Huy Lê - Điềm tĩnh, Rõ ràng</option>
+            <option value="40">🎙️ [41] Huỳnh Dương - Năng động, Tự tin</option>
+            <option value="41">🎙️ [42] Phương - Mượt mà, An ủi</option>
+            <option value="42">🎙️ [43] Minh - Rõ ràng, Chắc chắn</option>
+            <option value="43">🎙️ [44] An Nhiên</option>
+            <option value="44">🎙️ [45] Xuân - Năng động</option>
+            <option value="45">🎙️ [46] Quỳnh Anh</option>
+            <option value="46">🎙️ [47] Emma - Điềm tĩnh, Êm dịu</option>
+            <option value="47">🎙️ [48] Phong - Ấm áp, Rõ ràng</option>
+            <option value="48">🎙️ [49] Nhung - Rõ ràng, Trang trọng</option>
+            <option value="49">🎙️ [50] Trang - Nhẹ nhàng</option>
+            <option value="50">🎙️ [51] Viết Linh</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">🌐 NGÔN NGỮ</label>
+          <select class="form-select" id="finLangSelect" style="margin-bottom:0;">
+            <option value="vi" selected>🇻🇳 Tiếng Việt</option>
+            <option value="en">🇺🇸 English</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">🤖 MODEL VẼ ẢNH</label>
+          <select class="form-select" id="finImageModel" style="margin-bottom:0;">
+            <option value="NARWHAL" selected>Nano Banana 2 (1s)</option>
+            <option value="GEM_PIX_2">Gemini Pix 2</option>
+            <option value="IMAGEN_3_5">Imagen 3.5</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Live Calculation Hint -->
+      <div id="finCalcHint" style="font-size:11px; color:var(--accent2); background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:6px 12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+        <span>📊 <b>Tính toán nhịp:</b> Trung bình <b>15.0s / 1 ảnh</b> (Có thể 1 ý/câu nhiều ảnh đổi góc quay)</span>
+        <span style="font-size:10px; color:var(--text3);">Tự động phân bổ đều 100% thời lượng</span>
+      </div>
+    </div>
+
+    <!-- NÚT PHÁT TRIỂN KỊCH BẢN CHÍNH -->
+    <button class="btn btn-primary" id="btnGenFinScript" style="width:100%; padding:14px; font-size:14px; margin-bottom:12px;">
+      ✨ Dùng Gemini Phân Đợt Sinh Kịch Bản Dài & Prompts Ảnh
+    </button>
+
+    <!-- Progress bar sinh kịch bản -->
+    <div id="finScriptProgressContainer" style="display:none; margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+        <span id="finScriptProgressText" style="color:var(--text2);">Đang phân tích cấu trúc 5 Hồi...</span>
+        <span id="finScriptProgressPct" style="font-weight:800; color:var(--accent2);">25%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="finScriptProgressFill" style="width:25%;"></div>
+      </div>
+    </div>
+
+    <div id="finGenStatus" class="status-msg" style="display:none;"></div>
+
+    <!-- KHỐI 4: VOICE SCRIPT AUDIO (HIỆN KHI CÓ SCRIPT) -->
+    <div id="finScriptBox" style="display:none; margin-top:16px;" class="section-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div class="step-title" style="margin-bottom:0;">
+          <span class="step-badge">3</span>
+          <span>Script Giọng Đọc Audio Toàn Bộ Video</span>
+        </div>
+        <button class="btn btn-sm btn-green" id="btnCopyFinVoice" style="font-weight:700;">📋 Copy Toàn Bộ Script Thuyết Minh</button>
+      </div>
+      <textarea class="form-textarea" id="finFullVoiceText" style="height:120px; margin-bottom:8px; font-size:12px; background:var(--bg);" readonly></textarea>
+      <div style="font-size:11px; color:var(--text2); line-height:1.4;">
+        👉 <b>Hướng dẫn:</b> Copy script này dán vào <b>ElevenLabs / Vbee / CapCut TTS</b> để tạo file giọng đọc (.mp3). Nhịp đọc đã được khớp chuẩn với từng ảnh (10s - 20s/ảnh)!
+      </div>
+    </div>
+
+    <!-- KHỐI 5: DANH SÁCH PHÂN CẢNH & NÚT VẼ / GHÉP VIDEO -->
+    <div id="finScenesBox" style="display:none; margin-top:16px;" class="section-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div class="step-title" style="margin-bottom:0;">
+          <span class="step-badge">4</span>
+          <span>Timeline Phân Cảnh (Ảnh + Thời Gian Hiển Thị)</span>
+        </div>
+        <span id="finTotalDurationBadge" style="font-size:11px; font-weight:800; background:var(--green-bg); color:var(--green); padding:4px 10px; border-radius:6px;">Tổng: ~10 Phút (40 Ảnh)</span>
+      </div>
+      
+      <!-- List Cards -->
+      <div id="finScenesList" style="display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; padding-right:4px; margin-bottom:14px;"></div>
+
+      <!-- Render Progress Bar -->
+      <div id="finRenderProgressContainer" style="display:none; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+          <span id="finRenderProgressText" style="color:var(--text2);">Đang vẽ ảnh 1/40...</span>
+          <span id="finRenderProgressPct" style="font-weight:800; color:var(--green);">0%</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="finRenderProgressFill" style="width:0%;"></div>
+        </div>
+      </div>
+
+      <!-- Bottom Action Buttons -->
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" id="btnGenAllFinVideos" style="flex:2; padding:12px; font-weight:800; font-size:13px;">
+          🎨 1-Click Tự Động Vẽ Hàng Loạt Tất Cả Ảnh
+        </button>
+        <button class="btn btn-sm" id="btnStopFinRender" style="background:#7f1d1d; color:#fca5a5; border:1px solid rgba(239,68,68,0.4); padding:10px 16px; font-weight:700; display:none;">
+          🛑 DỪNG LẠI
+        </button>
+        <button class="btn btn-green" id="btnDownloadAllFinClips" style="padding:12px 18px; font-weight:800; display:none;">
+          🎬 Ghép Video Hoàn Chỉnh (.mp4)
+        </button>
+      </div>
+      <div id="finRunStatus" class="status-msg" style="display:none; margin-top:10px;"></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

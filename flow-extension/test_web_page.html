@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Flow Extension Tester — Demo Web App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 30px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { color: #38bdf8; margin-bottom: 10px; font-size: 24px; }
+    p.subtitle { color: #94a3b8; margin-bottom: 25px; font-size: 14px; }
+    
+    .card { background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #334155; }
+    h2 { font-size: 16px; color: #f1f5f9; margin-bottom: 12px; }
+    label { display: block; font-weight: 600; margin-bottom: 8px; font-size: 14px; color: #cbd5e1; }
+    input[type="text"], textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px; margin-bottom: 12px; }
+    textarea { height: 80px; resize: vertical; }
+
+    button { background: #0284c7; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+    button:hover { background: #0369a1; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+
+    .btn-create { background: #8b5cf6; }
+    .btn-create:hover { background: #7c3aed; }
+
+    .status-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    .status-ready { background: #166534; color: #4ade80; }
+    .status-wait { background: #854d0e; color: #facc15; }
+
+    .meta-tag { display: inline-block; background: #334155; color: #38bdf8; font-size: 11px; padding: 3px 8px; border-radius: 4px; margin-right: 5px; font-weight: 600; }
+
+    .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-top: 15px; }
+    .video-card { background: #0f172a; border-radius: 8px; padding: 15px; border: 1px solid #334155; }
+    .video-title { font-weight: bold; font-size: 14px; color: #e2e8f0; margin-bottom: 8px; line-height: 1.4; }
+    .video-id { font-family: monospace; font-size: 11px; color: #64748b; margin-bottom: 10px; }
+    .btn-dl { background: #16a34a; font-size: 12px; padding: 8px 14px; display: inline-block; text-decoration: none; border-radius: 6px; color: white; font-weight: bold; }
+    .btn-dl:hover { background: #15803d; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🌐 Google Flow Bridge Extension Tester</h1>
+  <p class="subtitle">Trang web demo kết nối Google Flow API (Hiện tên Project, Tên Model, Submit Prompt & Tải MP4)</p>
+
+  <!-- Card 1: Submit Tạo Video Mới -->
+  <div class="card">
+    <h2>✨ 1. Tạo Video Mới (Submit Prompt lên Google Flow):</h2>
+    <label for="promptInput">Nội dung Prompt Video:</label>
+    <textarea id="promptInput" placeholder="Ví dụ: A majestic lion running through the African savanna at golden hour, cinematic 4K"></textarea>
+    <button class="btn-create" id="btnCreate" onclick="createNewVideo()">🚀 Gửi Lệnh Tạo Video Mới</button>
+    <div id="createResult" style="margin-top: 10px; font-size: 13px;"></div>
+  </div>
+
+  <!-- Card 2: Lấy danh sách Video & Download -->
+  <div class="card">
+    <h2>📋 2. Danh Sách & Tải Video từ Project:</h2>
+    <label for="projectId">Project ID của bạn:</label>
+    <input type="text" id="projectId" value="345ceb94-bd8b-4069-b995-41e510f5972e" placeholder="Dán Project ID từ URL tab Google Flow vào đây...">
+    <p style="font-size: 12px; color: #38bdf8; margin-bottom: 12px;">💡 <b>Project đang chọn:</b> <code>345ceb94-bd8b-4069-b995-41e510f5972e</code></p>
+
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button id="btnFetch" onclick="fetchProjectVideos()">🎬 Lấy danh sách ngay</button>
+      <label style="display: inline-flex; align-items: center; cursor: pointer; margin: 0; font-size: 13px; color: #38bdf8;">
+        <input type="checkbox" id="autoPollToggle" onchange="toggleAutoPoll(this.checked)" checked style="margin-right: 6px; width: 16px; height: 16px; cursor: pointer;">
+        🔄 Auto Refresh mỗi 10 giây <span id="pollTimerText" style="margin-left: 6px; color: #94a3b8; font-weight: normal;">(10s)</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Card 3: Kết quả -->
+  <div class="card">
+    <h2>📦 Kết quả từ Google Flow:</h2>
+    <div id="logOutput" style="color: #94a3b8; font-size: 14px; margin-top: 10px;">Chưa gọi API...</div>
+    <div id="videoContainer" class="video-grid"></div>
+  </div>
+</div>
+
+<script>
+  let pendingRequests = {};
+
+  // Lắng nghe kết quả từ Extension
+  window.addEventListener("message", (event) => {
+    if (event.data && event.data.source === "FLOW_EXTENSION") {
+      const { reqId, response } = event.data;
+      if (pendingRequests[reqId]) {
+        pendingRequests[reqId](response);
+        delete pendingRequests[reqId];
+      }
+    }
+  });
+
+  // Helper gửi request tới Extension
+  function callExtension(action, data) {
+    return new Promise((resolve) => {
+      const reqId = "req_" + Math.random().toString(36).substr(2, 9);
+      pendingRequests[reqId] = resolve;
+
+      window.postMessage({
+        source: "MY_WEB_APP",
+        reqId: reqId,
+        action: action,
+        ...data
+      }, "*");
+    });
+  }
+
+  // 1. Hàm gửi lệnh tạo video mới
+  async function createNewVideo() {
+    const prompt = document.getElementById("promptInput").value.trim();
+    const projectId = document.getElementById("projectId").value.trim();
+    const resultDiv = document.getElementById("createResult");
+    const btn = document.getElementById("btnCreate");
+
+    if (!prompt) {
+      alert("Vui lòng nhập nội dung Prompt!");
+      return;
+    }
+
+    btn.disabled = true;
+    resultDiv.innerHTML = "⏳ Đang kết nối tới tab Google Flow để submit prompt...";
+
+    try {
+      const res = await callExtension("CREATE_VIDEO", { prompt, projectId });
+      console.log("Create Video Response:", res);
+
+      if (res && res.success) {
+        resultDiv.innerHTML = `<span style="color:#4ade80;">✅ <b>${res.message || "Submit thành công!"}</b> Mở tab Google Flow để xem trạng thái render.</span>`;
+      } else {
+        resultDiv.innerHTML = `<span style="color:#f87171;">❌ ${res ? res.error : "Không thể tạo video. Hãy đảm bảo tab Google Flow đang mở!"}</span>`;
+      }
+    } catch (err) {
+      resultDiv.innerHTML = `<span style="color:#f87171;">❌ Lỗi: ${err.message}</span>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  let pollInterval = null;
+  let countdownSeconds = 10;
+  let countdownTimer = null;
+
+  // 2. Hàm lấy danh sách video
+  async function fetchProjectVideos(isAuto = false) {
+    const projectId = document.getElementById("projectId").value.trim();
+    const logOutput = document.getElementById("logOutput");
+    const container = document.getElementById("videoContainer");
+    const btn = document.getElementById("btnFetch");
+
+    if (!projectId) {
+      alert("Vui lòng nhập Project ID của bạn!");
+      return;
+    }
+
+    if (!isAuto) {
+      btn.disabled = true;
+      logOutput.innerHTML = "⏳ Đang kết nối lấy dữ liệu Project...";
+    }
+
+    try {
+      const res = await callExtension("GET_PROJECT_VIDEOS", { projectId });
+      console.log("Response:", res);
+
+      if (res && res.success) {
+        const lastUpdated = new Date().toLocaleTimeString("vi-VN");
+        logOutput.innerHTML = `
+          <div style="background:#0f172a; padding:12px; border-radius:8px; border:1px solid #334155;">
+            <div>📂 Tên Project: <b style="color:#38bdf8;">${res.projectName}</b></div>
+            <div>🤖 Model mặc định: <b style="color:#a78bfa;">${res.defaultModel}</b></div>
+            <div>📊 Tổng số Video: <b>${res.totalMedia}</b> <span style="font-size:11px; color:#64748b; margin-left:8px;">(Cập nhật lúc: ${lastUpdated})</span></div>
+          </div>
+        `;
+        
+        container.innerHTML = "";
+        if (res.videos.length === 0) {
+          container.innerHTML = "<p style='grid-column: 1/-1; color:#64748b;'>Không có video nào trong project này.</p>";
+        } else {
+          res.videos.forEach(v => {
+            const card = document.createElement("div");
+            card.className = "video-card";
+            const isReady = v.status === "COMPLETED";
+            card.innerHTML = `
+              <div class="video-title">${v.prompt || "Chưa có prompt"}</div>
+              <div class="video-id">ID: ${v.mediaId}</div>
+              <div style="margin-bottom: 10px;">
+                <span class="meta-tag">🤖 ${v.model}</span>
+                <span class="meta-tag">📺 ${v.resolution}</span>
+              </div>
+              <div style="margin-bottom: 12px;">
+                <span class="status-badge ${isReady ? 'status-ready' : 'status-wait'}">${isReady ? '✅ SẴN SÀNG' : '⏳ ĐANG RENDER'}</span>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <a class="btn-dl" href="${v.downloadUrl}" target="_blank" download="${v.mediaId}.mp4">📥 Tải MP4</a>
+                <button style="background: #ef4444; font-size: 12px; padding: 7px 12px; border-radius: 6px;" onclick="deleteVideo('${v.mediaId}')">🗑 Xoá</button>
+              </div>
+            `;
+            container.appendChild(card);
+          });
+        }
+      } else {
+        logOutput.innerHTML = `<span style="color:#f87171;">❌ ${res ? res.error : "Extension chưa được cài hoặc chưa bật!"}</span>`;
+      }
+    } catch (err) {
+      logOutput.innerHTML = `<span style="color:#f87171;">❌ Lỗi: ${err.message}</span>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // 4. Hàm Xoá Video
+  async function deleteVideo(mediaId) {
+    if (!confirm(`Bạn có chắc muốn xoá video ID: ${mediaId}?`)) return;
+
+    try {
+      const res = await callExtension("DELETE_VIDEO", { mediaId });
+      if (res && res.success) {
+        alert(res.message || "Đã gửi lệnh xoá video!");
+        fetchProjectVideos(); // Refresh lại danh sách
+      } else {
+        alert(res ? res.error : "Không thể xoá video");
+      }
+    } catch (err) {
+      alert("Lỗi: " + err.message);
+    }
+  }
+
+  // 3. Quản lý Auto-Polling mỗi 10 giây
+  function toggleAutoPoll(enabled) {
+    if (pollInterval) clearInterval(pollInterval);
+    if (countdownTimer) clearInterval(countdownTimer);
+
+    const timerText = document.getElementById("pollTimerText");
+
+    if (enabled) {
+      countdownSeconds = 10;
+      timerText.innerHTML = `(${countdownSeconds}s)`;
+
+      countdownTimer = setInterval(() => {
+        countdownSeconds--;
+        if (countdownSeconds <= 0) {
+          countdownSeconds = 10;
+        }
+        timerText.innerHTML = `(${countdownSeconds}s)`;
+      }, 1000);
+
+      pollInterval = setInterval(() => {
+        fetchProjectVideos(true);
+      }, 10000);
+    } else {
+      timerText.innerHTML = "(Đã tắt)";
+    }
+  }
+
+  // Khởi động auto-polling ngay khi load trang
+  window.addEventListener("DOMContentLoaded", () => {
+    fetchProjectVideos();
+    toggleAutoPoll(true);
+  });
+</script>
+
+</body>
+</html>

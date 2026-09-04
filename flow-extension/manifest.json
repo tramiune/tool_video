@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Flow Studio Pro",
+  "version": "4.0",
+  "description": "Studio tự động tạo AI Video (Veo 3.1) & Ảnh (Imagen) chuyên nghiệp trực tiếp trong Chrome",
+  "permissions": [
+    "cookies",
+    "storage",
+    "tabs",
+    "downloads",
+    "scripting",
+    "proxy",
+    "alarms",
+    "sidePanel",
+    "debugger"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Flow Studio Pro"
+  },
+  "host_permissions": [
+    "https://labs.google/*",
+    "https://aisandbox-pa.googleapis.com/*",
+    "https://www.google.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://labs.google/*"],
+      "js": ["main_world.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://labs.google/*"],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["bridge_content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost/*",
+      "http://127.0.0.1/*"
+    ]
+  }
+}
