@@ -3340,6 +3340,7 @@ function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Sparkles size={28} style={{ color: '#f472b6' }} />
                 <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2rem)', fontWeight: '800', margin: 0 }}>Drama Tool</h1>
+                <span style={{ fontSize: '0.68rem', background: 'linear-gradient(135deg, rgba(236,72,153,0.2) 0%, rgba(139,92,246,0.2) 100%)', color: '#f472b6', border: '1px solid rgba(236,72,153,0.4)', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>v2.6 (Start-End Chaining)</span>
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px', margin: 0 }}>Tạo video drama gia đình bằng AI.</p>
             </div>
@@ -6363,9 +6364,10 @@ function App() {
 
       {/* Top Header Bar */}
       <header className="header-container">
-        <div className="logo-container">
+        <div className="logo-container" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <img src="/logo.png" alt="meo3 logo" className="logo-image" />
           <span className="logo-text">meo3</span>
+          <span style={{ fontSize: '0.65rem', background: 'rgba(236,72,153,0.18)', color: '#f472b6', border: '1px solid rgba(236,72,153,0.35)', padding: '2px 7px', borderRadius: '6px', fontWeight: 'bold' }}>v2.6</span>
         </div>
         
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
