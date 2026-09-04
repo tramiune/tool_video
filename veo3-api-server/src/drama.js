@@ -125,13 +125,14 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       '- title: tiêu đề kịch bản hoạt hình, ngắn gọn, sáng tạo, thu hút trẻ em (tiếng Việt).',
       '- characters: đúng 3 nhân vật như yêu cầu, kèm vai trò và mô tả chi tiết ngoại hình.',
       '- baseImagePrompt: mô tả bối cảnh sáng tạo đã chọn + phong cách hoạt hình 3D Pixar, vertical 9:16.',
-      `- scenes: đúng 6 cảnh theo cấu trúc trên. Mỗi cảnh có title, description (mô tả cảnh bằng tiếng Anh), imagePrompt (prompt vẽ ảnh tiếng Anh mô tả khung hình BẮT ĐẦU: bối cảnh tĩnh, nhân vật Bin đứng yên bên trái, Sumo đứng yên bên phải mặc áo choàng đỏ nơ đỏ), endImagePrompt (prompt vẽ ảnh tiếng Anh mô tả khung hình KẾT THÚC của cảnh sau 8s thoại, biểu cảm phản ứng và tư thế mới của các nhân vật, giữ nguyên góc máy và bối cảnh để làm frame đầu cho cảnh tiếp theo), videoPrompt (prompt tiếng Anh cho clip 8s mô tả chuyển động cơ thể mượt mà từ khung bắt đầu đến khung kết thúc và mấp máy miệng khi nói thoại), và dialogue (mảng thoại tiếng Việt, mỗi cảnh chỉ được chứa đúng 1 câu thoại duy nhất của nhân vật chính trong cảnh đó, dài từ 25-35 từ để khớp 8 giây).`,
-      'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH, VỊ TRÍ NHÂN VẬT & HIỂN THỊ CHỮ:',
-      '- Cảnh 1 (Scene 1) PHẢI mô tả rõ cả bé Bin, chú hươu Sumo (mặc áo choàng đỏ nơ đỏ) và bạn bè. Mô tả chi tiết ngoại hình của họ ngay trong Cảnh 1.',
-      '- Vị trí nhân vật: Giữ vị trí tương đối của các nhân vật (ví dụ Bin bên trái, Sumo bên phải) một cách nhất quán để người xem dễ theo dõi.',
-      '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ ràng vị trí và hành động tự nhiên của nhân vật bằng tiếng Anh (ví dụ: "Bin is on the left side, Sumo is on the right side. Sumo is a friendly deer character wearing a red cape and a red bowtie on his neck, standing upright on two legs. Characters interact naturally with expressive acting, natural lip movements, and gestures"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
+      `- scenes: đúng 6 cảnh theo cấu trúc trên. Mỗi cảnh có title, description (mô tả cảnh bằng tiếng Anh), imagePrompt (prompt vẽ ảnh tiếng Anh mô tả khung hình BẮT ĐẦU với bố cục điện ảnh tự nhiên), endImagePrompt (prompt vẽ ảnh tiếng Anh mô tả khung hình KẾT THÚC của cảnh sau 8s thoại, biểu cảm phản ứng và tư thế mới của các nhân vật, giữ nguyên góc máy và bối cảnh để làm frame đầu cho cảnh tiếp theo), videoPrompt (prompt tiếng Anh cho clip 8s mô tả chuyển động cơ thể mượt mà từ khung bắt đầu đến khung kết thúc và mấp máy miệng khi nói thoại), và dialogue (mảng thoại tiếng Việt, mỗi cảnh chỉ được chứa đúng 1 câu thoại duy nhất của nhân vật chính trong cảnh đó, dài từ 25-35 từ để khớp 8 giây).`,
+      'YÊU CẦU QUAN TRỌNG VỀ BỐ CỤC ĐIỆN ẢNH & TƯ THẾ NHÂN VẬT (CINEMATIC STAGING & NATURAL POSING):',
+      '- TUYỆT ĐỐI KHÔNG ĐỂ CÁC NHÂN VẬT ĐỨNG DÀN HÀNG NGANG (DO NOT POSE CHARACTERS IN A STIFF LINEUP LIKE A GROUP PHOTO):',
+      '  * Phân bổ tư thế tự nhiên đa dạng tùy tình huống cảnh: Ví dụ bé Bin có thể ngồi khoanh chân trên thảm chơi đồ chơi, ngồi ở bàn ăn nhìn đĩa rau chán nản, hoặc ngồi trên ghế sofa ôm gối; Sumo đứng gần bên nhiệt tình làm cử chỉ vui nhộn; Mẹ đứng cạnh quầy bếp chuẩn bị đồ ăn hoặc ngồi cạnh Bin trên ghế.',
+      '  * Tạo chiều sâu khung hình (Foreground / Midground / Background), nhân vật hướng mắt và tương tác sinh động với nhau hoặc tương tác với đồ vật trong phòng thay vì đứng đơ quay mặt ra trước camera.',
+      '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ ràng tư thế tự nhiên cụ thể của từng nhân vật bằng tiếng Anh (ví dụ: "Bin is sitting cross-legged on the colorful playmat examining a toy, while Sumo stands naturally beside him gesturing playfully..."). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
       '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
-      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
+      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ];
   } else {
     const themePrompt = inputTopic 
@@ -149,16 +150,20 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       '- title: tiêu đề kịch bản, ngắn gọn, gây tò mò (tiếng Việt).',
       '- characters: 3 nhân vật, mỗi người có role (vd: "con dâu", "mẹ chồng", "chồng") và description ngắn.',
       '- baseImagePrompt: prompt tiếng Anh mô tả khung cảnh gốc + phong cách hình ảnh chung (vd: "A 3D Pixar-style modern Vietnamese house, cinematic lighting..."), vertical 9:16.',
-      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình BẮT ĐẦU của cảnh), endImagePrompt (prompt tiếng Anh mô tả khung hình KẾT THÚC của cảnh sau 8s thoại, biểu cảm phản ứng và tư thế mới của các nhân vật, giữ nguyên góc máy và bối cảnh để làm frame đầu cho cảnh kế tiếp), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây nối từ start frame sang end frame), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
+      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình BẮT ĐẦU của cảnh với bố cục điện ảnh sinh động), endImagePrompt (prompt tiếng Anh mô tả khung hình KẾT THÚC của cảnh sau 8s thoại, biểu cảm phản ứng và tư thế mới của các nhân vật, giữ nguyên góc máy và bối cảnh để làm frame đầu cho cảnh kế tiếp), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây nối từ start frame sang end frame), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
       '- YÊU CẦU QUAN TRỌNG VỀ THOẠI (DIALOGUE):',
       '  * Bắt buộc cảnh nào cũng phải có thoại. Mảng dialogue của mỗi cảnh chỉ được phép chứa đúng 1 câu thoại duy nhất của 1 nhân vật (1 người nói duy nhất mỗi cảnh, không có đối thoại qua lại trong cùng 1 cảnh).',
       '  * Mỗi câu thoại phải đủ dài để đọc/nói chậm rãi trong khoảng 7 đến 8 giây (độ dài kịch bản thoại khoảng 25-35 từ tiếng Việt), diễn đạt sâu sắc, kịch tính, tránh thoại ngắn cụt lủn.',
-      'YÊU CẦU QUAN TRỌNG VỀ PHỐI CẢNH, VỊ TRÍ NHÂN VẬT & HIỂN THỊ CHỮ:',
-      '- Cảnh 1 (Scene 1) PHẢI chứa đầy đủ tất cả các nhân vật trong characters cùng xuất hiện trong một khung hình (ví dụ: mô tả rõ cả Huy, Lan và bà mẹ đều đứng trong phòng khách). Mô tả chi tiết ngoại hình và trang phục của họ ngay trong Cảnh 1.',
-      '- Vị trí nhân vật: Giữ vị trí tương đối của các nhân vật (ví dụ Huy bên trái, Lan bên phải) một cách nhất quán xuyên suốt các cảnh.',
-      '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ ràng vị trí và hành động tự nhiên của nhân vật bằng tiếng Anh (ví dụ: "Huy is on the left side, Lan is on the right side. Characters talk with natural facial expressions, emotions, and subtle gestures matching the dramatic dialogue"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
+      'YÊU CẦU QUAN TRỌNG VỀ BỐ CỤC ĐIỆN ẢNH & TƯ THẾ NHÂN VẬT (CINEMATIC STAGING & NATURAL POSING):',
+      '- TUYỆT ĐỐI KHÔNG ĐỂ CÁC NHÂN VẬT ĐỨNG DÀN HÀNG NGANG (DO NOT POSE CHARACTERS IN A STIFF LINEUP LIKE A MUGSHOT OR GROUP PHOTO).',
+      '- ĐA DẠNG HÓA TƯ THẾ & TƯƠNG TÁC TỰ NHIÊN VỚI BỐI CẢNH (Contextual Posing & Natural Props):',
+      '  * Phân chia tư thế thực tế theo cốt truyện từng cảnh: Có người NGỒI (sitting on the sofa watching TV, sitting at the dining table holding a teacup, looking down at a smartphone...), có người ĐỨNG hoặc TỰA LƯNG (standing or leaning by the kitchen counter, standing to plead or explain, holding a plate of fruit or glass of water...), có người làm việc nhà hoặc sinh hoạt đời thường.',
+      '  * Tạo chiều sâu khung hình (Layering & Depth): Có người ở tiền cảnh (foreground, ví dụ ngồi trên ghế sofa gần camera hơn), người ở trung cảnh (midground) hoặc hậu cảnh (bên bàn ăn hoặc quầy bếp). Góc máy bao quát căn phòng với bố cục điện ảnh chân thực.',
+      '  * Ngôn ngữ cơ thể & Ánh mắt: Các nhân vật hướng mắt, cử chỉ và tư thế về phía nhau để trò chuyện, thể hiện rõ cảm xúc kịch tính thay vì cùng quay mặt đơ về phía máy ảnh.',
+      '- Giữ tính liên tục của bối cảnh & nhân vật (Spatial Continuity): Giữ nguyên căn phòng, đồ đạc nội thất, phong cách trang phục và diện mạo của các nhân vật qua các cảnh.',
+      '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ tư thế tự nhiên cụ thể của từng người bằng tiếng Anh (ví dụ: "The mother is sitting sternly on the sofa holding a teacup, while Lan stands nervously near the dining table holding a plate, and Huy leans against the doorway looking conflicted"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
       '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
-      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes, keep both characters in the frame at all times) để đảm bảo video ghép lại không bị giật, nhảy hình.'
+      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes) để đảm bảo video ghép lại không bị giật, nhảy hình.'
     ];
   }
 
@@ -717,7 +722,7 @@ function getCharacterPositionLabel(job, scene, speakerName) {
     }
   }
 
-  // 2. Find position (left or right)
+  // 2. Find position & posture from scene text
   const fullText = [
     scene.videoPrompt,
     scene.imagePrompt,
@@ -730,26 +735,45 @@ function getCharacterPositionLabel(job, scene, speakerName) {
   if (nameIdx >= 0) {
     const windowText = fullText.slice(Math.max(0, nameIdx - 40), Math.min(fullText.length, nameIdx + 60));
     if (windowText.includes('left')) {
-      position = 'on the far left side';
+      position = 'on the left side';
     } else if (windowText.includes('right')) {
-      position = 'on the far right side';
+      position = 'on the right side';
+    } else if (windowText.includes('sofa') || windowText.includes('couch')) {
+      position = 'on the sofa';
+    } else if (windowText.includes('table')) {
+      position = 'by the table';
+    } else if (windowText.includes('counter')) {
+      position = 'by the counter';
     }
   }
 
   if (!position) {
-    if (fullText.includes(`${name} is standing on the left`) || fullText.includes(`${name} on the left`)) {
-      position = 'on the far left side';
-    } else if (fullText.includes(`${name} is standing on the right`) || fullText.includes(`${name} on the right`)) {
-      position = 'on the far right side';
+    if (fullText.includes(`${name} on the left`) || fullText.includes('on the left')) {
+      position = 'on the left side';
+    } else if (fullText.includes(`${name} on the right`) || fullText.includes('on the right')) {
+      position = 'on the right side';
     }
   }
 
   if (!position && charObj) {
     const charIdx = characters.indexOf(charObj);
-    position = charIdx === 0 ? 'on the far left side' : 'on the far right side';
+    position = charIdx === 0 ? 'on the left' : 'on the right';
   }
 
-  return `the ${descriptor} standing ${position || 'on the far right side'}`;
+  // Detect posture: sitting, leaning, kneeling, or standing
+  let posture = 'standing';
+  const charContext = nameIdx >= 0 
+    ? fullText.slice(Math.max(0, nameIdx - 50), Math.min(fullText.length, nameIdx + 80))
+    : fullText;
+  if (charContext.includes('sit') || charContext.includes('seated') || charContext.includes('sofa') || charContext.includes('couch') || charContext.includes('chair') || charContext.includes('armchair')) {
+    posture = 'sitting';
+  } else if (charContext.includes('lean')) {
+    posture = 'leaning';
+  } else if (charContext.includes('kneel')) {
+    posture = 'kneeling';
+  }
+
+  return `the ${descriptor} ${posture} ${position || 'in the scene'}`.replace(/\s+/g, ' ').trim();
 }
 
 function buildScenePrompt(job, scene, mediaType) {
@@ -781,7 +805,12 @@ function buildScenePrompt(job, scene, mediaType) {
         parts.push('Important: All of the listed characters MUST be present and visible together in this single image.');
       }
     }
-    parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
+    parts.push('Cinematic staging: Characters have natural, varied postures with depth (e.g. one sitting comfortably on sofa/chair, one standing or leaning near table/counter, interacting naturally with props or room setting). NEVER pose characters standing in a stiff lineup side-by-side.');
+    if (job.channelType === 'sumo') {
+      parts.push('Vertical 9:16 composition. 3D Pixar animated film style, vibrant, expressive, cute.');
+    } else {
+      parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
+    }
   } else if (normalizedType === 'endimage' || normalizedType === 'end_image') {
     const endPrompt = String(scene.endImagePrompt || '').trim() || String(scene.videoPrompt || scene.description || '').trim();
     parts.push(endPrompt);
@@ -795,7 +824,11 @@ function buildScenePrompt(job, scene, mediaType) {
       parts.push(`Ending keyframe after this dialogue:\n${dialogueLines}`);
     }
     parts.push('Important: This is the END FRAME of the 8-second scene. Preserve the EXACT SAME characters, faces, clothes, camera angle, and background as the reference start image. Only depict updated emotional reactions, facial expressions, and postures at the conclusion of the line.');
-    parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
+    if (job.channelType === 'sumo') {
+      parts.push('Vertical 9:16 composition. 3D Pixar animated film style, vibrant, expressive, cute.');
+    } else {
+      parts.push('Vertical 9:16 composition. Photorealistic Vietnamese family drama.');
+    }
   } else {
     parts.push(String(scene.videoPrompt || scene.description || '').trim());
     if (baseImagePrompt) {
@@ -808,7 +841,7 @@ function buildScenePrompt(job, scene, mediaType) {
       parts.push(`Important: Character Dialogues (make sure their lips move/talk and their expressions match this dialogue):\n${dialogueLines}`);
     }
     parts.push('Important: Characters talk with natural facial expressions, emotions, and subtle gestures matching the dialogue.');
-    parts.push('Create one coherent 8-second vertical clip smoothly transitioning from the start frame to the end frame. Photorealistic Vietnamese family drama, natural movement.');
+    parts.push('Create one coherent 8-second vertical clip smoothly transitioning from the start frame to the end frame. Natural cinematic movement with depth, avoid stiff lineup posing.');
   }
   return parts.join('\n');
 }
