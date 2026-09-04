@@ -1483,7 +1483,7 @@ async function deleteVideo(workflowId, projectId, mediaId) {
 // ══════════════════════════════════════
 // 5. Upload Image to Flow (from URL or Base64)
 // ══════════════════════════════════════
-async function uploadImage(projectId, imageUrl, imageBase64, shouldReload = true, isRetry = false) {
+async function uploadImage(projectId, imageUrl, imageBase64, shouldReload = true, isRetry = false, tabType = 'video') {
   if (!projectId) return { success: false, error: "Thiếu projectId" };
   if (!imageUrl && !imageBase64) return { success: false, error: "Thiếu link ảnh hoặc dữ liệu ảnh" };
 
@@ -1505,8 +1505,11 @@ async function uploadImage(projectId, imageUrl, imageBase64, shouldReload = true
 
   if (b64 && b64.includes(",")) b64 = b64.split(",")[1];
 
-  const flowTab = await getFlowTab(shouldReload ? 'video' : 'image', projectId);
-  if (!flowTab) return { success: false, error: `Cần mở tab Google Flow cho ${shouldReload ? 'Video' : 'Ảnh'}!` };
+  let flowTab = await getFlowTab(tabType, projectId);
+  if (!flowTab) {
+    flowTab = await getFlowTab('video', projectId) || await getFlowTab('image', projectId);
+  }
+  if (!flowTab) return { success: false, error: `Cần mở tab Google Flow cho ${tabType === 'video' ? 'Video' : 'Ảnh'}!` };
 
   // Ưu tiên Project ID từ URL của tab đang mở để upload chính xác vào project trên màn hình
   let effectiveProjectId = null;
@@ -1523,7 +1526,7 @@ async function uploadImage(projectId, imageUrl, imageBase64, shouldReload = true
   // ── Lấy token còn hạn (< 50 phút). Nếu chưa có hoặc đã hết hạn -> Tự động F5 tab để bắt token mới! ──
   let authToken = await getFreshAuthToken(flowTab);
   if (!authToken) {
-    authToken = await refreshAuthByReloadingTab(flowTab, shouldReload ? 'Tab Video' : 'Tab Tạo Ảnh');
+    authToken = await refreshAuthByReloadingTab(flowTab, tabType === 'video' ? 'Tab Video' : 'Tab Tạo Ảnh');
   }
 
   if (!authToken) return { success: false, error: "Chưa bắt được Auth token từ tab Flow dù đã F5. Hãy kiểm tra tab Flow đã đăng nhập!" };
@@ -1564,8 +1567,8 @@ async function uploadImage(projectId, imageUrl, imageBase64, shouldReload = true
     // ── XỬ LÝ LỖI 401: TỰ ĐỘNG XÓA TOKEN CŨ, F5 TAB LẤY TOKEN MỚI VÀ RETRY 1 LẦN ──
     if (parsed?.error && (parsed.status === 401 || String(parsed.error).includes("401")) && !isRetry) {
       logToBridge(`[Upload Engine] ⚠️ Phát hiện lỗi 401 (Token hết hạn), đang tự động F5 tab lấy token mới và upload lại...`);
-      await refreshAuthByReloadingTab(flowTab, shouldReload ? 'Tab Video' : 'Tab Tạo Ảnh');
-      return await uploadImage(projectId, imageUrl, b64, shouldReload, true);
+      await refreshAuthByReloadingTab(flowTab, tabType === 'video' ? 'Tab Video' : 'Tab Tạo Ảnh');
+      return await uploadImage(projectId, imageUrl, b64, shouldReload, true, tabType);
     }
 
     if (parsed?.error) return { success: false, error: parsed.error, detail: parsed.body };
@@ -2180,24 +2183,20 @@ async function processServerVideoQueue() {
       const needsUploadStart = Boolean(task.startImage && (task.startImage.startsWith("http") || task.startImage.startsWith("data:") || task.startImage.length > 500));
       const needsUploadEnd = Boolean(task.endImage && (task.endImage.startsWith("http") || task.endImage.startsWith("data:") || task.endImage.length > 500));
 
-      // Bước 1: Nếu có startImage -> Tải lên Google Flow
+      // Bước 1: Nếu có startImage -> Tải lên Google Flow và F5 tab Video
       if (needsUploadStart) {
         logToBridge(`[Video Engine] Tải ảnh đầu vào (startImage) lên Google Flow...`);
         const isUrl = task.startImage.startsWith("http://") || task.startImage.startsWith("https://");
         const isB64 = task.startImage.startsWith("data:") || task.startImage.length > 500;
         
-        // Nếu sau đó còn cần upload endImage, không cần reload ngay lúc này (để upload cả 2 rồi reload 1 lần)
-        const shouldReload = !needsUploadEnd;
-        const upRes = await uploadImage(task.projectId, isUrl ? task.startImage : null, isB64 ? task.startImage : null, shouldReload);
+        // F5 lại tab Video sau khi upload startImage theo yêu cầu của user
+        const upRes = await uploadImage(task.projectId, isUrl ? task.startImage : null, isB64 ? task.startImage : null, true, false, 'video');
         if (!upRes?.success || !upRes?.mediaId) {
           throw new Error(`Lỗi upload ảnh đầu vào: ${upRes?.error || 'Không nhận được mediaId'}`);
         }
         resolvedStartImage = upRes.mediaId;
-        logToBridge(`[Video Engine] ✅ Đã upload ảnh đầu vào (Media ID: ${resolvedStartImage})!`);
-        if (shouldReload) {
-          logToBridge(`[Video Engine] Đã F5 lại tab Video! Đợi 3.5s...`);
-          await new Promise(r => setTimeout(r, 3500));
-        }
+        logToBridge(`[Video Engine] ✅ Đã upload ảnh đầu vào (Media ID: ${resolvedStartImage}) và F5 lại tab Video! Đợi 3.5s...`);
+        await new Promise(r => setTimeout(r, 3500));
       }
 
       // Bước 1.1: Nếu có endImage -> Tải lên Google Flow và F5 tab Video
@@ -2206,8 +2205,8 @@ async function processServerVideoQueue() {
         const isUrl = task.endImage.startsWith("http://") || task.endImage.startsWith("https://");
         const isB64 = task.endImage.startsWith("data:") || task.endImage.length > 500;
         
-        // Luôn reload sau khi upload ảnh kết thúc để cả 2 ảnh xuất hiện trên Flow UI
-        const upRes = await uploadImage(task.projectId, isUrl ? task.endImage : null, isB64 ? task.endImage : null, true);
+        // F5 lại tab Video sau khi upload endImage
+        const upRes = await uploadImage(task.projectId, isUrl ? task.endImage : null, isB64 ? task.endImage : null, true, false, 'video');
         if (!upRes?.success || !upRes?.mediaId) {
           throw new Error(`Lỗi upload ảnh kết thúc: ${upRes?.error || 'Không nhận được mediaId'}`);
         }
