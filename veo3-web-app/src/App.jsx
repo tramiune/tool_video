@@ -1213,6 +1213,33 @@ function App() {
     }
   };
 
+  const formatLocalDateForInput = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const handleAdminSetExactExpiry = async (userId, dateString) => {
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      if (!dateString) {
+        await setDoc(userDocRef, { expiryDate: null }, { merge: true });
+        return;
+      }
+      const [y, m, d] = dateString.split('-').map(Number);
+      const targetDate = new Date(y, m - 1, d, 23, 59, 59, 999);
+      const newExpiry = targetDate.getTime();
+      await setDoc(userDocRef, { expiryDate: newExpiry }, { merge: true });
+    } catch (err) {
+      console.error(err);
+      alert("Lỗi cập nhật hạn dùng: " + err.message);
+    }
+  };
+
   const handleAdminExtendExpiry = async (userId) => {
     try {
       const userDocRef = doc(db, 'users', userId);
@@ -1642,37 +1669,57 @@ function App() {
                               <option value="premium_169k">Premium (299k)</option>
                             </select>
                           </td>
-                          <td data-label="Hạn dùng" style={{ padding: '14px 8px', color: isUserExpired ? '#ef4444' : 'var(--text-secondary)' }}>
-                            {usr.tier === 'free' ? 'N/A' : (
-                              usr.expiryDate ? (
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span>{new Date(usr.expiryDate).toLocaleDateString('vi-VN')}</span>
-                                  {isUserExpired && <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>(Hết hạn)</span>}
-                                </div>
-                              ) : 'Không giới hạn'
-                            )}
+                          <td data-label="Hạn dùng" style={{ padding: '10px 8px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <input
+                                type="date"
+                                value={formatLocalDateForInput(usr.expiryDate)}
+                                onChange={(e) => handleAdminSetExactExpiry(usr.id, e.target.value)}
+                                style={{
+                                  background: '#16161a',
+                                  border: `1px solid ${isUserExpired ? '#ef4444' : 'rgba(255,255,255,0.12)'}`,
+                                  borderRadius: '6px',
+                                  padding: '4px 6px',
+                                  color: isUserExpired ? '#ef4444' : '#fff',
+                                  fontSize: '0.75rem',
+                                  outline: 'none',
+                                  colorScheme: 'dark',
+                                  cursor: 'pointer',
+                                  width: '130px'
+                                }}
+                                title="Bấm để chọn chính xác ngày hết hạn"
+                              />
+                              {usr.expiryDate ? (
+                                <span style={{ fontSize: '0.65rem', color: isUserExpired ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+                                  {isUserExpired ? '⚠️ Đã hết hạn' : `Hết hạn: ${new Date(usr.expiryDate).toLocaleDateString('vi-VN')}`}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
+                                  {usr.tier === 'free' ? 'Free (Chưa đặt hạn)' : 'Vĩnh viễn'}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td data-label="Thao tác" data-actions style={{ padding: '14px 8px', textAlign: 'right' }}>
-                            {usr.tier !== 'free' && (
-                              <button
-                                onClick={() => handleAdminExtendExpiry(usr.id)}
-                                style={{
-                                  background: 'rgba(255,255,255,0.05)',
-                                  border: '1px solid rgba(255,255,255,0.08)',
-                                  borderRadius: '6px',
-                                  padding: '4px 8px',
-                                  fontSize: '0.7rem',
-                                  color: '#3b82f6',
-                                  cursor: 'pointer',
-                                  fontWeight: 'bold',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                              >
-                                <Clock size={10} /> +30 ngày
-                              </button>
-                            )}
+                            <button
+                              onClick={() => handleAdminExtendExpiry(usr.id)}
+                              style={{
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                borderRadius: '6px',
+                                padding: '5px 8px',
+                                fontSize: '0.7rem',
+                                color: '#3b82f6',
+                                cursor: 'pointer',
+                                fontWeight: 'bold',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              title="Cộng thêm 30 ngày vào hạn hiện tại"
+                            >
+                              <Clock size={10} /> +30 ngày
+                            </button>
                           </td>
                         </tr>
                       );
@@ -6369,7 +6416,7 @@ function App() {
               className="avatar-circle" 
               onClick={() => setShowUserDropdown(prev => !prev)}
               style={{ cursor: 'pointer', userSelect: 'none' }}
-              title="Tài khoản"
+              title={userExpiryDate ? `Tài khoản: ${user.email || ''}\nGói: ${userTier}\nHạn dùng: ${new Date(userExpiryDate).toLocaleDateString('vi-VN')}` : "Tài khoản"}
             >
               {user.photoURL ? (
                 <img src={user.photoURL} alt="User Avatar" />
@@ -6390,10 +6437,10 @@ function App() {
                 padding: '6px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px',
+                gap: '6px',
                 boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
                 zIndex: 1000,
-                width: '180px'
+                width: '210px'
               }}>
                 <div style={{
                   fontSize: '0.75rem',
@@ -6405,6 +6452,44 @@ function App() {
                   whiteSpace: 'nowrap'
                 }}>
                   {user.email || 'Khách dùng thử'}
+                </div>
+
+                {/* Card thông tin Gói & Hạn dùng */}
+                <div style={{
+                  padding: '8px 10px',
+                  background: 'rgba(255,255,255,0.04)',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  fontSize: '0.73rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Gói cước:</span>
+                    <span style={{
+                      fontWeight: '700',
+                      color: userTier === 'premium_169k' ? '#fbbf24' : userTier === 'basic_69k' ? '#3b82f6' : userTier === 'hocvien' ? '#10b981' : 'var(--text-secondary)'
+                    }}>
+                      {userTier === 'premium_169k' ? '👑 Premium' : userTier === 'basic_69k' ? '⚡ Basic' : userTier === 'hocvien' ? '🎓 Học viên' : 'Free'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Hạn dùng:</span>
+                    {userExpiryDate ? (
+                      <span style={{
+                        fontWeight: '700',
+                        color: userExpiryDate < Date.now() ? '#ef4444' : '#10b981'
+                      }}>
+                        {new Date(userExpiryDate).toLocaleDateString('vi-VN')}
+                        {userExpiryDate < Date.now() && <span style={{ fontSize: '0.65rem', marginLeft: '3px', color: '#ef4444' }}>(Hết hạn)</span>}
+                      </span>
+                    ) : (
+                      <span style={{ color: userTier === 'free' ? 'var(--text-secondary)' : '#10b981', fontWeight: '600' }}>
+                        {userTier === 'free' ? 'Dùng thử' : 'Vĩnh viễn'}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 
                 <button
