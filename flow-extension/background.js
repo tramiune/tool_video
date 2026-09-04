@@ -1007,25 +1007,39 @@ async function createVideoUI(prompt, projectId, config = {}) {
               await sleep(500); // Allow frame slots to mount on editor
 
               // Locate frame slot buttons (Start: Bắt đầu, End: Kết thúc)
+              // Locate frame slot buttons (Start: Bắt đầu, End: Kết thúc)
               const getFrameSlots = () => {
-                let slots = Array.from(document.querySelectorAll("div[type='button'][aria-haspopup='dialog']"))
-                  .filter(isElemVisible);
+                let slots = Array.from(document.querySelectorAll("button, [role='button'], div[aria-haspopup='dialog']"))
+                  .filter(el => {
+                    if (!isElemVisible(el)) return false;
+                    const t = (el.textContent || "").toLowerCase();
+                    const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+                    return t.includes("bắt đầu") || t.includes("kết thúc") 
+                        || aria.includes("bắt đầu") || aria.includes("kết thúc")
+                        || t.includes("start frame") || t.includes("end frame")
+                        || aria.includes("start frame") || aria.includes("end frame")
+                        || t === "start" || t === "end";
+                  });
                 if (!slots.length) {
-                  slots = Array.from(document.querySelectorAll("button, div[role='button']"))
-                    .filter(el => {
-                      if (!isElemVisible(el)) return false;
-                      const t = (el.textContent || "").trim();
-                      return t === "Bắt đầu" || t === "Kết thúc" || t.includes("Bắt đầu") || t.includes("Kết thúc");
-                    });
+                  const promptContainer = document.querySelector("form") || document.querySelector("div[class*='prompt']") || document;
+                  slots = Array.from(promptContainer.querySelectorAll("button[aria-haspopup='dialog'], [role='button'][aria-haspopup='dialog'], div[type='button'][aria-haspopup='dialog']"))
+                    .filter(isElemVisible);
                 }
                 return slots;
               };
 
               // Helper to pick/upload inside the media asset picker dialog
-              const handleMediaDialog = async (imageQuery) => {
+              const handleMediaDialog = async (imageQuery, preferIndex = 0) => {
                 await sleep(600); // Wait for Radix dialog to open
-                const dialog = document.querySelector("div[role='dialog'][data-state='open']") 
+                let dialog = document.querySelector("div[role='dialog'][data-state='open']") 
                             || document.querySelector("div[role='dialog']");
+                if (!dialog) {
+                  for (let waitDlg = 0; waitDlg < 6; waitDlg++) {
+                    await sleep(250);
+                    dialog = document.querySelector("div[role='dialog'][data-state='open']") || document.querySelector("div[role='dialog']");
+                    if (dialog) break;
+                  }
+                }
                 if (!dialog) return false;
 
                 const cleanQuery = String(imageQuery || "").trim();
@@ -1069,7 +1083,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
                       console.warn("[Flow] File upload error:", e);
                     }
                   }
-                } else if (isFirst || !cleanQuery) {
+                } else if (isFirst || (!cleanQuery && preferIndex === 0)) {
                   // Direct 1st / newest item: DO NOT search, click 1st tile directly!
                   await sleep(400);
                   const tiles = getTiles();
@@ -1077,7 +1091,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
                     triggerClick(tiles[0]);
                     await sleep(500);
                   }
-                } else if (isSecond) {
+                } else if (isSecond || (!cleanQuery && preferIndex === 1)) {
                   // Direct 2nd item: DO NOT search, click 2nd tile directly!
                   await sleep(400);
                   const tiles = getTiles();
@@ -1101,15 +1115,19 @@ async function createVideoUI(prompt, projectId, config = {}) {
                     await sleep(500);
                   }
                 } else if (isUuid) {
-                  // Direct Media ID (ảnh vừa upload): tìm theo tile ID/outerHTML hoặc chọn luôn tile[0] (ảnh mới nhất)
+                  // Direct Media ID (ảnh vừa upload): tìm theo tile ID/outerHTML nếu có, nếu không fallback theo preferIndex
                   await sleep(400);
                   const tiles = getTiles();
-                  const targetTile = tiles.find(t => {
+                  let targetTile = tiles.find(t => {
                     const id = (t.getAttribute("data-tile-id") || t.getAttribute("id") || t.getAttribute("data-media-id") || "").toLowerCase();
                     const html = (t.outerHTML || "").toLowerCase();
                     return id.includes(cleanLower) || html.includes(cleanLower);
-                  }) || (tiles.length > 0 ? tiles[0] : null);
+                  });
+                  if (!targetTile) {
+                    targetTile = (tiles.length > preferIndex ? tiles[preferIndex] : (tiles.length > 0 ? tiles[0] : null));
+                  }
                   if (targetTile) {
+                    console.log(`[Flow Recon] Selected tile index ${tiles.indexOf(targetTile)} (prefer: ${preferIndex}) for UUID: ${cleanQuery}`);
                     triggerClick(targetTile);
                     await sleep(600);
                   }
@@ -1132,11 +1150,11 @@ async function createVideoUI(prompt, projectId, config = {}) {
                     const id = (t.getAttribute("data-tile-id") || t.getAttribute("id") || t.getAttribute("data-media-id") || "").toLowerCase();
                     const html = (t.outerHTML || "").toLowerCase();
                     return txt.includes(cleanLower) || txt.includes(cleanLower.slice(0, 10)) || id.includes(cleanLower) || html.includes(cleanLower);
-                  }) || (tiles.length > 0 ? tiles[0] : null);
+                  });
 
-                  // IF search gave 0 results (e.g. user typed 1.jpg but Flow renamed to "Woman in beige halter dress"):
+                  // IF search gave 0 results:
                   if (!targetTile) {
-                    console.warn(`[Flow Recon] Search "${cleanQuery}" returned 0 matches, clearing search and picking newest asset...`);
+                    console.warn(`[Flow Recon] Search "${cleanQuery}" returned 0 matches, clearing search and picking asset at index ${preferIndex}...`);
                     if (searchInput) {
                       searchInput.value = "";
                       searchInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1144,7 +1162,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
                       await sleep(500);
                     }
                     tiles = getTiles();
-                    targetTile = tiles[0]; // Pick top 1 newest uploaded image
+                    targetTile = (tiles.length > preferIndex ? tiles[preferIndex] : (tiles.length > 0 ? tiles[0] : null));
                   }
 
                   if (targetTile) {
@@ -1165,28 +1183,61 @@ async function createVideoUI(prompt, projectId, config = {}) {
                     await sleep(500);
                   }
                 }
+
+                // Ensure dialog is closed before moving to next slot
+                for (let waitClose = 0; waitClose < 10; waitClose++) {
+                  const stillOpen = document.querySelector("div[role='dialog'][data-state='open']");
+                  if (!stillOpen) break;
+                  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+                  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+                  await sleep(200);
+                }
                 return true;
               };
 
               // 1. Attach Start Image (Bắt đầu)
               if (cfg?.startImage) {
                 const slots = getFrameSlots();
-                let startSlot = slots.find(s => (s.textContent || "").includes("Bắt đầu")) || slots[0];
+                let startSlot = slots.find(s => {
+                  const t = (s.textContent || "").toLowerCase();
+                  const aria = (s.getAttribute("aria-label") || "").toLowerCase();
+                  return (t.includes("bắt đầu") || aria.includes("bắt đầu") || t.includes("start")) && !t.includes("kết thúc") && !aria.includes("kết thúc");
+                }) || slots[0];
                 if (startSlot) {
+                  console.log("[Flow Extension] Found Start frame slot, clicking...", startSlot);
                   triggerClick(startSlot);
-                  await handleMediaDialog(cfg.startImage);
-                  await sleep(500);
+                  const startIndex = (cfg?.startImage && cfg?.endImage) ? (cfg.startIndex ?? 1) : (cfg.startIndex ?? 0);
+                  await handleMediaDialog(cfg.startImage, startIndex);
+                  await sleep(800);
                 }
               }
 
               // 2. Attach End Image (Kết thúc)
               if (cfg?.endImage) {
+                await sleep(400);
                 const slots = getFrameSlots();
-                let endSlot = slots.find(s => (s.textContent || "").includes("Kết thúc")) || slots[slots.length - 1];
+                let endSlot = slots.find(s => {
+                  const t = (s.textContent || "").toLowerCase();
+                  const aria = (s.getAttribute("aria-label") || "").toLowerCase();
+                  return (t.includes("kết thúc") || aria.includes("kết thúc") || t.includes("end")) && !t.includes("bắt đầu") && !aria.includes("bắt đầu");
+                });
+                if (!endSlot && slots.length > 1) {
+                  endSlot = slots[slots.length - 1];
+                }
+                if (!endSlot) {
+                  const allBtns = Array.from(document.querySelectorAll("button, [role='button'], div[type='button']")).filter(isElemVisible);
+                  endSlot = allBtns.find(s => {
+                    const t = (s.textContent || "").toLowerCase();
+                    const aria = (s.getAttribute("aria-label") || "").toLowerCase();
+                    return (t.includes("kết thúc") || aria.includes("kết thúc") || t.includes("end frame")) && !t.includes("bắt đầu");
+                  });
+                }
                 if (endSlot) {
+                  console.log("[Flow Extension] Found End frame slot, clicking...", endSlot);
                   triggerClick(endSlot);
-                  await handleMediaDialog(cfg.endImage);
-                  await sleep(500);
+                  const endIndex = cfg.endIndex ?? 0;
+                  await handleMediaDialog(cfg.endImage, endIndex);
+                  await sleep(800);
                 }
               }
             } catch (frameErr) {
@@ -2126,27 +2177,36 @@ async function processServerVideoQueue() {
       let resolvedStartImage = task.startImage || null;
       let resolvedEndImage = task.endImage || null;
 
-      // Bước 1: Nếu có startImage -> Tải lên Google Flow và F5 tab Video để ảnh hiện lên UI
-      if (task.startImage && (task.startImage.startsWith("http") || task.startImage.startsWith("data:") || task.startImage.length > 500)) {
+      const needsUploadStart = Boolean(task.startImage && (task.startImage.startsWith("http") || task.startImage.startsWith("data:") || task.startImage.length > 500));
+      const needsUploadEnd = Boolean(task.endImage && (task.endImage.startsWith("http") || task.endImage.startsWith("data:") || task.endImage.length > 500));
+
+      // Bước 1: Nếu có startImage -> Tải lên Google Flow
+      if (needsUploadStart) {
         logToBridge(`[Video Engine] Tải ảnh đầu vào (startImage) lên Google Flow...`);
         const isUrl = task.startImage.startsWith("http://") || task.startImage.startsWith("https://");
         const isB64 = task.startImage.startsWith("data:") || task.startImage.length > 500;
         
-        const upRes = await uploadImage(task.projectId, isUrl ? task.startImage : null, isB64 ? task.startImage : null, true);
+        // Nếu sau đó còn cần upload endImage, không cần reload ngay lúc này (để upload cả 2 rồi reload 1 lần)
+        const shouldReload = !needsUploadEnd;
+        const upRes = await uploadImage(task.projectId, isUrl ? task.startImage : null, isB64 ? task.startImage : null, shouldReload);
         if (!upRes?.success || !upRes?.mediaId) {
           throw new Error(`Lỗi upload ảnh đầu vào: ${upRes?.error || 'Không nhận được mediaId'}`);
         }
         resolvedStartImage = upRes.mediaId;
-        logToBridge(`[Video Engine] ✅ Đã upload ảnh đầu vào (Media ID: ${resolvedStartImage}) và F5 lại tab Video! Đợi 3.5s...`);
-        await new Promise(r => setTimeout(r, 3500));
+        logToBridge(`[Video Engine] ✅ Đã upload ảnh đầu vào (Media ID: ${resolvedStartImage})!`);
+        if (shouldReload) {
+          logToBridge(`[Video Engine] Đã F5 lại tab Video! Đợi 3.5s...`);
+          await new Promise(r => setTimeout(r, 3500));
+        }
       }
 
       // Bước 1.1: Nếu có endImage -> Tải lên Google Flow và F5 tab Video
-      if (task.endImage && (task.endImage.startsWith("http") || task.endImage.startsWith("data:") || task.endImage.length > 500)) {
+      if (needsUploadEnd) {
         logToBridge(`[Video Engine] Tải ảnh kết thúc (endImage) lên Google Flow...`);
         const isUrl = task.endImage.startsWith("http://") || task.endImage.startsWith("https://");
         const isB64 = task.endImage.startsWith("data:") || task.endImage.length > 500;
         
+        // Luôn reload sau khi upload ảnh kết thúc để cả 2 ảnh xuất hiện trên Flow UI
         const upRes = await uploadImage(task.projectId, isUrl ? task.endImage : null, isB64 ? task.endImage : null, true);
         if (!upRes?.success || !upRes?.mediaId) {
           throw new Error(`Lỗi upload ảnh kết thúc: ${upRes?.error || 'Không nhận được mediaId'}`);
@@ -2156,14 +2216,19 @@ async function processServerVideoQueue() {
         await new Promise(r => setTimeout(r, 3500));
       }
 
+      const hasBoth = Boolean(resolvedStartImage && resolvedEndImage);
       const config = {
         aspectRatio: task.aspectRatio || '9:16',
         duration: '8s',
         count: 'x1',
         model: 'veo_3_1_lite_low_priority',
         isFrames: Boolean(resolvedStartImage || resolvedEndImage),
+        hasBothFrames: hasBoth,
         startImage: resolvedStartImage,
-        endImage: resolvedEndImage
+        endImage: resolvedEndImage,
+        // Start up trước -> index 1 trong thư viện; End up sau -> index 0 (mới nhất)
+        startIndex: hasBoth ? 1 : 0,
+        endIndex: 0
       };
 
       // Bước 2: Chạy Auto Click UI (chuyển Khung hình, gắn frame vừa upload, submit)
