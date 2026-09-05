@@ -1104,19 +1104,30 @@ func: async (promptText, cfg) => {
             if (countBtn) triggerClick(countBtn);
             await sleep(400);
 
-            // 5. Select Model: Veo 3.1 - Lite [Lower Priority]
+            // 5. Select Model:
             const scope = getPopover() || popover || document;
+            const modelDropdown = queryScopeDeep(scope, "button, [role='combobox'], [role='button'], div").find(b => {
+              if (!isElemVisible(b)) return false;
+              if (b.closest("[role='listbox']")) return false; 
+              const t = (b.textContent || "").trim().toLowerCase();
+              const isModelName = (t.includes("omni") || t.includes("veo") || t.includes("flash") || t.includes("lite") || t.includes("fast") || t.includes("quality")) && t.length < 40;
+              const isExcluded = t.includes("9:16") || t.includes("16:9") || t.includes("8s") || t.includes("4s") || t.includes("6s") || t.includes("10s") || t.includes("video") || t.includes("hình ảnh") || t.includes("khung hình");
+              return isModelName && !isExcluded;
+            });
+
+            if (modelDropdown) {
+              triggerClick(modelDropdown);
+              await sleep(600);
+            }
+
             const mTxt = (cfg?.model || "veo_3_1_lite_low_priority").toLowerCase();
-            
             const isMatch = (el) => {
                 const ot = (el.textContent || "").toLowerCase();
-                
                 let matchCount = 0;
                 if (ot.includes("omni") || ot.includes("flash")) matchCount++;
                 if (ot.includes("lite")) matchCount++;
                 if (ot.includes("fast")) matchCount++;
                 if (ot.includes("quality")) matchCount++;
-                
                 if (matchCount > 1 || ot.length > 60) return false;
                 
                 if (mTxt.includes("low_priority")) return ot.includes("lower priority") || ot.includes("ưu tiên thấp") || ot.includes("lite [lower priority]");
@@ -1127,41 +1138,21 @@ func: async (promptText, cfg) => {
                 return false;
             };
 
-            const allCandidates = queryScopeDeep(scope, "[role='option'], [role='menuitem'], [role='tab'], button, li").filter(isElemVisible);
-            let targetOpt = allCandidates.find(el => {
-                if (el.getAttribute("role") === "combobox" || el.hasAttribute("aria-haspopup")) return false;
-                return isMatch(el);
-            });
+            let targetOpt = null;
+            for (let attempt = 0; attempt < 15; attempt++) {
+                const portalCandidates = queryDeep("[role='option'], [role='menuitem'], [role='tab'], button, div, span, li").filter(isElemVisible);
+                targetOpt = portalCandidates.find(el => {
+                    if (el.hasAttribute("aria-haspopup") || el.getAttribute("aria-expanded") === "true") return false;
+                    return isMatch(el);
+                });
+                if (targetOpt) break;
+                await sleep(100);
+            }
 
             if (targetOpt) {
-                triggerClick(targetOpt);
+                const clickable = targetOpt.closest("[role='option'], [role='menuitem'], [role='tab'], button, li") || targetOpt;
+                triggerClick(clickable);
                 await sleep(500);
-            } else {
-                const modelDropdown = queryScopeDeep(scope, "button, [role='combobox'], [role='button'], div").find(b => {
-                  if (!isElemVisible(b)) return false;
-                  const t = (b.textContent || "").trim().toLowerCase();
-                  const hasPopup = b.hasAttribute("aria-haspopup") || b.getAttribute("role") === "combobox";
-                  const isModelName = (t.includes("omni") || t.includes("veo") || t.includes("flash") || t.includes("lite") || t.includes("fast") || t.includes("quality")) && t.length < 40;
-                  const isExcluded = t.includes("9:16") || t.includes("16:9") || t.includes("8s") || t.includes("4s") || t.includes("6s") || t.includes("10s") || t.includes("video") || t.includes("hình ảnh");
-                  return (hasPopup || isModelName) && !isExcluded;
-                });
-
-                if (modelDropdown) {
-                  triggerClick(modelDropdown);
-                  await sleep(600);
-                  
-                  for (let attempt = 0; attempt < 15; attempt++) {
-                    await sleep(100);
-                    const portalCandidates = queryDeep("[role='option'], [role='menuitem'], button, div, span, li").filter(isElemVisible);
-                    const portalOpt = portalCandidates.find(el => isMatch(el));
-                    if (portalOpt) {
-                      const clickable = portalOpt.closest("[role='option'], [role='menuitem'], button, li") || portalOpt;
-                      triggerClick(clickable);
-                      await sleep(500);
-                      break;
-                    }
-                  }
-                }
             }
           }
 
