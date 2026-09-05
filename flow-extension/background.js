@@ -2986,6 +2986,78 @@ async function testUiStep(step, req) {
         }
 
         
+        if (stepIdx === 4.6) {
+                const results = [];
+                // Find file inputs
+                const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
+                results.push(`TÌM THẤY ${fileInputs.length} THẺ <input type="file">`);
+                fileInputs.forEach((fi, i) => {
+                    results.push(`[File ${i}] id: ${fi.id}, accept: ${fi.accept}, style: ${fi.getAttribute('style')}`);
+                });
+                
+                // Find frame buttons
+                const slots = Array.from(document.querySelectorAll("button, [role='button'], div[aria-haspopup='dialog']"))
+                  .filter(el => {
+                    const t = (el.textContent || "").toLowerCase();
+                    const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+                    return t.includes("bắt đầu") || t.includes("kết thúc") 
+                        || aria.includes("bắt đầu") || aria.includes("kết thúc")
+                        || t.includes("start frame") || t.includes("end frame")
+                        || aria.includes("start frame") || aria.includes("end frame")
+                        || t === "start" || t === "end" || t.includes("khung hình bắt đầu") || t.includes("khung hình kết thúc");
+                  });
+                results.push(`\nTÌM THẤY ${slots.length} NÚT KHUNG HÌNH`);
+                slots.forEach((s, i) => {
+                    results.push(`[Nút ${i}] text: ${s.textContent.trim().substring(0,20)}, outerHTML: ${s.outerHTML.substring(0, 150)}`);
+                });
+                
+                return results.join("\n");
+            }
+
+            if (stepIdx === 4.7) {
+                const editor = document.querySelector(".ProseMirror, [contenteditable='true'], textarea, input[type='text']");
+                if (!editor) throw new Error("Không tìm thấy ô nhập Prompt (editor) để paste!");
+                
+                // Red 10x10 pixel PNG
+                const base64Img = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FAP5mB/1w4q3bAAAAAElFTkSuQmCC";
+                const res = await fetch(base64Img);
+                const blob = await res.blob();
+                const file = new File([blob], "test-auto-paste.png", { type: "image/png" });
+                
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                
+                const pasteEvent = new ClipboardEvent("paste", {
+                    clipboardData: dt,
+                    bubbles: true,
+                    cancelable: true
+                });
+                
+                // Robust focus
+                editor.scrollIntoView({ block: "center" });
+                editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+                editor.focus();
+                editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+                editor.click();
+                await sleep(300);
+
+                // 1. Try Paste
+                editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: true, metaKey: true, bubbles: true }));
+                editor.dispatchEvent(pasteEvent);
+                
+                // 2. Try Drop (drag and drop is often more robustly supported for files)
+                const dropEvent = new DragEvent("drop", {
+                    dataTransfer: dt,
+                    bubbles: true,
+                    cancelable: true
+                });
+                editor.dispatchEvent(dropEvent);
+                
+                return "Đã focus vào khung chat và bắn giả lập cả lệnh Paste + Drop (ảnh đỏ 10x10)! Bạn chờ thử vài giây nhé.";
+            }
+
+
+        
         if (Math.floor(stepIdx) === 4) {
           if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
 
