@@ -3014,7 +3014,7 @@ async function testUiStep(step, req) {
                 return results.join("\n");
             }
 
-            if (stepIdx === 4.7) {
+            if (stepIdx === 4.7 || stepIdx === 4.8) {
                 const isElemVisible = (el) => {
                     if (!el) return false;
                     const r = el.getBoundingClientRect();
@@ -3025,45 +3025,58 @@ async function testUiStep(step, req) {
                     const r = el.getBoundingClientRect();
                     return r.width > 50 && r.height > 20;
                 });
-                const editor = editors[0];
+                
+                let editor = editors.length > 0 ? editors[0] : null;
+                const activePrompt = editors.find(e => {
+                  const id = (e.getAttribute("id") || "").toLowerCase();
+                  const ph = (e.getAttribute("placeholder") || "").toLowerCase();
+                  const aria = (e.getAttribute("aria-label") || "").toLowerCase();
+                  return id.includes("prompt") || ph.includes("prompt") || aria.includes("prompt") || e.classList.contains("ProseMirror");
+                });
+                if (activePrompt) editor = activePrompt;
+                
                 if (!editor) throw new Error("Không tìm thấy ô nhập Prompt (editor) giống như Bước 1!");
                 
-                // Red 10x10 pixel PNG
-                const base64Img = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FAP5mB/1w4q3bAAAAAElFTkSuQmCC";
-                const res = await fetch(base64Img);
-                const blob = await res.blob();
-                const file = new File([blob], "test-auto-paste.png", { type: "image/png" });
-                
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                
-                const pasteEvent = new ClipboardEvent("paste", {
-                    clipboardData: dt,
-                    bubbles: true,
-                    cancelable: true
-                });
-                
-                // Robust focus
+                // Cực kỳ bạo lực để focus
                 editor.scrollIntoView({ block: "center" });
-                editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+                triggerClick(editor);
                 editor.focus();
-                editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-                editor.click();
                 await sleep(300);
 
-                // 1. Try Paste
-                editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: false, metaKey: true, bubbles: true })); // Mac Command+V
-                editor.dispatchEvent(pasteEvent);
-                
-                // 2. Try Drop (drag and drop is often more robustly supported for files)
-                const dropEvent = new DragEvent("drop", {
-                    dataTransfer: dt,
-                    bubbles: true,
-                    cancelable: true
-                });
-                editor.dispatchEvent(dropEvent);
-                
-                return "Đã focus vào khung chat và bắn giả lập cả lệnh Paste + Drop (ảnh đỏ 10x10)! Bạn chờ thử vài giây nhé.";
+                if (stepIdx === 4.7) {
+                    return "Đã focus vào ô nhập Text! Cậu thử bấm Command+V bằng tay ngay bây giờ xem ảnh có vào không nhé.";
+                }
+
+                if (stepIdx === 4.8) {
+                    // Red 10x10 pixel PNG
+                    const base64Img = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FAP5mB/1w4q3bAAAAAElFTkSuQmCC";
+                    const res = await fetch(base64Img);
+                    const blob = await res.blob();
+                    const file = new File([blob], "test-auto-paste.png", { type: "image/png" });
+                    
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    
+                    const pasteEvent = new ClipboardEvent("paste", {
+                        clipboardData: dt,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    
+                    // 1. Try Paste
+                    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: false, metaKey: true, bubbles: true })); // Mac Command+V
+                    editor.dispatchEvent(pasteEvent);
+                    
+                    // 2. Try Drop
+                    const dropEvent = new DragEvent("drop", {
+                        dataTransfer: dt,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    editor.dispatchEvent(dropEvent);
+                    
+                    return "Đã tự động bắn giả lập lệnh Paste + Drop (ảnh đỏ 10x10)! Bạn chờ thử vài giây nhé.";
+                }
             }
 
 
