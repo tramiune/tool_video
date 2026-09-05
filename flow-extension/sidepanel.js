@@ -1228,8 +1228,7 @@
     bindClick('btnTestStep4_1', () => runTest4(4.1, "Tỷ lệ"));
     bindClick('btnTestStep4_2', () => runTest4(4.2, "Thời lượng"));
     bindClick('btnTestStep4_3', () => runTest4(4.3, "Số lượng"));
-    bindClick('btnTestStep4_4', () => runTest4(4.4, "Mở List Model"));
-    bindClick('btnTestStep4_5', () => runTest4(4.5, "Chọn Model"));
+    bindClick('btnTestStep4_4', () => runTest4(4.4, "Model Video"));
     bindClick('btnTestStep4', () => runTest4(4, "All Config"));
     
     bindClick('btnCreate', createVideo);
