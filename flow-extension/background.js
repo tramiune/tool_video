@@ -3015,66 +3015,59 @@ async function testUiStep(step, req) {
             }
 
             if (stepIdx === 4.7 || stepIdx === 4.8) {
+                // Hàm lấy element đang được focus (kể cả trong Shadow DOM)
+                const getDeepActiveElement = (root = document) => {
+                    if (root.activeElement && root.activeElement.shadowRoot) {
+                        return getDeepActiveElement(root.activeElement.shadowRoot);
+                    }
+                    return root.activeElement;
+                };
+
                 const isElemVisible = (el) => {
                     if (!el) return false;
                     const r = el.getBoundingClientRect();
                     return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
                 };
-                const editors = queryDeep("div.ProseMirror, div[contenteditable='true'], textarea, input[type='text']").filter(el => {
-                    if (!isElemVisible(el)) return false;
-                    const r = el.getBoundingClientRect();
-                    return r.width > 50 && r.height > 20;
-                });
-                
-                const findCorrectPrompt = (list) => {
-                    return list.find(e => {
-                        const ph = (e.getAttribute("placeholder") || "").toLowerCase();
-                        const aria = (e.getAttribute("aria-label") || "").toLowerCase();
-                        return ph.includes("bạn muốn tạo") || ph.includes("prompt") || aria.includes("prompt") || e.classList.contains("ProseMirror") || e.tagName.toLowerCase() === "textarea";
-                    });
-                };
 
-                // Lọc bỏ search bar trên cùng bằng TỌA ĐỘ (y < 150)
-                const validEditors = editors.filter(e => {
+                // 1. Tìm element chứa chữ "Bạn muốn tạo" hoặc là ProseMirror
+                const candidates = queryDeep("*").filter(e => {
+                    if (!isElemVisible(e)) return false;
                     const r = e.getBoundingClientRect();
-                    if (r.top < 150) return false; // Loại bỏ tất cả input ở phần Header (Search, v.v.)
+                    if (r.top < 150) return false; // Bỏ qua thanh tìm kiếm ở trên cùng
                     
                     const ph = (e.getAttribute("placeholder") || "").toLowerCase();
-                    const aria = (e.getAttribute("aria-label") || "").toLowerCase();
-                    return !ph.includes("tìm kiếm") && !ph.includes("search") && !aria.includes("tìm kiếm") && !aria.includes("search");
-                });
-
-                let editor = findCorrectPrompt(validEditors) || (validEditors.length > 0 ? validEditors[validEditors.length - 1] : null);
-
-                // Ưu tiên popover nếu nó đang mở
-                const activePopover = queryDeep("div[role='dialog'], div[data-radix-popper-content-wrapper], div[class*='popover']").find(d => {
-                  if (!isElemVisible(d)) return false;
-                  const t = d.textContent || "";
-                  return (t.includes("9:16") || t.includes("16:9") || t.includes("Bạn muốn tạo"));
+                    const text = (e.textContent || "").toLowerCase();
+                    const isEditable = e.isContentEditable || e.tagName === "TEXTAREA" || e.tagName === "INPUT";
+                    
+                    return ph.includes("bạn muốn tạo") || text.includes("bạn muốn tạo") || e.classList.contains("ProseMirror") || isEditable;
                 });
                 
-                if (activePopover) {
-                  const popoverEditors = queryScopeDeep(activePopover, "div.ProseMirror, div[contenteditable='true'], textarea, input[type='text']").filter(isElemVisible);
-                  const validPopoverEditors = popoverEditors.filter(e => !e.getAttribute("placeholder")?.toLowerCase().includes("tìm kiếm"));
-                  if (validPopoverEditors.length > 0) {
-                     const innerPrompt = findCorrectPrompt(validPopoverEditors);
-                     if (innerPrompt) editor = innerPrompt;
-                     else editor = validPopoverEditors[validPopoverEditors.length - 1];
-                  }
-                }
+                // Lọc những thằng có khả năng nhất
+                let targetEl = candidates.find(e => {
+                    const ph = (e.getAttribute("placeholder") || "").toLowerCase();
+                    return ph.includes("bạn muốn tạo") || e.classList.contains("ProseMirror");
+                });
                 
-                if (!editor) throw new Error("Không tìm thấy ô nhập Prompt (editor)!");
+                if (!targetEl) targetEl = candidates.find(e => (e.textContent || "").toLowerCase().includes("bạn muốn tạo"));
+                if (!targetEl && candidates.length > 0) targetEl = candidates[candidates.length - 1]; // Lấy thằng cuối cùng (thường ở dưới cùng)
+
+                if (!targetEl) throw new Error("Không tìm thấy bất kỳ ô chữ nào để click vào!");
+
+                // Cực kỳ bạo lực để focus: Click thẳng vào phần tử đó để browser tự focus!
+                targetEl.scrollIntoView({ block: "center" });
+                targetEl.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+                targetEl.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+                targetEl.click();
+                if (typeof targetEl.focus === 'function') targetEl.focus();
                 
-                // Focus the target editor
-                editor.scrollIntoView({ block: "center" });
-                editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-                editor.click();
-                editor.focus();
-                editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
-                await sleep(300);
+                const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+                await sleep(400);
+
+                // Lấy đúng phần tử ĐANG ĐƯỢC FOCUS sau cú click
+                let activeEl = getDeepActiveElement() || targetEl;
 
                 if (stepIdx === 4.7) {
-                    return "Đã focus vào ô nhập Text! Cậu thử bấm Command+V bằng tay ngay bây giờ xem ảnh có vào không nhé.";
+                    return "Đã click vào vùng có chữ 'Bạn muốn tạo...'. Con trỏ có đang nháy ở đó không? Nếu có, bạn thử Command+V bằng tay ngay nhé!";
                 }
 
                 if (stepIdx === 4.8) {
@@ -3087,25 +3080,32 @@ async function testUiStep(step, req) {
                     const dt = new DataTransfer();
                     dt.items.add(file);
                     
+                    // Thử chèn thẳng vào file input nếu có
+                    const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
+                    if (fileInputs.length > 0) {
+                        fileInputs[0].files = dt.files;
+                        fileInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+
+                    // Bắn Paste vào Active Element
                     const pasteEvent = new ClipboardEvent("paste", {
                         clipboardData: dt,
                         bubbles: true,
                         cancelable: true
                     });
                     
-                    // 1. Try Paste
-                    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: false, metaKey: true, bubbles: true })); // Mac Command+V
-                    editor.dispatchEvent(pasteEvent);
+                    activeEl.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: false, metaKey: true, bubbles: true }));
+                    activeEl.dispatchEvent(pasteEvent);
                     
-                    // 2. Try Drop
+                    // Thử Drop thẳng vào Active Element
                     const dropEvent = new DragEvent("drop", {
                         dataTransfer: dt,
                         bubbles: true,
                         cancelable: true
                     });
-                    editor.dispatchEvent(dropEvent);
+                    activeEl.dispatchEvent(dropEvent);
                     
-                    return "Đã tự động bắn giả lập lệnh Paste + Drop (ảnh đỏ 10x10)! Bạn chờ thử vài giây nhé.";
+                    return "Đã bắn lệnh Paste/Drop trực tiếp vào phần tử đang focus (" + activeEl.tagName + ") và tiêm file ẩn. Bạn chờ xem ảnh có lên không nhé.";
                 }
             }
 
