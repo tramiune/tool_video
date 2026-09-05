@@ -1416,14 +1416,35 @@
     });
   }
 
+  async function autoSyncProjectIdFromActiveTab() {
+    try {
+      const tabs = await chrome.tabs.query({ url: ["https://labs.google/*", "https://flow.google.com/*"] });
+      if (tabs?.length) {
+        const matchTab = tabs.find(t => t.url && t.url.match(/project\/([a-f0-9\-]{36})/i)) || tabs[0];
+        if (matchTab?.url) {
+          const m = matchTab.url.match(/project\/([a-f0-9\-]{36})/i);
+          if (m && m[1]) {
+            const currentPid = m[1];
+            ["projectId", "projectId2", "batchProjectId", "imageProjectId", "batchImageProjectId"].forEach(id => {
+              const el = document.getElementById(id);
+              if (el) el.value = currentPid;
+            });
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   async function initConnection() {
     const ok = await checkConnection();
     if (ok) toast("Extension đã kết nối!", "success");
     else toast("Extension chưa kết nối! Reload extension rồi F5 trang này.", "error");
 
+    autoSyncProjectIdFromActiveTab();
     updateToolServerStatus();
     loadInitialLiveLogs();
     setInterval(updateToolServerStatus, 3000);
+    window.addEventListener('focus', autoSyncProjectIdFromActiveTab);
   }
 
   if (document.readyState === 'loading') {

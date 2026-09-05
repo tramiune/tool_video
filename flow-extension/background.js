@@ -213,7 +213,7 @@ const HANDLERS = {
 // Dedicated Flow Tab Manager (Dual-Tab Support: 1 Video, 1 Image)
 // ══════════════════════════════════════
 async function getFlowTab(purpose = 'video', targetProjectId = null) {
-  const flowTabs = await chrome.tabs.query({ url: "https://labs.google/*" });
+  const flowTabs = await chrome.tabs.query({ url: ["https://labs.google/*", "https://flow.google.com/*"] });
   if (!flowTabs.length) return null;
   if (flowTabs.length === 1) return flowTabs[0];
 
@@ -236,7 +236,7 @@ async function getFlowTab(purpose = 'video', targetProjectId = null) {
 }
 
 async function getFlowTabsStatus() {
-  const flowTabs = await chrome.tabs.query({ url: "https://labs.google/*" });
+  const flowTabs = await chrome.tabs.query({ url: ["https://labs.google/*", "https://flow.google.com/*"] });
   const videoTab = await getFlowTab('video');
   const imageTab = await getFlowTab('image');
   return {

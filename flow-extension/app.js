@@ -632,7 +632,7 @@ function toast(msg, type = "info") {
 // ── Auto Sync Project ID from Active Google Flow Tab ──
 async function autoSyncProject() {
   try {
-    const tabs = await chrome.tabs.query({ url: "https://labs.google/*" });
+    const tabs = await chrome.tabs.query({ url: ["https://labs.google/*", "https://flow.google.com/*"] });
     if (tabs.length && tabs[0].url) {
       const m = tabs[0].url.match(/project\/([a-f0-9\-]{36})/i);
       if (m && m[1]) {
@@ -1697,7 +1697,7 @@ async function generateAllFinanceImages() {
   
   if (!projectId) {
     try {
-      const tabs = await chrome.tabs.query({ url: "https://labs.google/*" });
+      const tabs = await chrome.tabs.query({ url: ["https://labs.google/*", "https://flow.google.com/*"] });
       if (tabs.length && tabs[0].url) {
         const m = tabs[0].url.match(/project\/([a-f0-9\-]{36})/i);
         if (m && m[1]) projectId = m[1];

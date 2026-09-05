@@ -12,6 +12,6 @@ document.getElementById('btnFullTab').addEventListener('click', () => {
 });
 
 document.getElementById('btnOpenFlow').addEventListener('click', () => {
-  chrome.tabs.create({ url: 'https://labs.google/fx/tools/flow' });
+  chrome.tabs.create({ url: 'https://flow.google.com' });
   window.close();
 });
