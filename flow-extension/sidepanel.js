@@ -1230,6 +1230,7 @@
     bindClick('btnTestStep4_2', () => runTest4(4.2, "Thời lượng"));
     bindClick('btnTestStep4_3', () => runTest4(4.3, "Số lượng"));
     bindClick('btnTestStep4_4', () => runTest4(4.4, "Model Video"));
+    bindClick('btnTestStep4_6', () => runTest4(4.6, "Quét Upload"));
     bindClick('btnTestStep4', () => runTest4(4, "All Config"));
     
     bindClick('btnCreate', createVideo);
