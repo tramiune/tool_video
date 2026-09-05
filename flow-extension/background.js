@@ -1079,7 +1079,11 @@ func: async (promptText, cfg) => {
             const durButtons = queryScopeDeep(durScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
             const durBtn = durButtons.find(b => {
               const t = (b.textContent || "").trim();
-              return (t === targetDuration || t.includes(targetDuration)) && !t.includes("4s") && !t.includes("6s") && !t.includes("10s");
+              if (t === targetDuration || t.includes(targetDuration)) {
+                 const others = ["4s", "5s", "6s", "8s", "10s"].filter(x => x !== targetDuration);
+                 return !others.some(x => t.includes(x));
+              }
+              return false;
             });
             if (durBtn) triggerClick(durBtn);
             await sleep(400);
@@ -1088,8 +1092,13 @@ func: async (promptText, cfg) => {
             const countScope = getPopover() || popover || document;
             const countButtons = queryScopeDeep(countScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
             const countBtn = countButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              return (t === targetCount || t.includes(targetCount) || t === "1x") && !t.includes("x2") && !t.includes("x3") && !t.includes("x4");
+              const t = (b.textContent || "").trim().toLowerCase();
+              const tc = targetCount.toLowerCase();
+              if (t === tc || t.includes(tc) || (tc==="x1" && t==="1x")) {
+                 const others = ["x1", "x2", "x3", "x4"].filter(x => x !== tc);
+                 return !others.some(x => t.includes(x));
+              }
+              return false;
             });
             if (countBtn) triggerClick(countBtn);
             await sleep(400);
@@ -1115,9 +1124,29 @@ func: async (promptText, cfg) => {
                 const candidates = queryDeep("[role='option'], [role='menuitem'], button, div, span, li").filter(el => isElemVisible(el));
                 const targetOpt = candidates.find(el => {
                   const ot = (el.textContent || "").toLowerCase();
-                  const matches = ot.includes("lower priority") || ot.includes("lite [lower priority]") || ot.includes("ưu tiên thấp");
-                  // Exclude parent wrapper/containers that contain other option names
-                  const isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 55;
+                  let mTxt = (cfg?.model || "veo_3_1_lite_low_priority").toLowerCase();
+                  let matches = false;
+                  let isContainer = false;
+                  
+                  if (mTxt === "veo_3_1_t2v_lite_low_priority" || mTxt === "veo_3_1_lite_low_priority") {
+                     matches = ot.includes("lower priority") || ot.includes("lite [lower priority]") || ot.includes("ưu tiên thấp");
+                     isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 55;
+                  } else if (mTxt === "veo_3_1_lite") {
+                     matches = (ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp"));
+                     isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 55;
+                  } else if (mTxt === "veo_3_1_fast") {
+                     matches = ot.includes("fast");
+                     isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("lite") || ot.length > 55;
+                  } else if (mTxt === "veo_3_1_quality") {
+                     matches = ot.includes("quality");
+                     isContainer = ot.includes("omni") || ot.includes("fast") || ot.includes("lite") || ot.length > 55;
+                  } else if (mTxt === "abra") {
+                     matches = ot.includes("omni") || ot.includes("flash");
+                     isContainer = ot.includes("quality") || ot.includes("fast") || ot.includes("lite") || ot.length > 55;
+                  } else {
+                     matches = ot.includes("lower priority"); // fallback
+                  }
+                  
                   return matches && !isContainer;
                 });
 
@@ -3079,7 +3108,11 @@ async function testUiStep(step, req) {
             const durButtons = queryScopeDeep(durScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
             const durBtn = durButtons.find(b => {
               const t = (b.textContent || "").trim();
-              return (t === targetDuration || t.includes(targetDuration)) && !t.includes("4s") && !t.includes("6s") && !t.includes("10s");
+              if (t === targetDuration || t.includes(targetDuration)) {
+                 const others = ["4s", "5s", "6s", "8s", "10s"].filter(x => x !== targetDuration);
+                 return !others.some(x => t.includes(x));
+              }
+              return false;
             });
             if (durBtn) triggerClick(durBtn);
             await sleep(400);
@@ -3088,8 +3121,13 @@ async function testUiStep(step, req) {
             const countScope = getPopover() || popover || document;
             const countButtons = queryScopeDeep(countScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
             const countBtn = countButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              return (t === targetCount || t.includes(targetCount) || t === "1x") && !t.includes("x2") && !t.includes("x3") && !t.includes("x4");
+              const t = (b.textContent || "").trim().toLowerCase();
+              const tc = targetCount.toLowerCase();
+              if (t === tc || t.includes(tc) || (tc==="x1" && t==="1x")) {
+                 const others = ["x1", "x2", "x3", "x4"].filter(x => x !== tc);
+                 return !others.some(x => t.includes(x));
+              }
+              return false;
             });
             if (countBtn) triggerClick(countBtn);
             await sleep(400);
@@ -3115,9 +3153,29 @@ async function testUiStep(step, req) {
                 const candidates = queryDeep("[role='option'], [role='menuitem'], button, div, span, li").filter(el => isElemVisible(el));
                 const targetOpt = candidates.find(el => {
                   const ot = (el.textContent || "").toLowerCase();
-                  const matches = ot.includes("lower priority") || ot.includes("lite [lower priority]") || ot.includes("ưu tiên thấp");
-                  // Exclude parent wrapper/containers that contain other option names
-                  const isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 55;
+                  let mTxt = (cfg?.model || "veo_3_1_lite_low_priority").toLowerCase();
+                  let matches = false;
+                  let isContainer = false;
+                  
+                  if (mTxt === "veo_3_1_t2v_lite_low_priority" || mTxt === "veo_3_1_lite_low_priority") {
+                     matches = ot.includes("lower priority") || ot.includes("lite [lower priority]") || ot.includes("ưu tiên thấp");
+                     isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 55;
+                  } else if (mTxt === "veo_3_1_lite") {
+                     matches = (ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp"));
+                     isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 55;
+                  } else if (mTxt === "veo_3_1_fast") {
+                     matches = ot.includes("fast");
+                     isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("lite") || ot.length > 55;
+                  } else if (mTxt === "veo_3_1_quality") {
+                     matches = ot.includes("quality");
+                     isContainer = ot.includes("omni") || ot.includes("fast") || ot.includes("lite") || ot.length > 55;
+                  } else if (mTxt === "abra") {
+                     matches = ot.includes("omni") || ot.includes("flash");
+                     isContainer = ot.includes("quality") || ot.includes("fast") || ot.includes("lite") || ot.length > 55;
+                  } else {
+                     matches = ot.includes("lower priority"); // fallback
+                  }
+                  
                   return matches && !isContainer;
                 });
 
@@ -3147,7 +3205,7 @@ async function testUiStep(step, req) {
           // ──────────────────────────────────────────────
 } catch(e) { throw e; }
 
-          return "Đã bấm chọn xong Cấu Hình (Tỷ Lệ, Thời Lượng, Model...)! Bạn kiểm tra lại trên giao diện nhé.";
+          return `Đã config xong: Tỷ lệ ${targetRatio}, Model ${cfg?.model}, Thời lượng ${targetDuration}, Số lượng ${targetCount}. Bạn kiểm tra lại trên màn hình nhé!`;
         }
 
         return "Unknown step";
