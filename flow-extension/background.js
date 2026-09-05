@@ -893,29 +893,45 @@ func: async (promptText, cfg) => {
 
         // Identify settings chip button (e.g. "Video · 720p · 8s · x2" or "Nano Banana")
         // To avoid clicking the "Back" button or random header buttons, we must be more specific.
-        let settingsChip = composerButtons.find(b => {
-          if (b === submitBtn) return false;
-          if (b.offsetParent === null) return false;
-          const t = (b.textContent || "").trim().toLowerCase();
-          // The chip usually contains indicators like "video", "ảnh", "image", "s", "p", "x"
-          if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.match(/\b(720p|1080p|4k|giây|fps)\b/i) || t.match(/^\d+s/i)) {
-            return true;
-          }
-          return false;
-        });
-        
-        // Fallback: If not found by text, try to find a button that is physically close to submitBtn in the DOM tree
-        if (!settingsChip && submitBtn) {
+        // Chỉ tìm Settings Chip xung quanh khu vực của submitBtn (để tránh click nhầm vào các video trong danh sách)
+        let settingsChip = null;
+        if (submitBtn) {
            let parent = submitBtn;
-           for(let i = 0; i < 6 && parent; i++) {
+           for (let i = 0; i < 8 && parent; i++) {
              parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
              if (!parent) break;
              const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
-             const candidate = buttonsHere.find(b => b !== submitBtn && b.offsetParent !== null && !b.innerHTML.toLowerCase().includes("add") && (b.textContent || "").trim() !== "+");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn) return false;
+                if (b.offsetParent === null) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                const h = (b.innerHTML || "").toLowerCase();
+                // Ưu tiên nút có chứa các thông số cài đặt
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.match(/\b(720p|1080p|4k|giây|fps)\b/i) || t.match(/^\d+s/i)) {
+                   return true;
+                }
+                return false;
+             });
+             
              if (candidate) {
                settingsChip = candidate;
                break;
              }
+           }
+           
+           // Nếu vẫn không thấy bằng text, chọn một nút bất kỳ cạnh submitBtn không phải là nút "+" hay "add"
+           if (!settingsChip) {
+              parent = submitBtn;
+              for (let i = 0; i < 8 && parent; i++) {
+                 parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+                 if (!parent) break;
+                 const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+                 const candidate = buttonsHere.find(b => b !== submitBtn && b.offsetParent !== null && !b.innerHTML.toLowerCase().includes("add") && (b.textContent || "").trim() !== "+");
+                 if (candidate) {
+                   settingsChip = candidate;
+                   break;
+                 }
+              }
            }
         }
 
@@ -2855,27 +2871,43 @@ async function testUiStep(step, req) {
           return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send";
         });
 
-        let settingsChip = composerButtons.find(b => {
-          if (b === submitBtn) return false;
-          if (b.offsetParent === null) return false;
-          const t = (b.textContent || "").trim().toLowerCase();
-          if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.match(/\b(720p|1080p|4k|giây|fps)\b/i) || t.match(/^\d+s/i)) {
-            return true;
-          }
-          return false;
-        });
-        
-        if (!settingsChip && submitBtn) {
+        // Chỉ tìm Settings Chip xung quanh khu vực của submitBtn (để tránh click nhầm vào các video trong danh sách)
+        let settingsChip = null;
+        if (submitBtn) {
            let parent = submitBtn;
-           for(let i = 0; i < 6 && parent; i++) {
+           for (let i = 0; i < 8 && parent; i++) {
              parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
              if (!parent) break;
              const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
-             const candidate = buttonsHere.find(b => b !== submitBtn && b.offsetParent !== null && !b.innerHTML.toLowerCase().includes("add") && (b.textContent || "").trim() !== "+");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn) return false;
+                if (b.offsetParent === null) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                // Ưu tiên nút có chứa các thông số cài đặt
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.match(/\b(720p|1080p|4k|giây|fps)\b/i) || t.match(/^\d+s/i)) {
+                   return true;
+                }
+                return false;
+             });
+             
              if (candidate) {
                settingsChip = candidate;
                break;
              }
+           }
+           
+           if (!settingsChip) {
+              parent = submitBtn;
+              for (let i = 0; i < 8 && parent; i++) {
+                 parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+                 if (!parent) break;
+                 const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+                 const candidate = buttonsHere.find(b => b !== submitBtn && b.offsetParent !== null && !b.innerHTML.toLowerCase().includes("add") && (b.textContent || "").trim() !== "+");
+                 if (candidate) {
+                   settingsChip = candidate;
+                   break;
+                 }
+              }
            }
         }
 
