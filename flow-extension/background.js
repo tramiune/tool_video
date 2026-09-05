@@ -1,19 +1,20 @@
 // Flow Studio Bridge — Background Service Worker v3.3
-// Uses captured auth token from Flow's own API calls
+// Uses captured auth token from Flow's own API calls (Isolated Per-Tab)
 "use strict";
 
-let cachedAuthToken = null;
-let cachedAuthTokenTime = 0;
+// ── Auth Token Management (Isolated Per-Tab) ──
+// Map: tabId -> { auth: string, time: number }
+const tabAuthTokens = new Map();
 const MAX_TOKEN_AGE_MS = 50 * 60 * 1000; // 50 phút
 
-// ── Auth Token Management ──
+// Dọn dẹp token khi tab đóng
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabAuthTokens.delete(tabId);
+});
+
 async function invalidateAuthToken(flowTab = null) {
-  cachedAuthToken = null;
-  cachedAuthTokenTime = 0;
-  try {
-    await chrome.storage.local.remove(["flowAuthToken", "capturedAuth"]);
-  } catch (_) {}
   if (flowTab?.id) {
+    tabAuthTokens.delete(flowTab.id);
     try {
       await chrome.scripting.executeScript({
         target: { tabId: flowTab.id },
@@ -28,9 +29,6 @@ async function invalidateAuthToken(flowTab = null) {
               sessionStorage.removeItem("__flow_saved_auth");
               sessionStorage.removeItem("__flow_saved_auth_time");
               sessionStorage.removeItem("flow_auth_token");
-              localStorage.removeItem("__flow_saved_auth");
-              localStorage.removeItem("__flow_saved_auth_time");
-              localStorage.removeItem("flow_auth_token");
             } catch (_) {}
           }
         }
@@ -40,83 +38,108 @@ async function invalidateAuthToken(flowTab = null) {
 }
 
 async function getFreshAuthToken(flowTab, allowExpired = false) {
+  if (!flowTab?.id) return null;
+  const tabId = flowTab.id;
   const now = Date.now();
 
-  // 1. Kiểm tra cachedAuthToken trong memory
-  if (cachedAuthToken && (allowExpired || (cachedAuthTokenTime > 0 && now - cachedAuthTokenTime < MAX_TOKEN_AGE_MS))) {
-    return cachedAuthToken;
+  // 1. Kiểm tra trong memory map của tab này
+  const cached = tabAuthTokens.get(tabId);
+  if (cached?.auth && (allowExpired || (cached.time > 0 && now - cached.time < MAX_TOKEN_AGE_MS))) {
+    return cached.auth;
   }
 
-  // 2. Đọc từ world MAIN của flowTab
-  if (flowTab?.id) {
-    try {
-      const authResults = await chrome.scripting.executeScript({
-        target: { tabId: flowTab.id },
-        world: "MAIN",
-        func: () => {
-          const auth = window.__flowAuth || sessionStorage.getItem("__flow_saved_auth") || localStorage.getItem("__flow_saved_auth") || "";
-          const savedTime = window.__flowAuthTime || parseInt(sessionStorage.getItem("__flow_saved_auth_time") || localStorage.getItem("__flow_saved_auth_time") || "0", 10);
-          return { auth, savedTime };
-        }
-      });
-      const data = authResults?.[0]?.result;
-      if (data?.auth) {
-        const age = now - (data.savedTime || 0);
-        if (allowExpired || !data.savedTime || age < MAX_TOKEN_AGE_MS) {
-          cachedAuthToken = data.auth;
-          cachedAuthTokenTime = data.savedTime || now;
-          return cachedAuthToken;
-        }
+  // 2. Đọc từ world MAIN của chính flowTab này
+  try {
+    const authResults = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const auth = window.__flowAuth || sessionStorage.getItem("__flow_saved_auth") || "";
+        const savedTime = window.__flowAuthTime || parseInt(sessionStorage.getItem("__flow_saved_auth_time") || "0", 10);
+        return { auth, savedTime };
       }
-    } catch (e) {
-      console.warn("❌ Lỗi đọc auth từ Flow tab:", e);
+    });
+    const data = authResults?.[0]?.result;
+    if (data?.auth && data.auth.startsWith("Bearer ya29")) {
+      const age = now - (data.savedTime || 0);
+      if (allowExpired || !data.savedTime || age < MAX_TOKEN_AGE_MS) {
+        tabAuthTokens.set(tabId, { auth: data.auth, time: data.savedTime || now });
+        return data.auth;
+      }
     }
+  } catch (e) {
+    console.warn(`❌ Lỗi đọc auth từ Flow tab ${tabId}:`, e);
   }
 
   return null;
 }
 
+async function triggerTokenGenerationInTab(tabId) {
+  if (!tabId) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: async () => {
+        try {
+          // Gửi request nội bộ bằng credentials của chính tab để Flow mint/send token ya29
+          fetch("https://labs.google/fx/api/trpc/project.searchUserProjects?input=%7B%7D", { credentials: "include" }).catch(() => {});
+          fetch("https://aisandbox-pa.googleapis.com/v1/flowWorkflows", { credentials: "include" }).catch(() => {});
+        } catch (_) {}
+      }
+    });
+  } catch (_) {}
+}
+
 async function refreshAuthByReloadingTab(flowTab, purpose = 'Flow Tab') {
   if (!flowTab?.id) return null;
-  logToBridge(`[Auth Engine] Token hết hạn hoặc chưa có, đang tự động F5 ${purpose} để lấy token mới toanh...`);
+  const tabId = flowTab.id;
+  logToBridge(`[Auth Engine] Đang tìm kiếm Auth Token cho ${purpose} (Tab ID: ${tabId})...`);
 
-  // 1. Xóa token cũ mọi nơi
-  await invalidateAuthToken(flowTab);
+  // Bước 1: Kiểm tra xem tab đã có token sẵn chưa
+  let existingAuth = await getFreshAuthToken(flowTab);
+  if (existingAuth) {
+    logToBridge(`[Auth Engine] ✅ Đã có sẵn Auth Token hợp lệ cho ${purpose}!`);
+    return existingAuth;
+  }
 
-  // 2. F5 lại tab
+  // Bước 2: Chủ động kích hoạt request nội bộ trong chính tab đó để sinh token (không cần reload ngay)
+  logToBridge(`[Auth Engine] Chủ động kích hoạt phiên tạo token trong ${purpose}...`);
+  await triggerTokenGenerationInTab(tabId);
+  for (let i = 0; i < 5; i++) {
+    await new Promise(r => setTimeout(r, 600));
+    const token = await getFreshAuthToken(flowTab);
+    if (token) {
+      logToBridge(`[Auth Engine] ✅ Kích hoạt thành công! Đã bắt được Auth Token từ ${purpose}!`);
+      return token;
+    }
+  }
+
+  // Bước 3: Nếu vẫn chưa có token -> F5 lại tab, nhưng TUYỆT ĐỐI KHÔNG XÓA TOKEN TRƯỚC ĐÓ
+  logToBridge(`[Auth Engine] F5 ${purpose} để nạp lại phiên...`);
   try {
-    await chrome.tabs.reload(flowTab.id);
+    await chrome.tabs.reload(tabId);
   } catch (e) {
     console.warn("Lỗi reload tab:", e);
   }
 
-  // 3. Đợi trang tải lại và bắt token mới (thử trong tối đa 10s, mỗi 600ms)
+  // Đợi trang tải lại và chủ động kích hoạt lại
   const startTime = Date.now();
-  while (Date.now() - startTime < 10000) {
-    await new Promise(r => setTimeout(r, 600));
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: flowTab.id },
-        world: "MAIN",
-        func: () => {
-          const a = window.__flowAuth || sessionStorage.getItem("__flow_saved_auth") || "";
-          const t = window.__flowAuthTime || parseInt(sessionStorage.getItem("__flow_saved_auth_time") || "0", 10) || 0;
-          return { auth: a, time: t };
-        }
-      });
-      const res = results?.[0]?.result;
-      if (res?.auth && res.auth.startsWith("Bearer ya29")) {
-        cachedAuthToken = res.auth;
-        cachedAuthTokenTime = res.time || Date.now();
-        logToBridge(`[Auth Engine] ✅ Đã bắt được Auth Token mới toanh từ ${purpose}!`);
-        return cachedAuthToken;
-      }
-    } catch (_) {}
+  while (Date.now() - startTime < 12000) {
+    await new Promise(r => setTimeout(r, 800));
+    const token = await getFreshAuthToken(flowTab);
+    if (token) {
+      logToBridge(`[Auth Engine] ✅ Đã bắt được Auth Token mới từ ${purpose}!`);
+      return token;
+    }
+    // Cứ mỗi 3s thử kích hoạt lại 1 lần
+    if ((Date.now() - startTime) % 3000 < 800) {
+      await triggerTokenGenerationInTab(tabId);
+    }
   }
 
-  logToBridge(`[Auth Engine] ⚠️ Đã F5 ${purpose} nhưng chưa bắt được token mới. Đợi thêm 2s...`);
-  await new Promise(r => setTimeout(r, 2000));
-  return cachedAuthToken;
+  logToBridge(`[Auth Engine] ⚠️ Đã thử lấy token cho ${purpose} nhưng chưa bắt được. Vui lòng kiểm tra tab đã đăng nhập.`);
+  return tabAuthTokens.get(tabId)?.auth || null;
 }
 
 const TRPC_BASE = "https://labs.google/fx/api/trpc";
@@ -132,9 +155,21 @@ const MODEL_NAMES = {
 // ── Message Handler ──
 function handleMessage(req, sender, sendResponse) {
   console.log("📥 BG:", req.action, req);
+
+  // Nhận token được bắt từ MAIN world qua content_script
+  if (req.action === "FLOW_AUTH_CAPTURED") {
+    if (sender?.tab?.id && req.auth) {
+      const tabId = sender.tab.id;
+      tabAuthTokens.set(tabId, { auth: req.auth, time: req.time || Date.now() });
+      console.log(`[Auth Engine] Captured fresh auth token for tab ${tabId} (${req.auth.slice(0, 25)}...)`);
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
   const handler = HANDLERS[req.action];
   if (!handler) { sendResponse({ success: false, error: "Unknown: " + req.action }); return true; }
-  handler(req)
+  handler(req, sender)
     .then(r => { console.log("✅", r); sendResponse(r); })
     .catch(e => { console.error("❌", e); sendResponse({ success: false, error: e.message }); });
   return true;
@@ -1564,9 +1599,10 @@ async function uploadImage(projectId, imageUrl, imageBase64, shouldReload = true
     const raw = results?.[0]?.result;
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
 
-    // ── XỬ LÝ LỖI 401: TỰ ĐỘNG XÓA TOKEN CŨ, F5 TAB LẤY TOKEN MỚI VÀ RETRY 1 LẦN ──
+    // ── XỬ LÝ LỖI 401: TỰ ĐỘNG XÓA TOKEN CŨ CỦA TAB NÀY, F5 TAB LẤY TOKEN MỚI VÀ RETRY 1 LẦN ──
     if (parsed?.error && (parsed.status === 401 || String(parsed.error).includes("401")) && !isRetry) {
-      logToBridge(`[Upload Engine] ⚠️ Phát hiện lỗi 401 (Token hết hạn), đang tự động F5 tab lấy token mới và upload lại...`);
+      logToBridge(`[Upload Engine] ⚠️ Phát hiện lỗi 401 (Token hết hạn trên tab ${flowTab.id}), đang tự động lấy token mới và upload lại...`);
+      await invalidateAuthToken(flowTab);
       await refreshAuthByReloadingTab(flowTab, tabType === 'video' ? 'Tab Video' : 'Tab Tạo Ảnh');
       return await uploadImage(projectId, imageUrl, b64, shouldReload, true, tabType);
     }
@@ -1834,9 +1870,10 @@ async function createImageAPI(prompt, projectId, model, aspectRatio, referenceIm
     if (!raw) return { success: false, error: "Response rỗng từ tab Flow" };
     let p; try { p = JSON.parse(raw); } catch { p = raw; }
 
-    // ── XỬ LÝ LỖI 401: TỰ ĐỘNG XÓA TOKEN CŨ, F5 TAB LẤY TOKEN MỚI VÀ RETRY 1 LẦN ──
+    // ── XỬ LÝ LỖI 401: TỰ ĐỘNG XÓA TOKEN CŨ CỦA TAB NÀY, F5 TAB LẤY TOKEN MỚI VÀ RETRY 1 LẦN ──
     if (p?.error && (p.status === 401 || String(p.error).includes("401")) && !isRetry) {
-      logToBridge(`[Image Engine] ⚠️ Phát hiện lỗi 401 (Token hết hạn), đang tự động F5 Tab Tạo Ảnh để lấy token mới...`);
+      logToBridge(`[Image Engine] ⚠️ Phát hiện lỗi 401 (Token hết hạn trên tab ${flowTab.id}), đang tự động lấy token mới...`);
+      await invalidateAuthToken(flowTab);
       await refreshAuthByReloadingTab(flowTab, 'Tab Tạo Ảnh');
       return await createImageAPI(prompt, projectId, model, aspectRatio, referenceImage, true);
     }

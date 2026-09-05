@@ -3,7 +3,17 @@
 
 (function() {
   "use strict";
-  if (typeof chrome === "undefined" || !chrome.runtime) return;
+  // Forward auth token captured in MAIN world to background service worker
+  window.addEventListener("message", (event) => {
+    if (event.source !== window || !event.data || event.data.type !== "__FLOW_AUTH_CAPTURED") return;
+    try {
+      chrome.runtime.sendMessage({
+        action: "FLOW_AUTH_CAPTURED",
+        auth: event.data.auth,
+        time: event.data.time
+      });
+    } catch (_) {}
+  });
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 

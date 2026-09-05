@@ -5,19 +5,29 @@
   const _origFetch = window.fetch;
   
   // Restore cached auth immediately on page load ONLY IF FRESH (< 50 mins old)
+  // NOTE: Use sessionStorage ONLY so each tab maintains its own isolated auth context!
   try {
-    const savedTime = parseInt(sessionStorage.getItem("__flow_saved_auth_time") || localStorage.getItem("__flow_saved_auth_time") || "0", 10);
+    const savedTime = parseInt(sessionStorage.getItem("__flow_saved_auth_time") || "0", 10);
     const age = Date.now() - savedTime;
     if (savedTime > 0 && age < 50 * 60 * 1000) {
-      window.__flowAuth = sessionStorage.getItem("__flow_saved_auth") || localStorage.getItem("__flow_saved_auth") || null;
+      window.__flowAuth = sessionStorage.getItem("__flow_saved_auth") || null;
       window.__flowAuthTime = savedTime;
+      if (window.__flowAuth) {
+        setTimeout(() => {
+          try {
+            window.postMessage({
+              type: "__FLOW_AUTH_CAPTURED",
+              auth: window.__flowAuth,
+              time: window.__flowAuthTime
+            }, "*");
+          } catch (_) {}
+        }, 100);
+      }
     } else {
       window.__flowAuth = null;
       window.__flowAuthTime = 0;
       sessionStorage.removeItem("__flow_saved_auth");
       sessionStorage.removeItem("__flow_saved_auth_time");
-      localStorage.removeItem("__flow_saved_auth");
-      localStorage.removeItem("__flow_saved_auth_time");
     }
   } catch (e) {
     window.__flowAuth = null;
@@ -32,9 +42,6 @@
       sessionStorage.removeItem("__flow_saved_auth");
       sessionStorage.removeItem("__flow_saved_auth_time");
       sessionStorage.removeItem("flow_auth_token");
-      localStorage.removeItem("__flow_saved_auth");
-      localStorage.removeItem("__flow_saved_auth_time");
-      localStorage.removeItem("flow_auth_token");
     } catch (_) {}
   };
 
@@ -45,9 +52,16 @@
     try {
       sessionStorage.setItem("__flow_saved_auth", authVal);
       sessionStorage.setItem("__flow_saved_auth_time", String(Date.now()));
-      localStorage.setItem("__flow_saved_auth", authVal);
-      localStorage.setItem("__flow_saved_auth_time", String(Date.now()));
     } catch (e) {}
+
+    // Broadcast to content_script so background knows auth for this tabId
+    try {
+      window.postMessage({
+        type: "__FLOW_AUTH_CAPTURED",
+        auth: authVal,
+        time: window.__flowAuthTime
+      }, "*");
+    } catch (_) {}
   }
 
   // Hook XMLHttpRequest
