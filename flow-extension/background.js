@@ -167,6 +167,34 @@ function handleMessage(req, sender, sendResponse) {
     return true;
   }
 
+  // Nhận request batchexecute kiểu mới được bắt từ MAIN world
+  if (req.action === "FLOW_BATCHEXECUTE_CAPTURED") {
+    const tabId = sender?.tab?.id || 'unknown';
+    const rpcIds = req.rpcIds || 'batchexecute';
+    const isL2jnw = rpcIds.includes('L2jnw') || JSON.stringify(req.fReq || '').includes('L2jnw');
+    
+    logToBridge(`[New API Captured] 🚀 Tab ${tabId} vừa gọi batchexecute: RPC [${rpcIds}]`);
+    console.log(`🚀 [New API Captured Tab ${tabId}]: RPC [${rpcIds}]`, req);
+
+    if (isL2jnw) {
+      const summary = JSON.stringify(req.fReq).slice(0, 300);
+      logToBridge(`[New API Captured] 🔥 TÓM ĐƯỢC CẤU TRÚC L2jnw (StreamGenerateContent): ${summary}...`);
+      try {
+        chrome.storage.local.set({
+          captured_L2jnw: {
+            url: req.url,
+            at: req.at,
+            fReq: req.fReq,
+            time: req.time || Date.now()
+          }
+        });
+      } catch (_) {}
+    }
+
+    sendResponse({ success: true });
+    return true;
+  }
+
   const handler = HANDLERS[req.action];
   if (!handler) { sendResponse({ success: false, error: "Unknown: " + req.action }); return true; }
   handler(req, sender)

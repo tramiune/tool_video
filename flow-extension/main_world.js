@@ -64,13 +64,94 @@
     } catch (_) {}
   }
 
-  // Hook XMLHttpRequest
+  // ══════════════════════════════════════
+  // Helper to parse and log batchexecute & new Flow API calls
+  // ══════════════════════════════════════
+  function handleCapturedBatchexecute(url, body) {
+    try {
+      const urlStr = (typeof url === 'string') ? url : url?.toString() || '';
+      const bodyStr = (typeof body === 'string') ? body : (body ? body.toString() : '');
+      if (!urlStr && !bodyStr) return;
+
+      let parsedFReq = null;
+      if (bodyStr && bodyStr.includes('f.req=')) {
+        const match = bodyStr.match(/f\.req=([^&]+)/);
+        if (match && match[1]) {
+          try {
+            parsedFReq = JSON.parse(decodeURIComponent(match[1]));
+          } catch (_) {}
+        }
+      }
+
+      const atMatch = bodyStr.match(/at=([^&]+)/);
+      const atToken = atMatch ? decodeURIComponent(atMatch[1]) : null;
+
+      // Extract RPC IDs from URL or body
+      let rpcIds = "";
+      if (urlStr.includes('rpcids=')) {
+        const rm = urlStr.match(/rpcids=([^&]+)/);
+        if (rm) rpcIds = decodeURIComponent(rm[1]);
+      } else if (Array.isArray(parsedFReq)) {
+        rpcIds = parsedFReq.map(item => item?.[0]?.[0] || item?.[0]).filter(Boolean).join(',');
+      }
+
+      console.log(`🚀 [Captured Flow New API (${rpcIds || 'batchexecute'})]:`, urlStr);
+      if (parsedFReq) {
+        console.log('📦 [batchexecute payload]:', JSON.stringify(parsedFReq, null, 2));
+      }
+
+      // Check if it's L2jnw (StreamGenerateContent)
+      if (rpcIds.includes('L2jnw') || bodyStr.includes('L2jnw')) {
+        window.__flowLastL2jnw = {
+          url: urlStr,
+          at: atToken,
+          fReq: parsedFReq,
+          rawBody: bodyStr,
+          time: Date.now()
+        };
+        console.log('🔥 [Captured L2jnw StreamGenerateContent!]:', parsedFReq);
+      }
+
+      window.postMessage({
+        type: "__FLOW_BATCHEXECUTE_CAPTURED",
+        url: urlStr,
+        rpcIds: rpcIds,
+        at: atToken,
+        fReq: parsedFReq,
+        time: Date.now()
+      }, "*");
+    } catch (err) {
+      console.warn('Error in handleCapturedBatchexecute:', err);
+    }
+  }
+
+  // Hook XMLHttpRequest (both setRequestHeader and open/send for batchexecute)
   const origSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
     if (header && header.toLowerCase() === "authorization") {
       saveAuth(value);
     }
     return origSetRequestHeader.apply(this, arguments);
+  };
+
+  const origOpen = XMLHttpRequest.prototype.open;
+  const origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this.__flowUrl = (typeof url === 'string') ? url : url?.toString() || '';
+    this.__flowMethod = method;
+    return origOpen.apply(this, [method, url, ...rest]);
+  };
+
+  XMLHttpRequest.prototype.send = function(body) {
+    if (this.__flowUrl && (this.__flowUrl.includes('batchexecute') || this.__flowUrl.includes('FlowService') || this.__flowUrl.includes('upload'))) {
+      handleCapturedBatchexecute(this.__flowUrl, body);
+      this.addEventListener('load', () => {
+        try {
+          console.log(`📥 [XHR Response (${this.__flowUrl.slice(0, 60)})]:`, (this.responseText || '').slice(0, 600));
+        } catch (_) {}
+      });
+    }
+    return origSend.apply(this, arguments);
   };
 
   window.fetch = function(...args) {
@@ -88,7 +169,21 @@
       if (authVal) saveAuth(authVal);
     }
 
-    // Capture video generation request body and headers
+    // Capture new Flow Boq batchexecute / FlowService / upload requests
+    if (urlStr.includes('batchexecute') || urlStr.includes('FlowService') || urlStr.includes('StreamGenerateContent') || urlStr.includes('upload')) {
+      handleCapturedBatchexecute(urlStr, opts?.body);
+      const resPromise = _origFetch.apply(this, args);
+      resPromise.then(async (res) => {
+        try {
+          const clone = res.clone();
+          const txt = await clone.text();
+          console.log(`📥 [API Response (${urlStr.slice(0, 60)})]:`, txt.slice(0, 600));
+        } catch (_) {}
+      }).catch(() => {});
+      return resPromise;
+    }
+
+    // Capture video generation request body and headers (legacy format)
     if (urlStr.includes('batchAsyncGenerateVideo') || urlStr.includes('batchGenerateImage')) {
       if (opts?.body) {
         try {

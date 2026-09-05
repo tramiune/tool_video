@@ -5,14 +5,28 @@
   "use strict";
   // Forward auth token captured in MAIN world to background service worker
   window.addEventListener("message", (event) => {
-    if (event.source !== window || !event.data || event.data.type !== "__FLOW_AUTH_CAPTURED") return;
-    try {
-      chrome.runtime.sendMessage({
-        action: "FLOW_AUTH_CAPTURED",
-        auth: event.data.auth,
-        time: event.data.time
-      });
-    } catch (_) {}
+    if (event.source !== window || !event.data) return;
+    if (event.data.type === "__FLOW_AUTH_CAPTURED") {
+      try {
+        chrome.runtime.sendMessage({
+          action: "FLOW_AUTH_CAPTURED",
+          auth: event.data.auth,
+          time: event.data.time
+        });
+      } catch (_) {}
+    }
+    if (event.data.type === "__FLOW_BATCHEXECUTE_CAPTURED") {
+      try {
+        chrome.runtime.sendMessage({
+          action: "FLOW_BATCHEXECUTE_CAPTURED",
+          url: event.data.url,
+          rpcIds: event.data.rpcIds,
+          at: event.data.at,
+          fReq: event.data.fReq,
+          time: event.data.time
+        });
+      } catch (_) {}
+    }
   });
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
