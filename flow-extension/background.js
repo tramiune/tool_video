@@ -3028,19 +3028,38 @@ async function testUiStep(step, req) {
                 
                 let editor = editors.length > 0 ? editors[0] : null;
                 const activePrompt = editors.find(e => {
-                  const id = (e.getAttribute("id") || "").toLowerCase();
                   const ph = (e.getAttribute("placeholder") || "").toLowerCase();
-                  const aria = (e.getAttribute("aria-label") || "").toLowerCase();
-                  return id.includes("prompt") || ph.includes("prompt") || aria.includes("prompt") || e.classList.contains("ProseMirror");
+                  return ph.includes("prompt") || e.classList.contains("ProseMirror");
                 });
                 if (activePrompt) editor = activePrompt;
+
+                // SPECIAL FOR KHUNG HÌNH: The prompt editor is actually INSIDE the settings popover!
+                const activePopover = queryDeep("div[role='dialog'], div[data-radix-popper-content-wrapper], div[class*='popover']").find(d => {
+                  if (!isElemVisible(d)) return false;
+                  const t = d.textContent || "";
+                  return (t.includes("9:16") || t.includes("16:9") || t.includes("Bạn muốn tạo"));
+                });
                 
-                if (!editor) throw new Error("Không tìm thấy ô nhập Prompt (editor) giống như Bước 1!");
+                if (activePopover) {
+                  const popoverEditors = queryScopeDeep(activePopover, "div.ProseMirror, div[contenteditable='true'], textarea, input[type='text']").filter(isElemVisible);
+                  if (popoverEditors.length > 0) {
+                     editor = popoverEditors[0];
+                     const innerPrompt = popoverEditors.find(e => {
+                        const ph = (e.getAttribute("placeholder") || "").toLowerCase();
+                        return ph.includes("bạn muốn tạo") || e.classList.contains("ProseMirror");
+                     });
+                     if (innerPrompt) editor = innerPrompt;
+                  }
+                }
                 
-                // Cực kỳ bạo lực để focus
+                if (!editor) throw new Error("Không tìm thấy ô nhập Prompt (editor)!");
+                
+                // Focus the target editor
                 editor.scrollIntoView({ block: "center" });
-                triggerClick(editor);
+                editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+                editor.click();
                 editor.focus();
+                editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
                 await sleep(300);
 
                 if (stepIdx === 4.7) {
