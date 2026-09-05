@@ -2936,68 +2936,218 @@ async function testUiStep(step, req) {
         
         if (stepIdx === 4) {
           if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
-          
-          // Ensure menu is open (if it's not already)
-          // We can just click it and wait
-          settingsChip.click();
-          await sleep(500);
 
-          const allMenuOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
-          if (!allMenuOptions.length) throw new Error("Không tìm thấy Menu Options (Dropdown chưa mở?)");
-          
-          let logs = [];
+        // STEP 2: Configure Video Settings (Mode, Ratio, Duration, Count, Model)
+        // ──────────────────────────────────────────────
+        try {
+          const targetRatio = cfg?.aspectRatio || "9:16";
+          const targetDuration = cfg?.duration || "8s";
+          const targetCount = cfg?.count || "x1";
 
-          // Mode
-          const isVideoMode = !cfg.mode || cfg.mode === 'video';
-          const modeItem = allMenuOptions.find(o => {
-            const txt = (o.textContent || "").trim().toLowerCase();
-            return isVideoMode ? txt.includes("video") : (txt.includes("ảnh") || txt.includes("image"));
+          // Check visibility without offsetParent (fixed/portal elements have offsetParent == null!)
+          const isElemVisible = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
+          };
+
+          // Find active popover container
+          const getPopover = () => {
+            const candidates = queryDeep("div[role='dialog'], div[data-radix-popper-content-wrapper], div[class*='popover'], div");
+            return candidates.find(d => {
+              if (!isElemVisible(d)) return false;
+              const t = d.textContent || "";
+              // check if it's actually a dialog containing these options
+              return (t.includes("9:16") || t.includes("16:9")) && (t.includes("Video") || t.includes("Hình ảnh") || t.includes("Khung hình")) && d.querySelectorAll("button, [role='tab'], [role='button']").length > 0;
+            });
+          };
+
+          let popover = getPopover();
+
+          // If not open, click the settings chip to open it
+          if (!popover && settingsChip) {
+            settingsChip.scrollIntoView({ block: "nearest" });
+            settingsChip.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+            settingsChip.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            settingsChip.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+            settingsChip.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            settingsChip.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            settingsChip.click();
+            await sleep(600); // Wait for popup animation
+            popover = getPopover();
+          }
+
+          // Click option inside popover
+          const clickInsidePopover = async (textMatch) => {
+            const scope = popover || document;
+            const elements = queryScopeDeep(scope, "[role='tab'], button, [role='button'], div, span").filter(el => isElemVisible(el));
+
+            let match = elements.find(el => {
+              const t = (el.textContent || "").trim();
+              const aria = (el.getAttribute("aria-label") || "").trim();
+              return t === textMatch || aria === textMatch;
+            });
+
+            if (!match) {
+              match = elements.find(el => {
+                const t = (el.textContent || "").trim().toLowerCase();
+                const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
+                return t.includes(textMatch.toLowerCase()) || aria.includes(textMatch.toLowerCase());
+              });
+            }
+
+            if (match) {
+              const clickable = match.closest("[role='tab'], button, [role='button']") || match;
+              clickable.scrollIntoView({ block: "nearest" });
+              clickable.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+              clickable.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+              clickable.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+              clickable.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+              clickable.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+              clickable.click();
+              return true;
+            }
+            return false;
+          };
+
+          // Helper to trigger click with pointer + mouse events
+          const triggerClick = (el) => {
+            if (!el) return false;
+            el.scrollIntoView({ block: "nearest" });
+            el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            try { el.click(); } catch (_) {}
+            return true;
+          };
+
+          // 1. Select Mode: "Video" vs "Hình ảnh"
+          const modeScope = getPopover() || popover || document;
+          const modeButtons = queryScopeDeep(modeScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
+          if (cfg?.mode === 'image' || cfg?.mode === 'Hình ảnh') {
+            const imageBtn = modeButtons.find(b => {
+              const t = (b.textContent || "").trim();
+              return t === "Hình ảnh" || t.includes("Hình ảnh") || t.toLowerCase().includes("image");
+            });
+            if (imageBtn) triggerClick(imageBtn);
+            await sleep(400);
+          } else {
+            const videoBtn = modeButtons.find(b => {
+              const t = (b.textContent || "").trim();
+              return (t === "Video" || t.includes("Video")) && !t.includes("Hình ảnh") && !t.includes("Khung hình");
+            });
+            if (videoBtn) triggerClick(videoBtn);
+            await sleep(400);
+          }
+
+          // 1.1 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab
+          if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
+            const framesScope = getPopover() || popover || document;
+            const submodeButtons = queryScopeDeep(framesScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
+            const framesBtn = submodeButtons.find(b => {
+              const t = (b.textContent || "").trim();
+              const id = b.getAttribute("id") || "";
+              return t === "Khung hình" || t.includes("Khung hình") || id.endsWith("-trigger-VIDEO_FRAMES") || b.innerHTML.includes("crop_free");
+            });
+            if (framesBtn) {
+              triggerClick(framesBtn);
+              await sleep(400);
+            }
+          }
+
+          // 2. Select Aspect Ratio (9:16 vs 16:9)
+          const aspectScope = getPopover() || popover || document;
+          const aspectButtons = queryScopeDeep(aspectScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
+          const aspectBtn = aspectButtons.find(b => {
+            const t = (b.textContent || "").trim();
+            const aria = (b.getAttribute("aria-label") || "").trim();
+            if (targetRatio === "9:16") {
+              return (t.includes("9:16") || aria.includes("9:16")) && !t.includes("16:9");
+            } else {
+              return (t.includes("16:9") || aria.includes("16:9")) && !t.includes("9:16");
+            }
           });
-          if (modeItem) { modeItem.click(); await sleep(300); logs.push("Mode"); }
+          if (aspectBtn) triggerClick(aspectBtn);
+          await sleep(400);
 
-          // Ratio
-          if (cfg.ratio) {
-            const ratioOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
-            const rTxt = cfg.ratio.toLowerCase();
-            const ratioItem = ratioOptions.find(o => (o.textContent || "").trim().toLowerCase().includes(rTxt));
-            if (ratioItem) { ratioItem.click(); await sleep(300); logs.push("Ratio"); }
+          // If in Video mode, configure Duration, Count & Video Model
+          if (cfg?.mode !== 'image' && cfg?.mode !== 'Hình ảnh') {
+            // 3. Select Duration: "8s"
+            const durScope = getPopover() || popover || document;
+            const durButtons = queryScopeDeep(durScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
+            const durBtn = durButtons.find(b => {
+              const t = (b.textContent || "").trim();
+              return (t === targetDuration || t.includes(targetDuration)) && !t.includes("4s") && !t.includes("6s") && !t.includes("10s");
+            });
+            if (durBtn) triggerClick(durBtn);
+            await sleep(400);
+
+            // 4. Select Count: "x1"
+            const countScope = getPopover() || popover || document;
+            const countButtons = queryScopeDeep(countScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
+            const countBtn = countButtons.find(b => {
+              const t = (b.textContent || "").trim();
+              return (t === targetCount || t.includes(targetCount) || t === "1x") && !t.includes("x2") && !t.includes("x3") && !t.includes("x4");
+            });
+            if (countBtn) triggerClick(countBtn);
+            await sleep(400);
+
+            // 5. Select Model: Veo 3.1 - Lite [Lower Priority]
+            const scope = getPopover() || popover || document;
+            const modelDropdown = queryScopeDeep(scope, "button, [role='combobox'], [role='button'], div").find(b => {
+              if (!isElemVisible(b)) return false;
+              const t = (b.textContent || "").trim().toLowerCase();
+              const hasPopup = b.hasAttribute("aria-haspopup") || b.getAttribute("role") === "combobox";
+              const isModelName = (t.includes("omni") || t.includes("veo") || t.includes("flash") || t.includes("lite") || t.includes("fast") || t.includes("quality")) && t.length < 40;
+              const isExcluded = t.includes("9:16") || t.includes("16:9") || t.includes("8s") || t.includes("4s") || t.includes("6s") || t.includes("10s") || t.includes("x1") || t.includes("x2") || t.includes("x3") || t.includes("x4") || t.includes("video") || t.includes("hình ảnh") || t.includes("khung hình") || t.includes("thành phần") || t.includes("360p") || t.includes("720p");
+              return (hasPopup || isModelName) && !isExcluded;
+            });
+
+            if (modelDropdown) {
+              triggerClick(modelDropdown);
+              await sleep(600);
+
+              // Look for exact option across document root (Radix Portal)
+              for (let attempt = 0; attempt < 20; attempt++) {
+                await sleep(100);
+                const candidates = queryDeep("[role='option'], [role='menuitem'], button, div, span, li").filter(el => isElemVisible(el));
+                const targetOpt = candidates.find(el => {
+                  const ot = (el.textContent || "").toLowerCase();
+                  const matches = ot.includes("lower priority") || ot.includes("lite [lower priority]") || ot.includes("ưu tiên thấp");
+                  // Exclude parent wrapper/containers that contain other option names
+                  const isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 55;
+                  return matches && !isContainer;
+                });
+
+                if (targetOpt) {
+                  const clickable = targetOpt.closest("[role='option'], [role='menuitem'], button, li") || targetOpt;
+                  triggerClick(clickable);
+                  await sleep(500);
+                  break;
+                }
+              }
+            }
           }
 
-          // Duration
-          if (cfg.duration) {
-            const durOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
-            const dTxt = cfg.duration.toLowerCase();
-            const dItem = durOptions.find(o => (o.textContent || "").trim().toLowerCase().includes(dTxt));
-            if (dItem) { dItem.click(); await sleep(300); logs.push("Duration"); }
-          }
+          // 6. Close popup gracefully and focus editor
+          await sleep(300);
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+          await sleep(300);
 
-          // Variations
-          if (cfg.variations) {
-            const varOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
-            const vTxt = cfg.variations.toLowerCase();
-            const vItem = varOptions.find(o => (o.textContent || "").trim().toLowerCase().includes(vTxt));
-            if (vItem) { vItem.click(); await sleep(300); logs.push("Variations"); }
-          }
+          // Click editor to guarantee outside-click dismissal of popover and gain focus
+          try {
+            editor.click();
+            editor.focus();
+          } catch (_) {}
+          await sleep(300);
 
-          // Model
-          if (cfg.videoModel) {
-            const modelOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
-            let mTxt = cfg.videoModel.toLowerCase();
-            if (mTxt === "veo_3_1_t2v_lite_low_priority") mTxt = "lower priority";
-            else if (mTxt === "veo_3_1_lite") mTxt = "lite";
-            else if (mTxt === "veo_3_1_fast") mTxt = "fast";
-            else if (mTxt === "veo_3_1_quality") mTxt = "quality";
-            else if (mTxt === "abra") mTxt = "omni flash";
-            
-            const mItem = modelOptions.find(o => (o.textContent || "").trim().toLowerCase().includes(mTxt));
-            if (mItem) { mItem.click(); await sleep(300); logs.push("Model"); }
-          }
+          // ──────────────────────────────────────────────
+} catch(e) { throw e; }
 
-          // Close menu
-          document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-          document.body.click(); // Click outside to close
-
-          return "Đã set Config: " + logs.join(", ");
+          return "Đã bấm chọn xong Cấu Hình (Tỷ Lệ, Thời Lượng, Model...)! Bạn kiểm tra lại trên giao diện nhé.";
         }
 
         return "Unknown step";
