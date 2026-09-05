@@ -817,8 +817,35 @@ async function createVideoUI(prompt, projectId, config = {}) {
       target: { tabId: tab.id },
       world: "MAIN",
       args: [prompt, config],
-      func: async (promptText, cfg) => {
+func: async (promptText, cfg) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
+        
+        const queryDeep = (selector) => {
+          const matches = [];
+          const walk = (node) => {
+            if (node.shadowRoot) walk(node.shadowRoot);
+            for (const child of node.children) {
+              if (child.matches && child.matches(selector)) matches.push(child);
+              walk(child);
+            }
+          };
+          walk(document.body);
+          return matches;
+        };
+
+        const queryScopeDeep = (scope, selector) => {
+          if (!scope) return [];
+          const matches = [];
+          const walk = (node) => {
+            if (node.shadowRoot) walk(node.shadowRoot);
+            for (const child of node.children) {
+              if (child.matches && child.matches(selector)) matches.push(child);
+              walk(child);
+            }
+          };
+          walk(scope);
+          return matches;
+        };
         
         // ──────────────────────────────────────────────
         // STEP 1: Find Slate Editor & Composer Container
@@ -849,14 +876,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
                     
         if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt trên giao diện Flow!" };
 
-        // Locate composer bar containing editor & control buttons
-        let composer = editor;
-        while (composer && composer !== document.body) {
-          if (composer.querySelectorAll("button").length >= 2) break;
-          composer = composer.parentElement;
-        }
-
-        const composerButtons = composer ? Array.from(composer.querySelectorAll("button")) : Array.from(document.querySelectorAll("button"));
+        const composerButtons = queryDeep("button, [role='button']");
         
         // Identify submit button (arrow_forward icon)
         const submitBtn = composerButtons.find(b => {
@@ -891,11 +911,12 @@ async function createVideoUI(prompt, projectId, config = {}) {
 
           // Find active popover container
           const getPopover = () => {
-            const candidates = Array.from(document.querySelectorAll("div[role='dialog'], div[data-radix-popper-content-wrapper], div[class*='popover'], div"));
+            const candidates = queryDeep("div[role='dialog'], div[data-radix-popper-content-wrapper], div[class*='popover'], div");
             return candidates.find(d => {
               if (!isElemVisible(d)) return false;
               const t = d.textContent || "";
-              return (t.includes("9:16") || t.includes("16:9")) && (t.includes("Video") || t.includes("Hình ảnh") || t.includes("Khung hình"));
+              // check if it's actually a dialog containing these options
+              return (t.includes("9:16") || t.includes("16:9")) && (t.includes("Video") || t.includes("Hình ảnh") || t.includes("Khung hình")) && d.querySelectorAll("button, [role='tab'], [role='button']").length > 0;
             });
           };
 
@@ -917,8 +938,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
           // Click option inside popover
           const clickInsidePopover = async (textMatch) => {
             const scope = popover || document;
-            const elements = Array.from(scope.querySelectorAll("[role='tab'], button, [role='button'], div, span"))
-              .filter(el => isElemVisible(el));
+            const elements = queryScopeDeep(scope, "[role='tab'], button, [role='button'], div, span").filter(el => isElemVisible(el));
 
             let match = elements.find(el => {
               const t = (el.textContent || "").trim();
@@ -963,7 +983,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
 
           // 1. Select Mode: "Video" vs "Hình ảnh"
           const modeScope = getPopover() || popover || document;
-          const modeButtons = Array.from(modeScope.querySelectorAll("[role='tab'], button, [role='button']")).filter(isElemVisible);
+          const modeButtons = queryScopeDeep(modeScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
           if (cfg?.mode === 'image' || cfg?.mode === 'Hình ảnh') {
             const imageBtn = modeButtons.find(b => {
               const t = (b.textContent || "").trim();
@@ -983,7 +1003,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
           // 1.1 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab
           if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
             const framesScope = getPopover() || popover || document;
-            const submodeButtons = Array.from(framesScope.querySelectorAll("[role='tab'], button, [role='button']")).filter(isElemVisible);
+            const submodeButtons = queryScopeDeep(framesScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
             const framesBtn = submodeButtons.find(b => {
               const t = (b.textContent || "").trim();
               const id = b.getAttribute("id") || "";
@@ -997,7 +1017,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
 
           // 2. Select Aspect Ratio (9:16 vs 16:9)
           const aspectScope = getPopover() || popover || document;
-          const aspectButtons = Array.from(aspectScope.querySelectorAll("[role='tab'], button, [role='button']")).filter(isElemVisible);
+          const aspectButtons = queryScopeDeep(aspectScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
           const aspectBtn = aspectButtons.find(b => {
             const t = (b.textContent || "").trim();
             const aria = (b.getAttribute("aria-label") || "").trim();
@@ -1014,7 +1034,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
           if (cfg?.mode !== 'image' && cfg?.mode !== 'Hình ảnh') {
             // 3. Select Duration: "8s"
             const durScope = getPopover() || popover || document;
-            const durButtons = Array.from(durScope.querySelectorAll("[role='tab'], button, [role='button']")).filter(isElemVisible);
+            const durButtons = queryScopeDeep(durScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
             const durBtn = durButtons.find(b => {
               const t = (b.textContent || "").trim();
               return (t === targetDuration || t.includes(targetDuration)) && !t.includes("4s") && !t.includes("6s") && !t.includes("10s");
@@ -1024,7 +1044,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
 
             // 4. Select Count: "x1"
             const countScope = getPopover() || popover || document;
-            const countButtons = Array.from(countScope.querySelectorAll("[role='tab'], button, [role='button']")).filter(isElemVisible);
+            const countButtons = queryScopeDeep(countScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
             const countBtn = countButtons.find(b => {
               const t = (b.textContent || "").trim();
               return (t === targetCount || t.includes(targetCount) || t === "1x") && !t.includes("x2") && !t.includes("x3") && !t.includes("x4");
@@ -1034,7 +1054,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
 
             // 5. Select Model: Veo 3.1 - Lite [Lower Priority]
             const scope = getPopover() || popover || document;
-            const modelDropdown = Array.from(scope.querySelectorAll("button, [role='combobox'], [role='button'], div")).find(b => {
+            const modelDropdown = queryScopeDeep(scope, "button, [role='combobox'], [role='button'], div").find(b => {
               if (!isElemVisible(b)) return false;
               const t = (b.textContent || "").trim().toLowerCase();
               const hasPopup = b.hasAttribute("aria-haspopup") || b.getAttribute("role") === "combobox";
@@ -1050,7 +1070,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
               // Look for exact option across document root (Radix Portal)
               for (let attempt = 0; attempt < 20; attempt++) {
                 await sleep(100);
-                const candidates = Array.from(document.querySelectorAll("[role='option'], [role='menuitem'], button, div, span, li")).filter(el => isElemVisible(el));
+                const candidates = queryDeep("[role='option'], [role='menuitem'], button, div, span, li").filter(el => isElemVisible(el));
                 const targetOpt = candidates.find(el => {
                   const ot = (el.textContent || "").toLowerCase();
                   const matches = ot.includes("lower priority") || ot.includes("lite [lower priority]") || ot.includes("ưu tiên thấp");
@@ -1114,8 +1134,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
               // Helper to pick/upload inside the media asset picker dialog
               const handleMediaDialog = async (imageQuery, preferIndex = 0) => {
                 await sleep(600); // Wait for Radix dialog to open
-                let dialog = document.querySelector("div[role='dialog'][data-state='open']") 
-                            || document.querySelector("div[role='dialog']");
+                let dialog = queryDeep("div[role='dialog'][data-state='open']")[0] || queryDeep("div[role='dialog']")[0];
                 if (!dialog) {
                   for (let waitDlg = 0; waitDlg < 6; waitDlg++) {
                     await sleep(250);
@@ -1136,10 +1155,10 @@ async function createVideoUI(prompt, projectId, config = {}) {
 
                 // Helper to get selectable tiles/options in dialog
                 const getTiles = () => {
-                  let list = Array.from(dialog.querySelectorAll("[role='option'], [role='gridcell'], div[data-tile-id]"))
+                  let list = queryScopeDeep(dialog, "[role='option'], [role='gridcell'], div[data-tile-id]")
                     .filter(isElemVisible);
                   if (!list.length) {
-                    const imgs = Array.from(dialog.querySelectorAll("img")).filter(isElemVisible);
+                    const imgs = queryScopeDeep(dialog, "img").filter(isElemVisible);
                     list = imgs.map(img => img.closest("button, [role='button'], [role='option'], [role='gridcell'], div[tabindex]")).filter(Boolean);
                   }
                   return list;
@@ -1147,7 +1166,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
 
                 // Check if base64 file upload
                 if (cleanQuery.startsWith("data:image")) {
-                  const fileInput = dialog.querySelector("input[type='file']") || document.querySelector("input[type='file']");
+                  const fileInput = queryScopeDeep(dialog, "input[type='file']")[0] || queryDeep("input[type='file']")[0];
                   if (fileInput) {
                     try {
                       const arr = cleanQuery.split(',');
@@ -1257,7 +1276,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
                 // Check if "Include" button is needed
                 const openDialog = document.querySelector("div[role='dialog'][data-state='open']");
                 if (openDialog) {
-                  const addBtn = Array.from(openDialog.querySelectorAll("button")).find(b => {
+                  const addBtn = queryScopeDeep(openDialog, "button").find(b => {
                     const t = (b.textContent || "").toLowerCase();
                     return t.includes("thêm") || t.includes("add") || t.includes("chọn") || t.includes("áp dụng");
                   });
