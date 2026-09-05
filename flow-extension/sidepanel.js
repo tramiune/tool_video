@@ -1216,7 +1216,17 @@
       document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
     });
 
+
+    bindClick('btnTestStep4', async () => {
+      const pid = document.getElementById("projectId").value;
+      const config = getUiConfig();
+      document.getElementById("testStepLog").textContent = "⏳ Đang chạy Bước 4 (Config)...";
+      const r = await callExt("TEST_UI_STEP", { step: 4, projectId: pid, config });
+      document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
+    });
+    
     bindClick('btnCreate', createVideo);
+
 
     bindClick('btnStartBatch', startBatchQueue);
     bindClick('btnRetryFailed', retryFailedTasks);

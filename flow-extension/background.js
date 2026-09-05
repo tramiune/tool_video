@@ -2810,8 +2810,9 @@ async function testUiStep(step, req) {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "MAIN",
-      args: [step, req.prompt || ""],
-      func: async (stepIdx, promptText) => {
+      args: [step, req.prompt || "", req.config || {}],
+      func: async (stepIdx, promptText, cfg) => {
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
         const queryDeep = (selector) => {
           const matches = [];
           const walk = (node) => {
@@ -2930,6 +2931,73 @@ async function testUiStep(step, req) {
           if (!submitBtn) throw new Error("Không tìm thấy nút Bắt Đầu (Submit)");
           submitBtn.click();
           return "Đã bấm Submit!";
+        }
+
+        
+        if (stepIdx === 4) {
+          if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
+          
+          // Ensure menu is open (if it's not already)
+          // We can just click it and wait
+          settingsChip.click();
+          await sleep(500);
+
+          const allMenuOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
+          if (!allMenuOptions.length) throw new Error("Không tìm thấy Menu Options (Dropdown chưa mở?)");
+          
+          let logs = [];
+
+          // Mode
+          const isVideoMode = !cfg.mode || cfg.mode === 'video';
+          const modeItem = allMenuOptions.find(o => {
+            const txt = (o.textContent || "").trim().toLowerCase();
+            return isVideoMode ? txt.includes("video") : (txt.includes("ảnh") || txt.includes("image"));
+          });
+          if (modeItem) { modeItem.click(); await sleep(300); logs.push("Mode"); }
+
+          // Ratio
+          if (cfg.ratio) {
+            const ratioOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
+            const rTxt = cfg.ratio.toLowerCase();
+            const ratioItem = ratioOptions.find(o => (o.textContent || "").trim().toLowerCase().includes(rTxt));
+            if (ratioItem) { ratioItem.click(); await sleep(300); logs.push("Ratio"); }
+          }
+
+          // Duration
+          if (cfg.duration) {
+            const durOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
+            const dTxt = cfg.duration.toLowerCase();
+            const dItem = durOptions.find(o => (o.textContent || "").trim().toLowerCase().includes(dTxt));
+            if (dItem) { dItem.click(); await sleep(300); logs.push("Duration"); }
+          }
+
+          // Variations
+          if (cfg.variations) {
+            const varOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
+            const vTxt = cfg.variations.toLowerCase();
+            const vItem = varOptions.find(o => (o.textContent || "").trim().toLowerCase().includes(vTxt));
+            if (vItem) { vItem.click(); await sleep(300); logs.push("Variations"); }
+          }
+
+          // Model
+          if (cfg.videoModel) {
+            const modelOptions = queryDeep("li, [role='menuitem'], [role='option'], mat-list-item");
+            let mTxt = cfg.videoModel.toLowerCase();
+            if (mTxt === "veo_3_1_t2v_lite_low_priority") mTxt = "lower priority";
+            else if (mTxt === "veo_3_1_lite") mTxt = "lite";
+            else if (mTxt === "veo_3_1_fast") mTxt = "fast";
+            else if (mTxt === "veo_3_1_quality") mTxt = "quality";
+            else if (mTxt === "abra") mTxt = "omni flash";
+            
+            const mItem = modelOptions.find(o => (o.textContent || "").trim().toLowerCase().includes(mTxt));
+            if (mItem) { mItem.click(); await sleep(300); logs.push("Model"); }
+          }
+
+          // Close menu
+          document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          document.body.click(); // Click outside to close
+
+          return "Đã set Config: " + logs.join(", ");
         }
 
         return "Unknown step";
