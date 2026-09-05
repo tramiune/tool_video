@@ -3026,14 +3026,23 @@ async function testUiStep(step, req) {
                     return r.width > 50 && r.height > 20;
                 });
                 
-                let editor = editors.length > 0 ? editors[0] : null;
-                const activePrompt = editors.find(e => {
-                  const ph = (e.getAttribute("placeholder") || "").toLowerCase();
-                  return ph.includes("prompt") || e.classList.contains("ProseMirror");
-                });
-                if (activePrompt) editor = activePrompt;
+                const findCorrectPrompt = (list) => {
+                    return list.find(e => {
+                        const ph = (e.getAttribute("placeholder") || "").toLowerCase();
+                        const aria = (e.getAttribute("aria-label") || "").toLowerCase();
+                        return ph.includes("bạn muốn tạo") || ph.includes("prompt") || aria.includes("prompt") || e.classList.contains("ProseMirror") || e.tagName.toLowerCase() === "textarea";
+                    });
+                };
 
-                // SPECIAL FOR KHUNG HÌNH: The prompt editor is actually INSIDE the settings popover!
+                // Lọc bỏ search bar trên cùng
+                const validEditors = editors.filter(e => {
+                    const ph = (e.getAttribute("placeholder") || "").toLowerCase();
+                    return !ph.includes("tìm kiếm") && !ph.includes("search");
+                });
+
+                let editor = findCorrectPrompt(validEditors) || (validEditors.length > 0 ? validEditors[validEditors.length - 1] : null);
+
+                // Ưu tiên popover nếu nó đang mở
                 const activePopover = queryDeep("div[role='dialog'], div[data-radix-popper-content-wrapper], div[class*='popover']").find(d => {
                   if (!isElemVisible(d)) return false;
                   const t = d.textContent || "";
@@ -3042,13 +3051,11 @@ async function testUiStep(step, req) {
                 
                 if (activePopover) {
                   const popoverEditors = queryScopeDeep(activePopover, "div.ProseMirror, div[contenteditable='true'], textarea, input[type='text']").filter(isElemVisible);
-                  if (popoverEditors.length > 0) {
-                     editor = popoverEditors[0];
-                     const innerPrompt = popoverEditors.find(e => {
-                        const ph = (e.getAttribute("placeholder") || "").toLowerCase();
-                        return ph.includes("bạn muốn tạo") || e.classList.contains("ProseMirror");
-                     });
+                  const validPopoverEditors = popoverEditors.filter(e => !e.getAttribute("placeholder")?.toLowerCase().includes("tìm kiếm"));
+                  if (validPopoverEditors.length > 0) {
+                     const innerPrompt = findCorrectPrompt(validPopoverEditors);
                      if (innerPrompt) editor = innerPrompt;
+                     else editor = validPopoverEditors[validPopoverEditors.length - 1];
                   }
                 }
                 
