@@ -1225,6 +1225,7 @@
       document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
     };
 
+    bindClick('btnTestStep4_0', () => runTest4(4.0, "Chế độ (Mode)"));
     bindClick('btnTestStep4_1', () => runTest4(4.1, "Tỷ lệ"));
     bindClick('btnTestStep4_2', () => runTest4(4.2, "Thời lượng"));
     bindClick('btnTestStep4_3', () => runTest4(4.3, "Số lượng"));

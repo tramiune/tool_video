@@ -3122,7 +3122,6 @@ async function testUiStep(step, req) {
             await sleep(400);
           }
 
-          }
           // 1.1 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab
           if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
             const framesScope = getPopover() || popover || document;
@@ -3138,6 +3137,7 @@ async function testUiStep(step, req) {
             }
           }
 
+          }
           if (stepIdx === 4 || stepIdx === 4.1) {
           // 2. Select Aspect Ratio (9:16 vs 16:9)
           const aspectScope = getPopover() || popover || document;
