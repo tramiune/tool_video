@@ -3034,10 +3034,14 @@ async function testUiStep(step, req) {
                     });
                 };
 
-                // Lọc bỏ search bar trên cùng
+                // Lọc bỏ search bar trên cùng bằng TỌA ĐỘ (y < 150)
                 const validEditors = editors.filter(e => {
+                    const r = e.getBoundingClientRect();
+                    if (r.top < 150) return false; // Loại bỏ tất cả input ở phần Header (Search, v.v.)
+                    
                     const ph = (e.getAttribute("placeholder") || "").toLowerCase();
-                    return !ph.includes("tìm kiếm") && !ph.includes("search");
+                    const aria = (e.getAttribute("aria-label") || "").toLowerCase();
+                    return !ph.includes("tìm kiếm") && !ph.includes("search") && !aria.includes("tìm kiếm") && !aria.includes("search");
                 });
 
                 let editor = findCorrectPrompt(validEditors) || (validEditors.length > 0 ? validEditors[validEditors.length - 1] : null);
