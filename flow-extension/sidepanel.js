@@ -1217,13 +1217,19 @@
     });
 
 
-    bindClick('btnTestStep4', async () => {
+    const runTest4 = async (subStep, label) => {
       const pid = document.getElementById("projectId").value;
       const config = getUiConfig();
-      document.getElementById("testStepLog").textContent = "⏳ Đang chạy Bước 4 (Config)...";
-      const r = await callExt("TEST_UI_STEP", { step: 4, projectId: pid, config });
+      document.getElementById("testStepLog").textContent = `⏳ Đang chạy Bước ${subStep} (${label})...`;
+      const r = await callExt("TEST_UI_STEP", { step: subStep, projectId: pid, config });
       document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
-    });
+    };
+
+    bindClick('btnTestStep4_1', () => runTest4(4.1, "Tỷ lệ"));
+    bindClick('btnTestStep4_2', () => runTest4(4.2, "Thời lượng"));
+    bindClick('btnTestStep4_3', () => runTest4(4.3, "Số lượng"));
+    bindClick('btnTestStep4_4', () => runTest4(4.4, "Model"));
+    bindClick('btnTestStep4', () => runTest4(4, "All Config"));
     
     bindClick('btnCreate', createVideo);
 

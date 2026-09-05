@@ -2963,7 +2963,7 @@ async function testUiStep(step, req) {
         }
 
         
-        if (stepIdx === 4) {
+        if (Math.floor(stepIdx) === 4) {
           if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
 
         // STEP 2: Configure Video Settings (Mode, Ratio, Duration, Count, Model)
@@ -3052,6 +3052,7 @@ async function testUiStep(step, req) {
             return true;
           };
 
+          if (stepIdx === 4 || stepIdx === 4.0) {
           // 1. Select Mode: "Video" vs "Hình ảnh"
           const modeScope = getPopover() || popover || document;
           const modeButtons = queryScopeDeep(modeScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
@@ -3071,6 +3072,7 @@ async function testUiStep(step, req) {
             await sleep(400);
           }
 
+          }
           // 1.1 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab
           if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
             const framesScope = getPopover() || popover || document;
@@ -3086,6 +3088,7 @@ async function testUiStep(step, req) {
             }
           }
 
+          if (stepIdx === 4 || stepIdx === 4.1) {
           // 2. Select Aspect Ratio (9:16 vs 16:9)
           const aspectScope = getPopover() || popover || document;
           const aspectButtons = queryScopeDeep(aspectScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
@@ -3101,8 +3104,10 @@ async function testUiStep(step, req) {
           if (aspectBtn) triggerClick(aspectBtn);
           await sleep(400);
 
+          }
           // If in Video mode, configure Duration, Count & Video Model
           if (cfg?.mode !== 'image' && cfg?.mode !== 'Hình ảnh') {
+            if (stepIdx === 4 || stepIdx === 4.2) {
             // 3. Select Duration: "8s"
             const durScope = getPopover() || popover || document;
             const durButtons = queryScopeDeep(durScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
@@ -3117,6 +3122,8 @@ async function testUiStep(step, req) {
             if (durBtn) triggerClick(durBtn);
             await sleep(400);
 
+            }
+            if (stepIdx === 4 || stepIdx === 4.3) {
             // 4. Select Count: "x1"
             const countScope = getPopover() || popover || document;
             const countButtons = queryScopeDeep(countScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
@@ -3132,6 +3139,8 @@ async function testUiStep(step, req) {
             if (countBtn) triggerClick(countBtn);
             await sleep(400);
 
+            }
+            if (stepIdx === 4 || stepIdx === 4.4) {
             // 5. Select Model: Veo 3.1 - Lite [Lower Priority]
             const scope = getPopover() || popover || document;
             const modelDropdown = queryScopeDeep(scope, "button, [role='combobox'], [role='button'], div").find(b => {
@@ -3187,8 +3196,10 @@ async function testUiStep(step, req) {
                 }
               }
             }
+            }
           }
 
+          if (stepIdx === 4) {
           // 6. Close popup gracefully and focus editor
           await sleep(300);
           document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
@@ -3202,10 +3213,11 @@ async function testUiStep(step, req) {
           } catch (_) {}
           await sleep(300);
 
+          }
           // ──────────────────────────────────────────────
 } catch(e) { throw e; }
 
-          return `Đã config xong: Tỷ lệ ${targetRatio}, Model ${cfg?.model}, Thời lượng ${targetDuration}, Số lượng ${targetCount}. Bạn kiểm tra lại trên màn hình nhé!`;
+          return `Đã test xong Bước ${stepIdx}! (Ratio: ${targetRatio}, Model: ${cfg?.model}, Dur: ${targetDuration}, Cnt: ${targetCount})`;
         }
 
         return "Unknown step";
