@@ -3015,8 +3015,18 @@ async function testUiStep(step, req) {
             }
 
             if (stepIdx === 4.7) {
-                const editor = document.querySelector(".ProseMirror, [contenteditable='true'], textarea, input[type='text']");
-                if (!editor) throw new Error("Không tìm thấy ô nhập Prompt (editor) để paste!");
+                const isElemVisible = (el) => {
+                    if (!el) return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
+                };
+                const editors = queryDeep("div.ProseMirror, div[contenteditable='true'], textarea, input[type='text']").filter(el => {
+                    if (!isElemVisible(el)) return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 50 && r.height > 20;
+                });
+                const editor = editors[0];
+                if (!editor) throw new Error("Không tìm thấy ô nhập Prompt (editor) giống như Bước 1!");
                 
                 // Red 10x10 pixel PNG
                 const base64Img = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FAP5mB/1w4q3bAAAAAElFTkSuQmCC";
@@ -3042,7 +3052,7 @@ async function testUiStep(step, req) {
                 await sleep(300);
 
                 // 1. Try Paste
-                editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: true, metaKey: true, bubbles: true }));
+                editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: false, metaKey: true, bubbles: true })); // Mac Command+V
                 editor.dispatchEvent(pasteEvent);
                 
                 // 2. Try Drop (drag and drop is often more robustly supported for files)
