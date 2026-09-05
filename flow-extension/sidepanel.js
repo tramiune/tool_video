@@ -1195,7 +1195,29 @@
     bindClick('btnSelectEndFile', () => document.getElementById('endFile').click());
     bindClick('btnSelectRefFile', () => document.getElementById('refFile').click());
     
+
+    bindClick('btnTestStep1', async () => {
+      const p = document.getElementById("testStepPrompt").value;
+      const pid = document.getElementById("projectId").value;
+      document.getElementById("testStepLog").textContent = "⏳ Đang chạy Bước 1...";
+      const r = await callExt("TEST_UI_STEP", { step: 1, prompt: p, projectId: pid });
+      document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
+    });
+    bindClick('btnTestStep2', async () => {
+      const pid = document.getElementById("projectId").value;
+      document.getElementById("testStepLog").textContent = "⏳ Đang chạy Bước 2...";
+      const r = await callExt("TEST_UI_STEP", { step: 2, projectId: pid });
+      document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
+    });
+    bindClick('btnTestStep3', async () => {
+      const pid = document.getElementById("projectId").value;
+      document.getElementById("testStepLog").textContent = "⏳ Đang chạy Bước 3...";
+      const r = await callExt("TEST_UI_STEP", { step: 3, projectId: pid });
+      document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
+    });
+
     bindClick('btnCreate', createVideo);
+
     bindClick('btnStartBatch', startBatchQueue);
     bindClick('btnRetryFailed', retryFailedTasks);
     bindClick('btnPauseBatch', pauseBatchQueue);

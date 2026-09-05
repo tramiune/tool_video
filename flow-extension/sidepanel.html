@@ -127,10 +127,40 @@
   <div class="tab" data-tab="image" >🎨 Tạo Ảnh</div>
   <div class="tab" data-tab="batch-image" >⚡ Hàng Đợi Ảnh</div>
   <div class="tab" data-tab="click-ui" style="background: rgba(0, 214, 143, 0.12); color: var(--green); border: 1px solid rgba(0, 214, 143, 0.35);">🖱️ Auto Click UI</div>
+  <div class="tab" data-tab="test-steps" style="background: rgba(255, 153, 0, 0.12); color: #FF9900; border: 1px solid rgba(255, 153, 0, 0.35);">🛠️ Test Từng Bước</div>
   <div class="tab" data-tab="library" >📚 Thư Viện</div>
 </div>
 
 <div class="main">
+  
+  <!-- TAB: TEST TỪNG BƯỚC -->
+  <div class="panel" id="panel-test-steps">
+    <div class="card">
+      <div class="card-title">🛠️ Công Cụ Test Auto-Click Từng Phần</div>
+      <p style="font-size:11px; color:var(--text2); margin-bottom:12px;">Kiểm tra độ chính xác của từng hành động trên giao diện Flow.</p>
+
+      <div class="form-group">
+        <label class="form-label">1. Tìm Ô Nhập & Gõ Text</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="testStepPrompt" class="form-input" style="flex:1; margin:0;" value="test nhập chữ...">
+          <button class="btn btn-primary" id="btnTestStep1">Test B1</button>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:12px;">
+        <label class="form-label">2. Tìm & Bấm Nút Cài Đặt (Chip)</label>
+        <button class="btn btn-primary" id="btnTestStep2" style="width:100%;">Test B2 (Click Nút Chip)</button>
+      </div>
+
+      <div class="form-group" style="margin-top:12px;">
+        <label class="form-label">3. Tìm & Bấm Nút Bắt Đầu (Submit)</label>
+        <button class="btn btn-primary" id="btnTestStep3" style="width:100%;">Test B3 (Click Submit)</button>
+      </div>
+
+      <div id="testStepLog" style="margin-top: 12px; font-size: 11px; color: var(--accent); padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; font-family: monospace;"></div>
+    </div>
+  </div>
+
   <!-- TAB: Tạo Video Đơn Lẻ -->
   <div class="panel active" id="panel-create">
     <div class="card">

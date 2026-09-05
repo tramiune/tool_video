@@ -168,6 +168,12 @@ function handleMessage(req, sender, sendResponse) {
   }
 
   // Nhận request batchexecute kiểu mới được bắt từ MAIN world
+
+  if (req.action === "TEST_UI_STEP") {
+    testUiStep(req.step, req).then(sendResponse).catch(e => sendResponse({success: false, error: e.message}));
+    return true;
+  }
+
   if (req.action === "FLOW_BATCHEXECUTE_CAPTURED") {
     const tabId = sender?.tab?.id || 'unknown';
     const rpcIds = req.rpcIds || 'batchexecute';
@@ -2771,5 +2777,135 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId) {
       ok: false,
       error: 'Timeout quá 10 phút chờ Google Flow render video'
     }));
+  }
+}
+
+
+async function testUiStep(step, req) {
+  const tab = await getFlowTab('video', req.projectId);
+  if (!tab) return { success: false, error: "Cần mở ít nhất một tab Google Flow cho Video!" };
+  
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    await new Promise(r => setTimeout(r, 400));
+  } catch (_) {}
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      args: [step, req.prompt || ""],
+      func: async (stepIdx, promptText) => {
+        const queryDeep = (selector) => {
+          const matches = [];
+          const walk = (node) => {
+            if (node.shadowRoot) walk(node.shadowRoot);
+            for (const child of node.children) {
+              if (child.matches && child.matches(selector)) matches.push(child);
+              walk(child);
+            }
+          };
+          walk(document.body);
+          return matches;
+        };
+
+        const queryScopeDeep = (scope, selector) => {
+          if (!scope) return [];
+          const matches = [];
+          const walk = (node) => {
+            if (node.shadowRoot) walk(node.shadowRoot);
+            for (const child of node.children) {
+              if (child.matches && child.matches(selector)) matches.push(child);
+              walk(child);
+            }
+          };
+          walk(scope);
+          return matches;
+        };
+        
+        const findDeepEditor = () => {
+          const walk = (node) => {
+            if (node.shadowRoot) {
+              const res = walk(node.shadowRoot);
+              if (res) return res;
+            }
+            for (const child of node.children) {
+              if (child.tagName === 'TEXTAREA' || child.getAttribute('contenteditable') === 'true' || child.getAttribute('data-slate-editor') === 'true' || child.getAttribute('role') === 'textbox') {
+                return child;
+              }
+              const res = walk(child);
+              if (res) return res;
+            }
+            return null;
+          };
+          return walk(document.body);
+        };
+
+        const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
+                    || document.querySelector("div[data-slate-editor='true']")
+                    || document.querySelector("div[contenteditable='true']")
+                    || document.querySelector("textarea[placeholder*='prompt' i]")
+                    || findDeepEditor();
+                    
+        const composerButtons = queryDeep("button, [role='button']");
+        
+        const submitBtn = composerButtons.find(b => {
+          const inner = (b.innerHTML || "").toLowerCase();
+          const t = (b.textContent || "").trim().toLowerCase();
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send";
+        });
+
+        let settingsChip = composerButtons.find(b => {
+          if (b === submitBtn) return false;
+          if (b.offsetParent === null) return false;
+          const t = (b.textContent || "").trim().toLowerCase();
+          if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.match(/\b(720p|1080p|4k|giây|fps)\b/i) || t.match(/^\d+s/i)) {
+            return true;
+          }
+          return false;
+        });
+        
+        if (!settingsChip && submitBtn) {
+           let parent = submitBtn;
+           for(let i = 0; i < 6 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => b !== submitBtn && b.offsetParent !== null && !b.innerHTML.toLowerCase().includes("add") && (b.textContent || "").trim() !== "+");
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+        }
+
+        if (stepIdx === 1) {
+          if (!editor) throw new Error("Không tìm thấy ô nhập prompt (Editor)");
+          editor.focus();
+          document.execCommand('selectAll', false, null);
+          document.execCommand('insertText', false, promptText);
+          editor.dispatchEvent(new Event('input', { bubbles: true }));
+          return "Đã điền prompt thành công!";
+        }
+
+        if (stepIdx === 2) {
+          if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
+          settingsChip.click();
+          return "Đã bấm nút Settings Chip!";
+        }
+
+        if (stepIdx === 3) {
+          if (!submitBtn) throw new Error("Không tìm thấy nút Bắt Đầu (Submit)");
+          submitBtn.click();
+          return "Đã bấm Submit!";
+        }
+
+        return "Unknown step";
+      }
+    });
+
+    return { success: true, message: results[0].result };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 }
