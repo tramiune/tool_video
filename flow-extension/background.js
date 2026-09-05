@@ -1110,11 +1110,17 @@ func: async (promptText, cfg) => {
             
             const isMatch = (el) => {
                 const ot = (el.textContent || "").toLowerCase();
-                const isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 60;
-                if (isContainer) return false;
                 
-                if (mTxt.includes("low_priority")) return ot.includes("lower priority") || ot.includes("lite [lower priority]") || ot.includes("ưu tiên thấp");
-                if (mTxt.includes("lite")) return ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp");
+                let matchCount = 0;
+                if (ot.includes("omni") || ot.includes("flash")) matchCount++;
+                if (ot.includes("lite")) matchCount++;
+                if (ot.includes("fast")) matchCount++;
+                if (ot.includes("quality")) matchCount++;
+                
+                if (matchCount > 1 || ot.length > 60) return false;
+                
+                if (mTxt.includes("low_priority")) return ot.includes("lower priority") || ot.includes("ưu tiên thấp") || ot.includes("lite [lower priority]");
+                if (mTxt.includes("lite")) return (ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp"));
                 if (mTxt.includes("fast")) return ot.includes("fast");
                 if (mTxt.includes("quality")) return ot.includes("quality");
                 if (mTxt.includes("abra")) return ot.includes("omni") || ot.includes("flash");
@@ -3147,11 +3153,17 @@ async function testUiStep(step, req) {
             
             const isMatch = (el) => {
                 const ot = (el.textContent || "").toLowerCase();
-                const isContainer = ot.includes("omni") || ot.includes("quality") || ot.includes("fast") || ot.length > 60;
-                if (isContainer) return false;
                 
-                if (mTxt.includes("low_priority")) return ot.includes("lower priority") || ot.includes("lite [lower priority]") || ot.includes("ưu tiên thấp");
-                if (mTxt.includes("lite")) return ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp");
+                let matchCount = 0;
+                if (ot.includes("omni") || ot.includes("flash")) matchCount++;
+                if (ot.includes("lite")) matchCount++;
+                if (ot.includes("fast")) matchCount++;
+                if (ot.includes("quality")) matchCount++;
+                
+                if (matchCount > 1 || ot.length > 60) return false;
+                
+                if (mTxt.includes("low_priority")) return ot.includes("lower priority") || ot.includes("ưu tiên thấp") || ot.includes("lite [lower priority]");
+                if (mTxt.includes("lite")) return (ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp"));
                 if (mTxt.includes("fast")) return ot.includes("fast");
                 if (mTxt.includes("quality")) return ot.includes("quality");
                 if (mTxt.includes("abra")) return ot.includes("omni") || ot.includes("flash");
