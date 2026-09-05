@@ -1014,13 +1014,40 @@ func: async (promptText, cfg) => {
           const triggerClick = (el) => {
             if (!el) return false;
             el.scrollIntoView({ block: "nearest" });
+            
+            // Only send pointer/mouse events. Avoid calling el.click() to prevent double-toggling,
+            // or vice versa. Some components double-toggle if both are used.
             el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
             el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
             el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
             el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            
+            // Dispatching click manually is usually enough for React/Radix.
             el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-            try { el.click(); } catch (_) {}
             return true;
+          };
+
+          const safeToggle = async (el) => {
+            if (!el) return;
+            const target = el.closest("button, [role='combobox']") || el;
+            target.scrollIntoView({ block: "nearest" });
+            
+            // Check if already expanded
+            if (target.getAttribute("aria-expanded") === "true") return;
+            
+            // Try standard click
+            try { target.click(); } catch (_) {}
+            await sleep(300);
+            
+            if (target.getAttribute("aria-expanded") !== "true" && !document.querySelector("[role='listbox']")) {
+                // Fallback to pointer events if it didn't open
+                target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+                target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+                target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+                target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+                target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+                await sleep(300);
+            }
           };
 
           // 1. Select Mode: "Video" vs "Hình ảnh"
@@ -1116,8 +1143,8 @@ func: async (promptText, cfg) => {
             });
 
             if (modelDropdown) {
-              triggerClick(modelDropdown);
-              await sleep(600);
+              await safeToggle(modelDropdown);
+              await sleep(400); // Give portal time to mount
             }
 
             const mTxt = (cfg?.model || "veo_3_1_lite_low_priority").toLowerCase();
@@ -3039,13 +3066,40 @@ async function testUiStep(step, req) {
           const triggerClick = (el) => {
             if (!el) return false;
             el.scrollIntoView({ block: "nearest" });
+            
+            // Only send pointer/mouse events. Avoid calling el.click() to prevent double-toggling,
+            // or vice versa. Some components double-toggle if both are used.
             el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
             el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
             el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
             el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            
+            // Dispatching click manually is usually enough for React/Radix.
             el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-            try { el.click(); } catch (_) {}
             return true;
+          };
+
+          const safeToggle = async (el) => {
+            if (!el) return;
+            const target = el.closest("button, [role='combobox']") || el;
+            target.scrollIntoView({ block: "nearest" });
+            
+            // Check if already expanded
+            if (target.getAttribute("aria-expanded") === "true") return;
+            
+            // Try standard click
+            try { target.click(); } catch (_) {}
+            await sleep(300);
+            
+            if (target.getAttribute("aria-expanded") !== "true" && !document.querySelector("[role='listbox']")) {
+                // Fallback to pointer events if it didn't open
+                target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+                target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+                target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+                target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+                target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+                await sleep(300);
+            }
           };
 
           if (stepIdx === 4 || stepIdx === 4.0) {
