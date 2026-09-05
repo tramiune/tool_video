@@ -823,10 +823,30 @@ async function createVideoUI(prompt, projectId, config = {}) {
         // ──────────────────────────────────────────────
         // STEP 1: Find Slate Editor & Composer Container
         // ──────────────────────────────────────────────
+        const findDeepEditor = () => {
+          const walk = (node) => {
+            if (node.shadowRoot) {
+              const res = walk(node.shadowRoot);
+              if (res) return res;
+            }
+            for (const child of node.children) {
+              if (child.tagName === 'TEXTAREA' || child.getAttribute('contenteditable') === 'true' || child.getAttribute('data-slate-editor') === 'true' || child.getAttribute('role') === 'textbox') {
+                return child;
+              }
+              const res = walk(child);
+              if (res) return res;
+            }
+            return null;
+          };
+          return walk(document.body);
+        };
+
         const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
                     || document.querySelector("div[data-slate-editor='true']")
                     || document.querySelector("div[contenteditable='true']")
-                    || document.querySelector("textarea[placeholder*='prompt' i]");
+                    || document.querySelector("textarea[placeholder*='prompt' i]")
+                    || findDeepEditor();
+                    
         if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt trên giao diện Flow!" };
 
         // Locate composer bar containing editor & control buttons
@@ -1331,6 +1351,12 @@ async function createVideoUI(prompt, projectId, config = {}) {
       }
     });
 
+// Kiểm tra lỗi từ executeScript
+    if (results && results[0] && results[0].result && results[0].result.success === false) {
+      logToBridge(`[Flow Recon] ⚠️ Lỗi UI: ${results[0].result.error}`);
+      return { success: false, error: results[0].result.error };
+    }
+
     // ──────────────────────────────────────────────
     // STEP 4: Native Hardware Typing & Enter via CDP (chrome.debugger)
     // ──────────────────────────────────────────────
@@ -1366,15 +1392,25 @@ async function createVideoUI(prompt, projectId, config = {}) {
             target: { tabId: tab.id },
             world: "MAIN",
             func: () => {
-              const allBtns = Array.from(document.querySelectorAll("button"));
+              const walk = (node, matches) => {
+                if (node.shadowRoot) walk(node.shadowRoot, matches);
+                for (const child of node.children) {
+                  walk(child, matches);
+                  if (child.tagName === 'BUTTON' || child.getAttribute('role') === 'button') matches.push(child);
+                }
+              };
+              const allBtns = [];
+              walk(document.body, allBtns);
+
               for (const btn of allBtns) {
                 const inner = (btn.innerHTML || "").toLowerCase();
                 const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
-                let match = inner.includes("arrow_forward") || inner.includes("send") || aria.includes("submit") || aria.includes("generate") || aria.includes("tạo");
+                const title = (btn.getAttribute("title") || "").toLowerCase();
+                let match = inner.includes("arrow_forward") || inner.includes("send") || aria.includes("submit") || aria.includes("generate") || aria.includes("tạo") || title.includes("generate") || inner.includes("magic");
                 if (!match) {
                   for (const el of btn.querySelectorAll("*")) {
                     const t = (el.textContent || "").trim();
-                    if (t === "arrow_forward" || t === "send") {
+                    if (t === "arrow_forward" || t === "send" || t === "Generate" || t === "Tạo") {
                       match = true;
                       break;
                     }
