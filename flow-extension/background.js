@@ -886,13 +886,33 @@ func: async (promptText, cfg) => {
         });
 
         // Identify settings chip button (e.g. "Video · 720p · 8s · x2" or "Nano Banana")
-        const settingsChip = composerButtons.find(b => {
+        // To avoid clicking the "Back" button or random header buttons, we must be more specific.
+        let settingsChip = composerButtons.find(b => {
           if (b === submitBtn) return false;
+          if (b.offsetParent === null) return false;
           const t = (b.textContent || "").trim().toLowerCase();
-          const h = (b.innerHTML || "").toLowerCase();
-          if (t === "+" || h.includes("add") || t.includes("tác nhân") || t.includes("agent")) return false;
-          return b.offsetParent !== null;
+          // The chip usually contains indicators like "video", "ảnh", "image", "s", "p", "x"
+          if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.match(/\b(720p|1080p|4k|giây|fps)\b/i) || t.match(/^\d+s/i)) {
+            return true;
+          }
+          return false;
         });
+        
+        // Fallback: If not found by text, try to find a button that is physically close to submitBtn in the DOM tree
+        if (!settingsChip && submitBtn) {
+           let parent = submitBtn;
+           for(let i = 0; i < 6 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => b !== submitBtn && b.offsetParent !== null && !b.innerHTML.toLowerCase().includes("add") && (b.textContent || "").trim() !== "+");
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+        }
+
 
         // ──────────────────────────────────────────────
         // STEP 2: Configure Video Settings (Mode, Ratio, Duration, Count, Model)
