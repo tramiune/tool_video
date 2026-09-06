@@ -4657,7 +4657,19 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
           }
         }
 
-        // ƯU TIÊN 2: Tìm text element chứa query hoặc STT (ví dụ: "011." hoặc "011")
+        const removeDiacritics = (str) => {
+          return (str || "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/đ/g, "d")
+            .replace(/Đ/g, "D")
+            .toLowerCase();
+        };
+
+        const cleanQueryNoAccents = removeDiacritics(cleanQuery);
+        const promptFullNoAccents = removeDiacritics(promptFull);
+
+        // ƯU TIÊN 2: Tìm text element chứa query hoặc STT hoặc prompt
         if (!matchedCard) {
           const candidateTextEls = Array.from(
             document.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, button, b, strong, [aria-label], [title]")
@@ -4669,8 +4681,10 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim().toLowerCase();
             const combined = t + " " + aria;
             if (!combined.trim()) return false;
-            if (combined.includes(cleanQuery)) return true;
-            if (numOnly && cleanQuery.includes(".") && combined.includes(numOnly)) return true;
+            const combNoAccents = removeDiacritics(combined);
+            if (combined.includes(cleanQuery) || (cleanQueryNoAccents && combNoAccents.includes(cleanQueryNoAccents))) return true;
+            if (numOnly && cleanQuery.includes(".") && (combined.includes(numOnly) || combNoAccents.includes(numOnly))) return true;
+            if (promptFullNoAccents && (combined.includes(promptFull) || combNoAccents.includes(promptFullNoAccents))) return true;
             return false;
           });
 
@@ -4717,15 +4731,15 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
           }
         }
 
-        // ƯU TIÊN 3: Tìm theo từ khoá Prompt (Semantic Keywords Matching)
-        // Khi Flow tự động đổi tên thẻ sang tóm tắt ngắn (VD: "Golden eagle soarin..."), dùng từ khoá để định vị
+        // ƯU TIÊN 3: Tìm theo từ khoá Prompt (Semantic Keywords Matching hỗ trợ tiếng Việt không dấu)
+        // Khi Flow tự động đổi tên thẻ sang tóm tắt ngắn (VD: "Tao video con meo con"), dùng từ khoá để định vị
         if (!matchedCard && promptFull) {
-          const stopWords = new Set(["video", "tạo", "make", "create", "shot", "scene", "with", "from", "that", "this", "over", "into", "onto", "under", "about", "close", "realistic", "cinematic", "high", "detail", "4k", "8k"]);
-          const pWords = promptFull
+          const stopWords = new Set(["video", "tạo", "tao", "make", "create", "shot", "scene", "with", "from", "that", "this", "over", "into", "onto", "under", "about", "close", "realistic", "cinematic", "high", "detail", "4k", "8k"]);
+          const pWords = removeDiacritics(promptFull)
             .replace(/^\d+[\.\-_:\s]+/g, "")
             .replace(/[^\p{L}\p{N}\s]/gu, " ")
             .split(/\s+/)
-            .filter(w => w.length >= 4 && !stopWords.has(w));
+            .filter(w => w.length >= 2 && !stopWords.has(w));
 
           if (pWords.length > 0) {
             const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
@@ -4739,12 +4753,12 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             let maxScore = 0;
 
             for (const c of potentialCards) {
-              const cText = (c.innerText || c.textContent || "").toLowerCase();
+              const cTextNoAccents = removeDiacritics(c.innerText || c.textContent || "");
               let score = 0;
               for (const w of pWords) {
-                if (cText.includes(w)) score++;
+                if (cTextNoAccents.includes(w)) score++;
               }
-              if (score > maxScore && score >= 2) {
+              if (score > maxScore && score >= 1) {
                 maxScore = score;
                 bestCard = c;
               }
@@ -5389,7 +5403,19 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           }
         }
 
-        // ƯU TIÊN 2: Tìm text element chứa query hoặc STT (kiểm tra cả innerText, textContent và aria-label/title)
+        const removeDiacritics = (str) => {
+          return (str || "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/đ/g, "d")
+            .replace(/Đ/g, "D")
+            .toLowerCase();
+        };
+
+        const cleanQueryNoAccents = removeDiacritics(cleanQuery);
+        const promptFullNoAccents = removeDiacritics(promptFull);
+
+        // ƯU TIÊN 2: Tìm text element chứa query hoặc STT hoặc prompt (hỗ trợ cả tiếng Việt không dấu)
         if (!matched) {
           const candidateTextEls = Array.from(
             document.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, button, b, strong, [aria-label], [title]")
@@ -5401,8 +5427,10 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim().toLowerCase();
             const combined = t + " " + aria;
             if (!combined.trim()) return false;
-            if (combined.includes(cleanQuery)) return true;
-            if (numOnly && cleanQuery.includes(".") && combined.includes(numOnly)) return true;
+            const combNoAccents = removeDiacritics(combined);
+            if (combined.includes(cleanQuery) || (cleanQueryNoAccents && combNoAccents.includes(cleanQueryNoAccents))) return true;
+            if (numOnly && cleanQuery.includes(".") && (combined.includes(numOnly) || combNoAccents.includes(numOnly))) return true;
+            if (promptFullNoAccents && (combined.includes(promptFull) || combNoAccents.includes(promptFullNoAccents))) return true;
             return false;
           });
 
@@ -5450,14 +5478,14 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         }
 
         // ƯU TIÊN 3: Tìm theo từ khoá Prompt (Semantic Keywords Matching)
-        // Khi video render xong, Google Flow tự động tóm tắt prompt thành tên ngắn (VD: "Golden eagle soarin...")
+        // Khi video render xong, Google Flow tự động tóm tắt prompt thành tên ngắn (VD: "Tao video con meo con")
         if (!matched && promptFull) {
-          const stopWords = new Set(["video", "tạo", "make", "create", "shot", "scene", "with", "from", "that", "this", "over", "into", "onto", "under", "about", "close", "realistic", "cinematic", "high", "detail", "4k", "8k"]);
-          const pWords = promptFull
+          const stopWords = new Set(["video", "tạo", "tao", "make", "create", "shot", "scene", "with", "from", "that", "this", "over", "into", "onto", "under", "about", "close", "realistic", "cinematic", "high", "detail", "4k", "8k"]);
+          const pWords = removeDiacritics(promptFull)
             .replace(/^\d+[\.\-_:\s]+/g, "")
             .replace(/[^\p{L}\p{N}\s]/gu, " ")
             .split(/\s+/)
-            .filter(w => w.length >= 4 && !stopWords.has(w));
+            .filter(w => w.length >= 2 && !stopWords.has(w));
 
           if (pWords.length > 0) {
             const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
@@ -5471,10 +5499,10 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             let maxScore = 0;
 
             for (const c of potentialCards) {
-              const cText = (c.innerText || c.textContent || "").toLowerCase();
+              const cTextNoAccents = removeDiacritics(c.innerText || c.textContent || "");
               let score = 0;
               for (const w of pWords) {
-                if (cText.includes(w)) score++;
+                if (cTextNoAccents.includes(w)) score++;
               }
               if (score > maxScore && score >= 1) {
                 maxScore = score;
@@ -5488,7 +5516,8 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           }
         }
 
-        // ƯU TIÊN 4: Tìm thẻ lỗi / vi phạm chính sách (kể cả khi Flow xoá sạch text prompt khỏi giao diện thẻ)
+        // ƯU TIÊN 4: Tìm thẻ lỗi / vi phạm chính sách của CHÍNH TASK NÀY
+        // TUYỆT ĐỐI KHÔNG BẮT NHẦM CÁC THẺ LỖI CŨ TỪ CÁC LẦN CHẠY TRƯỚC
         if (!matched && (cleanQuery || promptFull || targetMediaId)) {
           const allFailedCards = Array.from(
             document.querySelectorAll("div, [role='listitem'], [data-id], [data-media-id], [data-workflow-id]")
@@ -5499,7 +5528,6 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             return isCardFailed(el);
           });
 
-          // 4a. Tìm trong tất cả phần tử con của thẻ lỗi: innerText, aria-label, title, dataset, outerHTML
           for (const fc of allFailedCards) {
             const childMeta = Array.from(fc.querySelectorAll("*")).map(c => 
               (c.getAttribute("aria-label") || "") + " " + 
@@ -5507,13 +5535,14 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
               (c.dataset ? Object.values(c.dataset).join(" ") : "")
             ).join(" ");
             const fullContent = ((fc.innerText || fc.textContent || "") + " " + childMeta).toLowerCase();
+            const fullContentNoAccents = removeDiacritics(fullContent);
             const htmlStr = fc.outerHTML || "";
 
             if (targetMediaId && (htmlStr.includes(targetMediaId) || fullContent.includes(targetMediaId.toLowerCase()))) {
               matched = fc;
               break;
             }
-            if (cleanQuery && fullContent.includes(cleanQuery)) {
+            if (cleanQuery && (fullContent.includes(cleanQuery) || (cleanQueryNoAccents && fullContentNoAccents.includes(cleanQueryNoAccents)))) {
               matched = fc;
               break;
             }
@@ -5521,32 +5550,17 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
               matched = fc;
               break;
             }
-            // Tìm theo từ khoá quan trọng của prompt
             if (promptFull) {
-              const words = promptFull.replace(/[^\p{L}\p{N}\s]/gu, " ").toLowerCase().split(/\s+/).filter(w => w.length >= 4);
-              const hits = words.filter(w => fullContent.includes(w)).length;
+              const stopWords = new Set(["video", "tạo", "tao", "make", "create"]);
+              const words = removeDiacritics(promptFull).replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+              const hits = words.filter(w => fullContentNoAccents.includes(w)).length;
               if (hits >= 2) {
                 matched = fc;
                 break;
               }
             }
           }
-
-          // 4b. FALLBACK: Khi Flow hoàn toàn không ghi bất kỳ chữ gì của prompt lên thẻ lỗi
-          // Nếu có thẻ lỗi xuất hiện trên màn hình VÀ trên toàn bộ Flow không còn thẻ nào đang render (% / spinner)
-          if (!matched && allFailedCards.length > 0) {
-            const isAnyCardRendering = Boolean(
-              document.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") ||
-              Array.from(document.querySelectorAll("*")).some(el => {
-                const r = el.getBoundingClientRect();
-                return r.width > 0 && r.height > 0 && r.height < 50 && Boolean((el.innerText || "").match(/\b\d{1,2}\s*%/));
-              })
-            );
-
-            if (!isAnyCardRendering) {
-              matched = allFailedCards[0];
-            }
-          }
+          // ĐÃ LOẠI BỎ HOÀN TOÀN 4b FALLBACK: Tuyệt đối không gán thẻ lỗi cũ của task khác vào task này!
         }
 
         if (!matched) return { status: 'WAITING_CARD' };
