@@ -2993,13 +2993,10 @@ async function createImageUI(prompt, projectId, config = {}) {
         // ──────────────────────────────────────────────
         // BƯỚC 2: Mở Cài Đặt (DÙNG CHÍNH TEST B2: click nút settingsChip)
         // ──────────────────────────────────────────────
+        // Mở Popover 1 lần duy nhất (chip là toggle → click lần 2 sẽ đóng!)
         if (!isPopoverOpen() && settingsChip) {
-          settingsChip.click(); // Đúng như Test B2!
-          await sleep(600);
-          if (!isPopoverOpen()) {
-            settingsChip.click();
-            await sleep(600);
-          }
+          settingsChip.click();
+          await sleep(1000);
         }
 
         // ──────────────────────────────────────────────
@@ -4176,46 +4173,64 @@ async function processServerImageQueue() {
       task.prompt = prompt;
       task.seq = seqStr;
 
-      logToBridge(`Bắt đầu tạo ảnh cho task: ${task.id} (prompt: "${(task.prompt || '').slice(0, 30)}...")`);
+      logToBridge(`Bắt đầu tạo ảnh (Auto Click UI) cho task: ${task.id} (prompt: "${(task.prompt || '').slice(0, 30)}...")`);
 
-      const model = "NARWHAL";
-      let aspect = "IMAGE_ASPECT_RATIO_LANDSCAPE";
-      if (task.aspectRatio === '9:16' || task.aspectRatio?.includes('PORTRAIT')) {
-        aspect = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-      } else if (task.aspectRatio === '16:9' || task.aspectRatio?.includes('LANDSCAPE')) {
-        aspect = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+      // Chuyển aspect ratio sang format cho createImageUI
+      let uiAspectRatio = "9:16";
+      if (task.aspectRatio === '16:9' || task.aspectRatio?.includes('LANDSCAPE')) {
+        uiAspectRatio = '16:9';
+      } else if (task.aspectRatio === '9:16' || task.aspectRatio?.includes('PORTRAIT')) {
+        uiAspectRatio = '9:16';
       } else if (task.aspectRatio === '1:1' || task.aspectRatio?.includes('SQUARE')) {
-        aspect = 'IMAGE_ASPECT_RATIO_SQUARE';
+        uiAspectRatio = '1:1';
+      } else if (task.aspectRatio === '4:3' || task.aspectRatio?.includes('FOUR_THREE')) {
+        uiAspectRatio = '4:3';
+      } else if (task.aspectRatio === '3:4' || task.aspectRatio?.includes('THREE_FOUR')) {
+        uiAspectRatio = '3:4';
       }
 
-      // Gọi API tạo ảnh trực tiếp giống tab Tạo Ảnh (KHÔNG fallback sang Auto Click)
-      logToBridge(`[Image Engine] Gọi API tạo ảnh cho task ${task.id}...`);
-      const res = await createImageAPI(prompt, task.projectId, model, aspect, task.referenceImage);
+      // Chuyển model sang format cho createImageUI
+      let uiModel = "banana_pro";
+      const srcModel = (task.model || task.imageModel || "").toLowerCase();
+      if (srcModel.includes("lite")) uiModel = "banana_2_lite";
+      else if (srcModel.includes("banana_2") || srcModel.includes("narwhal")) uiModel = "banana_2";
+      else if (srcModel.includes("pro")) uiModel = "banana_pro";
 
-      if (!res?.success || !res?.mediaId) {
-        const detailStr = res?.detail ? ` (${res.detail})` : '';
-        throw new Error((res?.error || 'Không nhận được Media ID từ Google Flow API') + detailStr);
+      // Gọi Auto Click UI tạo ảnh trên Flow (giống video flow)
+      logToBridge(`[Image Engine] Auto Click tạo ảnh cho task ${task.id} [${uiAspectRatio} | ${uiModel}]...`);
+      const clickRes = await createImageUI(prompt, task.projectId, {
+        aspectRatio: uiAspectRatio,
+        model: uiModel,
+        count: "x1"
+      });
+
+      if (!clickRes?.success) {
+        throw new Error(clickRes?.error || "Auto Click tạo ảnh thất bại trên Flow");
       }
 
-      const mediaId = res.mediaId;
+      logToBridge(`[Image Engine] Đã submit ảnh trên Flow! Bắt đầu theo dõi card "${task.seq}"...`);
 
-      logToBridge(`🎉 Task ảnh ${task.id} thành công! Media ID: ${mediaId}. Đang tải file ảnh về máy...`);
-      const fname = `flow_img_${Date.now()}_${mediaId.slice(0, 8)}.jpg`;
-      const dlRes = await downloadFileToDisk(mediaId, fname);
-      logToBridge(`✅ Đã tải xong ảnh về máy: ${dlRes.filePath} (${(dlRes.fileSize / 1024).toFixed(0)} KB)! Gửi cho tool_video...`);
+      // Poll + Download ảnh bằng hàm riêng cho ảnh
+      const dlRes = await waitAndDownloadImageCard(task.projectId, prompt, 300000);
+
+      if (!dlRes?.success) {
+        throw new Error(dlRes?.error || "Không tải được ảnh từ Flow");
+      }
+
+      logToBridge(`✅ Đã tải xong ảnh: ${dlRes.filename || dlRes.filePath}! Gửi cho tool_video...`);
 
       if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
         _toolWs.send(JSON.stringify({
           type: 'IMAGE_RESULT',
           id: task.id,
-          mediaId: mediaId,
-          filePath: dlRes.filePath,
-          downloadUrl: dlRes.url,
+          mediaId: dlRes.mediaId || "",
+          filePath: dlRes.filePath || dlRes.filename || "",
+          downloadUrl: dlRes.url || "",
           ok: true
         }));
       }
 
-      try { chrome.downloads.erase({ id: dlRes.downloadId }); } catch (_) {}
+      try { if (dlRes.downloadId) chrome.downloads.erase({ id: dlRes.downloadId }); } catch (_) {}
 
       await new Promise(r => setTimeout(r, 2000));
     } catch (err) {
@@ -6202,6 +6217,94 @@ async function waitAndDownloadCard(projectId, promptText, timeoutMs = 600000) {
   }
 
   return { success: false, error: "Quá thời gian chờ render (timeout)" };
+}
+
+// ══════════════════════════════════════
+// WAIT AND DOWNLOAD IMAGE CARD (Hàm riêng cho ảnh — không đụng video)
+// ══════════════════════════════════════
+async function waitAndDownloadImageCard(projectId, promptText, timeoutMs = 300000) {
+  const seqMatch = promptText ? promptText.trim().match(/^(\d+[\.\-_:\s])/i) : null;
+  const query = seqMatch ? seqMatch[1].toLowerCase() : (promptText ? promptText.slice(0, 20).toLowerCase() : "001.");
+
+  const flowTab = await getFlowTab('image', projectId) || await getFlowTab('video', projectId);
+  if (!flowTab?.id) {
+    return { success: false, error: "Không tìm thấy tab Google Flow đang mở!" };
+  }
+
+  logToBridge(`[Image Download] Bắt đầu theo dõi card ảnh "${query}"...`);
+  const startTime = Date.now();
+  const pollInterval = 3000;
+  let lastProgress = "";
+
+  // Quét 1 lần trước khi bắt đầu poll
+  try { await scanFlowCards(flowTab.id, projectId); } catch (_) {}
+
+  while (Date.now() - startTime < timeoutMs) {
+    await new Promise(r => setTimeout(r, pollInterval));
+
+    // Quét lại trước khi check
+    try { await scanFlowCards(flowTab.id, projectId); } catch (_) {}
+
+    const cardInfo = await checkCardStatus(projectId, query, promptText, "", "", 'image');
+    const cardStatus = cardInfo?.status;
+
+    if (cardStatus === 'RENDERING') {
+      const prog = cardInfo.progress || "Đang tạo ảnh...";
+      if (prog !== lastProgress) {
+        lastProgress = prog;
+        logToBridge(`[Image Download] Card ảnh "${query}" đang render (${prog})...`);
+        chrome.runtime.sendMessage({
+          action: "DOWNLOAD_STATUS_UPDATE",
+          query,
+          status: 'RENDERING',
+          progress: prog
+        }).catch(() => {});
+      }
+    } else if (cardStatus === 'READY') {
+      logToBridge(`[Image Download] 🎉 Card ảnh "${query}" đã xong! Bắt đầu tải ảnh...`);
+      chrome.runtime.sendMessage({
+        action: "DOWNLOAD_STATUS_UPDATE",
+        query,
+        status: 'READY',
+        progress: "Ảnh đã sẵn sàng! Đang tải..."
+      }).catch(() => {});
+
+      await new Promise(r => setTimeout(r, 800));
+      const dlResult = await downloadImageCardDirect(flowTab.id, query, promptText, cardInfo?.mediaId || "", "", null, projectId);
+
+      if (!dlResult?.success || !dlResult?.downloadId) {
+        return dlResult;
+      }
+
+      // Đợi download hoàn tất và lấy filePath
+      const filePath = await new Promise((resolve) => {
+        const maxWait = setTimeout(() => resolve(null), 30000);
+        const poll = setInterval(async () => {
+          try {
+            const items = await chrome.downloads.search({ id: dlResult.downloadId });
+            if (items?.[0]?.state === 'complete') {
+              clearInterval(poll);
+              clearTimeout(maxWait);
+              resolve(items[0].filename);
+            } else if (items?.[0]?.state === 'interrupted') {
+              clearInterval(poll);
+              clearTimeout(maxWait);
+              resolve(null);
+            }
+          } catch (_) {}
+        }, 500);
+      });
+
+      dlResult.filePath = filePath || dlResult.filename;
+      logToBridge(`[Image Download] ✅ Đã tải ảnh: ${dlResult.filePath}`);
+      return dlResult;
+    } else if (cardStatus === 'FAILED') {
+      logToBridge(`[Image Download] ❌ Card ảnh "${query}" tạo thất bại!`);
+      return { success: false, error: cardInfo?.error || "Tạo ảnh thất bại trên Flow" };
+    }
+  }
+
+  return { success: false, error: "Quá thời gian chờ tạo ảnh (timeout)" };
 }
 
 const _activeDeliveries = new Set();
