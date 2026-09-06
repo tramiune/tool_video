@@ -1552,6 +1552,22 @@ func: async (promptText, cfg) => {
             return true;
           };
 
+          const triggerClick = (el) => {
+            if (!el) return false;
+            const target = el.closest("button, [role='button'], [role='tab'], [role='radio'], [role='combobox'], [role='menuitem']") || el;
+            target.scrollIntoView({ block: "nearest" });
+            target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+            target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+            target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            if (typeof target.click === "function") {
+              target.click();
+            } else {
+              target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            }
+            return true;
+          };
+
           const safeToggle = async (el) => {
             if (!el) return;
             const target = el.closest("button, [role='combobox']") || el;
@@ -2362,7 +2378,6 @@ func: async (promptText, cfg) => {
           finalSubmit.removeAttribute("disabled");
           finalSubmit.setAttribute("aria-disabled", "false");
           triggerClick(finalSubmit);
-          finalSubmit.click();
           await sleep(500);
         }
 
@@ -6054,13 +6069,17 @@ async function testUiStep(step, req) {
         
         const triggerClick = (el) => {
           if (!el) return false;
-          el.scrollIntoView({ block: "nearest" });
-          el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-          el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-          el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-          el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-          el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-          if (typeof el.click === "function") el.click();
+          const target = el.closest("button, [role='button'], [role='tab'], [role='radio'], [role='combobox'], [role='menuitem']") || el;
+          target.scrollIntoView({ block: "nearest" });
+          target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+          target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+          target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+          target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+          if (typeof target.click === "function") {
+            target.click();
+          } else {
+            target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+          }
           return true;
         };
 
@@ -6300,10 +6319,12 @@ async function testUiStep(step, req) {
         const ensurePopoverOpen = async () => {
           if (isPopoverOpen()) return true;
           if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip để mở bảng cài đặt");
-          triggerClick(settingsChip);
+          const targetChip = settingsChip.closest("button, [role='button']") || settingsChip;
+          targetChip.scrollIntoView({ block: "nearest" });
+          targetChip.click();
           await sleep(600);
           if (!isPopoverOpen()) {
-            triggerClick(settingsChip);
+            targetChip.click();
             await sleep(600);
           }
           return isPopoverOpen();
@@ -6325,11 +6346,22 @@ async function testUiStep(step, req) {
             }
             throw new Error("Không tìm thấy nút Settings Chip");
           }
-          triggerClick(settingsChip);
-          await sleep(500);
+          const targetChip = settingsChip.closest("button, [role='button']") || settingsChip;
+          targetChip.scrollIntoView({ block: "nearest" });
+
+          // Bấm 1 lần duy nhất bằng native .click()
+          targetChip.click();
+          await sleep(600);
+
+          // Nếu popover chưa mở (ví dụ trước đó đang mở nên bị tắt, hoặc click lần 1 chưa ăn), bấm thêm 1 lần để đảm bảo popover mở
+          if (!isPopoverOpen()) {
+            targetChip.click();
+            await sleep(600);
+          }
+
           return isPopoverOpen()
-            ? `Đã bấm Settings Chip và mở Popover thành công! ("${settingsChip.textContent.trim().slice(0, 35)}")`
-            : `Đã bấm Settings Chip! ("${settingsChip.textContent.trim().slice(0, 35)}")`;
+            ? `✅ Đã bấm Settings Chip và mở Popover thành công! ("${targetChip.textContent.trim().slice(0, 35)}")`
+            : `Đã bấm Settings Chip! ("${targetChip.textContent.trim().slice(0, 35)}")`;
         }
 
         if (stepIdx === 3) {
@@ -6978,13 +7010,17 @@ async function testUiStep(step, req) {
 
           const triggerClick = (el) => {
             if (!el) return false;
-            el.scrollIntoView({ block: "nearest" });
-            el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-            if (typeof el.click === "function") el.click();
+            const target = el.closest("button, [role='button'], [role='tab'], [role='radio'], [role='combobox'], [role='menuitem']") || el;
+            target.scrollIntoView({ block: "nearest" });
+            target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+            target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+            target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            if (typeof target.click === "function") {
+              target.click();
+            } else {
+              target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            }
             return true;
           };
 
@@ -7053,14 +7089,16 @@ async function testUiStep(step, req) {
             }
             if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
 
-            triggerClick(settingsChip);
+            const targetChip = settingsChip.closest("button, [role='button']") || settingsChip;
+            targetChip.scrollIntoView({ block: "nearest" });
+            targetChip.click();
             await sleep(600);
 
             if (isPopoverOpen()) return true;
 
             // Thử click lần 2 nếu lần đầu chưa ăn
             await sleep(300);
-            triggerClick(settingsChip);
+            targetChip.click();
             await sleep(600);
 
             if (isPopoverOpen()) return true;
