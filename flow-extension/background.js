@@ -312,6 +312,7 @@ const HANDLERS = {
   SCROLL_FLOW_TO_TOP: req => scrollFlowToTop(req.tabId, req.projectId),
   REPORT_TOOL_VIDEO_RESULT: req => reportToolVideoResult(req),
   GET_PENDING_SERVER_TASKS: () => getPendingServerTasks(),
+  SCAN_FLOW_CARDS: req => scanFlowCards(req.tabId, req.projectId),
 };
 
 // ══════════════════════════════════════
@@ -606,14 +607,7 @@ async function getProjectVideos(projectId, targetTab = null) {
               container.querySelector("button[aria-label*='Phát' i], button[aria-label*='Play' i], button[title*='Phát' i], [class*='play'], svg")
             ) || txt.includes("play_arrow") || txt.includes("play");
             const hasVideoText = prompt.toLowerCase().includes("video") || txt.includes("video") || /\b\d+s\b/i.test(txt);
-
-            // BẢO VỆ CHỐNG BẮT NHẦM ẢNH START_FRAME / END_FRAME / ASSET:
-            const isImgAsset = !v && !vidUrl && !isProcessing && (
-              txt.includes("start_fra") || txt.includes("end_fra") || txt.includes("start frame") || txt.includes("end frame") ||
-              txt.includes("frame_") || /\.(png|jpg|jpeg|webp)\b/i.test(txt) ||
-              Boolean(container.querySelector("svg.lucide-image, [data-icon*='image'], [aria-label*='ảnh' i]"))
-            );
-            const isVideo = !isImgAsset && Boolean(v || vidUrl || hasPlay || hasVideoText || isProcessing || (!prompt.toLowerCase().includes("ảnh") && !prompt.toLowerCase().includes(".png") && !prompt.toLowerCase().includes(".jpg")));
+            const isVideo = Boolean(v || vidUrl || hasPlay || hasVideoText || isProcessing || !prompt.toLowerCase().includes("ảnh"));
 
             const cleanPrompt = prompt || `Video Veo #${idx + 1}`;
 
@@ -2570,13 +2564,11 @@ func: async (promptText, cfg) => {
 
       // ── TẦNG 2: Kiểm tra biến toàn cục & DOM trực tiếp trên tab Flow ──
       try {
-        const seqMatch = prompt ? prompt.trim().match(/^(\d{1,14})[\.\-_:\s]/i) : null;
-        const submitNumOnly = seqMatch ? seqMatch[1] : "";
         const tabCheck = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           world: "MAIN",
-          args: [effectiveSubmitTime, prompt, Array.from(preSubmitCapturedIds), submitNumOnly],
-          func: (startTime, promptText, excludedList, numOnly) => {
+          args: [effectiveSubmitTime, prompt, Array.from(preSubmitCapturedIds)],
+          func: (startTime, promptText, excludedList) => {
             const excluded = new Set(excludedList || []);
             const recent = window.__flowRecentMedia || [];
             const fresh = recent.find(item => item.time >= startTime - 500 && item.primaryId && !excluded.has(item.primaryId));
@@ -2585,28 +2577,21 @@ func: async (promptText, cfg) => {
             }
 
             // Check DOM attributes
-            const allElements = document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], [role='listitem']");
+            const allElements = document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id]");
             for (const el of allElements) {
               // LOẠI TRỪ: Các phần tử nằm trong composer, prompt editor, frame slot
               if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='frame-slot'], [class*='upload']")) {
                 continue;
               }
 
-              const text = (el.innerText || el.textContent || "").toLowerCase();
-              const hasSpinner = Boolean(el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin"));
-              const hasGeneratingText = text.includes("đang tạo") || text.includes("generating") || text.includes("đang kết xuất") || /\b\d+\s*%/.test(text);
+              // LOẠI TRỪ: Thẻ chỉ chứa ảnh mà không có video/loading
+              const hasVideo = el.querySelector("video");
+              // Card mới tạo phải có spinner / chữ đang tạo HOẶC phải chứa nội dung prompt của task này!
               const promptSub = (promptText || "").trim().slice(0, 15).toLowerCase();
-              const textMatchesPrompt = Boolean(promptSub && text.includes(promptSub));
-              const hasSeqMatch = Boolean(numOnly && new RegExp(`(^|[^0-9])${numOnly}([\\.\\-_:\\s]|$)`).test(text));
+              const textMatchesPrompt = promptSub && text.includes(promptSub);
 
-              if (!hasSpinner && !hasGeneratingText && !textMatchesPrompt && !hasSeqMatch) {
+              if (!hasSpinner && !hasGeneratingText && !textMatchesPrompt) {
                 continue; // Bỏ qua các card cũ đã hoàn thành từ trước
-              }
-
-              // Đóng dấu DOM attribute ngay lập tức khi phát hiện card video mới
-              if (numOnly) {
-                el.setAttribute("data-flow-task-seq-num", numOnly);
-                el.dataset.flowTaskSeqNum = numOnly;
               }
 
               const mId = el.getAttribute("data-media-id");
@@ -4088,17 +4073,24 @@ async function processServerVideoQueue() {
   while (_serverVideoQueue.length > 0) {
     const task = _serverVideoQueue.shift();
     try {
-      // ĐẢM BẢO ĐÁNH UNIX TIMESTAMP 10 SỐ ĐẦU PROMPT
+      // ĐẢM BẢO ĐÁNH SỐ THỨ TỰ 001., 002. ĐẦU PROMPT
       let prompt = (task.prompt || '').trim();
       let seqStr = "";
-      const matchTimestamp = prompt.match(/^(\d{9,14})[\.\-_:\s]/);
-      if (matchTimestamp) {
-        seqStr = matchTimestamp[1] + ".";
-        prompt = prompt.replace(/^(\d{9,14})[\.\-_:\s]\s*/, `${seqStr} `);
+      const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
+      if (matchSeq) {
+        const num = parseInt(matchSeq[1], 10);
+        seqStr = String(num).padStart(3, '0') + ".";
+        prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
+      } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
+        const num = Number(task.sceneIndex) + 1;
+        seqStr = String(num).padStart(3, '0') + ".";
+        prompt = `${seqStr} ${prompt}`;
+        await updateMaxSeq(task.projectId, num);
       } else {
-        prompt = prompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, ''); // Xóa STT cũ nếu có
-        const nowSec = Math.floor(Date.now() / 1000);
-        seqStr = `${nowSec}.`;
+        const seqRes = await getMaxSeq(task.projectId);
+        const nextSeq = (seqRes?.maxSeq || 0) + 1;
+        await updateMaxSeq(task.projectId, nextSeq);
+        seqStr = String(nextSeq).padStart(3, '0') + ".";
         prompt = `${seqStr} ${prompt}`;
       }
       task.prompt = prompt;
@@ -4165,17 +4157,24 @@ async function processServerImageQueue() {
   while (_serverImageQueue.length > 0) {
     const task = _serverImageQueue.shift();
     try {
-      // ĐẢM BẢO ĐÁNH UNIX TIMESTAMP 10 SỐ ĐẦU PROMPT
+      // ĐẢM BẢO ĐÁNH SỐ THỨ TỰ 001., 002. ĐẦU PROMPT
       let prompt = (task.prompt || '').trim();
       let seqStr = "";
-      const matchTimestamp = prompt.match(/^(\d{9,14})[\.\-_:\s]/);
-      if (matchTimestamp) {
-        seqStr = matchTimestamp[1] + ".";
-        prompt = prompt.replace(/^(\d{9,14})[\.\-_:\s]\s*/, `${seqStr} `);
+      const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
+      if (matchSeq) {
+        const num = parseInt(matchSeq[1], 10);
+        seqStr = String(num).padStart(3, '0') + ".";
+        prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
+      } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
+        const num = Number(task.sceneIndex) + 1;
+        seqStr = String(num).padStart(3, '0') + ".";
+        prompt = `${seqStr} ${prompt}`;
+        await updateMaxSeq(task.projectId, num);
       } else {
-        prompt = prompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, ''); // Xóa STT cũ nếu có
-        const nowSec = Math.floor(Date.now() / 1000);
-        seqStr = `${nowSec}.`;
+        const seqRes = await getMaxSeq(task.projectId);
+        const nextSeq = (seqRes?.maxSeq || 0) + 1;
+        await updateMaxSeq(task.projectId, nextSeq);
+        seqStr = String(nextSeq).padStart(3, '0') + ".";
         prompt = `${seqStr} ${prompt}`;
       }
       task.prompt = prompt;
@@ -4527,8 +4526,29 @@ async function downloadImageCardDirect(tabId, query = "001.", promptText = "", m
 
         if (matchedCard) {
           matchedCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          matchedCard.style.outline = '4px solid #10b981';
-          matchedCard.style.boxShadow = '0 0 25px rgba(16, 185, 129, 0.9)';
+          // ─── INJECT PERSISTENT SEQ BADGE (IMAGE) ───
+          try {
+            const seqDisplay = cleanQuery.replace(/[\.\-_:\s]+$/g, '').trim();
+            if (seqDisplay) {
+              const _mRect = matchedCard.getBoundingClientRect();
+              if (_mRect.width > 450 || _mRect.height > 500) throw new Error('skip');
+              const pos = getComputedStyle(matchedCard).position;
+              if (pos === 'static') matchedCard.style.position = 'relative';
+              matchedCard.style.outline = '3px solid #10b981';
+              matchedCard.style.outlineOffset = '-1px';
+              matchedCard.setAttribute('data-flow-seq', seqDisplay);
+              matchedCard.setAttribute('data-flow-seq-status', 'READY');
+              let badge = matchedCard.querySelector('[data-flow-seq-badge]');
+              if (!badge) {
+                badge = document.createElement('div');
+                badge.setAttribute('data-flow-seq-badge', 'true');
+                badge.style.cssText = 'position:absolute;top:6px;left:6px;z-index:9999;padding:3px 10px;border-radius:6px;font-family:"SF Mono",Consolas,monospace;font-size:13px;font-weight:800;color:#fff;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1.4;letter-spacing:0.5px;';
+                matchedCard.appendChild(badge);
+              }
+              badge.style.background = 'rgba(16,185,129,0.92)';
+              badge.textContent = `✅ ${seqDisplay}`;
+            }
+          } catch (_badgeErr) {}
 
           const imgs = Array.from(matchedCard.querySelectorAll("img")).filter(img => {
             const s = img.src || img.currentSrc || "";
@@ -4671,7 +4691,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
       world: "MAIN",
       args: [query, promptText || "", mediaId || "", workflowId || "", mediaType || "video"],
       func: async (q, pText, mId, wId, mType = "video") => {
-        const cleanQuery = (q || "").trim().toLowerCase();
+        const cleanQuery = (q || "001.").trim().toLowerCase();
         const numOnly = cleanQuery.replace(/[^0-9]/g, "");
         const targetMediaId = (mId || "").trim();
         const targetWorkflowId = (wId || "").trim();
@@ -4710,14 +4730,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         function isCardImageAsset(el) {
           if (!el) return false;
           const text = (el.innerText || el.textContent || "").toLowerCase();
-          // Nếu thẻ đang trong tiến trình render (có spinner, progress %, đang tạo...) thì là thẻ VIDEO đang tạo, KHÔNG PHẢI ảnh asset!
-          if (el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d{1,3}\s*%/i.test(text) || text.includes("đang tạo") || text.includes("generating") || text.includes("đang kết xuất")) {
-            return false;
-          }
-          if (el.querySelector("video")) return false;
-          if (el.querySelector("svg.lucide-play, [data-icon*='play'], button[aria-label*='phát' i], button[aria-label*='play' i]")) return false;
-          if (text.includes("▶") || text.includes("►") || text.includes("play_arrow") || /\b\d+s\b/i.test(text) || /\b\d+\s*giây\b/i.test(text)) return false;
-
+          if (isCardVideo(el)) return false;
           if (text.includes("start_fra") || text.includes("end_fra") || text.includes("start frame") || text.includes("end frame") ||
               /\.(png|jpg|jpeg|webp)\b/i.test(text) || text.includes("frame_")) {
             return true;
@@ -4731,28 +4744,14 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         // Helper leo lên container cha của thẻ card
         function getCardContainer(el) {
           if (!el) return null;
-          const tagged = el.closest("[data-flow-task-seq-num]");
-          if (tagged) return tagged;
-
-          const directItem = el.closest("[role='listitem'], div[class*='card'], div[data-id], div[data-media-id], div[data-workflow-id]");
-          if (directItem) {
-            const r = directItem.getBoundingClientRect();
-            if (r.width >= 120 && r.width <= 550 && r.height >= 150 && r.height <= 850) {
-              return directItem;
-            }
-          }
-
           let card = el;
           let cur = el.parentElement;
           while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
             const r = cur.getBoundingClientRect();
             if (r.width > 550 || r.height > 850 || r.width > window.innerWidth * 0.8) break;
 
-            const mediaCount = cur.querySelectorAll("video, img:not([src*='avatar']):not([src*='profile'])").length;
-            if (mediaCount > 2) break;
-
             const curText = cur.textContent || "";
-            const seqMatches = curText.match(/\b\d{3,14}[\.\-_:\s]/g) || [];
+            const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
             const uniqueSeqs = new Set(seqMatches.map(s => s.trim()));
             if (uniqueSeqs.size > 1) break;
 
@@ -4788,29 +4787,16 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             if (isVid) return -999999;
           }
 
-          const cardText = (card.innerText || card.textContent || "").trim();
-          const cardTextLower = cardText.toLowerCase();
-          const cardTextNoAccents = removeDiacritics(cardTextLower);
-
-          // BẢO VỆ TUYỆT ĐỐI: Loại bỏ triệt để các card có STT khác (chống tải nhầm video của task khác)
-          if (numOnly) {
-            const rawSeqs = (cardText.match(/\b\d{3,14}[\.\-_:\s]/g) || []).map(s => s.replace(/[^0-9]/g, ""));
-            if (rawSeqs.length > 0 && !rawSeqs.includes(numOnly)) {
-              return -999999;
-            }
-          }
-
           let score = 0;
           if (isVideoTask && isVid) score += 10000;
           if (mType === 'image' && isImgAsset) score += 5000;
 
+          const cardText = (card.innerText || card.textContent || "").trim();
+          const cardTextLower = cardText.toLowerCase();
+          const cardTextNoAccents = removeDiacritics(cardTextLower);
+
           if (isVideoTask && (cardTextLower.includes("start_fra") || cardTextLower.includes("end_fra") || cardTextLower.includes("frame_"))) {
             score -= 8000;
-          }
-
-          // Ưu tiên cao nhất cho thẻ đã được đóng dấu DOM attribute chính xác
-          if (numOnly && (card.getAttribute("data-flow-task-seq-num") === numOnly || card.dataset?.flowTaskSeqNum === numOnly)) {
-            score += 25000;
           }
 
           if (promptFull && (cardTextLower.includes(promptFull) || (promptFullNoAccents && cardTextNoAccents.includes(promptFullNoAccents)))) {
@@ -4822,16 +4808,8 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             score += 3000;
           }
 
-          // Semantic keyword matching (hỗ trợ trường hợp tiêu đề bị AI paraphrase sau khi render xong)
-          let wordHits = 0;
           for (const w of pWords) {
-            if (cardTextNoAccents.includes(w)) {
-              score += 500;
-              wordHits++;
-            }
-          }
-          if (wordHits >= 2) {
-            score += 3500; // Thưởng điểm lớn khi khớp 2+ từ khóa của prompt
+            if (cardTextNoAccents.includes(w)) score += 500;
           }
 
           if (card.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d+\s*%/i.test(cardText)) {
@@ -4846,20 +4824,25 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
         let matchedCard = null;
 
-        // ƯU TIÊN 0: Tìm theo DOM Attribute đã được đóng dấu (data-flow-task-seq-num)
-        if (numOnly) {
-          const taggedEls = Array.from(document.querySelectorAll(`[data-flow-task-seq-num="${numOnly}"]`));
-          for (const el of taggedEls) {
-            const card = getCardContainer(el) || el;
-            if (card && scoreCard(card) > 0) {
-              matchedCard = card;
-              break;
-            }
+        // ƯU TIÊN 0: Tìm card đã được highlight bởi scanner hoặc checkCardStatus
+        // → Nhanh nhất, chính xác nhất vì card đã được xác định từ trước!
+        const seqDisplay = cleanQuery.replace(/[\.\-_:\s]+$/g, '').trim();
+        if (seqDisplay) {
+          // Tìm cả 2 loại badge: scanner (data-flow-scan-seq) và poll (data-flow-seq)
+          const badgedCards = Array.from(document.querySelectorAll(
+            `[data-flow-scan-seq="${seqDisplay}"], [data-flow-seq="${seqDisplay}"]`
+          ));
+          if (badgedCards.length > 0) {
+            const readyCard = badgedCards.find(c =>
+              c.getAttribute('data-flow-seq-status') === 'READY' ||
+              c.getAttribute('data-flow-scan-seq')
+            );
+            matchedCard = readyCard || badgedCards[0];
           }
         }
 
         // ƯU TIÊN 1: Tìm chính xác theo Media ID hoặc Workflow ID (UUID)
-        if (targetMediaId || targetWorkflowId) {
+        if (!matchedCard && (targetMediaId || targetWorkflowId)) {
           const allMediaAndCards = Array.from(
             document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], img, video")
           );
@@ -4911,7 +4894,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
           const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
             if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
             const r = el.getBoundingClientRect();
-            if (r.width < 120 || r.width > 550 || r.height < 150 || r.height > 850) return false;
+            if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
             return Boolean(el.querySelector("video, img"));
           });
 
@@ -4973,8 +4956,30 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         }
 
         matchedCard.scrollIntoView({ behavior: 'auto', block: 'center' });
-        matchedCard.style.outline = '4px dashed #ff007f';
-        matchedCard.style.boxShadow = '0 0 25px rgba(255, 0, 127, 0.9)';
+
+        // ─── INJECT PERSISTENT SEQ BADGE (READY - đang tải) ───
+        try {
+          const seqDisplay = cleanQuery.replace(/[\.\-_:\s]+$/g, '').trim();
+          if (seqDisplay) {
+            const _mRect = matchedCard.getBoundingClientRect();
+            if (_mRect.width > 450 || _mRect.height > 500) throw new Error('skip');
+            const pos = getComputedStyle(matchedCard).position;
+            if (pos === 'static') matchedCard.style.position = 'relative';
+            matchedCard.style.outline = '3px solid #10b981';
+            matchedCard.style.outlineOffset = '-1px';
+            matchedCard.setAttribute('data-flow-seq', seqDisplay);
+            matchedCard.setAttribute('data-flow-seq-status', 'READY');
+            let badge = matchedCard.querySelector('[data-flow-seq-badge]');
+            if (!badge) {
+              badge = document.createElement('div');
+              badge.setAttribute('data-flow-seq-badge', 'true');
+              badge.style.cssText = 'position:absolute;top:6px;left:6px;z-index:9999;padding:3px 10px;border-radius:6px;font-family:"SF Mono",Consolas,monospace;font-size:13px;font-weight:800;color:#fff;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1.4;letter-spacing:0.5px;';
+              matchedCard.appendChild(badge);
+            }
+            badge.style.background = 'rgba(16,185,129,0.92)';
+            badge.textContent = `✅ ${seqDisplay}`;
+          }
+        } catch (_badgeErr) {}
 
         // Đợi layout ổn định sau khi scroll
         await new Promise(res => setTimeout(res, 150));
@@ -5478,6 +5483,152 @@ async function updateMaxSeq(projectId, newMax) {
   } catch (_) {}
   return { success: true };
 }
+// ══════════════════════════════════════
+// SCAN FLOW CARDS: Quét toàn bộ card trên màn hình, nhận diện STT, gắn badge
+// ══════════════════════════════════════
+async function scanFlowCards(tabId, projectId) {
+  try {
+    let targetTabId = tabId;
+    if (!targetTabId) {
+      const flowTab = await getFlowTab('video', projectId);
+      if (!flowTab?.id) return { success: false, error: 'Không tìm thấy tab Flow' };
+      targetTabId = flowTab.id;
+    }
+
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      world: "MAIN",
+      func: () => {
+        const BADGE_CSS = 'position:absolute;top:6px;left:6px;z-index:9999;padding:3px 10px;border-radius:6px;font-family:"SF Mono",Consolas,monospace;font-size:13px;font-weight:800;color:#fff;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1.4;letter-spacing:0.5px;';
+        const SEQ_REGEX = /(?:^|\s)(\d{1,4})[\.\-_:\s]/;
+        const statusColors = {
+          'rendering': { bg: 'rgba(0,229,255,0.92)', outline: '#00e5ff', emoji: '⏳' },
+          'ready':     { bg: 'rgba(16,185,129,0.92)', outline: '#10b981', emoji: '✅' },
+          'failed':    { bg: 'rgba(239,68,68,0.92)',  outline: '#ef4444', emoji: '❌' }
+        };
+
+        // Lịch sử: lưu thumbnail URL → seq (persist trên window)
+        if (!window.__flowScanHistory) window.__flowScanHistory = new Map();
+
+        // Helper: lấy fingerprint của card (thumbnail URL cắt ngắn)
+        const getCardFingerprint = (el) => {
+          const vid = el.querySelector('video');
+          const vidSrc = vid?.currentSrc || vid?.src || vid?.querySelector('source')?.src || '';
+          if (vidSrc) return vidSrc.split('?')[0].slice(-60);
+          const imgs = Array.from(el.querySelectorAll('img')).filter(img => {
+            const s = img.src || img.currentSrc || '';
+            return s && !s.startsWith('data:image/svg') && !s.includes('avatar') && !s.includes('icon');
+          }).sort((a, b) => ((b.naturalWidth||b.width||0)*(b.naturalHeight||b.height||0)) - ((a.naturalWidth||a.width||0)*(a.naturalHeight||a.height||0)));
+          if (imgs.length > 0) return (imgs[0].currentSrc || imgs[0].src).split('?')[0].slice(-60);
+          return '';
+        };
+
+        // Helper: xác định trạng thái card
+        const getCardStatus = (el) => {
+          const t = (el.innerText || el.textContent || '').toLowerCase();
+          if (el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d+\s*%/i.test(t) || t.includes('đang tạo') || t.includes('generating')) return 'rendering';
+          if (t.includes('không thành công') || t.includes('vi phạm chính sách') || t.includes('failed')) return 'failed';
+          return 'ready';
+        };
+
+        // Helper: gắn badge lên card
+        const applyBadge = (card, seq, status) => {
+          const colors = statusColors[status];
+          const pos = getComputedStyle(card).position;
+          if (pos === 'static') card.style.position = 'relative';
+          card.style.outline = `3px solid ${colors.outline}`;
+          card.style.outlineOffset = '-1px';
+          card.setAttribute('data-flow-scan-seq', seq);
+          const badge = document.createElement('div');
+          badge.setAttribute('data-flow-scan-badge', 'true');
+          badge.style.cssText = BADGE_CSS;
+          badge.style.background = colors.bg;
+          badge.textContent = `${colors.emoji} ${seq}`;
+          card.appendChild(badge);
+        };
+
+        // ═══ BƯỚC 1: Thu thập tất cả card-like elements ═══
+        const allElements = document.querySelectorAll('div, [role="listitem"]');
+        const validCards = [];
+
+        for (const el of allElements) {
+          if (el.closest('[data-slate-editor], form, [class*="composer"], [class*="input-container"], [class*="prompt-box"]')) continue;
+          if (el.hasAttribute('data-flow-scan-badge')) continue;
+
+          const r = el.getBoundingClientRect();
+          if (r.width < 100 || r.width > 400 || r.height < 100 || r.height > 450) continue;
+          if (r.top > window.innerHeight || r.bottom < 0) continue;
+
+          const hasMedia = el.querySelector('video') || Array.from(el.querySelectorAll('img')).some(img => {
+            const src = img.src || img.currentSrc || '';
+            if (!src || src.startsWith('data:image/svg') || src.includes('avatar') || src.includes('icon')) return false;
+            return (img.naturalWidth > 60 && img.naturalHeight > 60) || (img.width > 60 && img.height > 60);
+          });
+          const hasProgress = el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d+\s*%/i.test(el.textContent || '');
+          if (!hasMedia && !hasProgress) continue;
+
+          const text = (el.innerText || el.textContent || '').trim();
+          const seqMatch = text.match(SEQ_REGEX);
+          const seq = seqMatch ? seqMatch[1].padStart(3, '0') : null;
+          const fingerprint = getCardFingerprint(el);
+
+          validCards.push({ el, seq, text: text.slice(0, 60), fingerprint, rect: { w: r.width, h: r.height } });
+        }
+
+        // ═══ BƯỚC 2: Xóa badge cũ ═══
+        document.querySelectorAll('[data-flow-scan-badge]').forEach(b => b.remove());
+        document.querySelectorAll('[data-flow-scan-seq]').forEach(c => {
+          c.removeAttribute('data-flow-scan-seq');
+          c.style.outline = '';
+          c.style.outlineOffset = '';
+        });
+
+        // ═══ BƯỚC 3: Gán STT — từ text HOẶC từ lịch sử (cho card bị paraphrase) ═══
+        const seqMap = new Map(); // seq → { el, text, ... }
+
+        for (const c of validCards) {
+          let seq = c.seq;
+
+          // Nếu text không có STT → tìm trong lịch sử qua fingerprint
+          if (!seq && c.fingerprint) {
+            seq = window.__flowScanHistory.get(c.fingerprint) || null;
+          }
+          if (!seq) continue;
+
+          // Lưu vào lịch sử (fingerprint → seq)
+          if (c.fingerprint) {
+            window.__flowScanHistory.set(c.fingerprint, seq);
+          }
+
+          // Tránh trùng parent
+          const parentWithSeq = c.el.parentElement?.closest('[data-flow-scan-seq]');
+          if (parentWithSeq && parentWithSeq.getAttribute('data-flow-scan-seq') === seq) continue;
+
+          // Deduplicate: chọn element nhỏ nhất
+          const existing = seqMap.get(seq);
+          if (!existing || (c.rect.w * c.rect.h < existing.rect.w * existing.rect.h)) {
+            seqMap.set(seq, c);
+          }
+        }
+
+        // ═══ BƯỚC 4: Gắn badge ═══
+        const labeled = [];
+        for (const [seq, c] of seqMap) {
+          const status = getCardStatus(c.el);
+          applyBadge(c.el, seq, status);
+          labeled.push({ seq, status, text: c.text.slice(0, 40) });
+        }
+
+        return { success: true, count: labeled.length, cards: labeled, historySize: window.__flowScanHistory.size };
+      }
+    });
+
+    return result?.[0]?.result || { success: false, error: 'No result' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 async function checkCardStatus(projectId, query = "001.", promptText = "", mediaId = "", workflowId = "", mediaType = "auto") {
   const cleanQ = (query || "001.").trim().toLowerCase();
   const flowTab = (mediaType === 'image')
@@ -5494,7 +5645,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
       world: "MAIN",
       args: [cleanQ, promptText || "", mediaId || "", workflowId || "", mediaType || "auto"],
       func: (q, pText, mId, wId, mType = "auto") => {
-        const cleanQuery = (q || "").trim().toLowerCase();
+        const cleanQuery = (q || "001.").trim().toLowerCase();
         const numOnly = cleanQuery.replace(/[^0-9]/g, "");
         const targetMediaId = (mId || "").trim();
         const targetWorkflowId = (wId || "").trim();
@@ -5533,14 +5684,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         function isCardImageAsset(el) {
           if (!el) return false;
           const text = (el.innerText || el.textContent || "").toLowerCase();
-          // Nếu thẻ đang trong tiến trình render (có spinner, progress %, đang tạo...) thì là thẻ VIDEO đang tạo, KHÔNG PHẢI ảnh asset!
-          if (el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d{1,3}\s*%/i.test(text) || text.includes("đang tạo") || text.includes("generating") || text.includes("đang kết xuất")) {
-            return false;
-          }
-          if (el.querySelector("video")) return false;
-          if (el.querySelector("svg.lucide-play, [data-icon*='play'], button[aria-label*='phát' i], button[aria-label*='play' i]")) return false;
-          if (text.includes("▶") || text.includes("►") || text.includes("play_arrow") || /\b\d+s\b/i.test(text) || /\b\d+\s*giây\b/i.test(text)) return false;
-
+          if (isCardVideo(el)) return false;
           if (text.includes("start_fra") || text.includes("end_fra") || text.includes("start frame") || text.includes("end frame") ||
               /\.(png|jpg|jpeg|webp)\b/i.test(text) || text.includes("frame_")) {
             return true;
@@ -5625,28 +5769,14 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         // Helper leo lên container cha của thẻ card
         function getCardContainer(el) {
           if (!el) return null;
-          const tagged = el.closest("[data-flow-task-seq-num]");
-          if (tagged) return tagged;
-
-          const directItem = el.closest("[role='listitem'], div[class*='card'], div[data-id], div[data-media-id], div[data-workflow-id]");
-          if (directItem) {
-            const r = directItem.getBoundingClientRect();
-            if (r.width >= 120 && r.width <= 550 && r.height >= 150 && r.height <= 850) {
-              return directItem;
-            }
-          }
-
           let card = el;
           let cur = el.parentElement;
           while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
             const r = cur.getBoundingClientRect();
             if (r.width > 550 || r.height > 850 || r.width > window.innerWidth * 0.8) break;
 
-            const mediaCount = cur.querySelectorAll("video, img:not([src*='avatar']):not([src*='profile'])").length;
-            if (mediaCount > 2) break;
-
             const curText = cur.textContent || "";
-            const seqMatches = curText.match(/\b\d{3,14}[\.\-_:\s]/g) || [];
+            const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
             const uniqueSeqs = new Set(seqMatches.map(s => s.trim()));
             if (uniqueSeqs.size > 1) break;
 
@@ -5682,29 +5812,16 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             if (isVid) return -999999;
           }
 
-          const cardText = (card.innerText || card.textContent || "").trim();
-          const cardTextLower = cardText.toLowerCase();
-          const cardTextNoAccents = removeDiacritics(cardTextLower);
-
-          // BẢO VỆ TUYỆT ĐỐI: Loại bỏ triệt để các card có STT khác (chống tải nhầm video của task khác)
-          if (numOnly) {
-            const rawSeqs = (cardText.match(/\b\d{3,14}[\.\-_:\s]/g) || []).map(s => s.replace(/[^0-9]/g, ""));
-            if (rawSeqs.length > 0 && !rawSeqs.includes(numOnly)) {
-              return -999999;
-            }
-          }
-
           let score = 0;
           if (isVideoTask && isVid) score += 10000;
           if (mType === 'image' && isImgAsset) score += 5000;
 
+          const cardText = (card.innerText || card.textContent || "").trim();
+          const cardTextLower = cardText.toLowerCase();
+          const cardTextNoAccents = removeDiacritics(cardTextLower);
+
           if (isVideoTask && (cardTextLower.includes("start_fra") || cardTextLower.includes("end_fra") || cardTextLower.includes("frame_"))) {
             score -= 8000;
-          }
-
-          // Ưu tiên cao nhất cho thẻ đã được đóng dấu DOM attribute chính xác
-          if (numOnly && (card.getAttribute("data-flow-task-seq-num") === numOnly || card.dataset?.flowTaskSeqNum === numOnly)) {
-            score += 25000;
           }
 
           if (promptFull && (cardTextLower.includes(promptFull) || (promptFullNoAccents && cardTextNoAccents.includes(promptFullNoAccents)))) {
@@ -5716,16 +5833,8 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             score += 3000;
           }
 
-          // Semantic keyword matching (hỗ trợ trường hợp tiêu đề bị AI paraphrase sau khi render xong)
-          let wordHits = 0;
           for (const w of pWords) {
-            if (cardTextNoAccents.includes(w)) {
-              score += 500;
-              wordHits++;
-            }
-          }
-          if (wordHits >= 2) {
-            score += 3500; // Thưởng điểm lớn khi khớp 2+ từ khóa của prompt
+            if (cardTextNoAccents.includes(w)) score += 500;
           }
 
           if (card.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d+\s*%/i.test(cardText)) {
@@ -5740,15 +5849,14 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
 
         let matched = null;
 
-        // ƯU TIÊN 0: Tìm theo DOM Attribute đã được đóng dấu (data-flow-task-seq-num)
-        if (numOnly) {
-          const taggedEls = Array.from(document.querySelectorAll(`[data-flow-task-seq-num="${numOnly}"]`));
-          for (const el of taggedEls) {
-            const card = getCardContainer(el) || el;
-            if (card && scoreCard(card) > 0) {
-              matched = card;
-              break;
-            }
+        // ƯU TIÊN 0: Tìm card đã được highlight bởi scanner hoặc lần poll trước
+        const seqDisplay = cleanQuery.replace(/[\.\-_:\s]+$/g, '').trim();
+        if (seqDisplay) {
+          const badgedCards = Array.from(document.querySelectorAll(
+            `[data-flow-scan-seq="${seqDisplay}"], [data-flow-seq="${seqDisplay}"]`
+          ));
+          if (badgedCards.length > 0) {
+            matched = badgedCards[0];
           }
         }
 
@@ -5806,7 +5914,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
             if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
             const r = el.getBoundingClientRect();
-            if (r.width < 120 || r.width > 550 || r.height < 150 || r.height > 850) return false;
+            if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
             return Boolean(el.querySelector("video, img"));
           });
 
@@ -5828,7 +5936,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           ).filter(el => {
             if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
             const r = el.getBoundingClientRect();
-            if (r.width < 120 || r.width > 550 || r.height < 150 || r.height > 850) return false;
+            if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
             if (isVideoTask && isCardImageAsset(el)) return false;
             return isCardFailed(el);
           });
@@ -5873,7 +5981,10 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           return { status: 'WAITING_CARD' };
         }
 
-        // 1. KIỂM TRA RENDERING TRƯỚC HẾT (để không bao giờ đánh trượt các thẻ đang render 12%, 24%...)
+        // ─── 1. XÁC ĐỊNH TRẠNG THÁI ───
+        let cardStatus = 'READY';
+        let statusExtra = {};
+
         const text = (matched.textContent || "").trim();
         const lowerText = text.toLowerCase();
         const isGenerating = Boolean(matched.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin"));
@@ -5882,39 +5993,152 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         const hasSingleCancelBtn = Boolean(matched.querySelector("button[aria-label*='hủy' i]"));
 
         if (pctMatch || isGenerating || hasGenText || hasSingleCancelBtn) {
-          if (numOnly) {
-            matched.setAttribute("data-flow-task-seq-num", numOnly);
-            matched.dataset.flowTaskSeqNum = numOnly;
+          cardStatus = 'RENDERING';
+          statusExtra = { progress: pctMatch ? `${pctMatch[1]}%` : "Đang render..." };
+        } else if (isCardFailed(matched)) {
+          cardStatus = 'FAILED';
+          statusExtra = { error: getCardErrorMessage(matched) };
+        } else {
+          const matchedMediaId = matched?.getAttribute("data-media-id") || matched?.getAttribute("data-workflow-id") || targetMediaId;
+          const videoEl = matched?.querySelector("video");
+          const videoUrl = videoEl?.currentSrc || videoEl?.src || "";
+          statusExtra = { mediaId: matchedMediaId, videoUrl };
+        }
+
+        // ─── 2. INJECT PERSISTENT SEQ BADGE ───
+        try {
+          if (seqDisplay) {
+            // Guard: Không badge lên container quá lớn (chắc chắn không phải card đơn lẻ)
+            const _mRect = matched.getBoundingClientRect();
+            if (_mRect.width > 450 || _mRect.height > 500) throw new Error('skip_badge_too_large');
+
+            const BADGE_CSS = 'position:absolute;top:6px;left:6px;z-index:9999;padding:3px 10px;border-radius:6px;font-family:"SF Mono",Consolas,monospace;font-size:13px;font-weight:800;color:#fff;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1.4;letter-spacing:0.5px;';
+            const badgeColors = {
+              'RENDERING': { bg: 'rgba(0,229,255,0.92)',  outline: '#00e5ff', emoji: '⏳' },
+              'READY':     { bg: 'rgba(16,185,129,0.92)', outline: '#10b981', emoji: '✅' },
+              'FAILED':    { bg: 'rgba(239,68,68,0.92)',  outline: '#ef4444', emoji: '❌' }
+            };
+            const colors = badgeColors[cardStatus] || badgeColors['RENDERING'];
+
+            // Đảm bảo card có relative positioning cho badge overlay
+            const pos = getComputedStyle(matched).position;
+            if (pos === 'static') matched.style.position = 'relative';
+
+            // Viền khoanh vùng card theo trạng thái
+            matched.style.outline = `3px solid ${colors.outline}`;
+            matched.style.outlineOffset = '-1px';
+
+            // Đánh dấu card với data attribute
+            matched.setAttribute('data-flow-seq', seqDisplay);
+            matched.setAttribute('data-flow-seq-status', cardStatus);
+
+            // Tạo hoặc cập nhật badge
+            let badge = matched.querySelector('[data-flow-seq-badge]');
+            if (!badge) {
+              badge = document.createElement('div');
+              badge.setAttribute('data-flow-seq-badge', 'true');
+              badge.style.cssText = BADGE_CSS;
+              matched.appendChild(badge);
+            }
+            badge.style.background = colors.bg;
+            badge.textContent = `${colors.emoji} ${seqDisplay}`;
+
+            // ─── LƯU SEQ VÀO MAP PERSISTENT (trên window) ───
+            if (!window.__flowSeqMap) window.__flowSeqMap = new Map();
+            window.__flowSeqMap.set(seqDisplay, {
+              cleanQuery, numOnly, status: cardStatus
+            });
+
+            // ─── MUTATION OBSERVER THÔNG MINH: TÌM LẠI CARD KHI FLOW RE-RENDER ───
+            if (!window.__flowSeqObserver) {
+              let _reapplyTimer = null;
+
+              const _applyBadgeToCard = (card, seq, st) => {
+                // Guard: container quá lớn → không phải card đơn lẻ
+                const _r = card.getBoundingClientRect();
+                if (_r.width > 450 || _r.height > 500) return;
+
+                const cMap = { 'RENDERING': 'rgba(0,229,255,0.92)', 'READY': 'rgba(16,185,129,0.92)', 'FAILED': 'rgba(239,68,68,0.92)' };
+                const eMap = { 'RENDERING': '⏳', 'READY': '✅', 'FAILED': '❌' };
+                const oMap = { 'RENDERING': '#00e5ff', 'READY': '#10b981', 'FAILED': '#ef4444' };
+                const cPos = getComputedStyle(card).position;
+                if (cPos === 'static') card.style.position = 'relative';
+                card.style.outline = `3px solid ${oMap[st] || oMap['RENDERING']}`;
+                card.style.outlineOffset = '-1px';
+                card.setAttribute('data-flow-seq', seq);
+                card.setAttribute('data-flow-seq-status', st);
+                let b = card.querySelector('[data-flow-seq-badge]');
+                if (!b) {
+                  b = document.createElement('div');
+                  b.setAttribute('data-flow-seq-badge', 'true');
+                  b.style.cssText = 'position:absolute;top:6px;left:6px;z-index:9999;padding:3px 10px;border-radius:6px;font-family:"SF Mono",Consolas,monospace;font-size:13px;font-weight:800;color:#fff;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1.4;letter-spacing:0.5px;';
+                  card.appendChild(b);
+                }
+                b.style.background = cMap[st] || cMap['RENDERING'];
+                b.textContent = `${eMap[st] || '⏳'} ${seq}`;
+              };
+
+              const _getCardContainer = (el) => {
+                if (!el) return null;
+                let card = el, cur = el.parentElement;
+                while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+                  const r = cur.getBoundingClientRect();
+                  if (r.width > 450 || r.height > 500 || r.width > window.innerWidth * 0.5) break;
+                  const curText = cur.textContent || '';
+                  const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
+                  if (new Set(seqMatches.map(s => s.trim())).size > 1) break;
+                  card = cur;
+                  if (cur.parentElement) {
+                    const pr = cur.parentElement.getAttribute('role') || '';
+                    if (cur.getAttribute('role') === 'listitem' || pr === 'list' || pr === 'grid') break;
+                  }
+                  cur = cur.parentElement;
+                }
+                return card;
+              };
+
+              const _reapplyAllLabels = () => {
+                if (!window.__flowSeqMap || window.__flowSeqMap.size === 0) return;
+                window.__flowSeqMap.forEach((info, seq) => {
+                  // Card còn tồn tại và có badge → skip
+                  const existing = document.querySelector(`[data-flow-seq="${seq}"]`);
+                  if (existing && existing.querySelector('[data-flow-seq-badge]')) return;
+                  // Card còn tồn tại nhưng mất badge → gắn lại
+                  if (existing) { _applyBadgeToCard(existing, seq, info.status); return; }
+
+                  // Card bị xóa → tìm lại bằng text content
+                  const sRegex = info.numOnly ? new RegExp(`(^|[^0-9])${info.numOnly}([\\.\\-_:\\s]|$)`) : null;
+                  const textEls = document.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, b, strong');
+                  for (const el of textEls) {
+                    if (el.closest('[data-slate-editor], form, [class*="composer"], [class*="input-container"]')) continue;
+                    // Bỏ qua element đã là badge
+                    if (el.hasAttribute('data-flow-seq-badge')) continue;
+                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                    if (!t) continue;
+                    if (t.includes(info.cleanQuery) || (sRegex && sRegex.test(t))) {
+                      const card = _getCardContainer(el);
+                      if (!card) continue;
+                      // Tránh gắn trùng lên card đã có seq khác
+                      const cardSeq = card.getAttribute('data-flow-seq');
+                      if (cardSeq && cardSeq !== seq) continue;
+                      _applyBadgeToCard(card, seq, info.status);
+                      break;
+                    }
+                  }
+                });
+              };
+
+              window.__flowSeqObserver = new MutationObserver(() => {
+                clearTimeout(_reapplyTimer);
+                _reapplyTimer = setTimeout(_reapplyAllLabels, 300);
+              });
+              const listContainer = document.querySelector('[role="list"], [role="grid"], main') || document.body;
+              window.__flowSeqObserver.observe(listContainer, { childList: true, subtree: true });
+            }
           }
-          const cardRealId = matched.getAttribute("data-media-id") ||
-                             matched.getAttribute("data-workflow-id") ||
-                             matched.getAttribute("data-id") ||
-                             (matched.id && matched.id !== '_gd' ? matched.id : null);
-          return {
-            status: 'RENDERING',
-            progress: pctMatch ? `${pctMatch[1]}%` : "Đang render...",
-            mediaId: cardRealId || targetMediaId
-          };
-        }
+        } catch (_badgeErr) {}
 
-        // 2. KIỂM TRA LỖI TRÊN CHÍNH THẺ MATCHED (TUYỆT ĐỐI KHÔNG KIỂM TRA TRÊN ANCESTOR/CONTAINER)
-        if (isCardFailed(matched)) {
-          return { status: 'FAILED', error: getCardErrorMessage(matched) };
-        }
-
-        // 3. THẺ ĐÃ HOÀN TẤT -> READY để kích hoạt tải 720p!
-        if (numOnly) {
-          matched.setAttribute("data-flow-task-seq-num", numOnly);
-          matched.dataset.flowTaskSeqNum = numOnly;
-        }
-        const cardRealId = matched?.getAttribute("data-media-id") ||
-                           matched?.getAttribute("data-workflow-id") ||
-                           matched?.getAttribute("data-id") ||
-                           (matched.id && matched.id !== '_gd' ? matched.id : null);
-        const matchedMediaId = cardRealId || targetMediaId;
-        const videoEl = matched?.querySelector("video");
-        const videoUrl = videoEl?.currentSrc || videoEl?.src || "";
-        return { status: 'READY', mediaId: matchedMediaId, videoUrl };
+        return { status: cardStatus, ...statusExtra };
       }
     });
 
@@ -5937,17 +6161,18 @@ async function waitAndDownloadCard(projectId, promptText, timeoutMs = 600000) {
   const startTime = Date.now();
   const pollInterval = 3500;
   let lastProgress = "";
-  let lastKnownMediaId = "";
+
+  // Quét 1 lần trước khi bắt đầu poll → đánh dấu tất cả card hiện có
+  try { await scanFlowCards(flowTab.id, projectId); } catch (_) {}
 
   while (Date.now() - startTime < timeoutMs) {
     await new Promise(r => setTimeout(r, pollInterval));
 
-    const cardInfo = await checkCardStatus(projectId, query, promptText, lastKnownMediaId, "", 'video');
-    const cardStatus = cardInfo?.status;
+    // Quét lại trước khi check → cập nhật badge cho card mới/thay đổi
+    try { await scanFlowCards(flowTab.id, projectId); } catch (_) {}
 
-    if (cardInfo?.mediaId) {
-      lastKnownMediaId = cardInfo.mediaId;
-    }
+    const cardInfo = await checkCardStatus(projectId, query, promptText, "", "", 'video');
+    const cardStatus = cardInfo?.status;
 
     if (cardStatus === 'RENDERING') {
       const prog = cardInfo.progress || "Đang render...";
@@ -5972,7 +6197,7 @@ async function waitAndDownloadCard(projectId, promptText, timeoutMs = 600000) {
 
       // Đợi 1s cho thẻ video hiển thị ổn định
       await new Promise(r => setTimeout(r, 1000));
-      const dlResult = await triggerNativeDownloadForCard(flowTab.id, query, promptText, cardInfo?.mediaId || lastKnownMediaId || "", "", 'video', projectId);
+      const dlResult = await triggerNativeDownloadForCard(flowTab.id, query, promptText, cardInfo?.mediaId || "", "", 'video', projectId);
       return dlResult;
     } else if (cardStatus === 'FAILED') {
       logToBridge(`[Auto Download] ❌ Card "${query}" render thất bại!`);
@@ -6020,6 +6245,8 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') 
 
       // ── BƯỚC 1: Quét trạng thái thẻ bằng checkCardStatus (đồng bộ 100% cơ chế Tab Auto Click UI) ──
       try {
+        // Quét card trước → đánh dấu STT cho checkCardStatus dùng
+        try { await scanFlowCards(flowTab.id, projectId); } catch (_) {}
         const cardInfo = await checkCardStatus(projectId, promptText, promptText, finalMediaId, null, 'video');
         if (cardInfo) {
           if (cardInfo.mediaId && !finalMediaId) finalMediaId = cardInfo.mediaId;
