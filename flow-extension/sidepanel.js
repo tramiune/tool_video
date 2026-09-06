@@ -839,6 +839,15 @@
               callExt("SCROLL_FLOW_TO_TOP", { projectId: targetPid }).catch(() => {});
             }
 
+            if (dlRes?.isStillRendering) {
+              console.log(`[Batch Worker] Task #${task.id} vẫn đang render trên Flow (menu chỉ có nút Xoá), tiếp tục chờ...`);
+              task.status = "RENDERING";
+              task.downloadStatus = "Đang kết xuất video (chờ nút Tải xuống)...";
+              task.lastProgressAt = Date.now();
+              renderQueueUI();
+              continue;
+            }
+
             if (dlRes?.success) {
               task.status = "SUCCESS";
               task.downloadStatus = `Đã tải 720p (${dlRes.filename || 'OK'})`;
@@ -1555,6 +1564,15 @@
             } finally {
               releaseUiLock();
               callExt("SCROLL_FLOW_TO_TOP", { projectId }).catch(() => {});
+            }
+
+            if (dlRes?.isStillRendering) {
+              console.log(`[Ui Worker] Task #${task.id} vẫn đang render trên Flow (menu chỉ có nút Xoá), tiếp tục chờ...`);
+              task.status = "RENDERING";
+              task.downloadStatus = "Đang kết xuất video (chờ nút Tải xuống)...";
+              task.lastProgressAt = Date.now();
+              renderUiBatchUI();
+              continue;
             }
 
             if (dlRes?.success) {

@@ -4701,7 +4701,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
             while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
               const r = cur.getBoundingClientRect();
-              if (r.width > 480 || r.height > 650 || r.width > window.innerWidth * 0.7) break;
+              if (r.width > 550 || r.height > 850 || r.width > window.innerWidth * 0.8) break;
 
               const curText = cur.textContent || "";
               const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
@@ -4711,16 +4711,11 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
               card = cur;
 
               if (cur.parentElement) {
-                const siblings = Array.from(cur.parentElement.children);
-                if (siblings.length >= 2) {
-                  const cardSiblings = siblings.filter(s => {
-                    const sr = s.getBoundingClientRect();
-                    return Math.abs(sr.width - r.width) < 50 && sr.height > 100;
-                  });
-                  if (cardSiblings.length >= 2) {
-                    card = cur;
-                    break;
-                  }
+                const parentRole = cur.parentElement.getAttribute("role") || "";
+                const isCardContainer = cur.getAttribute("role") === "listitem" || parentRole === "list" || parentRole === "grid";
+                if (isCardContainer) {
+                  card = cur;
+                  break;
                 }
               }
 
@@ -4861,6 +4856,8 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
     // 4. B8.1: Tìm mục "Tải xuống" (Thử lại tối đa 3 giây kèm backup click CDP)
     let dlPos = null;
+    let isStillRenderingOnFlow = false;
+
     for (let attempt = 1; attempt <= 12; attempt++) {
       await new Promise(r => setTimeout(r, attempt === 1 ? 400 : 250));
 
@@ -4877,26 +4874,52 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             return t === "Tải xuống" || t.startsWith("Tải xuống") || t === "Download" || t.startsWith("Download") || t.toLowerCase().includes("tải xuống");
           });
 
-          if (all.length === 0) return null;
-          const exact = all.find(el => (el.innerText || el.textContent || "").trim() === "Tải xuống") || all[0];
-          const row = exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact;
-          const rect = row.getBoundingClientRect();
-          row.style.outline = '3px solid #00e5ff';
-          row.style.boxShadow = '0 0 20px #00e5ff';
-          ['mouseenter', 'mouseover', 'mousemove'].forEach(evt => {
-            row.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+          if (all.length > 0) {
+            const exact = all.find(el => (el.innerText || el.textContent || "").trim() === "Tải xuống") || all[0];
+            const row = exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact;
+            const rect = row.getBoundingClientRect();
+            row.style.outline = '3px solid #00e5ff';
+            row.style.boxShadow = '0 0 20px #00e5ff';
+            ['mouseenter', 'mouseover', 'mousemove'].forEach(evt => {
+              row.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+            });
+            return {
+              type: 'DOWNLOAD',
+              x: Math.round(rect.left + rect.width / 2),
+              y: Math.round(rect.top + rect.height / 2),
+              right: Math.round(rect.right),
+              left: Math.round(rect.left)
+            };
+          }
+
+          // Kiểm tra nếu menu chuột phải đã mở nhưng chỉ có nút "Xoá" (Flow đang xử lý, chưa xong)
+          const hasDeleteBtn = Array.from(document.querySelectorAll("*")).some(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.width > 380 || r.height > 90) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = (el.innerText || el.textContent || "").trim().toLowerCase();
+            return (t === "xóa" || t === "xoá" || t === "delete") && Boolean(el.closest("[role='menu'], [role='menuitem'], [class*='menu'], [class*='popover'], ul"));
           });
-          return {
-            x: Math.round(rect.left + rect.width / 2),
-            y: Math.round(rect.top + rect.height / 2),
-            right: Math.round(rect.right),
-            left: Math.round(rect.left)
-          };
+
+          if (hasDeleteBtn) {
+            // Đóng menu chuột phải để không làm kẹt giao diện
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+            return { type: 'STILL_RENDERING' };
+          }
+
+          return null;
         }
       });
 
-      dlPos = r1?.[0]?.result;
-      if (dlPos) break;
+      const res = r1?.[0]?.result;
+      if (res?.type === 'DOWNLOAD') {
+        dlPos = res;
+        break;
+      }
+      if (res?.type === 'STILL_RENDERING') {
+        isStillRenderingOnFlow = true;
+        break;
+      }
 
       // Nếu sau 2 lần (~650ms) chưa thấy menu chuột phải, gửi thêm CDP hardware right-click bổ trợ
       if (attempt === 2 || attempt === 5) {
@@ -4910,6 +4933,10 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
           });
         } catch (_) {}
       }
+    }
+
+    if (isStillRenderingOnFlow) {
+      return { success: false, isStillRendering: true, error: "Thẻ vẫn đang render trên Flow (menu chuột phải chỉ có nút Xoá)" };
     }
 
     if (!dlPos) {
@@ -5447,7 +5474,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
 
             while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
               const r = cur.getBoundingClientRect();
-              if (r.width > 480 || r.height > 650 || r.width > window.innerWidth * 0.7) break;
+              if (r.width > 550 || r.height > 850 || r.width > window.innerWidth * 0.8) break;
 
               const curText = cur.textContent || "";
               const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
@@ -5457,16 +5484,11 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
               card = cur;
 
               if (cur.parentElement) {
-                const siblings = Array.from(cur.parentElement.children);
-                if (siblings.length >= 2) {
-                  const cardSiblings = siblings.filter(s => {
-                    const sr = s.getBoundingClientRect();
-                    return Math.abs(sr.width - r.width) < 50 && sr.height > 100;
-                  });
-                  if (cardSiblings.length >= 2) {
-                    card = cur;
-                    break;
-                  }
+                const parentRole = cur.parentElement.getAttribute("role") || "";
+                const isCardContainer = cur.getAttribute("role") === "listitem" || parentRole === "list" || parentRole === "grid";
+                if (isCardContainer) {
+                  card = cur;
+                  break;
                 }
               }
 
@@ -5565,19 +5587,28 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
 
         if (!matched) return { status: 'WAITING_CARD' };
 
+        const cardRoot = matched.closest("[role='listitem'], div[class*='card'], div[class*='item']") || matched;
+        const targetContainer = cardRoot || matched;
+
         // 3. KIỂM TRA LỖI / VI PHẠM CHÍNH SÁCH / 3 NÚT BẤM (ƯU TIÊN HÀNG ĐẦU!)
-        if (isCardFailed(matched)) {
-          return { status: 'FAILED', error: getCardErrorMessage(matched) };
+        if (isCardFailed(matched) || isCardFailed(cardRoot)) {
+          return { status: 'FAILED', error: getCardErrorMessage(matched || cardRoot) };
         }
 
-        const text = matched.textContent || "";
+        const text = ((matched.textContent || "") + " " + (cardRoot?.textContent || "")).trim();
         const lowerText = text.toLowerCase();
 
         // 4. Kiểm tra xem riêng thẻ card này có đang render không
-        const isGenerating = Boolean(matched.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin"));
+        const isGenerating = Boolean(
+          matched.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") ||
+          cardRoot?.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin")
+        );
         const pctMatch = text.match(/(\d+)\s*%/);
         const hasGenText = lowerText.includes("đang tạo") || lowerText.includes("generating") || lowerText.includes("đang kết xuất");
-        const hasSingleCancelBtn = Boolean(matched.querySelector("button[aria-label*='hủy' i]"));
+        const hasSingleCancelBtn = Boolean(
+          matched.querySelector("button[aria-label*='hủy' i]") ||
+          cardRoot?.querySelector("button[aria-label*='hủy' i]")
+        );
 
         if (pctMatch || isGenerating || hasGenText || hasSingleCancelBtn) {
           return {
@@ -5586,30 +5617,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           };
         }
 
-        // 5. KIỂM TRA MEDIA THỰC TẾ: Video đã render xong BẮT BUỘC phải có ảnh thumbnail thật, video thật, hoặc nút play/tải
-        const hasRealImg = Array.from(matched.querySelectorAll("img")).some(img => {
-          const src = img.src || img.currentSrc || "";
-          if (!src || src.startsWith("data:image/svg") || src.includes("avatar") || src.includes("icon")) return false;
-          return (img.naturalWidth > 40 && img.naturalHeight > 40) || (img.width > 40 && img.height > 40) || src.includes("blob:") || src.includes("googleusercontent") || src.includes("flow-content");
-        });
-
-        const hasRealVideo = Array.from(matched.querySelectorAll("video")).some(v => {
-          const src = v.currentSrc || v.src || v.querySelector("source")?.src || "";
-          return Boolean(src) || v.readyState > 0 || v.duration > 0;
-        });
-
-        const hasDownloadBtn = Boolean(matched.querySelector("button[aria-label*='Tải' i], button[aria-label*='Download' i], button[title*='Tải' i], button[title*='Download' i], svg[data-icon='download']"));
-        const hasPlayIcon = Boolean(matched.querySelector("button[aria-label*='Phát' i], button[aria-label*='Play' i], svg[data-icon='play'], [class*='play']"));
-
-        const hasRenderedMedia = hasRealImg || hasRealVideo || hasDownloadBtn || hasPlayIcon;
-
-        // Nếu thẻ card chưa có ảnh thumbnail hoặc video thật -> Vẫn đang ở trạng thái kết xuất/đóng gói video
-        if (!hasRenderedMedia) {
-          return {
-            status: 'RENDERING',
-            progress: "Đang hoàn tất đóng gói video..."
-          };
-        }
+        // 5. Thẻ đã hoàn tất render (không spinner, không %, không nút hủy, không lỗi) -> READY để kích hoạt tải 720p!
 
         // 6. KHÔI PHỤC STT TRÊN GIAO DIỆN FLOW: Nếu Flow đã tự động đổi tên tóm tắt, bổ sung lại STT lên nhãn
         if (cleanQuery && matched) {
@@ -5631,8 +5639,8 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           } catch (_) {}
         }
 
-        const matchedMediaId = matched?.getAttribute("data-media-id") || matched?.getAttribute("data-workflow-id") || targetMediaId;
-        const videoEl = matched?.querySelector("video");
+        const matchedMediaId = targetContainer?.getAttribute("data-media-id") || targetContainer?.getAttribute("data-workflow-id") || matched?.getAttribute("data-media-id") || targetMediaId;
+        const videoEl = targetContainer?.querySelector("video") || matched?.querySelector("video");
         const videoUrl = videoEl?.currentSrc || videoEl?.src || "";
         return { status: 'READY', mediaId: matchedMediaId, videoUrl };
       }
