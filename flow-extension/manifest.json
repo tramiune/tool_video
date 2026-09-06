@@ -23,7 +23,9 @@
   "host_permissions": [
     "https://labs.google/*",
     "https://flow.google.com/*",
+    "https://flow-content.google/*",
     "https://aisandbox-pa.googleapis.com/*",
+    "https://*.googleusercontent.com/*",
     "https://www.google.com/*",
     "http://localhost/*",
     "http://127.0.0.1/*"

@@ -27,6 +27,14 @@
         });
       } catch (_) {}
     }
+    if (event.data.type === "__FLOW_MEDIA_CAPTURED") {
+      try {
+        chrome.runtime.sendMessage({
+          action: "FLOW_MEDIA_CAPTURED",
+          item: event.data.item
+        });
+      } catch (_) {}
+    }
   });
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

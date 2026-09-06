@@ -7,9 +7,13 @@
 const tabAuthTokens = new Map();
 const MAX_TOKEN_AGE_MS = 50 * 60 * 1000; // 50 phút
 
-// Dọn dẹp token khi tab đóng
+// Map: tabId -> Array of captured media objects { mediaIds, workflows, videoUrls, primaryId, rpcId, time }
+const _capturedMediaByTab = new Map();
+
+// Dọn dẹp token & media cache khi tab đóng
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabAuthTokens.delete(tabId);
+  _capturedMediaByTab.delete(tabId);
 });
 
 async function invalidateAuthToken(flowTab = null) {
@@ -179,12 +183,12 @@ function handleMessage(req, sender, sendResponse) {
     const rpcIds = req.rpcIds || 'batchexecute';
     const isL2jnw = rpcIds.includes('L2jnw') || JSON.stringify(req.fReq || '').includes('L2jnw');
     
-    logToBridge(`[New API Captured] 🚀 Tab ${tabId} vừa gọi batchexecute: RPC [${rpcIds}]`);
+    // Chỉ log ra console của DevTools, không bắn vào Live Log / Server log tránh spam
     console.log(`🚀 [New API Captured Tab ${tabId}]: RPC [${rpcIds}]`, req);
 
     if (isL2jnw) {
       const summary = JSON.stringify(req.fReq).slice(0, 300);
-      logToBridge(`[New API Captured] 🔥 TÓM ĐƯỢC CẤU TRÚC L2jnw (StreamGenerateContent): ${summary}...`);
+      console.log(`[New API Captured] 🔥 TÓM ĐƯỢC CẤU TRÚC L2jnw (StreamGenerateContent): ${summary}...`);
       try {
         chrome.storage.local.set({
           captured_L2jnw: {
@@ -197,6 +201,25 @@ function handleMessage(req, sender, sendResponse) {
       } catch (_) {}
     }
 
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (req.action === "FLOW_MEDIA_CAPTURED") {
+    const tabId = sender?.tab?.id || 'unknown';
+    const item = req.item || {};
+    const primaryId = item.primaryId;
+
+    if (!_capturedMediaByTab.has(tabId)) {
+      _capturedMediaByTab.set(tabId, []);
+    }
+    const tabMedia = _capturedMediaByTab.get(tabId);
+    tabMedia.unshift(item);
+    if (tabMedia.length > 50) tabMedia.pop();
+
+    if (primaryId) {
+      console.log(`[Flow Recon] 🎯 Tóm được Media ID từ RPC [${item.rpcId || 'Boq'}]: ${primaryId}`);
+    }
     sendResponse({ success: true });
     return true;
   }
@@ -262,10 +285,11 @@ const HANDLERS = {
   PING:               async () => ({ success: true, version: "3.9" }),
   GET_PROJECT_VIDEOS: req => getProjectVideos(req.projectId),
   GET_DOWNLOAD_URL:   req => getDownloadUrl(req.mediaId),
-  DOWNLOAD_VIDEO:     req => downloadVideo(req.mediaId, req.filename),
+  DOWNLOAD_VIDEO:     req => downloadVideo(req.mediaId, req.filename, req.videoUrl, req.cardIndex),
   CREATE_VIDEO:       req => createVideoAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.startImage, req.endImage),
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
+  CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
   UPLOAD_IMAGE:       req => uploadImage(req.projectId, req.imageUrl, req.imageBase64),
   RENAME_WORKFLOW_TO_UUID: req => renameWorkflowToUuid(req.projectId, req.mediaId),
@@ -276,6 +300,16 @@ const HANDLERS = {
   GET_TTS_VOICES:     req => getTTSVoices(req.lang),
   GENERATE_AI_SCRIPT: req => generateAIScriptDynamic(req.topic, req.totalScenes, req.totalMinutes, req.lang, req.geminiApiKey),
   GET_FLOW_TABS_STATUS: async () => getFlowTabsStatus(),
+  DOWNLOAD_CARD_NATIVE: req => (req.mediaType === 'image'
+    ? downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId)
+    : triggerNativeDownloadForCard(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.mediaType || 'auto', req.projectId)),
+  DOWNLOAD_IMAGE_CARD: req => downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId),
+  DOWNLOAD_IMAGE_CARD_NATIVE: req => downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId),
+  WAIT_AND_DOWNLOAD_CARD: req => waitAndDownloadCard(req.projectId, req.prompt, req.timeoutMs),
+  CHECK_CARD_STATUS: req => checkCardStatus(req.projectId, req.query, req.prompt, req.mediaId, req.workflowId, req.mediaType || 'auto'),
+  GET_MAX_SEQ: req => getMaxSeq(req.projectId),
+  UPDATE_MAX_SEQ: req => updateMaxSeq(req.projectId, req.newMax),
+  SCROLL_FLOW_TO_TOP: req => scrollFlowToTop(req.tabId, req.projectId),
 };
 
 // ══════════════════════════════════════
@@ -372,17 +406,308 @@ async function createProject(title) {
 // ══════════════════════════════════════
 // 1. Get Project Videos & Images
 // ══════════════════════════════════════
-async function getProjectVideos(projectId) {
+async function getProjectVideos(projectId, targetTab = null) {
   if (!projectId) return { success: false, error: "Thiếu projectId" };
-  const input = JSON.stringify({ json: { projectId } });
-  const url = `${TRPC_BASE}/flow.projectInitialData?input=${encodeURIComponent(input)}`;
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) {
-    if (res.status === 400) return { success: false, error: "Project ID không hợp lệ!" };
-    if (res.status === 401 || res.status === 403) return { success: false, error: "Chưa đăng nhập Google Flow!" };
-    return { success: false, error: `HTTP ${res.status}` };
+
+  let data = null;
+  const flowTab = targetTab || await getFlowTab('video', projectId);
+
+  // 1. Quét trực tiếp media từ DOM và biến toàn cục của Flow tab (hoạt động 100% trên flow.google.com)
+  if (flowTab?.id) {
+    try {
+      const execDom = await chrome.scripting.executeScript({
+        target: { tabId: flowTab.id },
+        world: "MAIN",
+        func: () => {
+          const videos = [];
+          const images = [];
+          const seen = new Set();
+
+          // Lấy Project ID từ URL hiện tại để tránh nhầm với Media ID
+          const pMatch = window.location.pathname.match(/project\/([a-f0-9\-]{36})/i);
+          const currentProjectId = pMatch ? pMatch[1].toLowerCase() : null;
+
+          // Helper trích xuất Prompt từ card container
+          const extractPromptFromCard = (container) => {
+            if (!container) return "";
+
+            // 1. Kiểm tra title hoặc aria-label trên các thẻ con
+            const titled = container.querySelectorAll("[title], [aria-label]");
+            for (const el of titled) {
+              for (const attr of ["title", "aria-label"]) {
+                let val = (el.getAttribute(attr) || "").trim();
+                if (val.length >= 3) {
+                  if (/^(phát|play|xem|more|tuỳ chọn|menu|thêm|xoá|delete|download|tải|replay|undo|redo|chia sẻ|share|hoàn tác|đóng|close|options|actions|ô hiển thị)/i.test(val)) continue;
+                  val = val.replace(/^(play_arrow|more_vert|replay)\s*/i, "").trim();
+                  if (val.length >= 3 && !/^(play_arrow|more_vert)$/i.test(val)) {
+                    if (val.toLowerCase().includes("video") || val.length > 8) return val;
+                  }
+                }
+              }
+            }
+
+            // 2. Thu thập text nodes
+            const candidates = [];
+            const walk = (node) => {
+              if (node.nodeType === Node.TEXT_NODE) {
+                const t = (node.textContent || "").replace(/\s+/g, " ").trim();
+                if (t.length >= 2) {
+                  const cleaned = t
+                    .replace(/^(play_arrow|replay|undo|redo|more_vert|refresh|arrow_forward|crop_free|close|add|check)\s*/i, "")
+                    .replace(/\s*(play_arrow|replay|undo|redo|more_vert|refresh|arrow_forward|crop_free|close|add|check)$/i, "")
+                    .trim();
+
+                  if (cleaned.length >= 2 &&
+                      !/^\d{1,3}%$/.test(cleaned) &&
+                      !/^\d+(\.\d+)?s$/i.test(cleaned) &&
+                      !/^(720p|1080p|4k|16:9|9:16|1:1)$/i.test(cleaned) &&
+                      !/^[a-f0-9\-]{30,45}$/i.test(cleaned) &&
+                      !/^(phát|play|video|ảnh|image|đang tạo|generating|hoàn tác|tuỳ chọn|more)$/i.test(cleaned)) {
+                    candidates.push(cleaned);
+                  }
+                }
+              } else if (node.nodeType === Node.ELEMENT_NODE) {
+                if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE' || node.tagName === 'NOSCRIPT') return;
+                for (const child of node.childNodes) walk(child);
+              }
+            };
+            walk(container);
+
+            if (!candidates.length) return "";
+
+            // Ưu tiên 1: Chuỗi bắt đầu bằng số thứ tự (VD: "001. tạo video...", "01. ...")
+            const numberedMatch = candidates.find(c => /^\d+[\.\-_:\s]/.test(c) && c.length >= 4);
+            if (numberedMatch) return numberedMatch;
+
+            // Ưu tiên 2: Chuỗi có chữ "tạo video" hoặc "video"
+            const vidMatch = candidates.find(c => /^(tạo\s+video|tạo)/i.test(c) || c.toLowerCase().includes("video"));
+            if (vidMatch) return vidMatch;
+
+            // Nếu không, lấy chuỗi có độ dài lớn nhất
+            candidates.sort((a, b) => b.length - a.length);
+            return candidates[0] || "";
+          };
+
+          // 1. Quét tất cả thẻ media của các card trên giao diện
+          const allMedia = Array.from(document.querySelectorAll("img, video")).filter(el => {
+            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            const src = el.src || el.currentSrc || "";
+            if (src.includes("googleusercontent.com/a/") || src.includes("avatar") || src.includes("profile")) return false;
+            if (src.startsWith("data:image/svg")) return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 60 && r.height > 60;
+          });
+
+          // 2. Tìm card container độc lập cho từng phần tử media
+          const rawCards = [];
+          const seenCardElements = new Set();
+
+          for (const mediaEl of allMedia) {
+            let card = mediaEl;
+            let cur = mediaEl.parentElement;
+
+            // Leo lên tìm phần tử cha lớn nhất mà vẫn chỉ chứa 1 card
+            while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+              const childMedia = allMedia.filter(m => cur.contains(m));
+              const distinctPos = new Set(childMedia.map(m => {
+                const r = m.getBoundingClientRect();
+                return `${Math.round(r.left / 25)},${Math.round((r.top + window.scrollY) / 35)}`;
+              }));
+
+              if (distinctPos.size > 1) {
+                break;
+              }
+              card = cur;
+              cur = cur.parentElement;
+            }
+
+            if (card && !seenCardElements.has(card)) {
+              seenCardElements.add(card);
+              const r = card.getBoundingClientRect();
+              rawCards.push({
+                card,
+                mediaEl,
+                top: r.top + window.scrollY,
+                left: r.left + window.scrollX
+              });
+            }
+          }
+
+          // 3. Sắp xếp theo thứ tự hiển thị tự nhiên trên màn hình: Trên xuống dưới, Trái qua phải
+          rawCards.sort((a, b) => {
+            if (Math.abs(a.top - b.top) > 80) {
+              return a.top - b.top;
+            }
+            return a.left - b.left;
+          });
+
+          // 4. Xử lý từng card
+          rawCards.forEach((item, idx) => {
+            const container = item.card;
+            const mediaEl = item.mediaEl;
+
+            // Đánh dấu DOM element để downloadVideo tìm lại chính xác 100% trong 0ms
+            container.setAttribute("data-flow-index", String(idx));
+
+            // Trích xuất Prompt
+            const prompt = extractPromptFromCard(container);
+
+            // Trích xuất ID
+            let id = null;
+            const dm = container.getAttribute("data-media-id") || container.getAttribute("data-workflow-id");
+            if (dm && dm.length >= 15 && dm.length <= 45 && dm.toLowerCase() !== currentProjectId) {
+              id = dm;
+            }
+            if (!id && container.id && container.id !== '_gd' && /^[a-f0-9\-]{30,45}$/i.test(container.id) && container.id.toLowerCase() !== currentProjectId) {
+              id = container.id;
+            }
+            if (!id) {
+              const m = container.outerHTML.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/gi);
+              if (m) {
+                const found = m.find(u => u.toLowerCase() !== currentProjectId);
+                if (found) id = found;
+              }
+            }
+            const imgSrc = mediaEl?.src || mediaEl?.currentSrc || "";
+            if (!id) {
+              const asbMatch = imgSrc.match(/\/asb\/([A-Za-z0-9_-]{12,})/);
+              if (asbMatch) {
+                id = "asb_" + asbMatch[1].slice(0, 16);
+              }
+            }
+            if (!id) {
+              id = "flow_card_" + (idx + 1);
+            }
+
+            container.setAttribute("data-flow-card-id", id);
+            seen.add(id);
+
+            // Kiểm tra thẻ <video> đã render
+            const v = container.querySelector("video");
+            const vSrc = v?.currentSrc || v?.src || v?.querySelector("source")?.src || null;
+            const vidUrl = (vSrc && vSrc.includes("/asb/")) ? vSrc : null;
+
+            // Kiểm tra trạng thái render (Đang tạo / % / Spinner)
+            const txt = (container.textContent || "").toLowerCase();
+            const pctMatch = txt.match(/\b(\d{1,3})%/);
+            const pctVal = pctMatch ? parseInt(pctMatch[1], 10) : null;
+            const isPctActive = pctVal !== null && pctVal < 100;
+            const isGen = Boolean(container.querySelector("[role='progressbar'], svg.animate-spin, .spinner, [class*='spin'], [class*='progress']")) ||
+                          txt.includes("đang tạo") ||
+                          txt.includes("generating") ||
+                          txt.includes("in progress");
+
+            const isProcessing = Boolean(isPctActive || isGen);
+
+            // Kiểm tra có phải Video hay Ảnh
+            const hasPlay = Boolean(
+              container.querySelector("button[aria-label*='Phát' i], button[aria-label*='Play' i], button[title*='Phát' i], [class*='play'], svg")
+            ) || txt.includes("play_arrow") || txt.includes("play");
+            const hasVideoText = prompt.toLowerCase().includes("video") || txt.includes("video") || /\b\d+s\b/i.test(txt);
+            const isVideo = Boolean(v || vidUrl || hasPlay || hasVideoText || isProcessing || !prompt.toLowerCase().includes("ảnh"));
+
+            const cleanPrompt = prompt || `Video Veo #${idx + 1}`;
+
+            if (isVideo) {
+              videos.push({
+                mediaId: id,
+                workflowId: id,
+                cardIndex: idx,
+                videoUrl: vidUrl,
+                imageUrl: imgSrc,
+                status: isProcessing ? 'PROCESSING' : 'COMPLETED',
+                progress: pctVal !== null ? `${pctVal}%` : (isProcessing ? 'Đang tạo...' : ''),
+                prompt: cleanPrompt,
+                model: 'Veo 3.1',
+                resolution: '720P'
+              });
+            } else {
+              images.push({
+                mediaId: id,
+                workflowId: id,
+                cardIndex: idx,
+                imageUrl: imgSrc,
+                status: isProcessing ? 'PROCESSING' : 'COMPLETED',
+                prompt: prompt || `Ảnh Flow #${idx + 1}`,
+                model: 'Imagen 3',
+                resolution: '1080P'
+              });
+            }
+          });
+
+          // 5. Bổ sung từ window.__flowRecentMedia nếu có media từ RPC mà chưa thấy trên DOM
+          const recent = window.__flowRecentMedia || [];
+          for (const m of recent) {
+            const id = m.primaryId || m.mediaIds?.[0];
+            if (id && !seen.has(id)) {
+              seen.add(id);
+              const realAsb = m.videoUrls?.find(u => u && u.includes("/asb/")) || null;
+              const isDone = Boolean((m.status === 'COMPLETED' || m.isSuccess) && realAsb);
+              videos.push({
+                mediaId: id,
+                workflowId: id,
+                cardIndex: videos.length,
+                videoUrl: realAsb,
+                status: isDone ? 'COMPLETED' : 'PROCESSING',
+                progress: isDone ? '' : 'Đang xử lý...',
+                prompt: `Video Veo #${videos.length + 1}`,
+                model: 'Veo 3.1',
+                resolution: '720P'
+              });
+            }
+          }
+
+          return { success: true, videos, images };
+        }
+      });
+
+      const domRes = execDom?.[0]?.result;
+      if (domRes?.success && (domRes.videos?.length > 0 || domRes.images?.length > 0)) {
+        return {
+          success: true,
+          videos: domRes.videos || [],
+          images: domRes.images || [],
+          workflows: [],
+          totalVideos: domRes.videos?.length || 0,
+          totalImages: domRes.images?.length || 0,
+          projectName: "Dự án Google Flow",
+          defaultModel: "Veo 3.1 Lite"
+        };
+      }
+    } catch (_) {}
   }
-  const data = await res.json();
+
+  // 2. Fallback: Nếu có labs.google tRPC data
+  if (flowTab?.id) {
+    try {
+      const exec = await chrome.scripting.executeScript({
+        target: { tabId: flowTab.id },
+        world: "MAIN",
+        args: [projectId, TRPC_BASE],
+        func: async (pId, trpcBase) => {
+          try {
+            const inp = JSON.stringify({ json: { projectId: pId } });
+            const u = `${trpcBase}/flow.projectInitialData?input=${encodeURIComponent(inp)}`;
+            const r = await fetch(u, { credentials: "include" });
+            if (!r.ok) return { ok: false, status: r.status };
+            const j = await r.json();
+            return { ok: true, data: j };
+          } catch (e) {
+            return { ok: false };
+          }
+        }
+      });
+      const tabRes = exec?.[0]?.result;
+      if (tabRes?.ok && tabRes.data) {
+        data = tabRes.data;
+      }
+    } catch (_) {}
+  }
+
+  if (!data) {
+    // Không coi 401 từ labs.google là lỗi vì Google Flow hiện chạy trên flow.google.com
+    return { success: true, videos: [], images: [], workflows: [] };
+  }
   const json = data?.result?.data?.json || {};
   const mediaList = json?.projectContents?.media || [];
   const workflows = json?.projectContents?.workflows || [];
@@ -589,13 +914,163 @@ async function getDownloadUrl(mediaId) {
   }
 }
 
-async function downloadVideo(mediaId, filename) {
-  if (!mediaId) return { success: false, error: "Thiếu mediaId" };
-  const url = `${TRPC_BASE}/media.getMediaUrlRedirect?name=${mediaId}`;
-  const fname = filename || `flow_video_${mediaId.slice(0, 8)}.mp4`;
+async function downloadVideo(mediaId, filename, directUrl = null, cardIndex = -1) {
+  if (!mediaId && !directUrl && cardIndex < 0) return { success: false, error: "Thiếu thông tin video cần tải" };
+  const fname = filename || `flow_video_${(mediaId || 'download').slice(0, 8)}.mp4`;
+  const mId = mediaId || '';
+  const cIdx = typeof cardIndex === 'number' ? cardIndex : -1;
+
+  let resolvedUrl = (directUrl && directUrl.startsWith("http") && !directUrl.includes("flow-content.google") && !directUrl.includes("labs.google")) ? directUrl : null;
+
+  const flowTab = await getFlowTab('video');
+  if (flowTab?.id) {
+    try {
+      const inTabRes = await chrome.scripting.executeScript({
+        target: { tabId: flowTab.id },
+        world: "MAIN",
+        args: [mId, fname, resolvedUrl, cIdx],
+        func: async (targetId, downloadName, customUrl, targetIndex) => {
+          const sleep = ms => new Promise(r => setTimeout(r, ms));
+          let targetUrl = null;
+
+          // 1. Tìm thẻ card của CHÍNH XÁC video cần tải
+          let card = null;
+
+          // A. Tìm theo data-flow-card-id hoặc data-flow-index đã được gán sẵn
+          if (targetId) {
+            card = document.querySelector(`[data-flow-card-id="${targetId}"]`);
+          }
+          if (!card && targetIndex >= 0) {
+            card = document.querySelector(`[data-flow-index="${targetIndex}"]`);
+          }
+
+          // B. Nếu chưa tìm được qua attribute, tìm lại theo danh sách media cards
+          if (!card) {
+            const allMedia = Array.from(document.querySelectorAll("img, video")).filter(el => {
+              if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+              const src = el.src || el.currentSrc || "";
+              if (src.includes("googleusercontent.com/a/") || src.includes("avatar")) return false;
+              const r = el.getBoundingClientRect();
+              return r.width > 60 && r.height > 60;
+            });
+
+            const cardMap = new Map();
+            for (const m of allMedia) {
+              let c = m;
+              let cur = m.parentElement;
+              while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+                const childMedia = allMedia.filter(x => cur.contains(x));
+                const distinctPos = new Set(childMedia.map(x => {
+                  const r = x.getBoundingClientRect();
+                  return `${Math.round(r.left / 25)},${Math.round((r.top + window.scrollY) / 35)}`;
+                }));
+                if (distinctPos.size > 1) break;
+                c = cur;
+                cur = cur.parentElement;
+              }
+              const r = c.getBoundingClientRect();
+              const posKey = `${Math.round((r.top + window.scrollY) / 80)}_${Math.round(r.left / 25)}`;
+              if (!cardMap.has(posKey)) {
+                cardMap.set(posKey, { card: c, top: r.top + window.scrollY, left: r.left + window.scrollX });
+              }
+            }
+
+            const sorted = Array.from(cardMap.values()).sort((a, b) => {
+              if (Math.abs(a.top - b.top) > 80) return a.top - b.top;
+              return a.left - b.left;
+            });
+
+            if (targetIndex >= 0 && targetIndex < sorted.length) {
+              card = sorted[targetIndex].card;
+            } else if (targetId) {
+              const matched = sorted.find(s => s.card.outerHTML.includes(targetId) || (s.card.querySelector("img, video")?.src || "").includes(targetId));
+              if (matched) card = matched.card;
+            }
+          }
+
+          if (card) {
+            // Kiểm tra xem thẻ card này đã có <video> chưa
+            let v = card.querySelector("video");
+            let src = v?.currentSrc || v?.src || v?.querySelector("source")?.src;
+
+            // Nếu card này CHƯA có thẻ video hoặc src chưa có /asb/, CHỈ hover vào card này để kích hoạt!
+            if (!src || !src.startsWith("http") || !src.includes("/asb/")) {
+              const hoverTarget = card.querySelector("img") || card;
+              hoverTarget.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, cancelable: true }));
+              hoverTarget.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true, cancelable: true }));
+              hoverTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }));
+              hoverTarget.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
+              hoverTarget.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true }));
+
+              // Thử hover nút play nếu có
+              const playBtn = card.querySelector("button[aria-label*='Phát' i], button[aria-label*='Play' i], button[title*='Phát' i], [class*='play'], svg");
+              if (playBtn) {
+                playBtn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+                playBtn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+              }
+
+              // Đợi tối đa 2.5 giây để Google Flow render thẻ video và nạp stream /asb/
+              for (let i = 0; i < 16; i++) {
+                await sleep(150);
+                v = card.querySelector("video");
+                src = v?.currentSrc || v?.src || v?.querySelector("source")?.src;
+                if (src && src.startsWith("http") && src.includes("/asb/")) break;
+              }
+            }
+
+            if (src && src.startsWith("http") && src.includes("/asb/")) {
+              targetUrl = src;
+            }
+          }
+
+          // 2. Nếu vẫn chưa có targetUrl, quét tất cả các thẻ <video> có stream /asb/ trên trang
+          if (!targetUrl) {
+            const allVideos = Array.from(document.querySelectorAll("video"));
+            for (const vid of allVideos) {
+              const s = vid.currentSrc || vid.src || vid.querySelector("source")?.src;
+              if (s && s.startsWith("http") && s.includes("/asb/")) {
+                if ((card && card.contains(vid)) || allVideos.length === 1) {
+                  targetUrl = s;
+                  break;
+                }
+              }
+            }
+          }
+
+          // 3. Fallback URL nếu hợp lệ từ tham số truyền vào
+          if (!targetUrl && customUrl && customUrl.startsWith("http") && customUrl.includes("/asb/")) {
+            targetUrl = customUrl;
+          }
+
+          return { url: targetUrl };
+        }
+      });
+
+      const tabResult = inTabRes?.[0]?.result;
+      if (tabResult?.url) {
+        resolvedUrl = tabResult.url;
+      }
+    } catch (tabErr) {
+      console.warn("[Download] In-tab scan error:", tabErr.message);
+    }
+  }
+
+  // Tuyệt đối không fallback sang flow-content.google vì link đó trả về trang HTML lỗi 404/login
+  if (!resolvedUrl || !resolvedUrl.startsWith('http') || !resolvedUrl.includes('/asb/')) {
+    return {
+      success: false,
+      error: "Chưa bắt được link video .mp4 từ Google Flow cho video này. Bạn vui lòng rê chuột trực tiếp vào video trên trang Flow 1 giây rồi bấm lại 'Tải MP4' nhé!"
+    };
+  }
+
+  // Tải trực tiếp bằng chrome.downloads trong Service Worker (Bypass CSP & CORS 100%)
   return new Promise(resolve => {
-    chrome.downloads.download({ url, filename: fname, saveAs: false }, (id) => {
-      resolve(chrome.runtime.lastError ? { success: false, error: chrome.runtime.lastError.message } : { success: true, message: "Đang tải...", downloadId: id });
+    chrome.downloads.download({ url: resolvedUrl, filename: fname, saveAs: false }, (downloadId) => {
+      if (chrome.runtime.lastError || !downloadId) {
+        resolve({ success: false, error: chrome.runtime.lastError?.message || 'Không thể bắt đầu tải' });
+      } else {
+        resolve({ success: true, message: "Đã bắt đầu tải video .mp4 về máy!", downloadId });
+      }
     });
   });
 }
@@ -788,6 +1263,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
   // Determine effective Project ID from tab URL or parameters
   const urlMatch = tab.url?.match(/project\/([a-zA-Z0-9_-]+)/);
   const effectiveProjectId = (urlMatch && urlMatch[1]) ? urlMatch[1] : projectId;
+  const clickStartTime = Date.now();
 
   // ──────────────────────────────────────────────
   // RECON STEP A: Snapshot Library Videos BEFORE Click
@@ -796,7 +1272,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
   let beforeCount = 0;
   if (effectiveProjectId) {
     try {
-      const beforeData = await getProjectVideos(effectiveProjectId);
+      const beforeData = await getProjectVideos(effectiveProjectId, tab);
       if (beforeData?.success) {
         const allMedia = [
           ...(beforeData.videos || []),
@@ -809,14 +1285,39 @@ async function createVideoUI(prompt, projectId, config = {}) {
           if (m.mediaId) beforeIds.add(m.mediaId);
           if (m.workflowId) beforeIds.add(m.workflowId);
         }
-        logToBridge(`[Flow Recon] Trước khi click: Đã có ${beforeCount} items (${beforeData.images?.length || 0} ảnh, ${beforeData.videos?.length || 0} video, ${beforeData.workflows?.length || 0} workflows) trong project ${effectiveProjectId.slice(0, 8)}...`);
-      } else {
-        logToBridge(`[Flow Recon] ⚠️ Lỗi getProjectVideos trước click: ${beforeData?.error || 'Lỗi'}`);
+        if (beforeCount > 0) {
+          logToBridge(`[Flow Recon] Trước khi click: Đã có ${beforeCount} items (${beforeData.images?.length || 0} ảnh, ${beforeData.videos?.length || 0} video, ${beforeData.workflows?.length || 0} workflows) trong project ${effectiveProjectId.slice(0, 8)}...`);
+        }
       }
     } catch (e) {
-      logToBridge(`[Flow Recon] ⚠️ Lỗi khi snapshot thư viện trước click: ${e.message}`);
     }
   }
+
+  // Snapshot toàn bộ Media ID đang có trong window.__flowRecentMedia và DOM TRƯỚC KHI BẤM CLICK để loại trừ 100%
+  try {
+    const preSnapshot = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: () => {
+        const ids = [];
+        const recent = window.__flowRecentMedia || [];
+        for (const r of recent) {
+          if (r.primaryId) ids.push(r.primaryId);
+          if (r.mediaIds) ids.push(...r.mediaIds);
+          if (r.workflows) ids.push(...r.workflows);
+        }
+        const domEls = document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id]");
+        for (const el of domEls) {
+          const m = el.getAttribute("data-media-id") || el.getAttribute("data-workflow-id") || el.getAttribute("data-id");
+          if (m) ids.push(m);
+        }
+        return ids;
+      }
+    });
+    if (preSnapshot?.[0]?.result) {
+      preSnapshot[0].result.forEach(id => beforeIds.add(id));
+    }
+  } catch (_) {}
 
   try {
     const results = await chrome.scripting.executeScript({
@@ -854,8 +1355,22 @@ func: async (promptText, cfg) => {
         };
         
         // ──────────────────────────────────────────────
-        // STEP 1: Find Slate Editor & Composer Container
+        // STEP 1: Find Editor & Composer Container
         // ──────────────────────────────────────────────
+        const getDeepActiveElement = (root = document) => {
+          if (root.activeElement && root.activeElement.shadowRoot) {
+            return getDeepActiveElement(root.activeElement.shadowRoot);
+          }
+          return root.activeElement;
+        };
+
+        const isElemVisible = (el) => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
+        };
+
+        // Tìm ô Slate Editor thực sự (div[contenteditable='true'][role='textbox'])
         const findDeepEditor = () => {
           const walk = (node) => {
             if (node.shadowRoot) {
@@ -874,12 +1389,12 @@ func: async (promptText, cfg) => {
           return walk(document.body);
         };
 
-        const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
-                    || document.querySelector("div[data-slate-editor='true']")
-                    || document.querySelector("div[contenteditable='true']")
-                    || document.querySelector("textarea[placeholder*='prompt' i]")
-                    || findDeepEditor();
-                    
+        let editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
+                  || document.querySelector("div[data-slate-editor='true']")
+                  || document.querySelector("div[contenteditable='true'][role='textbox']")
+                  || document.querySelector("div[contenteditable='true']")
+                  || findDeepEditor();
+
         if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt trên giao diện Flow!" };
 
         const composerButtons = queryDeep("button, [role='button']");
@@ -896,37 +1411,44 @@ func: async (promptText, cfg) => {
         // Chỉ tìm Settings Chip xung quanh khu vực của submitBtn (để tránh click nhầm vào các video trong danh sách)
         let settingsChip = null;
         if (submitBtn) {
+           const sRect = submitBtn.getBoundingClientRect();
            let parent = submitBtn;
            for (let i = 0; i < 8 && parent; i++) {
              parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
              if (!parent) break;
              const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
              const candidate = buttonsHere.find(b => {
-                if (b === submitBtn) return false;
-                if (b.offsetParent === null) return false;
+                if (b === submitBtn || !isElemVisible(b)) return false;
                 const t = (b.textContent || "").trim().toLowerCase();
-                const h = (b.innerHTML || "").toLowerCase();
-                // Ưu tiên nút có chứa các thông số cài đặt
-                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.match(/\b(720p|1080p|4k|giây|fps)\b/i) || t.match(/^\d+s/i)) {
+                if (t.includes("tác nhân") || t.includes("agent")) return false;
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || 
+                    t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") ||
+                    t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i)) {
                    return true;
                 }
                 return false;
              });
-             
              if (candidate) {
                settingsChip = candidate;
                break;
              }
            }
-           
-           // Nếu vẫn không thấy bằng text, chọn một nút bất kỳ cạnh submitBtn không phải là nút "+" hay "add"
            if (!settingsChip) {
               parent = submitBtn;
               for (let i = 0; i < 8 && parent; i++) {
                  parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
                  if (!parent) break;
                  const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
-                 const candidate = buttonsHere.find(b => b !== submitBtn && b.offsetParent !== null && !b.innerHTML.toLowerCase().includes("add") && (b.textContent || "").trim() !== "+");
+                 const leftOfSubmit = buttonsHere.filter(b => {
+                   if (b === submitBtn || !isElemVisible(b)) return false;
+                   return b.getBoundingClientRect().left < sRect.left;
+                 });
+                 leftOfSubmit.sort((a, b) => Math.abs(sRect.left - a.getBoundingClientRect().right) - Math.abs(sRect.left - b.getBoundingClientRect().right));
+                 const candidate = leftOfSubmit.find(b => {
+                   const t = (b.textContent || "").trim().toLowerCase();
+                   if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                   return true;
+                 });
                  if (candidate) {
                    settingsChip = candidate;
                    break;
@@ -936,6 +1458,13 @@ func: async (promptText, cfg) => {
         }
 
 
+        // Xóa prompt cũ trước khi cấu hình và đính kèm frame
+        try {
+          if (typeof editor.focus === 'function') editor.focus();
+          document.execCommand("selectAll", false, null);
+          document.execCommand("delete", false, null);
+        } catch (_) {}
+
         // ──────────────────────────────────────────────
         // STEP 2: Configure Video Settings (Mode, Ratio, Duration, Count, Model)
         // ──────────────────────────────────────────────
@@ -944,86 +1473,14 @@ func: async (promptText, cfg) => {
           const targetDuration = cfg?.duration || "8s";
           const targetCount = cfg?.count || "x1";
 
-          // Check visibility without offsetParent (fixed/portal elements have offsetParent == null!)
-          const isElemVisible = (el) => {
-            if (!el) return false;
-            const r = el.getBoundingClientRect();
-            return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
-          };
-
-          // Find active popover container
-          const getPopover = () => {
-            const candidates = queryDeep("div[role='dialog'], div[data-radix-popper-content-wrapper], div[class*='popover'], div");
-            return candidates.find(d => {
-              if (!isElemVisible(d)) return false;
-              const t = d.textContent || "";
-              // check if it's actually a dialog containing these options
-              return (t.includes("9:16") || t.includes("16:9")) && (t.includes("Video") || t.includes("Hình ảnh") || t.includes("Khung hình")) && d.querySelectorAll("button, [role='tab'], [role='button']").length > 0;
-            });
-          };
-
-          let popover = getPopover();
-
-          // If not open, click the settings chip to open it
-          if (!popover && settingsChip) {
-            settingsChip.scrollIntoView({ block: "nearest" });
-            settingsChip.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-            settingsChip.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-            settingsChip.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-            settingsChip.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-            settingsChip.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-            settingsChip.click();
-            await sleep(600); // Wait for popup animation
-            popover = getPopover();
-          }
-
-          // Click option inside popover
-          const clickInsidePopover = async (textMatch) => {
-            const scope = popover || document;
-            const elements = queryScopeDeep(scope, "[role='tab'], button, [role='button'], div, span").filter(el => isElemVisible(el));
-
-            let match = elements.find(el => {
-              const t = (el.textContent || "").trim();
-              const aria = (el.getAttribute("aria-label") || "").trim();
-              return t === textMatch || aria === textMatch;
-            });
-
-            if (!match) {
-              match = elements.find(el => {
-                const t = (el.textContent || "").trim().toLowerCase();
-                const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
-                return t.includes(textMatch.toLowerCase()) || aria.includes(textMatch.toLowerCase());
-              });
-            }
-
-            if (match) {
-              const clickable = match.closest("[role='tab'], button, [role='button']") || match;
-              clickable.scrollIntoView({ block: "nearest" });
-              clickable.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-              clickable.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-              clickable.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-              clickable.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-              clickable.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-              clickable.click();
-              return true;
-            }
-            return false;
-          };
-
-          // Helper to trigger click with pointer + mouse events
-          const triggerClick = (el) => {
+          const safeClick = (el) => {
             if (!el) return false;
             el.scrollIntoView({ block: "nearest" });
-            
-            // Only send pointer/mouse events. Avoid calling el.click() to prevent double-toggling,
-            // or vice versa. Some components double-toggle if both are used.
-            el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-            
-            // Dispatching click manually is usually enough for React/Radix.
-            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            if (typeof el.click === "function") {
+              el.click();
+            } else {
+              el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            }
             return true;
           };
 
@@ -1040,105 +1497,325 @@ func: async (promptText, cfg) => {
             await sleep(300);
             
             if (target.getAttribute("aria-expanded") !== "true" && !document.querySelector("[role='listbox']")) {
-                // Fallback to pointer events if it didn't open
                 target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
                 target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
                 target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
                 target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-                target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+                if (typeof target.click === "function") target.click();
+                else target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
                 await sleep(300);
             }
           };
 
-          // 1. Select Mode: "Video" vs "Hình ảnh"
-          const modeScope = getPopover() || popover || document;
-          const modeButtons = queryScopeDeep(modeScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
-          if (cfg?.mode === 'image' || cfg?.mode === 'Hình ảnh') {
-            const imageBtn = modeButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              return t === "Hình ảnh" || t.includes("Hình ảnh") || t.toLowerCase().includes("image");
+          // Tìm tab "Video"
+          const findVideoTabElement = () => {
+            const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              if (r.width < 30 || r.height < 15) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+              const t = (el.textContent || "").trim();
+              const aria = (el.getAttribute("aria-label") || "").trim();
+              const id = (el.getAttribute("id") || "").toLowerCase();
+
+              if (t.includes("Khung hình") || aria.includes("Khung hình") || t.includes("Hình ảnh") || aria.includes("Hình ảnh")) return false;
+              if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1080p") || t.includes("fps")) return false;
+
+              return t === "Video" || aria === "Video" || 
+                     t.toLowerCase() === "video" || aria.toLowerCase() === "video" ||
+                     id.endsWith("-trigger-video") || id.endsWith("-trigger-VIDEO") || 
+                     (t.includes("Video") && t.length <= 10) ||
+                     (aria.includes("Video") && aria.length <= 10);
             });
-            if (imageBtn) triggerClick(imageBtn);
-            await sleep(400);
-          } else {
-            const videoBtn = modeButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              return (t === "Video" || t.includes("Video")) && !t.includes("Hình ảnh") && !t.includes("Khung hình");
+
+            if (candidates.length === 0) return null;
+
+            let best = candidates.find(el => {
+              const p = el.parentElement;
+              if (p && (p.textContent.includes("Hình ảnh") || p.getAttribute("role") === "tablist")) return true;
+              const gp = p?.parentElement;
+              if (gp && (gp.textContent.includes("Hình ảnh") || gp.getAttribute("role") === "tablist")) return true;
+              return false;
             });
-            if (videoBtn) triggerClick(videoBtn);
-            await sleep(400);
+
+            if (!best) {
+              best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+            }
+
+            return best.closest("[role='tab'], button, [role='button']") || best;
+          };
+
+          // Tìm tab "Hình ảnh"
+          const findImageTabElement = () => {
+            const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              if (r.width < 30 || r.height < 15) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+              const t = (el.textContent || "").trim();
+              const aria = (el.getAttribute("aria-label") || "").trim();
+              const id = (el.getAttribute("id") || "").toLowerCase();
+
+              if (t.includes("Khung hình") || aria.includes("Khung hình")) return false;
+
+              return t === "Hình ảnh" || aria === "Hình ảnh" || 
+                     t.toLowerCase() === "image" || aria.toLowerCase() === "image" ||
+                     id.endsWith("-trigger-image") || id.endsWith("-trigger-IMAGE") ||
+                     (t.includes("Hình ảnh") && t.length <= 15) ||
+                     (aria.includes("Hình ảnh") && aria.length <= 15);
+            });
+
+            if (candidates.length === 0) return null;
+
+            let best = candidates.find(el => {
+              const p = el.parentElement;
+              if (p && (p.textContent.includes("Video") || p.getAttribute("role") === "tablist")) return true;
+              const gp = p?.parentElement;
+              if (gp && (gp.textContent.includes("Video") || gp.getAttribute("role") === "tablist")) return true;
+              return false;
+            });
+
+            if (!best) {
+              best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+            }
+
+            return best.closest("[role='tab'], button, [role='button']") || best;
+          };
+
+          const isPopoverOpen = () => {
+            if (findVideoTabElement() || findImageTabElement()) return true;
+            const ratioBtn = queryDeep("button, [role='tab'], [role='radio']").find(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              const t = (el.textContent || "").trim();
+              return t === "16:9" || t === "9:16";
+            });
+            return !!ratioBtn;
+          };
+
+          // Mở Popover nếu chưa mở (DÙNG CHÍNH TEST B2: 1 native click)
+          if (!isPopoverOpen() && settingsChip) {
+            settingsChip.scrollIntoView({ block: "nearest" });
+            settingsChip.click();
+            await sleep(600);
+            if (!isPopoverOpen()) {
+              settingsChip.click();
+              await sleep(600);
+            }
           }
 
-          // 1.1 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab
-          if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
-            const framesScope = getPopover() || popover || document;
-            const submodeButtons = queryScopeDeep(framesScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
-            const framesBtn = submodeButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              const id = b.getAttribute("id") || "";
-              return t === "Khung hình" || t.includes("Khung hình") || id.endsWith("-trigger-VIDEO_FRAMES") || b.innerHTML.includes("crop_free");
-            });
-            if (framesBtn) {
-              triggerClick(framesBtn);
-              await sleep(400);
+          // Helper to select the Video Tab
+          const selectVideoTab = async () => {
+            const tabEl = findVideoTabElement();
+            if (tabEl) {
+              const isActive = tabEl.getAttribute("data-state") === "active" || 
+                               tabEl.getAttribute("aria-selected") === "true" ||
+                               tabEl.classList.contains("active") ||
+                               (tabEl.parentElement && tabEl.parentElement.getAttribute("data-state") === "active");
+              if (!isActive) {
+                safeClick(tabEl);
+                await sleep(400);
+              }
+              return { success: true, el: tabEl };
             }
+            return { success: false };
+          };
+
+          // Helper to select the Image Tab
+          const selectImageTab = async () => {
+            const tabEl = findImageTabElement();
+            if (tabEl) {
+              const isActive = tabEl.getAttribute("data-state") === "active" || 
+                               tabEl.getAttribute("aria-selected") === "true" ||
+                               tabEl.classList.contains("active") ||
+                               (tabEl.parentElement && tabEl.parentElement.getAttribute("data-state") === "active");
+              if (!isActive) {
+                safeClick(tabEl);
+                await sleep(400);
+              }
+              return { success: true, el: tabEl };
+            }
+            return { success: false };
+          };
+
+          // Helper to select the Khung hình (Frames) Tab
+          const selectFramesTab = async () => {
+            if (!isPopoverOpen() && settingsChip) {
+              settingsChip.scrollIntoView({ block: "nearest" });
+              settingsChip.click();
+              await sleep(600);
+            }
+
+            // Đảm bảo tab Video đã được kích hoạt trước
+            await selectVideoTab();
+            await sleep(400);
+
+            const isFramesMatch = (el) => {
+              if (!el) return false;
+              const t = (el.textContent || "").trim();
+              const tLower = t.toLowerCase();
+              const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
+              const id = (el.getAttribute("id") || "").toLowerCase();
+              const dataVal = (el.getAttribute("data-value") || "").toLowerCase();
+              const html = el.innerHTML || "";
+
+              // Loại trừ các tab khác
+              if (t === "Hình ảnh" || t === "Video" || aria === "video" || aria === "hình ảnh") return false;
+              if (t === "Thành phần" || aria === "thành phần" || tLower.includes("thành phần") || aria.includes("thành phần")) return false;
+
+              if (tLower === "khung hình" || tLower === "frames" || tLower === "frame") return true;
+              if (aria === "khung hình" || aria === "frames" || aria.includes("khung hình") || aria.includes("frames")) return true;
+              if (id.includes("video_frames") || id.includes("frames") || id.includes("frame")) return true;
+              if (dataVal === "frames" || dataVal === "video_frames") return true;
+              if (html.includes("crop_free") || tLower.includes("crop_free")) return true;
+              if ((tLower.includes("khung hình") || tLower.includes("frames")) && t.length <= 25) return true;
+              return false;
+            };
+
+            let target = null;
+            let lastAvailable = "";
+
+            for (let attempt = 0; attempt < 6; attempt++) {
+              const allButtons = queryDeep("[role='tab'], button, [role='button']").filter(el => {
+                if (!isElemVisible(el)) return false;
+                if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                const r = el.getBoundingClientRect();
+                return r.left >= 150;
+              });
+
+              target = allButtons.find(b => isFramesMatch(b));
+
+              if (!target) {
+                const subEls = queryDeep("span, div, svg, i, p").filter(el => {
+                  if (!isElemVisible(el)) return false;
+                  if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                  if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                  const r = el.getBoundingClientRect();
+                  if (r.left < 150) return false;
+                  const t = (el.textContent || "").trim();
+                  return t.length <= 30 && isFramesMatch(el);
+                });
+                for (const sub of subEls) {
+                  const pBtn = sub.closest("[role='tab'], button, [role='button']");
+                  if (pBtn && isElemVisible(pBtn) && (!settingsChip || !settingsChip.contains(pBtn))) {
+                    target = pBtn;
+                    break;
+                  }
+                }
+              }
+
+              if (target) break;
+
+              lastAvailable = allButtons.map(b => `[${b.tagName} role="${b.getAttribute("role")||""}" text="${(b.textContent||"").trim()}"]`).join(", ");
+              await sleep(250);
+            }
+
+            if (target) {
+              const clickable = target.closest("[role='tab'], button, [role='button']") || target;
+              safeClick(clickable);
+              await sleep(400);
+              return { success: true, el: clickable };
+            }
+
+            return { success: false, available: lastAvailable };
+          };
+
+          // 1. Select Mode: "Video" vs "Hình ảnh"
+          if (cfg?.mode === 'image' || cfg?.mode === 'Hình ảnh') {
+            await selectImageTab();
+            await sleep(400);
+          } else {
+            await selectVideoTab();
+            await sleep(400);
           }
 
           // 2. Select Aspect Ratio (9:16 vs 16:9)
-          const aspectScope = getPopover() || popover || document;
-          const aspectButtons = queryScopeDeep(aspectScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
+          const aspectButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            const t = (el.textContent || "").trim();
+            return t.includes("16:9") || t.includes("9:16");
+          });
           const aspectBtn = aspectButtons.find(b => {
             const t = (b.textContent || "").trim();
             const aria = (b.getAttribute("aria-label") || "").trim();
-            if (targetRatio === "9:16") {
-              return (t.includes("9:16") || aria.includes("9:16")) && !t.includes("16:9");
-            } else {
-              return (t.includes("16:9") || aria.includes("16:9")) && !t.includes("9:16");
-            }
+            const comb = t + " " + aria;
+            if (targetRatio === "9:16") return comb.includes("9:16") && !comb.includes("16:9");
+            return comb.includes("16:9");
           });
-          if (aspectBtn) triggerClick(aspectBtn);
-          await sleep(400);
+          if (aspectBtn) {
+            safeClick(aspectBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || aspectBtn);
+            await sleep(400);
+          }
 
           // If in Video mode, configure Duration, Count & Video Model
           if (cfg?.mode !== 'image' && cfg?.mode !== 'Hình ảnh') {
             // 3. Select Duration: "8s"
-            const durScope = getPopover() || popover || document;
-            const durButtons = queryScopeDeep(durScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
             const durNum = targetDuration.replace(/\D/g, "");
+            const durButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              const t = (el.textContent || "").trim().toLowerCase();
+              return t.includes(durNum + "s") || t.includes(durNum + " giây") || t.includes(durNum + " sec") || t === durNum;
+            });
             const durBtn = durButtons.find(b => {
               const t = (b.textContent || "").trim().toLowerCase();
-              if (t.includes(durNum + "s") || t.includes(durNum + " giây") || t.includes(durNum + " sec") || t === durNum) {
-                 const others = ["4", "5", "6", "8", "10"].filter(x => x !== durNum);
-                 return !others.some(x => t.includes(x + "s") || t.includes(x + " giây"));
-              }
-              return false;
+              const others = ["4", "5", "6", "8", "10"].filter(x => x !== durNum);
+              return !others.some(x => t.includes(x + "s") || t.includes(x + " giây"));
             });
-            if (durBtn) triggerClick(durBtn);
-            await sleep(400);
+            if (durBtn) {
+              safeClick(durBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || durBtn);
+              await sleep(400);
+            }
 
             // 4. Select Count: "x1"
-            const countScope = getPopover() || popover || document;
-            const countButtons = queryScopeDeep(countScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
+            const tc = targetCount.toLowerCase();
+            const countButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              const t = (el.textContent || "").trim().toLowerCase();
+              return t === tc || t.includes(tc) || (tc === "x1" && t === "1x");
+            });
             const countBtn = countButtons.find(b => {
               const t = (b.textContent || "").trim().toLowerCase();
-              const tc = targetCount.toLowerCase();
-              if (t === tc || t.includes(tc) || (tc==="x1" && t==="1x")) {
-                 const others = ["x1", "x2", "x3", "x4"].filter(x => x !== tc);
-                 return !others.some(x => t.includes(x));
-              }
-              return false;
+              const others = ["x1", "x2", "x3", "x4"].filter(x => x !== tc);
+              return !others.some(x => t.includes(x));
             });
-            if (countBtn) triggerClick(countBtn);
-            await sleep(400);
+            if (countBtn) {
+              safeClick(countBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || countBtn);
+              await sleep(400);
+            }
 
             // 5. Select Model:
-            const scope = getPopover() || popover || document;
-            const modelDropdown = queryScopeDeep(scope, "button, [role='combobox'], [role='button'], div").find(b => {
+            const modelDropdown = queryDeep("button, [role='combobox'], [role='button'], div").find(b => {
               if (!isElemVisible(b)) return false;
-              if (b.closest("[role='listbox']")) return false; 
+              if (settingsChip && (b === settingsChip || settingsChip.contains(b))) return false;
+              if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              if (b.closest("[role='listbox'], [role='menu']")) return false; 
+              const r = b.getBoundingClientRect();
+              if (r.left < 150) return false;
               const t = (b.textContent || "").trim().toLowerCase();
-              const isModelName = (t.includes("omni") || t.includes("veo") || t.includes("flash") || t.includes("lite") || t.includes("fast") || t.includes("quality")) && t.length < 40;
-              const isExcluded = t.includes("9:16") || t.includes("16:9") || t.includes("8s") || t.includes("4s") || t.includes("6s") || t.includes("10s") || t.includes("video") || t.includes("hình ảnh") || t.includes("khung hình");
+              const isModelName = (t.includes("omni") || t.includes("veo") || t.includes("flash") || t.includes("lite") || t.includes("fast") || t.includes("quality")) && t.length < 50;
+              const isExcluded = t.includes("9:16") || t.includes("16:9") || t.includes("8s") || t.includes("4s") || t.includes("6s") || t.includes("10s") || t.includes("video") || t.includes("hình ảnh") || t.includes("khung hình") || t.includes("thành phần");
               return isModelName && !isExcluded;
             });
 
@@ -1149,38 +1826,59 @@ func: async (promptText, cfg) => {
 
             const mTxt = (cfg?.model || "veo_3_1_lite_low_priority").toLowerCase();
             const isMatch = (el) => {
+                if (el === modelDropdown || modelDropdown?.contains(el)) return false;
                 const ot = (el.textContent || "").toLowerCase();
-                let matchCount = 0;
-                if (ot.includes("omni") || ot.includes("flash")) matchCount++;
-                if (ot.includes("lite")) matchCount++;
-                if (ot.includes("fast")) matchCount++;
-                if (ot.includes("quality")) matchCount++;
-                if (matchCount > 1 || ot.length > 60) return false;
+                if (ot.length > 80) return false;
                 
-                if (mTxt.includes("low_priority")) return ot.includes("lower priority") || ot.includes("ưu tiên thấp") || ot.includes("lite [lower priority]");
-                if (mTxt.includes("lite")) return (ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp"));
-                if (mTxt.includes("fast")) return ot.includes("fast");
-                if (mTxt.includes("quality")) return ot.includes("quality");
-                if (mTxt.includes("abra")) return ot.includes("omni") || ot.includes("flash");
+                if (mTxt.includes("low_priority") || mTxt.includes("ưu tiên thấp")) {
+                  return ot.includes("lower priority") || ot.includes("ưu tiên thấp") || ot.includes("lite [lower priority]") || ot.includes("lite (ưu tiên thấp)");
+                }
+                if (mTxt.includes("lite")) {
+                  return (ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp"));
+                }
+                if (mTxt.includes("fast")) return ot.includes("fast") || ot.includes("nhanh");
+                if (mTxt.includes("quality")) return ot.includes("quality") || ot.includes("chất lượng");
+                if (mTxt.includes("abra") || mTxt.includes("omni")) return ot.includes("omni") || ot.includes("flash");
                 return false;
             };
 
             let targetOpt = null;
             for (let attempt = 0; attempt < 15; attempt++) {
                 const portalCandidates = queryDeep("[role='option'], [role='menuitem'], [role='tab'], button, div, span, li").filter(isElemVisible);
-                targetOpt = portalCandidates.find(el => {
-                    if (el.hasAttribute("aria-haspopup") || el.getAttribute("aria-expanded") === "true") return false;
-                    return isMatch(el);
+                const actualOptions = portalCandidates.filter(el => {
+                  if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                  if (el === modelDropdown || modelDropdown?.contains(el)) return false;
+                  if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                  if (el.hasAttribute("aria-haspopup") || el.getAttribute("role") === "combobox" || el.getAttribute("aria-expanded") === "true") return false;
+                  return el.getAttribute("role") === "option" || el.getAttribute("role") === "menuitem" || el.closest("[role='listbox']");
                 });
-                if (targetOpt) break;
+                if (actualOptions.length > 0) {
+                  targetOpt = actualOptions.find(el => isMatch(el));
+                  if (targetOpt) break;
+                } else {
+                  targetOpt = portalCandidates.find(el => {
+                      if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                      if (el === modelDropdown || modelDropdown?.contains(el)) return false;
+                      if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                      if (el.hasAttribute("aria-haspopup") || el.getAttribute("role") === "combobox" || el.getAttribute("aria-expanded") === "true") return false;
+                      return isMatch(el);
+                  });
+                  if (targetOpt) break;
+                }
                 await sleep(100);
             }
 
             if (targetOpt) {
                 const clickable = targetOpt.closest("[role='option'], [role='menuitem'], [role='tab'], button, li") || targetOpt;
-                triggerClick(clickable);
+                safeClick(clickable);
                 await sleep(500);
             }
+          }
+
+          // 5.5 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab NOW
+          if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
+            await selectFramesTab();
+            await sleep(500);
           }
 
           // 6. Close popup gracefully and focus editor
@@ -1391,50 +2089,122 @@ func: async (promptText, cfg) => {
                 return true;
               };
 
+              // Helper: Inject image via pure Auto Paste / DataTransfer into active editor
+              const injectImageFile = async (imgData, filename = "frame.png") => {
+                if (!imgData) return false;
+                try {
+                  let fileObj = null;
+                  if (imgData.startsWith("data:") || imgData.startsWith("http://") || imgData.startsWith("https://") || imgData.startsWith("blob:")) {
+                    const res = await fetch(imgData);
+                    const blob = await res.blob();
+                    fileObj = new File([blob], filename, { type: blob.type || "image/png" });
+                  } else {
+                    return false;
+                  }
+
+                  const dt = new DataTransfer();
+                  dt.items.add(fileObj);
+
+                  // 1. Thử chèn thẳng vào file input nếu có
+                  const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
+                  if (fileInputs.length > 0) {
+                    try {
+                      fileInputs[0].files = dt.files;
+                      fileInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+                    } catch (_) {}
+                  }
+
+                  // 2. Bắn Paste vào Active Element
+                  const currentActive = getDeepActiveElement() || editor;
+                  const pasteEvent = new ClipboardEvent("paste", {
+                    clipboardData: dt,
+                    bubbles: true,
+                    cancelable: true
+                  });
+                  currentActive.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: false, metaKey: true, bubbles: true }));
+                  currentActive.dispatchEvent(pasteEvent);
+
+                  // 3. Thử Drop thẳng vào Active Element
+                  const dropEvent = new DragEvent("drop", {
+                    dataTransfer: dt,
+                    bubbles: true,
+                    cancelable: true
+                  });
+                  currentActive.dispatchEvent(dropEvent);
+                  return true;
+                } catch (e) {
+                  console.warn("[Auto Paste Image Error]", e);
+                  return false;
+                }
+              };
+
+              // Helper to wait until Google Flow finishes uploading pasted image
+              const waitForUploadToFinish = async (maxWaitMs = 25000) => {
+                const startWait = Date.now();
+                await sleep(800);
+                while (Date.now() - startWait < maxWaitMs) {
+                  const spinners = queryDeep("[role='progressbar'], [class*='spin'], [class*='loading'], svg.animate-spin, div[class*='spinner']").filter(isElemVisible);
+                  if (spinners.length === 0 && (Date.now() - startWait >= 2000)) {
+                    await sleep(600);
+                    return true;
+                  }
+                  await sleep(400);
+                }
+                return false;
+              };
+
               // 1. Attach Start Image (Bắt đầu)
               if (cfg?.startImage) {
-                const slots = getFrameSlots();
-                let startSlot = slots.find(s => {
-                  const t = (s.textContent || "").toLowerCase();
-                  const aria = (s.getAttribute("aria-label") || "").toLowerCase();
-                  return (t.includes("bắt đầu") || aria.includes("bắt đầu") || t.includes("start")) && !t.includes("kết thúc") && !aria.includes("kết thúc");
-                }) || slots[0];
-                if (startSlot) {
-                  console.log("[Flow Extension] Found Start frame slot, clicking...", startSlot);
-                  triggerClick(startSlot);
-                  const startIndex = (cfg?.startImage && cfg?.endImage) ? (cfg.startIndex ?? 1) : (cfg.startIndex ?? 0);
-                  await handleMediaDialog(cfg.startImage, startIndex);
-                  await sleep(800);
+                const pasted = await injectImageFile(cfg.startImage, "start_frame.png");
+                if (!pasted) {
+                  const slots = getFrameSlots();
+                  let startSlot = slots.find(s => {
+                    const t = (s.textContent || "").toLowerCase();
+                    const aria = (s.getAttribute("aria-label") || "").toLowerCase();
+                    return (t.includes("bắt đầu") || aria.includes("bắt đầu") || t.includes("start")) && !t.includes("kết thúc") && !aria.includes("kết thúc");
+                  }) || slots[0];
+                  if (startSlot) {
+                    console.log("[Flow Extension] Found Start frame slot, clicking...", startSlot);
+                    triggerClick(startSlot);
+                    const startIndex = (cfg?.startImage && cfg?.endImage) ? (cfg.startIndex ?? 1) : (cfg.startIndex ?? 0);
+                    await handleMediaDialog(cfg.startImage, startIndex);
+                  }
                 }
+                // Đợi upload ảnh hoàn tất
+                await waitForUploadToFinish(25000);
               }
 
               // 2. Attach End Image (Kết thúc)
               if (cfg?.endImage) {
                 await sleep(400);
-                const slots = getFrameSlots();
-                let endSlot = slots.find(s => {
-                  const t = (s.textContent || "").toLowerCase();
-                  const aria = (s.getAttribute("aria-label") || "").toLowerCase();
-                  return (t.includes("kết thúc") || aria.includes("kết thúc") || t.includes("end")) && !t.includes("bắt đầu") && !aria.includes("bắt đầu");
-                });
-                if (!endSlot && slots.length > 1) {
-                  endSlot = slots[slots.length - 1];
-                }
-                if (!endSlot) {
-                  const allBtns = Array.from(document.querySelectorAll("button, [role='button'], div[type='button']")).filter(isElemVisible);
-                  endSlot = allBtns.find(s => {
+                const pasted = await injectImageFile(cfg.endImage, "end_frame.png");
+                if (!pasted) {
+                  const slots = getFrameSlots();
+                  let endSlot = slots.find(s => {
                     const t = (s.textContent || "").toLowerCase();
                     const aria = (s.getAttribute("aria-label") || "").toLowerCase();
-                    return (t.includes("kết thúc") || aria.includes("kết thúc") || t.includes("end frame")) && !t.includes("bắt đầu");
+                    return (t.includes("kết thúc") || aria.includes("kết thúc") || t.includes("end")) && !t.includes("bắt đầu") && !aria.includes("bắt đầu");
                   });
+                  if (!endSlot && slots.length > 1) {
+                    endSlot = slots[slots.length - 1];
+                  }
+                  if (!endSlot) {
+                    const allBtns = Array.from(document.querySelectorAll("button, [role='button'], div[type='button']")).filter(isElemVisible);
+                    endSlot = allBtns.find(s => {
+                      const t = (s.textContent || "").toLowerCase();
+                      const aria = (s.getAttribute("aria-label") || "").toLowerCase();
+                      return (t.includes("kết thúc") || aria.includes("kết thúc") || t.includes("end frame")) && !t.includes("bắt đầu");
+                    });
+                  }
+                  if (endSlot) {
+                    console.log("[Flow Extension] Found End frame slot, clicking...", endSlot);
+                    triggerClick(endSlot);
+                    const endIndex = cfg.endIndex ?? 0;
+                    await handleMediaDialog(cfg.endImage, endIndex);
+                  }
                 }
-                if (endSlot) {
-                  console.log("[Flow Extension] Found End frame slot, clicking...", endSlot);
-                  triggerClick(endSlot);
-                  const endIndex = cfg.endIndex ?? 0;
-                  await handleMediaDialog(cfg.endImage, endIndex);
-                  await sleep(800);
-                }
+                // Đợi upload end frame hoàn tất
+                await waitForUploadToFinish(25000);
               }
             } catch (frameErr) {
               console.warn("[Flow Extension] Frame attach error:", frameErr);
@@ -1445,22 +2215,106 @@ func: async (promptText, cfg) => {
         }
 
         // ──────────────────────────────────────────────
-        // STEP 3: Clear Editor & Focus
+        // STEP 3: Focus Editor & Type Prompt (Test B1)
         // ──────────────────────────────────────────────
-        editor.focus();
-        await sleep(100);
+        editor.scrollIntoView({ block: "center" });
+        editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        editor.click();
+        if (typeof editor.focus === 'function') editor.focus();
+        editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+        await sleep(300);
 
-        const sel = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(editor);
-        sel.removeAllRanges();
-        sel.addRange(range);
-        document.execCommand("selectAll", false, null);
-        document.execCommand("delete", false, null);
-        await sleep(100);
-        editor.focus();
+        // Find non-void editable paragraph (avoiding image cards & placeholder)
+        const editableParas = Array.from(editor.querySelectorAll("[data-slate-node='element'], p"))
+          .filter(el => !el.closest("[data-slate-void='true']") && !el.hasAttribute("data-slate-void") && el.getAttribute("contenteditable") !== "false");
+        const targetPara = editableParas.pop() || editor;
 
-        return { success: true, message: "Đã cấu hình và làm sạch ô nhập!" };
+        targetPara.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        targetPara.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+        targetPara.click();
+        if (typeof targetPara.focus === 'function') targetPara.focus();
+        await sleep(150);
+
+        // Position cursor in editable leaf (excluding placeholder)
+        try {
+          const leaves = Array.from(targetPara.querySelectorAll("span[data-slate-string='true'], span[data-slate-leaf='true'], span[data-slate-zero-width]"))
+            .filter(s => !s.closest("[contenteditable='false'], [data-slate-placeholder='true']"));
+          const targetLeaf = leaves.pop() || targetPara;
+
+          const sel = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(targetLeaf);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } catch (selErr) {
+          console.warn("[Flow Extension] Selection collapse error:", selErr);
+        }
+        await sleep(150);
+
+        // Gõ prompt
+        if (promptText) {
+          editor.dispatchEvent(new InputEvent("beforeinput", {
+            inputType: "insertText",
+            data: promptText,
+            bubbles: true,
+            cancelable: true
+          }));
+          document.execCommand("insertText", false, promptText);
+          editor.dispatchEvent(new Event("input", { bubbles: true }));
+          await sleep(400);
+        }
+
+        // ──────────────────────────────────────────────
+        // STEP 4: Submit Video (Click Arrow Button) (Test B3)
+        // ──────────────────────────────────────────────
+        // Đợi nút submit hết bị disabled do upload ảnh hoặc trạng thái chờ (tối đa 15s)
+        let finalSubmit = null;
+        for (let waitSubmit = 0; waitSubmit < 25; waitSubmit++) {
+          const currentButtons = queryDeep("button, [role='button']").filter(isElemVisible);
+          finalSubmit = currentButtons.find(b => {
+            const inner = (b.innerHTML || "").toLowerCase();
+            const t = (b.textContent || "").trim().toLowerCase();
+            const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+            return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" || aria.includes("tạo") || aria.includes("generate") || aria.includes("submit");
+          }) || submitBtn;
+
+          if (finalSubmit) {
+            const isDisabled = finalSubmit.disabled || finalSubmit.getAttribute("aria-disabled") === "true";
+            if (!isDisabled) {
+              break; // Nút đã sẵn sàng bấm!
+            }
+          }
+          await sleep(500);
+        }
+
+        const submitTimestamp = Date.now();
+        if (finalSubmit) {
+          finalSubmit.removeAttribute("disabled");
+          finalSubmit.setAttribute("aria-disabled", "false");
+          triggerClick(finalSubmit);
+          finalSubmit.click();
+          await sleep(500);
+        }
+
+        const edRect = editor.getBoundingClientRect();
+        const promptTyped = (editor.textContent || "").includes(promptText.slice(0, 8));
+
+        // Snapshot toàn bộ Media ID đang có trong DOM trước khi bấm submit để loại trừ (kể cả ảnh frame vừa paste)
+        const domMediaIdsBeforeSubmit = Array.from(document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id]"))
+          .map(el => el.getAttribute("data-media-id") || el.getAttribute("data-workflow-id") || el.getAttribute("data-id"))
+          .filter(Boolean);
+
+        return {
+          success: true,
+          promptTyped: promptTyped,
+          clickX: Math.round(edRect.left + 50),
+          clickY: Math.round(edRect.bottom - 20),
+          submitTimestamp: submitTimestamp,
+          domMediaIdsBeforeSubmit: domMediaIdsBeforeSubmit,
+          message: "Đã cấu hình, đính kèm ảnh, gõ prompt và click Submit!"
+        };
       }
     });
 
@@ -1471,17 +2325,64 @@ func: async (promptText, cfg) => {
     }
 
     // ──────────────────────────────────────────────
-    // STEP 4: Native Hardware Typing & Enter via CDP (chrome.debugger)
+    // STEP 4B: Native Hardware Input & Enter via CDP (chrome.debugger)
     // ──────────────────────────────────────────────
     if (chrome.debugger) {
       try {
         await chrome.debugger.attach({ tabId: tab.id }, "1.3");
-        
-        // Single native insertText into focused editor
-        await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.insertText", { text: prompt });
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 200));
 
-        // Trusted Hardware Enter (pure keypress WITHOUT \r text so it submits instead of inserting newline!)
+        const uiRes = results?.[0]?.result;
+        
+        // 1. Kiểm tra xem prompt đã thực sự được gõ vào editor chưa
+        let isPromptPresent = uiRes?.promptTyped;
+        if (!isPromptPresent && prompt) {
+          const checkText = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world: "MAIN",
+            args: [prompt],
+            func: (pText) => {
+              const ed = document.querySelector("div[role='textbox'][data-slate-editor='true']")
+                      || document.querySelector("div[data-slate-editor='true']")
+                      || document.querySelector("div[contenteditable='true']");
+              const t = (ed?.textContent || "").trim();
+              return t.includes(pText.slice(0, 8));
+            }
+          });
+          isPromptPresent = checkText?.[0]?.result;
+        }
+
+        // 2. Nếu prompt CHƯA vào editor, dùng CDP Native Mouse Click & Input.insertText để gõ CHÍNH XÁC!
+        if (!isPromptPresent && prompt) {
+          logToBridge(`[Flow Recon] ✍️ Prompt chưa vào editor, kích hoạt CDP Native Hardware Input để gõ: "${prompt.slice(0, 30)}..."`);
+          
+          const clickX = uiRes?.clickX || 400;
+          const clickY = uiRes?.clickY || 600;
+          
+          await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
+            type: "mousePressed",
+            x: clickX,
+            y: clickY,
+            button: "left",
+            clickCount: 1
+          });
+          await new Promise(r => setTimeout(r, 60));
+          await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
+            type: "mouseReleased",
+            x: clickX,
+            y: clickY,
+            button: "left",
+            clickCount: 1
+          });
+          await new Promise(r => setTimeout(r, 150));
+
+          await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.insertText", {
+            text: prompt
+          });
+          await new Promise(r => setTimeout(r, 400));
+        }
+
+        // 3. Trusted Hardware Enter (pure keypress WITHOUT \r text so it submits instead of inserting newline!)
         await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchKeyEvent", {
           type: "rawKeyDown",
           key: "Enter",
@@ -1497,47 +2398,26 @@ func: async (promptText, cfg) => {
           windowsVirtualKeyCode: 13,
           nativeVirtualKeyCode: 13
         });
-
-        // Also trigger submit button click if it's enabled as extra safety
         await new Promise(r => setTimeout(r, 400));
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            world: "MAIN",
-            func: () => {
-              const walk = (node, matches) => {
-                if (node.shadowRoot) walk(node.shadowRoot, matches);
-                for (const child of node.children) {
-                  walk(child, matches);
-                  if (child.tagName === 'BUTTON' || child.getAttribute('role') === 'button') matches.push(child);
-                }
-              };
-              const allBtns = [];
-              walk(document.body, allBtns);
 
-              for (const btn of allBtns) {
-                const inner = (btn.innerHTML || "").toLowerCase();
-                const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
-                const title = (btn.getAttribute("title") || "").toLowerCase();
-                let match = inner.includes("arrow_forward") || inner.includes("send") || aria.includes("submit") || aria.includes("generate") || aria.includes("tạo") || title.includes("generate") || inner.includes("magic");
-                if (!match) {
-                  for (const el of btn.querySelectorAll("*")) {
-                    const t = (el.textContent || "").trim();
-                    if (t === "arrow_forward" || t === "send" || t === "Generate" || t === "Tạo") {
-                      match = true;
-                      break;
-                    }
-                  }
-                }
-                if (match) {
-                  btn.removeAttribute("disabled");
-                  btn.click();
-                  break;
-                }
-              }
+        // 4. Click Submit Button nếu vẫn còn hiển thị
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          world: "MAIN",
+          func: () => {
+            const btns = Array.from(document.querySelectorAll("button, [role='button']"));
+            const sBtn = btns.find(b => {
+              const inner = (b.innerHTML || "").toLowerCase();
+              const t = (b.textContent || "").trim().toLowerCase();
+              return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send";
+            });
+            if (sBtn) {
+              sBtn.removeAttribute("disabled");
+              sBtn.setAttribute("aria-disabled", "false");
+              sBtn.click();
             }
-          });
-        } catch (_) {}
+          }
+        });
 
         await chrome.debugger.detach({ tabId: tab.id });
       } catch (dbgErr) {
@@ -1547,47 +2427,153 @@ func: async (promptText, cfg) => {
     }
 
     // ──────────────────────────────────────────────
-    // RECON STEP B: Snapshot Library Videos AFTER Click & Identify New Video
+    // RECON STEP B: Multi-Layer Recon to Identify Newly Created Video
     // ──────────────────────────────────────────────
     let newVideo = null;
-    if (effectiveProjectId) {
-      logToBridge(`[Flow Recon] Bắt đầu theo dõi thư viện project ${effectiveProjectId.slice(0, 8)}...`);
-      for (let attempt = 1; attempt <= 10; attempt++) {
-        await new Promise(r => setTimeout(r, attempt === 1 ? 2500 : 1500));
-        try {
-          const afterData = await getProjectVideos(effectiveProjectId);
-          if (afterData?.success) {
-            const allMedia = [
-              ...(afterData.videos || []),
-              ...(afterData.images || []),
-              ...(afterData.workflows || [])
-            ];
-            // Find any media in afterData not present in beforeIds
-            const diff = allMedia.filter(v => (v.mediaId && !beforeIds.has(v.mediaId)) || (v.workflowId && !beforeIds.has(v.workflowId)));
-            if (diff.length > 0) {
-              newVideo = diff.find(v => (v.prompt || "").toLowerCase().includes(prompt.slice(0, 15).toLowerCase())) || diff[0];
-              const foundId = newVideo.mediaId || newVideo.workflowId;
-              logToBridge(`[Flow Recon] Lần ${attempt}: Phát hiện media mới vừa tạo! ID: ${foundId}`);
-              break;
-            } else if (allMedia.length > beforeCount) {
-              newVideo = allMedia[0];
-              const foundId = newVideo.mediaId || newVideo.workflowId;
-              logToBridge(`[Flow Recon] Lần ${attempt}: Số lượng media tăng (+${allMedia.length - beforeCount}), chọn: ${foundId}`);
-              break;
-            } else if (attempt % 3 === 0) {
-              logToBridge(`[Flow Recon] Lần ${attempt}: Chưa thấy media mới xuất hiện (hiện có ${allMedia.length} items)...`);
-            }
-          } else {
-            logToBridge(`[Flow Recon] Lần ${attempt} getProjectVideos trả về: ${afterData?.error || 'Không thành công'}`);
-          }
-        } catch (err) {
-          console.warn(`[Flow Recon] Attempt ${attempt} fetch error:`, err);
+    const effectiveSubmitTime = Date.now();
+
+    // Snapshot ALL media IDs captured before or during image upload / submit to exclude them
+    const preSubmitCapturedIds = new Set(beforeIds);
+    if (results?.[0]?.result?.domMediaIdsBeforeSubmit) {
+      for (const id of results[0].result.domMediaIdsBeforeSubmit) {
+        preSubmitCapturedIds.add(id);
+      }
+    }
+    const tabCapturedPre = tab?.id ? _capturedMediaByTab.get(tab.id) : null;
+    if (tabCapturedPre) {
+      for (const item of tabCapturedPre) {
+        if (item.time <= effectiveSubmitTime + 400) {
+          if (item.primaryId) preSubmitCapturedIds.add(item.primaryId);
+          if (item.mediaIds) item.mediaIds.forEach(id => preSubmitCapturedIds.add(id));
+          if (item.workflows) item.workflows.forEach(id => preSubmitCapturedIds.add(id));
+        }
+      }
+    }
+    logToBridge(`[Flow Recon] Bắt đầu theo dõi và nhận diện Media ID video mới (đã loại trừ ${preSubmitCapturedIds.size} IDs cũ & ảnh frame)...`);
+
+    for (let attempt = 1; attempt <= 15; attempt++) {
+      await new Promise(r => setTimeout(r, attempt === 1 ? 1500 : 1200));
+
+      // ── TẦNG 1: Kiểm tra Media ID bắt trực tiếp từ RPC response (YhhmEf, jwpduf, batchexecute) ──
+      const tabCaptured = tab?.id ? _capturedMediaByTab.get(tab.id) : null;
+      if (tabCaptured && tabCaptured.length > 0) {
+        const fresh = tabCaptured.find(item => {
+          if (!item.primaryId) return false;
+          if (preSubmitCapturedIds.has(item.primaryId)) return false;
+          if (item.mediaIds && item.mediaIds.some(id => preSubmitCapturedIds.has(id))) return false;
+          return item.time >= effectiveSubmitTime - 500;
+        });
+        if (fresh && fresh.primaryId) {
+          logToBridge(`[Flow Recon] Lần ${attempt}: 🎯 Bắt được Media ID video mới từ RPC [${fresh.rpcId || 'batchexecute'}]: ${fresh.primaryId}`);
+          newVideo = {
+            mediaId: fresh.primaryId,
+            workflowId: fresh.workflows?.[0] || fresh.primaryId,
+            videoUrl: fresh.videoUrls?.[0] || null,
+            projectId: effectiveProjectId,
+            prompt: prompt
+          };
+          break;
         }
       }
 
-      if (!newVideo) {
-        logToBridge(`[Flow Recon] ⚠️ Không phát hiện media mới nào sau khi submit trên Flow`);
-      }
+      // ── TẦNG 2: Kiểm tra biến toàn cục & DOM trực tiếp trên tab Flow ──
+      try {
+        const tabCheck = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          world: "MAIN",
+          args: [effectiveSubmitTime, prompt, Array.from(preSubmitCapturedIds)],
+          func: (startTime, promptText, excludedList) => {
+            const excluded = new Set(excludedList || []);
+            const recent = window.__flowRecentMedia || [];
+            const fresh = recent.find(item => item.time >= startTime - 500 && item.primaryId && !excluded.has(item.primaryId));
+            if (fresh && fresh.primaryId) {
+              return { source: 'window.__flowRecentMedia', id: fresh.primaryId, videoUrl: fresh.videoUrls?.[0] || null };
+            }
+
+            // Check DOM attributes
+            const allElements = document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id]");
+            for (const el of allElements) {
+              // LOẠI TRỪ: Các phần tử nằm trong composer, prompt editor, frame slot
+              if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='frame-slot'], [class*='upload']")) {
+                continue;
+              }
+
+              // LOẠI TRỪ: Thẻ chỉ chứa ảnh mà không có video/loading
+              const hasVideo = el.querySelector("video");
+              // Card mới tạo phải có spinner / chữ đang tạo HOẶC phải chứa nội dung prompt của task này!
+              const promptSub = (promptText || "").trim().slice(0, 15).toLowerCase();
+              const textMatchesPrompt = promptSub && text.includes(promptSub);
+
+              if (!hasSpinner && !hasGeneratingText && !textMatchesPrompt) {
+                continue; // Bỏ qua các card cũ đã hoàn thành từ trước
+              }
+
+              const mId = el.getAttribute("data-media-id");
+              const wId = el.getAttribute("data-workflow-id") || el.getAttribute("data-id");
+              const vEl = el.querySelector("video");
+              const vUrl = vEl?.currentSrc || vEl?.src || null;
+              if (mId && mId.length > 10 && !excluded.has(mId)) return { source: 'dom_data_media_id', id: mId, videoUrl: vUrl };
+              if (wId && wId.length > 20 && /^[a-f0-9\-]{36}$/i.test(wId) && !excluded.has(wId)) return { source: 'dom_data_workflow_id', id: wId, videoUrl: vUrl };
+            }
+
+            // Check video elements
+            const videos = document.querySelectorAll("video");
+            for (const v of videos) {
+              const src = v.currentSrc || v.src || "";
+              if (src && !src.startsWith("blob:") && src.includes("http")) {
+                const match = src.match(/media\/([a-f0-9\-]{36})/i) || src.match(/video\/([a-f0-9\-]{36})/i) || src.match(/name=([^&]+)/) || src.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+                if (match && !excluded.has(match[1])) return { source: 'dom_video_src', id: match[1], videoUrl: src };
+              }
+            }
+
+            try {
+              const savedId = sessionStorage.getItem('__flow_latest_media_id');
+              const savedTime = parseInt(sessionStorage.getItem('__flow_latest_media_time') || '0', 10);
+              if (savedId && savedTime >= startTime - 500 && !excluded.has(savedId)) {
+                return { source: 'session_storage', id: savedId };
+              }
+            } catch (_) {}
+
+            return null;
+          }
+        });
+
+        const resCheck = tabCheck?.[0]?.result;
+        if (resCheck?.id) {
+          logToBridge(`[Flow Recon] Lần ${attempt}: 🎯 Tìm thấy Media ID từ ${resCheck.source}: ${resCheck.id}`);
+          newVideo = {
+            mediaId: resCheck.id,
+            workflowId: resCheck.id,
+            videoUrl: resCheck.videoUrl || null,
+            projectId: effectiveProjectId,
+            prompt: prompt
+          };
+          break;
+        }
+      } catch (domErr) {}
+
+      // ── TẦNG 3: Fallback qua getProjectVideos (được fetch trong chính context của tab) ──
+      try {
+        const afterData = await getProjectVideos(effectiveProjectId, tab);
+        if (afterData?.success) {
+          // Chỉ kiểm tra danh sách videos, KHÔNG kiểm tra images để tránh bắt nhầm frame ảnh
+          const allVideos = afterData.videos || [];
+          const diff = allVideos.filter(v => {
+            const id = v.mediaId || v.workflowId;
+            return id && !preSubmitCapturedIds.has(id);
+          });
+          if (diff.length > 0) {
+            newVideo = diff.find(v => (v.prompt || "").toLowerCase().includes(prompt.slice(0, 15).toLowerCase())) || diff[0];
+            const foundId = newVideo.mediaId || newVideo.workflowId;
+            logToBridge(`[Flow Recon] Lần ${attempt}: 🎯 Phát hiện video mới từ getProjectVideos: ${foundId}`);
+            break;
+          }
+        }
+      } catch (err) {}
+    }
+
+    if (!newVideo) {
+      logToBridge(`[Flow Recon] ⚠️ Chưa tóm được ID ngay sau submit, sẽ theo dõi video theo Prompt & Thư viện...`);
     }
 
     if (newVideo) {
@@ -1606,7 +2592,507 @@ func: async (promptText, cfg) => {
       };
     }
 
-    return results?.[0]?.result || { success: true, message: "Đã thực thi click UI", newVideo: null };
+    return results?.[0]?.result || {
+      success: true,
+      message: "Đã thực thi click UI",
+      newVideo: {
+        mediaId: null,
+        prompt: prompt,
+        projectId: effectiveProjectId
+      }
+    };
+  } catch (err) {
+    return { success: false, error: "Lỗi tương tác UI: " + err.message };
+  }
+}
+
+// ══════════════════════════════════════
+// 3b. Create Image via UI Automation (Tab: Auto Click Ảnh)
+// ══════════════════════════════════════
+async function createImageUI(prompt, projectId, config = {}) {
+  // Tìm tab Flow cho Ảnh (hoặc tab Flow bất kỳ đang mở)
+  const tab = await getFlowTab('image', projectId) || await getFlowTab('video', projectId);
+  if (!tab) return { success: false, error: "Cần mở ít nhất một tab Google Flow để tạo ảnh!" };
+
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    await new Promise(r => setTimeout(r, 400));
+  } catch (_) {}
+
+  logToBridge(`[Flow Recon] Sử dụng Tab (ID: ${tab.id}) để thực hiện Auto Click Ảnh...`);
+
+  const urlMatch = tab.url?.match(/project\/([a-zA-Z0-9_-]+)/);
+  const effectiveProjectId = (urlMatch && urlMatch[1]) ? urlMatch[1] : projectId;
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      args: [prompt, config],
+      func: async (promptText, cfg) => {
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        const queryDeep = (selector) => {
+          const matches = [];
+          const walk = (node) => {
+            if (node.shadowRoot) walk(node.shadowRoot);
+            for (const child of node.children) {
+              if (child.matches && child.matches(selector)) matches.push(child);
+              walk(child);
+            }
+          };
+          walk(document.body);
+          return matches;
+        };
+
+        const queryScopeDeep = (scope, selector) => {
+          if (!scope) return [];
+          const matches = [];
+          const walk = (node) => {
+            if (node.shadowRoot) walk(node.shadowRoot);
+            for (const child of node.children) {
+              if (child.matches && child.matches(selector)) matches.push(child);
+              walk(child);
+            }
+          };
+          walk(scope);
+          return matches;
+        };
+
+        const isElemVisible = (el) => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
+        };
+
+        const safeClick = (el) => {
+          if (!el) return false;
+          el.scrollIntoView({ block: "nearest" });
+          if (typeof el.click === "function") {
+            el.click();
+          } else {
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+          }
+          return true;
+        };
+
+        const triggerPointerClick = (el) => {
+          if (!el) return false;
+          el.scrollIntoView({ block: "nearest" });
+          el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+          el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+          el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+          el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+          if (typeof el.click === "function") {
+            el.click();
+          } else {
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+          }
+          return true;
+        };
+
+        // 1. Tìm ô Editor
+        const findDeepEditor = () => {
+          const walk = (node) => {
+            if (node.shadowRoot) {
+              const res = walk(node.shadowRoot);
+              if (res) return res;
+            }
+            for (const child of node.children) {
+              if (child.tagName === 'TEXTAREA' || child.getAttribute('contenteditable') === 'true' || child.getAttribute('data-slate-editor') === 'true' || child.getAttribute('role') === 'textbox') {
+                return child;
+              }
+              const res = walk(child);
+              if (res) return res;
+            }
+            return null;
+          };
+          return walk(document.body);
+        };
+
+        let editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
+                  || document.querySelector("div[data-slate-editor='true']")
+                  || document.querySelector("div[contenteditable='true'][role='textbox']")
+                  || document.querySelector("div[contenteditable='true']")
+                  || findDeepEditor();
+
+        if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt trên giao diện Flow!" };
+
+        // 2. Tìm nút Submit
+        const composerButtons = queryDeep("button, [role='button']");
+        const submitBtn = composerButtons.find(b => {
+          const inner = (b.innerHTML || "").toLowerCase();
+          const t = (b.textContent || "").trim().toLowerCase();
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send";
+        });
+
+        // 3. Tìm Settings Chip (nằm cạnh submitBtn)
+        let settingsChip = null;
+        if (submitBtn) {
+           const sRect = submitBtn.getBoundingClientRect();
+           let parent = submitBtn;
+           for (let i = 0; i < 8 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn || !isElemVisible(b)) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent")) return false;
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || 
+                    t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") ||
+                    t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i)) {
+                   return true;
+                }
+                return false;
+             });
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+           if (!settingsChip) {
+              parent = submitBtn;
+              for (let i = 0; i < 8 && parent; i++) {
+                 parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+                 if (!parent) break;
+                 const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+                 const leftOfSubmit = buttonsHere.filter(b => {
+                   if (b === submitBtn || !isElemVisible(b)) return false;
+                   return b.getBoundingClientRect().left < sRect.left;
+                 });
+                 leftOfSubmit.sort((a, b) => Math.abs(sRect.left - a.getBoundingClientRect().right) - Math.abs(sRect.left - b.getBoundingClientRect().right));
+                 const candidate = leftOfSubmit.find(b => {
+                   const t = (b.textContent || "").trim().toLowerCase();
+                   if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                   return true;
+                 });
+                 if (candidate) {
+                   settingsChip = candidate;
+                   break;
+                 }
+              }
+           }
+        }
+
+        // Tìm tab "Hình ảnh"
+        const findImageTabElement = () => {
+          const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            if (r.width < 30 || r.height < 15) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+            const t = (el.textContent || "").trim();
+            const aria = (el.getAttribute("aria-label") || "").trim();
+            const id = (el.getAttribute("id") || "").toLowerCase();
+
+            if (t.includes("Khung hình") || aria.includes("Khung hình")) return false;
+
+            return t === "Hình ảnh" || aria === "Hình ảnh" || 
+                   t.toLowerCase() === "image" || aria.toLowerCase() === "image" ||
+                   id.endsWith("-trigger-image") || id.endsWith("-trigger-IMAGE") ||
+                   (t.includes("Hình ảnh") && t.length <= 15) ||
+                   (aria.includes("Hình ảnh") && aria.length <= 15);
+          });
+
+          if (candidates.length === 0) return null;
+
+          let best = candidates.find(el => {
+            const p = el.parentElement;
+            if (p && (p.textContent.includes("Video") || p.getAttribute("role") === "tablist")) return true;
+            const gp = p?.parentElement;
+            if (gp && (gp.textContent.includes("Video") || gp.getAttribute("role") === "tablist")) return true;
+            return false;
+          });
+
+          if (!best) {
+            best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+          }
+
+          return best.closest("[role='tab'], button, [role='button']") || best;
+        };
+
+        const isPopoverOpen = () => {
+          if (findImageTabElement()) return true;
+          const ratioBtn = queryDeep("button, [role='tab'], [role='radio']").find(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            const t = (el.textContent || "").trim();
+            return t === "16:9" || t === "9:16";
+          });
+          return !!ratioBtn;
+        };
+
+        // ──────────────────────────────────────────────
+        // BƯỚC 1: Điền Prompt vào Editor
+        // ──────────────────────────────────────────────
+        editor.scrollIntoView({ block: "center" });
+        editor.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, promptText || "");
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(350);
+
+        // ──────────────────────────────────────────────
+        // BƯỚC 2: Mở Cài Đặt (DÙNG CHÍNH TEST B2: click nút settingsChip)
+        // ──────────────────────────────────────────────
+        if (!isPopoverOpen() && settingsChip) {
+          settingsChip.click(); // Đúng như Test B2!
+          await sleep(600);
+          if (!isPopoverOpen()) {
+            settingsChip.click();
+            await sleep(600);
+          }
+        }
+
+        // ──────────────────────────────────────────────
+        // BƯỚC 3: Chọn Tab "Hình ảnh"
+        // ──────────────────────────────────────────────
+        const tabEl = findImageTabElement();
+        if (tabEl) {
+          const isActive = tabEl.getAttribute("data-state") === "active" || 
+                           tabEl.getAttribute("aria-selected") === "true" ||
+                           tabEl.classList.contains("active") ||
+                           (tabEl.parentElement && tabEl.parentElement.getAttribute("data-state") === "active");
+          if (!isActive) {
+            safeClick(tabEl);
+            await sleep(400);
+          }
+        }
+
+        // ──────────────────────────────────────────────
+        // BƯỚC 4: Chọn Tỉ Lệ Ảnh
+        // ──────────────────────────────────────────────
+        const targetRatio = (cfg?.aspectRatio || "9:16").trim();
+        const ratioButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+          if (!isElemVisible(el)) return false;
+          if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+          if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+          const r = el.getBoundingClientRect();
+          if (r.left < 150) return false;
+          const t = (el.textContent || "").trim();
+          return t.includes("16:9") || t.includes("4:3") || t.includes("1:1") || t.includes("3:4") || t.includes("9:16");
+        });
+
+        const targetRBtn = ratioButtons.find(b => {
+          const t = (b.textContent || "").trim();
+          const aria = (b.getAttribute("aria-label") || "").trim();
+          const combined = t + " " + aria;
+          if (targetRatio === "9:16") return combined.includes("9:16") && !combined.includes("16:9");
+          if (targetRatio === "16:9") return combined.includes("16:9");
+          if (targetRatio === "1:1") return combined.includes("1:1");
+          if (targetRatio === "4:3") return combined.includes("4:3") && !combined.includes("3:4");
+          if (targetRatio === "3:4") return combined.includes("3:4") && !combined.includes("4:3");
+          return combined.includes(targetRatio);
+        });
+
+        if (targetRBtn) {
+          safeClick(targetRBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || targetRBtn);
+          await sleep(350);
+        }
+
+        // ──────────────────────────────────────────────
+        // BƯỚC 5: Chọn Model Ảnh (Nano Banana)
+        // ──────────────────────────────────────────────
+        const targetModel = cfg?.model || "banana_pro";
+        
+        const isMatch = (text, requestedModel) => {
+          const tl = (text || "").toLowerCase().trim();
+          const req = (requestedModel || "banana_pro").toLowerCase().trim();
+          if (req.includes("lite") || req.includes("2_lite") || req.includes("2 lite")) {
+            return tl.includes("lite");
+          }
+          if (req.includes("banana 2") || req.includes("banana_2")) {
+            return (tl.includes("banana 2") || tl.includes("nano banana 2")) && !tl.includes("lite");
+          }
+          // Default / banana_pro
+          return (tl.includes("pro") || tl.includes("banana pro")) && !tl.includes("banana 2") && !tl.includes("lite");
+        };
+
+        const findModelDropdown = () => {
+          const candidates = queryDeep("button, [role='combobox'], [role='button']").filter(b => {
+            if (!isElemVisible(b)) return false;
+            if (settingsChip && (b === settingsChip || settingsChip.contains(b))) return false;
+            if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+            if (b.closest("[role='listbox'], [role='menu']")) return false;
+            const r = b.getBoundingClientRect();
+            if (r.left < 150 || r.width < 50 || r.height < 20) return false;
+            const t = (b.textContent || "").trim().toLowerCase();
+            const isModel = (t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.includes("imagen")) && t.length < 50;
+            const isExcluded = t.includes("16:9") || t.includes("9:16") || t.includes("1:1") || t.includes("4:3") || t.includes("3:4") || t.includes("x1") || t.includes("x2") || t.includes("x3") || t.includes("x4") || t.includes("video") || t.includes("hình ảnh");
+            return isModel && !isExcluded;
+          });
+          if (candidates.length > 0) return candidates[0];
+
+          const divCandidates = queryDeep("div[role='button'], div").filter(b => {
+            if (!isElemVisible(b)) return false;
+            if (settingsChip && (b === settingsChip || settingsChip.contains(b))) return false;
+            if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+            if (b.closest("[role='listbox'], [role='menu']")) return false;
+            const r = b.getBoundingClientRect();
+            if (r.left < 150 || r.width < 50 || r.height < 20) return false;
+            const t = (b.textContent || "").trim().toLowerCase();
+            const isModel = (t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.includes("imagen")) && t.length < 50;
+            const isExcluded = t.includes("16:9") || t.includes("9:16") || t.includes("1:1") || t.includes("4:3") || t.includes("3:4") || t.includes("x1") || t.includes("x2") || t.includes("x3") || t.includes("x4") || t.includes("video") || t.includes("hình ảnh");
+            return isModel && !isExcluded;
+          });
+          if (divCandidates.length > 0) {
+            const best = divCandidates.find(d => d.getAttribute("role") === "button") || divCandidates[divCandidates.length - 1];
+            return best.closest("button, [role='combobox'], [role='button']") || best;
+          }
+          return null;
+        };
+
+        const modelDropdown = findModelDropdown();
+        let selectedModelText = targetModel;
+
+        if (modelDropdown) {
+          const currentText = (modelDropdown.textContent || "").trim();
+          selectedModelText = currentText;
+
+          if (!isMatch(currentText, targetModel)) {
+            const btn = modelDropdown.closest("button, [role='combobox'], [role='button']") || modelDropdown;
+            btn.scrollIntoView({ block: "nearest" });
+
+            // Click mở dropdown (chỉ 1 lần native click như Test B2)
+            btn.click();
+            await sleep(400);
+
+            const checkMenuOpen = () => {
+              const items = queryDeep("[role='option'], [role='menuitem'], li, button, div, span").filter(isElemVisible);
+              return items.some(el => {
+                if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                if (el === modelDropdown || modelDropdown.contains(el)) return false;
+                const t = (el.textContent || "").trim();
+                return t.length >= 4 && t.length <= 35 && (t.includes("Banana") || t.includes("Nano"));
+              });
+            };
+
+            if (!checkMenuOpen()) {
+              btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+              await sleep(400);
+            }
+
+            let targetOpt = null;
+            for (let attempt = 0; attempt < 15; attempt++) {
+              const portalCandidates = queryDeep("[role='option'], [role='menuitem'], button, [role='button'], li, div, span").filter(isElemVisible);
+              const actualOptions = portalCandidates.filter(el => {
+                if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                if (el === modelDropdown || modelDropdown.contains(el)) return false;
+                if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                const t = (el.textContent || "").trim();
+                if (t.length < 4 || t.length > 35) return false;
+                const tl = t.toLowerCase();
+                return tl.includes("banana") || tl.includes("nano");
+              });
+
+              if (actualOptions.length > 0) {
+                targetOpt = actualOptions.find(el => isMatch((el.textContent || "").trim(), targetModel));
+                if (targetOpt) break;
+              }
+              await sleep(150);
+            }
+
+            if (targetOpt) {
+              const clickable = targetOpt.closest("[role='option'], [role='menuitem'], button, [role='button'], li") || targetOpt;
+              triggerPointerClick(clickable);
+              await sleep(400);
+              selectedModelText = (clickable.textContent || "").trim();
+            }
+          }
+        }
+
+        // ──────────────────────────────────────────────
+        // BƯỚC 6: Chọn Số Lượng Ảnh
+        // ──────────────────────────────────────────────
+        const targetCount = (cfg?.count || "x1").toLowerCase().trim();
+        const countButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(b => {
+          if (!isElemVisible(b)) return false;
+          if (settingsChip && (b === settingsChip || settingsChip.contains(b))) return false;
+          if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+          const r = b.getBoundingClientRect();
+          if (r.left < 150) return false;
+          const t = (b.textContent || "").trim().toLowerCase();
+          return t === "x1" || t === "x2" || t === "x3" || t === "x4" || t === "1x" || t === "2x" || t === "3x" || t === "4x";
+        });
+
+        const countBtn = countButtons.find(b => {
+          const t = (b.textContent || "").trim().toLowerCase();
+          if (targetCount === "x1" || targetCount === "1x") return t === "x1" || t === "1x";
+          if (targetCount === "x2" || targetCount === "2x") return t === "x2" || t === "2x";
+          if (targetCount === "x3" || targetCount === "3x") return t === "x3" || t === "3x";
+          if (targetCount === "x4" || targetCount === "4x") return t === "x4" || t === "4x";
+          return t === targetCount;
+        });
+
+        if (countBtn) {
+          safeClick(countBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || countBtn);
+          await sleep(350);
+        }
+
+        // ──────────────────────────────────────────────
+        // BƯỚC 7: Đóng Popover Cài Đặt
+        // ──────────────────────────────────────────────
+        await sleep(300);
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+        await sleep(300);
+        try {
+          if (editor) {
+            editor.click();
+            editor.focus();
+          }
+        } catch (_) {}
+        await sleep(200);
+        if (isPopoverOpen() && settingsChip) {
+          settingsChip.click();
+          await sleep(300);
+        }
+
+        // ──────────────────────────────────────────────
+        // BƯỚC 8: Bấm Nút Submit Tạo Ảnh (CHỈ CLICK 1 LẦN DUY NHẤT)
+        // ──────────────────────────────────────────────
+        if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit tạo ảnh" };
+
+        for (let waitSub = 0; waitSub < 15; waitSub++) {
+          const isDisabled = submitBtn.disabled || submitBtn.getAttribute("aria-disabled") === "true";
+          if (!isDisabled) break;
+          await sleep(200);
+        }
+
+        submitBtn.removeAttribute("disabled");
+        submitBtn.setAttribute("aria-disabled", "false");
+        submitBtn.click(); // Đúng chuẩn Test B3: Click đúng 1 lần duy nhất!
+        await sleep(500);
+
+        return {
+          success: true,
+          message: `Đã cấu hình [${targetRatio} | ${selectedModelText || targetModel} | ${targetCount}], điền prompt và bấm Submit tạo ảnh!`,
+          config: {
+            aspectRatio: targetRatio,
+            model: selectedModelText || targetModel,
+            count: targetCount
+          }
+        };
+      }
+    });
+
+    const res = results?.[0]?.result;
+    if (res && res.success === false) {
+      return { success: false, error: res.error };
+    }
+
+    return res || { success: true, message: "Đã thực thi tạo ảnh trên Flow!" };
   } catch (err) {
     return { success: false, error: "Lỗi tương tác UI: " + err.message };
   }
@@ -2389,78 +3875,33 @@ async function processServerVideoQueue() {
   while (_serverVideoQueue.length > 0) {
     const task = _serverVideoQueue.shift();
     try {
-      logToBridge(`Bắt đầu xử lý task video: ${task.id} (prompt: "${task.prompt.slice(0, 30)}...")`);
+      logToBridge(`Bắt đầu xử lý task video cho tool_video: ${task.id} (prompt: "${(task.prompt || '').slice(0, 30)}...")`);
       
-      let resolvedStartImage = task.startImage || null;
-      let resolvedEndImage = task.endImage || null;
-
-      const needsUploadStart = Boolean(task.startImage && (task.startImage.startsWith("http") || task.startImage.startsWith("data:") || task.startImage.length > 500));
-      const needsUploadEnd = Boolean(task.endImage && (task.endImage.startsWith("http") || task.endImage.startsWith("data:") || task.endImage.length > 500));
-
-      // Bước 1: Nếu có startImage -> Tải lên Google Flow và F5 tab Video
-      if (needsUploadStart) {
-        logToBridge(`[Video Engine] Tải ảnh đầu vào (startImage) lên Google Flow...`);
-        const isUrl = task.startImage.startsWith("http://") || task.startImage.startsWith("https://");
-        const isB64 = task.startImage.startsWith("data:") || task.startImage.length > 500;
-        
-        // F5 lại tab Video sau khi upload startImage theo yêu cầu của user
-        const upRes = await uploadImage(task.projectId, isUrl ? task.startImage : null, isB64 ? task.startImage : null, true, false, 'video');
-        if (!upRes?.success || !upRes?.mediaId) {
-          throw new Error(`Lỗi upload ảnh đầu vào: ${upRes?.error || 'Không nhận được mediaId'}`);
-        }
-        resolvedStartImage = upRes.mediaId;
-        logToBridge(`[Video Engine] ✅ Đã upload ảnh đầu vào (Media ID: ${resolvedStartImage}) và F5 lại tab Video! Đợi 3.5s...`);
-        await new Promise(r => setTimeout(r, 3500));
-      }
-
-      // Bước 1.1: Nếu có endImage -> Tải lên Google Flow và F5 tab Video
-      if (needsUploadEnd) {
-        logToBridge(`[Video Engine] Tải ảnh kết thúc (endImage) lên Google Flow...`);
-        const isUrl = task.endImage.startsWith("http://") || task.endImage.startsWith("https://");
-        const isB64 = task.endImage.startsWith("data:") || task.endImage.length > 500;
-        
-        // F5 lại tab Video sau khi upload endImage
-        const upRes = await uploadImage(task.projectId, isUrl ? task.endImage : null, isB64 ? task.endImage : null, true, false, 'video');
-        if (!upRes?.success || !upRes?.mediaId) {
-          throw new Error(`Lỗi upload ảnh kết thúc: ${upRes?.error || 'Không nhận được mediaId'}`);
-        }
-        resolvedEndImage = upRes.mediaId;
-        logToBridge(`[Video Engine] ✅ Đã upload ảnh kết thúc (Media ID: ${resolvedEndImage}) và F5 lại tab Video! Đợi 3.5s...`);
-        await new Promise(r => setTimeout(r, 3500));
-      }
-
-      const hasBoth = Boolean(resolvedStartImage && resolvedEndImage);
+      const hasFrames = Boolean(task.startImage || task.endImage || task.isFrames);
       const config = {
         aspectRatio: task.aspectRatio || '9:16',
-        duration: '8s',
-        count: 'x1',
-        model: 'veo_3_1_lite_low_priority',
-        isFrames: Boolean(resolvedStartImage || resolvedEndImage),
-        hasBothFrames: hasBoth,
-        startImage: resolvedStartImage,
-        endImage: resolvedEndImage,
-        // Start up trước -> index 1 trong thư viện; End up sau -> index 0 (mới nhất)
-        startIndex: hasBoth ? 1 : 0,
-        endIndex: 0
+        duration: task.duration || '8s',
+        count: task.count || 'x1',
+        model: task.model || 'veo_3_1_lite_low_priority',
+        isFrames: hasFrames,
+        hasBothFrames: Boolean(task.startImage && task.endImage),
+        startImage: task.startImage || null,
+        endImage: task.endImage || null
       };
 
-      // Bước 2: Chạy Auto Click UI (chuyển Khung hình, gắn frame vừa upload, submit)
-      logToBridge(`[Video Engine] Bắt đầu Auto Click: Cấu hình Khung hình, gắn ảnh và Submit...`);
+      // Thực thi Pure Auto Click UI (chọn tab Video/Khung hình, cấu hình thông số, dán ảnh, gõ prompt, submit)
+      logToBridge(`[Video Engine] Thực thi Pure Auto Click UI cho task ${task.id}...`);
       const res = await createVideoUI(task.prompt, task.projectId, config);
       if (!res?.success) {
         throw new Error(res?.error || 'Không thể click tạo video trên UI Flow');
       }
 
       const newVideo = res.newVideo;
-      const mediaId = newVideo?.mediaId;
-      logToBridge(`Task ${task.id} đã click submit thành công trên Flow! Media ID: ${mediaId}`);
+      const mediaId = newVideo?.mediaId || null;
+      logToBridge(`Task ${task.id} đã click submit thành công trên Flow! ${mediaId ? 'Media ID: ' + mediaId : 'Tiến hành theo dõi trạng thái qua prompt & thư viện...'}`);
 
-      if (!mediaId) {
-        throw new Error('Đã click nhưng không xác định được Media ID của video');
-      }
-
-      // 2. Spawn async poll & download worker for this mediaId in parallel
-      pollAndDeliverVideo(task.id, mediaId, task.projectId || newVideo.projectId);
+      // 2. Spawn async poll & download worker for this task in parallel (chuyển cả prompt để fallback)
+      pollAndDeliverVideo(task.id, mediaId, task.projectId || newVideo?.projectId, task.prompt);
 
       // Stagger delay 4s before taking next task from queue
       await new Promise(r => setTimeout(r, 4000));
@@ -2677,10 +4118,12 @@ async function checkVideoStatusOnFlow(mediaIds, projectId) {
 }
 
 function downloadFileToDisk(target, filename) {
-  const url = (typeof target === 'string' && target.startsWith('http'))
-    ? target
-    : `${TRPC_BASE}/media.getMediaUrlRedirect?name=${encodeURIComponent(target)}`;
-  const fname = filename || `flow_${Date.now()}.bin`;
+  let url = target;
+  if (!url || typeof url !== 'string' || !url.startsWith('http') || url.includes('labs.google')) {
+    const mId = target || '';
+    url = `https://flow-content.google/video/${encodeURIComponent(mId)}`;
+  }
+  const fname = filename || `flow_${Date.now()}.mp4`;
 
   return new Promise((resolve, reject) => {
     chrome.downloads.download({ url, filename: fname, saveAs: false }, (downloadId) => {
@@ -2703,6 +4146,13 @@ function downloadFileToDisk(target, filename) {
           }
           const item = items[0];
           if (item.state === 'complete') {
+            // Kiểm tra tính hợp lệ: Nếu Chrome tải về file lỗi .xml, .html (NoSuchKey/404) hoặc dung lượng quá nhỏ
+            if (item.filename?.endsWith('.xml') || item.filename?.endsWith('.html') || (item.fileSize && item.fileSize < 5000)) {
+              clearInterval(timer);
+              clearTimeout(timeout);
+              try { chrome.downloads.erase({ id: item.id }); } catch (_) {}
+              return reject(new Error(`File tải về từ Flow không phải video (${item.filename}, ${item.fileSize} bytes) - video chưa sẵn sàng`));
+            }
             clearInterval(timer);
             clearTimeout(timeout);
             resolve({
@@ -2723,10 +4173,1283 @@ function downloadFileToDisk(target, filename) {
 }
 const downloadVideoFileToDisk = downloadFileToDisk;
 
-async function pollAndDeliverVideo(taskId, mediaId, projectId) {
-  logToBridge(`Bắt đầu theo dõi video: task ${taskId}, mediaId: ${mediaId}`);
+// ══════════════════════════════════════════════════════════════════
+// Direct Image Download Automation (Extract Original High-Res Image & Download Instantly)
+// ══════════════════════════════════════════════════════════════════
+async function downloadImageCardDirect(tabId, query = "001.", promptText = "", mediaId = "", workflowId = "", fallbackImgSrc = null, projectId = "") {
+  let targetTabId = tabId;
+  if (!targetTabId) {
+    const tab = await getFlowTab('image', projectId) || await getFlowTab('video', projectId);
+    targetTabId = tab?.id;
+  }
+  if (!targetTabId) return { success: false, error: "Không tìm thấy tab Google Flow đang mở" };
+
+  try {
+    // 1. Focus tab Flow
+    try {
+      await chrome.tabs.update(targetTabId, { active: true });
+    } catch (_) {}
+
+    // 2. Tìm thẻ card và trích xuất URL ảnh chất lượng cao gốc từ DOM của Tab
+    const extractRes = await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      world: "MAIN",
+      args: [query, promptText || "", mediaId || "", workflowId || "", fallbackImgSrc || ""],
+      func: async (q, pText, mId, wId, fbSrc) => {
+        const cleanQuery = (q || "001.").trim().toLowerCase();
+        const numOnly = cleanQuery.replace(/[^0-9]/g, "");
+        const targetMediaId = (mId || "").trim();
+        const targetWorkflowId = (wId || "").trim();
+        const promptFull = (pText || "").trim().toLowerCase();
+
+        let matchedCard = null;
+
+        // ƯU TIÊN 1: Theo Media ID / Workflow ID
+        if (targetMediaId || targetWorkflowId) {
+          const all = Array.from(document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], div[class*='item'], img"));
+          for (const el of all) {
+            const elMId = el.getAttribute("data-media-id") || "";
+            const elWId = el.getAttribute("data-workflow-id") || el.getAttribute("data-id") || "";
+            const src = el.src || el.currentSrc || "";
+            if ((targetMediaId && (elMId === targetMediaId || src.includes(targetMediaId))) ||
+                (targetWorkflowId && (elWId === targetWorkflowId || src.includes(targetWorkflowId)))) {
+              let cur = el;
+              while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+                const r = cur.getBoundingClientRect();
+                if (r.width > 480 || r.height > 650) break;
+                cur = cur.parentElement;
+              }
+              matchedCard = cur;
+              break;
+            }
+          }
+        }
+
+        // ƯU TIÊN 2: Theo text STT / query
+        if (!matchedCard) {
+          const candidateTextEls = Array.from(
+            document.querySelectorAll("p, span, div, h1, h2, h3, h4, button, b, strong, [aria-label]")
+          ).filter(el => {
+            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            const t = (el.innerText || el.textContent || "").trim().toLowerCase();
+            const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
+            const combined = t + " " + aria;
+            if (!combined.trim()) return false;
+            if (combined.includes(cleanQuery)) return true;
+            if (numOnly && cleanQuery.includes(".") && combined.includes(numOnly)) return true;
+            return false;
+          });
+
+          if (candidateTextEls.length > 0) {
+            candidateTextEls.sort((a, b) => (a.innerText || a.textContent || "").length - (b.innerText || b.textContent || "").length);
+            const promptEl = candidateTextEls[0];
+            let card = promptEl;
+            let cur = promptEl.parentElement;
+            while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+              const r = cur.getBoundingClientRect();
+              if (r.width > 480 || r.height > 650) break;
+              card = cur;
+              cur = cur.parentElement;
+            }
+            matchedCard = card;
+          }
+        }
+
+        // ƯU TIÊN 3: Semantic keywords của prompt
+        if (!matchedCard && promptFull) {
+          const words = promptFull.replace(/^\d+[\.\-_:\s]+/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(w => w.length >= 4);
+          if (words.length > 0) {
+            const cards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
+              if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
+              const r = el.getBoundingClientRect();
+              return r.width >= 100 && r.width <= 480 && r.height >= 120 && r.height <= 650 && Boolean(el.querySelector("img"));
+            });
+            let bestCard = null;
+            let maxScore = 0;
+            for (const c of cards) {
+              const cText = (c.innerText || c.textContent || "").toLowerCase();
+              const score = words.filter(w => cText.includes(w)).length;
+              if (score > maxScore && score >= 1) {
+                maxScore = score;
+                bestCard = c;
+              }
+            }
+            if (bestCard) matchedCard = bestCard;
+          }
+        }
+
+        // Tìm ảnh thật trong card
+        let targetImg = null;
+        let imgSrc = fbSrc || null;
+
+        if (matchedCard) {
+          matchedCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          matchedCard.style.outline = '4px solid #10b981';
+          matchedCard.style.boxShadow = '0 0 25px rgba(16, 185, 129, 0.9)';
+
+          const imgs = Array.from(matchedCard.querySelectorAll("img")).filter(img => {
+            const s = img.src || img.currentSrc || "";
+            if (!s || s.startsWith("data:image/svg") || s.includes("avatar") || s.includes("icon")) return false;
+            return (img.naturalWidth > 80 && img.naturalHeight > 80) || (img.width > 80 && img.height > 80);
+          });
+          imgs.sort((a, b) => ((b.naturalWidth || b.width || 0) * (b.naturalHeight || b.height || 0)) - ((a.naturalWidth || a.width || 0) * (a.naturalHeight || a.height || 0)));
+          if (imgs.length > 0) {
+            targetImg = imgs[0];
+            imgSrc = targetImg.currentSrc || targetImg.src;
+          }
+        }
+
+        if (!imgSrc && fbSrc) imgSrc = fbSrc;
+        if (!imgSrc) return { success: false, error: `Không tìm thấy ảnh của card "${cleanQuery}"` };
+
+        // Chuẩn hóa URL ảnh chất lượng cao gốc (=s0)
+        let highResUrl = imgSrc;
+        if (highResUrl.includes("googleusercontent.com")) {
+          if (/=[swh]\d+.*$/i.test(highResUrl)) {
+            highResUrl = highResUrl.replace(/=[swh]\d+.*$/i, '=s0');
+          } else if (!highResUrl.includes("=")) {
+            highResUrl = highResUrl + "=s0";
+          }
+        }
+
+        // Tải blob và đổi thành Data URL ngay trong context trang Flow (100% bypass CORS)
+        try {
+          let resp = await fetch(highResUrl, { credentials: 'include' });
+          if (!resp.ok && highResUrl !== imgSrc) {
+            resp = await fetch(imgSrc, { credentials: 'include' });
+          }
+          if (resp.ok) {
+            const blob = await resp.blob();
+            const dataUrl = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(blob);
+            });
+            if (dataUrl) {
+              return { success: true, dataUrl, originalUrl: imgSrc, highResUrl };
+            }
+          }
+        } catch (fetchErr) {
+          console.warn("[downloadImageCardDirect] Fetch blob lỗi, fallback sang direct URL:", fetchErr);
+        }
+
+        return { success: true, dataUrl: null, originalUrl: imgSrc, highResUrl };
+      }
+    });
+
+    const res = extractRes?.[0]?.result;
+    if (!res?.success) {
+      return { success: false, error: res?.error || "Không lấy được dữ liệu ảnh" };
+    }
+
+    const cleanSlug = (promptText || query).replace(/^\d+[\.\-_:\s]+/g, "").replace(/[^\p{L}\p{N}\s]/gu, '').trim().slice(0, 40).replace(/\s+/g, '_');
+    const cleanSeq = (query || "").replace(/[^0-9]/g, '');
+    const filename = `${cleanSeq ? cleanSeq + '_' : ''}${cleanSlug || 'image'}.png`;
+
+    const downloadTarget = res.dataUrl || res.highResUrl || res.originalUrl;
+    if (!downloadTarget) {
+      return { success: false, error: "URL ảnh rỗng" };
+    }
+
+    // Trigger download qua Chrome Downloads API
+    const downloadId = await chrome.downloads.download({
+      url: downloadTarget,
+      filename: filename,
+      conflictAction: 'uniquify',
+      saveAs: false
+    });
+
+    return {
+      success: true,
+      downloadId: downloadId,
+      filename: filename
+    };
+  } catch (err) {
+    return { success: false, error: "Lỗi tải ảnh: " + err.message };
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Native UI Download Automation (Right Click Card -> Hover Download -> Hover 720p -> Click 720p)
+// ══════════════════════════════════════════════════════════════════
+async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = "", mediaId = "", workflowId = "", mediaType = "auto", projectId = "") {
+  let targetTabId = tabId;
+
+  if (!targetTabId) {
+    const tab = (mediaType === 'image') ? (await getFlowTab('image', projectId) || await getFlowTab('video', projectId)) : (await getFlowTab('video', projectId) || await getFlowTab('image', projectId));
+    targetTabId = tab?.id;
+  }
+  if (!targetTabId) return { success: false, error: "Không tìm thấy tab Google Flow đang mở" };
+
+  // NẾU LÀ ẢNH: Tải trực tiếp bằng downloadImageCardDirect siêu tốc, không cần qua menu chuột phải
+  if (mediaType === 'image') {
+    return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, null, projectId);
+  }
+
+  let cdpAttached = false;
+  const ensureCdp = async () => {
+    if (!cdpAttached) {
+      try {
+        await chrome.debugger.attach({ tabId: targetTabId }, "1.3");
+        cdpAttached = true;
+      } catch (err) {
+        if (err.message?.includes("Already attached")) cdpAttached = true;
+      }
+    }
+  };
+
+  try {
+    // 1. Focus tab
+    try {
+      await chrome.tabs.update(targetTabId, { active: true });
+      await new Promise(r => setTimeout(r, 300));
+    } catch (_) {}
+
+    // 2. Đóng panel / popover nếu đang mở
+    await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      world: "MAIN",
+      func: () => {
+        const bottomPanels = Array.from(document.querySelectorAll("[class*='config'], [class*='popover'], [class*='panel'], [class*='dialog']")).filter(el => {
+          const r = el.getBoundingClientRect();
+          return r.top > window.innerHeight - 350 && r.height > 100 && r.width > 200;
+        });
+        if (bottomPanels.length > 0) {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+        }
+      }
+    });
+    await new Promise(r => setTimeout(r, 200));
+
+    // 3. B8.0: Click chuột phải vào card khớp với query / Media ID / Prompt
+    const r0 = await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      world: "MAIN",
+      args: [query, promptText || "", mediaId || "", workflowId || ""],
+      func: async (q, pText, mId, wId) => {
+        const cleanQuery = (q || "001.").trim().toLowerCase();
+        const numOnly = cleanQuery.replace(/[^0-9]/g, "");
+        const targetMediaId = (mId || "").trim();
+        const targetWorkflowId = (wId || "").trim();
+        const promptFull = (pText || "").trim().toLowerCase();
+
+        let matchedCard = null;
+
+        // ƯU TIÊN 1: Tìm chính xác theo Media ID hoặc Workflow ID (UUID)
+        if (targetMediaId || targetWorkflowId) {
+          const allMediaAndCards = Array.from(
+            document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], div[class*='item'], img, video")
+          );
+          for (const el of allMediaAndCards) {
+            const elMId = el.getAttribute("data-media-id") || "";
+            const elWId = el.getAttribute("data-workflow-id") || el.getAttribute("data-id") || "";
+            const src = el.src || el.currentSrc || "";
+            if ((targetMediaId && (elMId === targetMediaId || src.includes(targetMediaId))) ||
+                (targetWorkflowId && (elWId === targetWorkflowId || src.includes(targetWorkflowId)))) {
+              let card = el;
+              let cur = el.parentElement;
+              while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+                const r = cur.getBoundingClientRect();
+                if (r.width > 480 || r.height > 650 || r.width > window.innerWidth * 0.7) break;
+                card = cur;
+                cur = cur.parentElement;
+              }
+              matchedCard = card;
+              break;
+            }
+          }
+        }
+
+        // ƯU TIÊN 2: Tìm text element chứa query hoặc STT (ví dụ: "011." hoặc "011")
+        if (!matchedCard) {
+          const candidateTextEls = Array.from(
+            document.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, button, b, strong, [aria-label], [title]")
+          ).filter(el => {
+            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) {
+              return false;
+            }
+            const t = (el.innerText || el.textContent || "").trim().toLowerCase();
+            const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim().toLowerCase();
+            const combined = t + " " + aria;
+            if (!combined.trim()) return false;
+            if (combined.includes(cleanQuery)) return true;
+            if (numOnly && cleanQuery.includes(".") && combined.includes(numOnly)) return true;
+            return false;
+          });
+
+          if (candidateTextEls.length > 0) {
+            candidateTextEls.sort((a, b) => {
+              const lenA = (a.innerText || a.textContent || "").length;
+              const lenB = (b.innerText || b.textContent || "").length;
+              return lenA - lenB;
+            });
+
+            const promptEl = candidateTextEls[0];
+            let card = promptEl;
+            let cur = promptEl.parentElement;
+
+            while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+              const r = cur.getBoundingClientRect();
+              if (r.width > 480 || r.height > 650 || r.width > window.innerWidth * 0.7) break;
+
+              const curText = cur.textContent || "";
+              const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
+              const uniqueSeqs = new Set(seqMatches.map(s => s.trim()));
+              if (uniqueSeqs.size > 1) break;
+
+              card = cur;
+
+              if (cur.parentElement) {
+                const siblings = Array.from(cur.parentElement.children);
+                if (siblings.length >= 2) {
+                  const cardSiblings = siblings.filter(s => {
+                    const sr = s.getBoundingClientRect();
+                    return Math.abs(sr.width - r.width) < 50 && sr.height > 100;
+                  });
+                  if (cardSiblings.length >= 2) {
+                    card = cur;
+                    break;
+                  }
+                }
+              }
+
+              cur = cur.parentElement;
+            }
+
+            matchedCard = card;
+          }
+        }
+
+        // ƯU TIÊN 3: Tìm theo từ khoá Prompt (Semantic Keywords Matching)
+        // Khi Flow tự động đổi tên thẻ sang tóm tắt ngắn (VD: "Golden eagle soarin..."), dùng từ khoá để định vị
+        if (!matchedCard && promptFull) {
+          const stopWords = new Set(["video", "tạo", "make", "create", "shot", "scene", "with", "from", "that", "this", "over", "into", "onto", "under", "about", "close", "realistic", "cinematic", "high", "detail", "4k", "8k"]);
+          const pWords = promptFull
+            .replace(/^\d+[\.\-_:\s]+/g, "")
+            .replace(/[^\p{L}\p{N}\s]/gu, " ")
+            .split(/\s+/)
+            .filter(w => w.length >= 4 && !stopWords.has(w));
+
+          if (pWords.length > 0) {
+            const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
+              if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
+              return Boolean(el.querySelector("video, img"));
+            });
+
+            let bestCard = null;
+            let maxScore = 0;
+
+            for (const c of potentialCards) {
+              const cText = (c.innerText || c.textContent || "").toLowerCase();
+              let score = 0;
+              for (const w of pWords) {
+                if (cText.includes(w)) score++;
+              }
+              if (score > maxScore && score >= 2) {
+                maxScore = score;
+                bestCard = c;
+              }
+            }
+
+            if (bestCard) {
+              matchedCard = bestCard;
+            }
+          }
+        }
+
+        // Fallback tìm theo media nếu chưa tìm ra
+        if (!matchedCard) {
+          const allMedia = Array.from(document.querySelectorAll("img, video")).filter(el => {
+            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            const src = el.src || el.currentSrc || "";
+            if (src.includes("googleusercontent.com/a/") || src.includes("avatar")) return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 60 && r.height > 60;
+          });
+
+          for (const m of allMedia) {
+            let cur = m.parentElement;
+            while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+              if ((cur.textContent || "").toLowerCase().includes(cleanQuery)) {
+                matchedCard = cur;
+                break;
+              }
+              cur = cur.parentElement;
+            }
+            if (matchedCard) break;
+          }
+        }
+
+        if (!matchedCard) return { success: false, error: `Không tìm thấy card chứa "${cleanQuery}" trên màn hình Flow` };
+
+        // Kiểm tra nếu card này là thẻ báo lỗi / vi phạm chính sách (chỉ khi KHÔNG có thumbnail/video thật)
+        const hasRealImg = Array.from(matchedCard.querySelectorAll("img")).some(img => {
+          const src = img.src || img.currentSrc || "";
+          if (!src || src.startsWith("data:image/svg") || src.includes("avatar")) return false;
+          return (img.naturalWidth > 80 && img.naturalHeight > 80) || (img.width > 80 && img.height > 80 && !src.includes("placeholder"));
+        });
+        const hasRealVideo = Array.from(matchedCard.querySelectorAll("video")).some(v => {
+          const src = v.currentSrc || v.src || v.querySelector("source")?.src || "";
+          return Boolean(src) || v.readyState > 0 || v.duration > 0;
+        });
+
+        if (!hasRealImg && !hasRealVideo) {
+          const cardTxt = (matchedCard.innerText || matchedCard.textContent || "").toLowerCase();
+          const hasErrKeywords = cardTxt.includes("không thành công") || cardTxt.includes("vi phạm chính sách") || cardTxt.includes("chính sách của chúng tôi") || cardTxt.includes("bạn chưa bị tính phí");
+          const hasAlert = Boolean(matchedCard.querySelector("svg.lucide-alert-triangle, [data-icon*='alert']"));
+          const hasTrash = Boolean(matchedCard.querySelector("button[aria-label*='xoá' i], button[aria-label*='trash' i], svg.lucide-trash"));
+          if (hasErrKeywords || (hasAlert && hasTrash)) {
+            return { success: false, error: "Card bị lỗi vi phạm chính sách / không thành công (không có video để tải)" };
+          }
+        }
+
+        matchedCard.scrollIntoView({ behavior: 'auto', block: 'center' });
+        matchedCard.style.outline = '4px dashed #ff007f';
+        matchedCard.style.boxShadow = '0 0 25px rgba(255, 0, 127, 0.9)';
+
+        // Đợi layout ổn định sau khi scroll
+        await new Promise(res => setTimeout(res, 150));
+
+        const clickTarget = matchedCard.querySelector("video") || matchedCard.querySelector("img") || matchedCard;
+        const rect = clickTarget.getBoundingClientRect();
+        const clientX = Math.round(rect.left + rect.width / 2);
+        const clientY = Math.round(rect.top + rect.height / 2);
+        const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX, clientY };
+        clickTarget.dispatchEvent(new MouseEvent('mousedown', opts));
+        clickTarget.dispatchEvent(new MouseEvent('mouseup', opts));
+        clickTarget.dispatchEvent(new MouseEvent('contextmenu', opts));
+
+        const imgEl = matchedCard.querySelector("img");
+        const imgSrc = imgEl ? (imgEl.currentSrc || imgEl.src) : null;
+        const isVideoCard = Boolean(matchedCard.querySelector("video"));
+
+        return { success: true, clientX, clientY, imgSrc, isVideoCard };
+      }
+    });
+
+    if (!r0?.[0]?.result?.success) {
+      return { success: false, error: r0?.[0]?.result?.error || "Không click phải được vào card" };
+    }
+
+    const { clientX, clientY, imgSrc, isVideoCard } = r0[0].result;
+    const isImage = (mediaType === 'image') || (mediaType !== 'video' && !isVideoCard && Boolean(imgSrc));
+
+    if (isImage) {
+      return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, imgSrc, projectId);
+    }
+
+    // 4. B8.1: Tìm mục "Tải xuống" (Thử lại tối đa 3 giây kèm backup click CDP)
+    let dlPos = null;
+    for (let attempt = 1; attempt <= 12; attempt++) {
+      await new Promise(r => setTimeout(r, attempt === 1 ? 400 : 250));
+
+      const r1 = await chrome.scripting.executeScript({
+        target: { tabId: targetTabId },
+        world: "MAIN",
+        func: () => {
+          const all = Array.from(document.querySelectorAll("*")).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.width > 380 || r.height > 90) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = (el.innerText || el.textContent || "").trim();
+            if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+            return t === "Tải xuống" || t.startsWith("Tải xuống") || t === "Download" || t.startsWith("Download") || t.toLowerCase().includes("tải xuống");
+          });
+
+          if (all.length === 0) return null;
+          const exact = all.find(el => (el.innerText || el.textContent || "").trim() === "Tải xuống") || all[0];
+          const row = exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact;
+          const rect = row.getBoundingClientRect();
+          row.style.outline = '3px solid #00e5ff';
+          row.style.boxShadow = '0 0 20px #00e5ff';
+          ['mouseenter', 'mouseover', 'mousemove'].forEach(evt => {
+            row.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+          });
+          return {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+            right: Math.round(rect.right),
+            left: Math.round(rect.left)
+          };
+        }
+      });
+
+      dlPos = r1?.[0]?.result;
+      if (dlPos) break;
+
+      // Nếu sau 2 lần (~650ms) chưa thấy menu chuột phải, gửi thêm CDP hardware right-click bổ trợ
+      if (attempt === 2 || attempt === 5) {
+        try {
+          await ensureCdp();
+          await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+            type: "mousePressed", button: "right", buttons: 2, x: clientX, y: clientY, clickCount: 1
+          });
+          await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+            type: "mouseReleased", button: "right", buttons: 0, x: clientX, y: clientY
+          });
+        } catch (_) {}
+      }
+    }
+
+    if (!dlPos) {
+      return { success: false, error: "Không tìm thấy mục 'Tải xuống' trong menu chuột phải" };
+    }
+
+    await ensureCdp();
+    await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: dlPos.x,
+      y: dlPos.y
+    });
+
+    // 5. B8.2: Tìm chính xác dòng "720p (Kích thước gốc)" kèm vòng lặp thử lại tối đa 3 giây
+    let opt720 = null;
+    for (let subAttempt = 1; subAttempt <= 12; subAttempt++) {
+      await new Promise(r => setTimeout(r, subAttempt === 1 ? 350 : 250));
+
+      // Mỗi vài lần thử mà submenu chưa mở, kích hoạt lại hover bằng cả CDP, DOM mouse và click
+      if (subAttempt === 2 || subAttempt === 4 || subAttempt === 7) {
+        try {
+          await ensureCdp();
+          const targetX = (subAttempt % 2 === 0 && dlPos.right) ? (dlPos.right - 15) : dlPos.x;
+          await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+            type: "mouseMoved",
+            x: targetX,
+            y: dlPos.y
+          });
+        } catch (_) {}
+
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: "MAIN",
+            func: () => {
+              const all = Array.from(document.querySelectorAll("*")).filter(el => {
+                const t = (el.innerText || el.textContent || "").trim();
+                return t === "Tải xuống" || t.startsWith("Tải xuống");
+              });
+              if (all.length > 0) {
+                const exact = all[0];
+                const row = exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact;
+                ['mouseenter', 'mouseover', 'mousemove', 'pointerenter', 'pointerover'].forEach(evt => {
+                  row.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+                });
+              }
+            }
+          });
+        } catch (_) {}
+      }
+
+      // Nếu sau 3 lần vẫn chưa thấy submenu mở, click trực tiếp vào dòng "Tải xuống" để buộc mở submenu
+      if (subAttempt === 3 || subAttempt === 6) {
+        try {
+          await ensureCdp();
+          await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+            type: "mousePressed", button: "left", buttons: 1, x: dlPos.x, y: dlPos.y, clickCount: 1
+          });
+          await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+            type: "mouseReleased", button: "left", buttons: 0, x: dlPos.x, y: dlPos.y
+          });
+        } catch (_) {}
+
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: "MAIN",
+            func: () => {
+              const all = Array.from(document.querySelectorAll("*")).filter(el => {
+                const t = (el.innerText || el.textContent || "").trim();
+                return t === "Tải xuống" || t.startsWith("Tải xuống");
+              });
+              if (all.length > 0) {
+                const exact = all[0];
+                const row = exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact;
+                if (typeof row.click === 'function') row.click();
+              }
+            }
+          });
+        } catch (_) {}
+      }
+
+      const r2 = await chrome.scripting.executeScript({
+        target: { tabId: targetTabId },
+        world: "MAIN",
+        func: () => {
+          const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.height > 180) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = (el.innerText || el.textContent || "").trim();
+            if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+            if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+            return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+          });
+
+          let opt = null;
+          if (allEls.length > 0) {
+            allEls.sort((a, b) => {
+              const ta = (a.innerText || a.textContent || "");
+              const tb = (b.innerText || b.textContent || "");
+              const aGoc = ta.includes("Kích thước gốc") || ta.toLowerCase().includes("gốc") || ta.toLowerCase().includes("original") ? 1 : 0;
+              const bGoc = tb.includes("Kích thước gốc") || tb.toLowerCase().includes("gốc") || tb.toLowerCase().includes("original") ? 1 : 0;
+              if (aGoc !== bGoc) return bGoc - aGoc;
+              const aBtn = a.tagName === 'BUTTON' || a.getAttribute('role') === 'menuitem' ? 1 : 0;
+              const bBtn = b.tagName === 'BUTTON' || b.getAttribute('role') === 'menuitem' ? 1 : 0;
+              if (aBtn !== bBtn) return bBtn - aBtn;
+              const ra = a.getBoundingClientRect();
+              const rb = b.getBoundingClientRect();
+              return (rb.width * rb.height) - (ra.width * ra.height);
+            });
+            opt = allEls[0];
+          }
+
+          if (!opt) {
+            const directText = Array.from(document.querySelectorAll("*")).filter(el => {
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 || r.height === 0 || r.height > 140) return false;
+              if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+              const t = (el.innerText || el.textContent || "").trim();
+              if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+              if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+              return t.includes("Kích thước gốc") || t.toLowerCase().includes("original") || t.includes("720p");
+            });
+            if (directText.length > 0) {
+              let cur = directText[0];
+              while (cur && cur.parentElement && cur.parentElement !== document.body) {
+                const p = cur.parentElement;
+                const pr = p.getBoundingClientRect();
+                const pt = (p.innerText || p.textContent || "").trim();
+                if (pr.height > 120 || pt.includes("270p") || pt.includes("1080p") || pt.includes("4K")) {
+                  break;
+                }
+                cur = p;
+                if (cur.tagName === 'BUTTON' || cur.getAttribute('role') === 'menuitem') break;
+              }
+              opt = cur;
+            }
+          }
+
+          if (!opt) return null;
+          const rect = opt.getBoundingClientRect();
+          opt.style.outline = '4px solid #00e676';
+          opt.style.boxShadow = '0 0 25px rgba(0, 230, 118, 0.95)';
+          opt.style.backgroundColor = 'rgba(0, 230, 118, 0.25)';
+          return {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+            text: (opt.innerText || opt.textContent || "").replace(/\s+/g, ' ').trim()
+          };
+        }
+      });
+
+      opt720 = r2?.[0]?.result;
+      if (opt720) break;
+    }
+
+    if (!opt720) {
+      return { success: false, error: "Không tìm thấy dòng '720p (Kích thước gốc)' trong submenu" };
+    }
+
+    // B8.2: Rê chuột vào 720p
+    await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: opt720.x,
+      y: opt720.y
+    });
+
+    // Dừng 650ms để đăng ký hover
+    await new Promise(r => setTimeout(r, 650));
+
+    // Lắng nghe chrome.downloads.onCreated
+    const dlPromise = new Promise((resolve) => {
+      const listener = (item) => {
+        chrome.downloads.onCreated.removeListener(listener);
+        resolve(item);
+      };
+      chrome.downloads.onCreated.addListener(listener);
+      setTimeout(() => {
+        chrome.downloads.onCreated.removeListener(listener);
+        resolve(null);
+      }, 12000);
+    });
+
+    // B8.3: Click 720p
+    await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: opt720.x,
+      y: opt720.y,
+      button: "left",
+      clickCount: 1
+    });
+    await new Promise(r => setTimeout(r, 80));
+    await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: opt720.x,
+      y: opt720.y,
+      button: "left",
+      clickCount: 1
+    });
+
+    // Fallback click
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: targetTabId },
+        world: "MAIN",
+        func: () => {
+          const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width < 50 || r.width > 350 || r.height < 18 || r.height > 180) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = (el.innerText || el.textContent || "").trim();
+            if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+            if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+            return t.includes("720p") || t.includes("Kích thước gốc");
+          });
+          if (allEls.length > 0 && typeof allEls[0].click === 'function') allEls[0].click();
+        }
+      });
+    } catch (_) {}
+
+    let downloadedItem = await dlPromise;
+    if (!downloadedItem) {
+      try {
+        const recents = await chrome.downloads.search({ limit: 3, orderBy: ['-startTime'] });
+        if (recents?.length && (Date.now() - new Date(recents[0].startTime).getTime() < 15000)) {
+          downloadedItem = recents[0];
+        }
+      } catch (_) {}
+    }
+    return {
+      success: true,
+      downloadItem: downloadedItem,
+      filename: downloadedItem?.filename || 'flow_video.mp4'
+    };
+  } finally {
+    // Tự động cuộn trang Google Flow lên đầu sau khi tải xong / hoàn tất thao tác
+    try {
+      await scrollFlowToTop(targetTabId);
+    } catch (_) {}
+
+    if (cdpAttached) {
+      try { await chrome.debugger.detach({ tabId: targetTabId }); } catch (_) {}
+    }
+  }
+}
+
+async function scrollFlowToTop(tabId = null, projectId = null) {
+  let targetTabId = tabId;
+  if (!targetTabId) {
+    const tab = await getFlowTab('video', projectId);
+    targetTabId = tab?.id;
+  }
+  if (!targetTabId) return { success: false };
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      world: "MAIN",
+      func: () => {
+        try {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          document.documentElement.scrollTop = 0;
+          document.body.scrollTop = 0;
+          const scrollables = Array.from(document.querySelectorAll("*")).filter(el => {
+            return el.scrollHeight > el.clientHeight + 40 && el.clientHeight > 200;
+          });
+          scrollables.forEach(s => {
+            try { s.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) { s.scrollTop = 0; }
+          });
+        } catch (_) {}
+      }
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function getMaxSeq(projectId) {
+  let maxSeq = 0;
+
+  // 1. Kiểm tra từ storage đã lưu cho projectId này
+  const pKey = projectId || 'default';
+  const storageKey = `flow_last_seq_${pKey}`;
+  try {
+    const stored = await chrome.storage.local.get([storageKey]);
+    if (stored[storageKey] && typeof stored[storageKey] === 'number') {
+      maxSeq = Math.max(maxSeq, stored[storageKey]);
+    }
+  } catch (_) {}
+
+  // 2. Quét DOM của tab Flow đang mở để tìm số STT lớn nhất hiện có
+  try {
+    const flowTab = await getFlowTab('image', projectId) || await getFlowTab('video', projectId);
+    if (flowTab?.id) {
+      const res = await chrome.scripting.executeScript({
+        target: { tabId: flowTab.id },
+        world: "MAIN",
+        func: () => {
+          const numbers = [];
+          const allTextEls = Array.from(document.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, button, [title], [aria-label]"));
+          for (const el of allTextEls) {
+            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) continue;
+            const text = ((el.innerText || el.textContent || "") + " " + (el.getAttribute("title") || "") + " " + (el.getAttribute("aria-label") || "")).trim();
+            const matches = text.match(/\b(\d{1,4})[\.\-_:\s]/g);
+            if (matches) {
+              for (const m of matches) {
+                const num = parseInt(m.replace(/\D/g, ''), 10);
+                if (num > 0 && num < 10000) {
+                  numbers.push(num);
+                }
+              }
+            }
+          }
+          return numbers.length > 0 ? Math.max(...numbers) : 0;
+        }
+      });
+      const domMax = res?.[0]?.result;
+      if (typeof domMax === 'number' && domMax > maxSeq) {
+        maxSeq = domMax;
+      }
+    }
+  } catch (err) {
+    console.warn("[getMaxSeq] Lỗi quét DOM:", err);
+  }
+
+  return { success: true, maxSeq };
+}
+
+async function updateMaxSeq(projectId, newMax) {
+  const pKey = projectId || 'default';
+  const storageKey = `flow_last_seq_${pKey}`;
+  try {
+    const stored = await chrome.storage.local.get([storageKey]);
+    const current = stored[storageKey] || 0;
+    if (newMax > current) {
+      await chrome.storage.local.set({ [storageKey]: newMax });
+    }
+  } catch (_) {}
+  return { success: true };
+}
+async function checkCardStatus(projectId, query = "001.", promptText = "", mediaId = "", workflowId = "", mediaType = "auto") {
+  const cleanQ = (query || "001.").trim().toLowerCase();
+  const flowTab = (mediaType === 'image')
+    ? (await getFlowTab('image', projectId) || await getFlowTab('video', projectId))
+    : (await getFlowTab('video', projectId) || await getFlowTab('image', projectId));
+
+  if (!flowTab?.id) {
+    return { status: 'NO_TAB', error: "Không tìm thấy tab Google Flow đang mở!" };
+  }
+
+  try {
+    const checkRes = await chrome.scripting.executeScript({
+      target: { tabId: flowTab.id },
+      world: "MAIN",
+      args: [cleanQ, promptText || "", mediaId || "", workflowId || ""],
+      func: (q, pText, mId, wId) => {
+        const cleanQuery = (q || "001.").trim().toLowerCase();
+        const numOnly = cleanQuery.replace(/[^0-9]/g, "");
+        const targetMediaId = (mId || "").trim();
+        const targetWorkflowId = (wId || "").trim();
+        const promptFull = (pText || "").trim().toLowerCase();
+
+        // Helper: Nhận diện chính xác 100% thẻ card bị Thất bại / Vi phạm chính sách
+        function isCardFailed(el) {
+          if (!el) return false;
+
+          // BẢO VỆ TUYỆT ĐỐI: Thẻ đã có ảnh thumbnail thật hoặc video thì 100% KHÔNG PHẢI THẺ LỖI!
+          const hasRealImg = Array.from(el.querySelectorAll("img")).some(img => {
+            const src = img.src || img.currentSrc || "";
+            if (!src || src.startsWith("data:image/svg") || src.includes("avatar")) return false;
+            return (img.naturalWidth > 80 && img.naturalHeight > 80) || (img.width > 80 && img.height > 80 && !src.includes("placeholder"));
+          });
+          const hasRealVideo = Array.from(el.querySelectorAll("video")).some(v => {
+            const src = v.currentSrc || v.src || v.querySelector("source")?.src || "";
+            return Boolean(src) || v.readyState > 0 || v.duration > 0;
+          });
+          if (hasRealImg || hasRealVideo) {
+            return false;
+          }
+
+          const text = (el.innerText || el.textContent || "").toLowerCase();
+          
+          // 1. Phải có text báo lỗi hoặc vi phạm chính sách rõ ràng
+          const hasErrorKeywords = (
+            text.includes("không thành công") ||
+            text.includes("vi phạm chính sách") ||
+            text.includes("chính sách của chúng tôi") ||
+            text.includes("trẻ vị thành niên") ||
+            text.includes("gây hại") ||
+            text.includes("bạn chưa bị tính phí") ||
+            text.includes("something went wrong") ||
+            text.includes("generation failed")
+          );
+
+          // 2. Icon cảnh báo tam giác ⚠️
+          const hasAlertIcon = Boolean(
+            el.querySelector("svg.lucide-alert-triangle, svg.lucide-alert-circle, [data-icon*='alert'], svg[class*='alert'], path[d*='M10.29 3.86L1.82 18']")
+          );
+
+          // 3. Nút xoá / thùng rác đặc trưng của thẻ lỗi
+          const hasTrash = Boolean(
+            el.querySelector("button[aria-label*='xoá' i], button[aria-label*='xóa' i], button[aria-label*='delete' i], button[aria-label*='trash' i], button[aria-label*='thùng rác' i], svg.lucide-trash, svg.lucide-trash-2, [data-icon*='trash']")
+          );
+
+          return hasErrorKeywords || (hasAlertIcon && hasTrash);
+        }
+
+        // Helper trích xuất câu báo lỗi chi tiết
+        function getCardErrorMessage(el) {
+          const text = (el?.innerText || el?.textContent || "").trim();
+          if (text.includes("trẻ vị thành niên")) {
+            return "Vi phạm chính sách: Trẻ vị thành niên";
+          }
+          if (text.includes("vi phạm chính sách") || text.includes("chính sách")) {
+            return "Vi phạm chính sách nội dung Flow";
+          }
+          if (text.includes("gây hại")) {
+            return "Nội dung gây hại (Flow từ chối tạo)";
+          }
+          if (text.includes("Không thành công") || text.includes("không thành công")) {
+            return "Không thành công trên Flow (Có 3 nút: Thử lại, Sử dụng lại, Xoá)";
+          }
+          if (text.toLowerCase().includes("failed")) {
+            return "Flow generation failed";
+          }
+          return "Render không thành công trên Flow";
+        }
+
+        let matched = null;
+
+        // ƯU TIÊN 1: Tìm chính xác theo Media ID hoặc Workflow ID (UUID)
+        if (targetMediaId || targetWorkflowId) {
+          const allMediaAndCards = Array.from(
+            document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], div[class*='item'], img, video")
+          );
+          for (const el of allMediaAndCards) {
+            const elMId = el.getAttribute("data-media-id") || "";
+            const elWId = el.getAttribute("data-workflow-id") || el.getAttribute("data-id") || "";
+            const src = el.src || el.currentSrc || "";
+            if ((targetMediaId && (elMId === targetMediaId || src.includes(targetMediaId))) ||
+                (targetWorkflowId && (elWId === targetWorkflowId || src.includes(targetWorkflowId)))) {
+              let card = el;
+              let cur = el.parentElement;
+              while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+                const r = cur.getBoundingClientRect();
+                if (r.width > 480 || r.height > 650 || r.width > window.innerWidth * 0.7) break;
+                card = cur;
+                cur = cur.parentElement;
+              }
+              matched = card;
+              break;
+            }
+          }
+        }
+
+        // ƯU TIÊN 2: Tìm text element chứa query hoặc STT (kiểm tra cả innerText, textContent và aria-label/title)
+        if (!matched) {
+          const candidateTextEls = Array.from(
+            document.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, button, b, strong, [aria-label], [title]")
+          ).filter(el => {
+            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) {
+              return false;
+            }
+            const t = (el.innerText || el.textContent || "").trim().toLowerCase();
+            const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim().toLowerCase();
+            const combined = t + " " + aria;
+            if (!combined.trim()) return false;
+            if (combined.includes(cleanQuery)) return true;
+            if (numOnly && cleanQuery.includes(".") && combined.includes(numOnly)) return true;
+            return false;
+          });
+
+          if (candidateTextEls.length > 0) {
+            candidateTextEls.sort((a, b) => {
+              const lenA = (a.innerText || a.textContent || "").length;
+              const lenB = (b.innerText || b.textContent || "").length;
+              return lenA - lenB;
+            });
+
+            const promptEl = candidateTextEls[0];
+            let card = promptEl;
+            let cur = promptEl.parentElement;
+
+            while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+              const r = cur.getBoundingClientRect();
+              if (r.width > 480 || r.height > 650 || r.width > window.innerWidth * 0.7) break;
+
+              const curText = cur.textContent || "";
+              const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
+              const uniqueSeqs = new Set(seqMatches.map(s => s.trim()));
+              if (uniqueSeqs.size > 1) break;
+
+              card = cur;
+
+              if (cur.parentElement) {
+                const siblings = Array.from(cur.parentElement.children);
+                if (siblings.length >= 2) {
+                  const cardSiblings = siblings.filter(s => {
+                    const sr = s.getBoundingClientRect();
+                    return Math.abs(sr.width - r.width) < 50 && sr.height > 100;
+                  });
+                  if (cardSiblings.length >= 2) {
+                    card = cur;
+                    break;
+                  }
+                }
+              }
+
+              cur = cur.parentElement;
+            }
+
+            matched = card;
+          }
+        }
+
+        // ƯU TIÊN 3: Tìm theo từ khoá Prompt (Semantic Keywords Matching)
+        // Khi video render xong, Google Flow tự động tóm tắt prompt thành tên ngắn (VD: "Golden eagle soarin...")
+        if (!matched && promptFull) {
+          const stopWords = new Set(["video", "tạo", "make", "create", "shot", "scene", "with", "from", "that", "this", "over", "into", "onto", "under", "about", "close", "realistic", "cinematic", "high", "detail", "4k", "8k"]);
+          const pWords = promptFull
+            .replace(/^\d+[\.\-_:\s]+/g, "")
+            .replace(/[^\p{L}\p{N}\s]/gu, " ")
+            .split(/\s+/)
+            .filter(w => w.length >= 4 && !stopWords.has(w));
+
+          if (pWords.length > 0) {
+            const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
+              if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
+              return Boolean(el.querySelector("video, img"));
+            });
+
+            let bestCard = null;
+            let maxScore = 0;
+
+            for (const c of potentialCards) {
+              const cText = (c.innerText || c.textContent || "").toLowerCase();
+              let score = 0;
+              for (const w of pWords) {
+                if (cText.includes(w)) score++;
+              }
+              if (score > maxScore && score >= 1) {
+                maxScore = score;
+                bestCard = c;
+              }
+            }
+
+            if (bestCard) {
+              matched = bestCard;
+            }
+          }
+        }
+
+        // ƯU TIÊN 4: Tìm thẻ lỗi / vi phạm chính sách (kể cả khi Flow xoá sạch text prompt khỏi giao diện thẻ)
+        if (!matched && (cleanQuery || promptFull || targetMediaId)) {
+          const allFailedCards = Array.from(
+            document.querySelectorAll("div, [role='listitem'], [data-id], [data-media-id], [data-workflow-id]")
+          ).filter(el => {
+            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            const r = el.getBoundingClientRect();
+            if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
+            return isCardFailed(el);
+          });
+
+          // 4a. Tìm trong tất cả phần tử con của thẻ lỗi: innerText, aria-label, title, dataset, outerHTML
+          for (const fc of allFailedCards) {
+            const childMeta = Array.from(fc.querySelectorAll("*")).map(c => 
+              (c.getAttribute("aria-label") || "") + " " + 
+              (c.getAttribute("title") || "") + " " + 
+              (c.dataset ? Object.values(c.dataset).join(" ") : "")
+            ).join(" ");
+            const fullContent = ((fc.innerText || fc.textContent || "") + " " + childMeta).toLowerCase();
+            const htmlStr = fc.outerHTML || "";
+
+            if (targetMediaId && (htmlStr.includes(targetMediaId) || fullContent.includes(targetMediaId.toLowerCase()))) {
+              matched = fc;
+              break;
+            }
+            if (cleanQuery && fullContent.includes(cleanQuery)) {
+              matched = fc;
+              break;
+            }
+            if (numOnly && cleanQuery.includes(".") && fullContent.includes(numOnly)) {
+              matched = fc;
+              break;
+            }
+            // Tìm theo từ khoá quan trọng của prompt
+            if (promptFull) {
+              const words = promptFull.replace(/[^\p{L}\p{N}\s]/gu, " ").toLowerCase().split(/\s+/).filter(w => w.length >= 4);
+              const hits = words.filter(w => fullContent.includes(w)).length;
+              if (hits >= 2) {
+                matched = fc;
+                break;
+              }
+            }
+          }
+
+          // 4b. FALLBACK: Khi Flow hoàn toàn không ghi bất kỳ chữ gì của prompt lên thẻ lỗi
+          // Nếu có thẻ lỗi xuất hiện trên màn hình VÀ trên toàn bộ Flow không còn thẻ nào đang render (% / spinner)
+          if (!matched && allFailedCards.length > 0) {
+            const isAnyCardRendering = Boolean(
+              document.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") ||
+              Array.from(document.querySelectorAll("*")).some(el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.height < 50 && Boolean((el.innerText || "").match(/\b\d{1,2}\s*%/));
+              })
+            );
+
+            if (!isAnyCardRendering) {
+              matched = allFailedCards[0];
+            }
+          }
+        }
+
+        if (!matched) return { status: 'WAITING_CARD' };
+
+        // 3. KIỂM TRA LỖI / VI PHẠM CHÍNH SÁCH / 3 NÚT BẤM (ƯU TIÊN HÀNG ĐẦU!)
+        if (isCardFailed(matched)) {
+          return { status: 'FAILED', error: getCardErrorMessage(matched) };
+        }
+
+        const text = matched.textContent || "";
+        const lowerText = text.toLowerCase();
+
+        // 4. Kiểm tra xem riêng thẻ card này có đang render không
+        const isGenerating = Boolean(matched.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin"));
+        const pctMatch = text.match(/(\d+)\s*%/);
+        const hasGenText = lowerText.includes("đang tạo") || lowerText.includes("generating") || lowerText.includes("đang kết xuất");
+        const hasSingleCancelBtn = Boolean(matched.querySelector("button[aria-label*='hủy' i]"));
+
+        if (pctMatch || isGenerating || hasGenText || hasSingleCancelBtn) {
+          return {
+            status: 'RENDERING',
+            progress: pctMatch ? `${pctMatch[1]}%` : "Đang render..."
+          };
+        }
+
+        // 5. KIỂM TRA MEDIA THỰC TẾ: Video đã render xong BẮT BUỘC phải có ảnh thumbnail thật, video thật, hoặc nút play/tải
+        const hasRealImg = Array.from(matched.querySelectorAll("img")).some(img => {
+          const src = img.src || img.currentSrc || "";
+          if (!src || src.startsWith("data:image/svg") || src.includes("avatar") || src.includes("icon")) return false;
+          return (img.naturalWidth > 40 && img.naturalHeight > 40) || (img.width > 40 && img.height > 40) || src.includes("blob:") || src.includes("googleusercontent") || src.includes("flow-content");
+        });
+
+        const hasRealVideo = Array.from(matched.querySelectorAll("video")).some(v => {
+          const src = v.currentSrc || v.src || v.querySelector("source")?.src || "";
+          return Boolean(src) || v.readyState > 0 || v.duration > 0;
+        });
+
+        const hasDownloadBtn = Boolean(matched.querySelector("button[aria-label*='Tải' i], button[aria-label*='Download' i], button[title*='Tải' i], button[title*='Download' i], svg[data-icon='download']"));
+        const hasPlayIcon = Boolean(matched.querySelector("button[aria-label*='Phát' i], button[aria-label*='Play' i], svg[data-icon='play'], [class*='play']"));
+
+        const hasRenderedMedia = hasRealImg || hasRealVideo || hasDownloadBtn || hasPlayIcon;
+
+        // Nếu thẻ card chưa có ảnh thumbnail hoặc video thật -> Vẫn đang ở trạng thái kết xuất/đóng gói video
+        if (!hasRenderedMedia) {
+          return {
+            status: 'RENDERING',
+            progress: "Đang hoàn tất đóng gói video..."
+          };
+        }
+
+        // 6. KHÔI PHỤC STT TRÊN GIAO DIỆN FLOW: Nếu Flow đã tự động đổi tên tóm tắt, bổ sung lại STT lên nhãn
+        if (cleanQuery && matched) {
+          try {
+            const labelCandidates = Array.from(matched.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, b, strong")).filter(el => {
+              if (el.children.length > 0) return false;
+              const t = (el.innerText || el.textContent || "").trim();
+              if (t.length < 3 || t.length > 80) return false;
+              if (t.includes("%") || /^\d+s$/i.test(t) || t.toLowerCase().includes("play") || t.includes("720p")) return false;
+              return true;
+            });
+            if (labelCandidates.length > 0) {
+              const lbl = labelCandidates[0];
+              const curTxt = lbl.textContent.trim();
+              if (!curTxt.includes(cleanQuery)) {
+                lbl.textContent = `${cleanQuery} ${curTxt}`;
+              }
+            }
+          } catch (_) {}
+        }
+
+        const matchedMediaId = matched?.getAttribute("data-media-id") || matched?.getAttribute("data-workflow-id") || targetMediaId;
+        const videoEl = matched?.querySelector("video");
+        const videoUrl = videoEl?.currentSrc || videoEl?.src || "";
+        return { status: 'READY', mediaId: matchedMediaId, videoUrl };
+      }
+    });
+
+    return checkRes?.[0]?.result || { status: 'WAITING_CARD' };
+  } catch (err) {
+    return { status: 'ERROR', error: err.message };
+  }
+}
+
+async function waitAndDownloadCard(projectId, promptText, timeoutMs = 600000) {
+  const seqMatch = promptText ? promptText.trim().match(/^(\d+[\.\-_:\s])/i) : null;
+  const query = seqMatch ? seqMatch[1].toLowerCase() : (promptText ? promptText.slice(0, 20).toLowerCase() : "001.");
+
+  const flowTab = await getFlowTab('video', projectId);
+  if (!flowTab?.id) {
+    return { success: false, error: "Không tìm thấy tab Google Flow đang mở!" };
+  }
+
+  logToBridge(`[Auto Download] Bắt đầu theo dõi card "${query}" để tải 720p...`);
+  const startTime = Date.now();
+  const pollInterval = 3500;
+  let lastProgress = "";
+
+  while (Date.now() - startTime < timeoutMs) {
+    await new Promise(r => setTimeout(r, pollInterval));
+
+    const cardInfo = await checkCardStatus(projectId, query);
+    const cardStatus = cardInfo?.status;
+
+    if (cardStatus === 'RENDERING') {
+      const prog = cardInfo.progress || "Đang render...";
+      if (prog !== lastProgress) {
+        lastProgress = prog;
+        logToBridge(`[Auto Download] Card "${query}" đang render (${prog})...`);
+        chrome.runtime.sendMessage({
+          action: "DOWNLOAD_STATUS_UPDATE",
+          query,
+          status: 'RENDERING',
+          progress: prog
+        }).catch(() => {});
+      }
+    } else if (cardStatus === 'READY') {
+      logToBridge(`[Auto Download] 🎉 Card "${query}" đã render xong! Bắt đầu tải 720p native...`);
+      chrome.runtime.sendMessage({
+        action: "DOWNLOAD_STATUS_UPDATE",
+        query,
+        status: 'READY',
+        progress: "Render hoàn tất! Đang kích hoạt tải 720p..."
+      }).catch(() => {});
+
+      // Đợi 1s cho thẻ video hiển thị ổn định
+      await new Promise(r => setTimeout(r, 1000));
+      const dlResult = await triggerNativeDownloadForCard(flowTab.id, query);
+      return dlResult;
+    } else if (cardStatus === 'FAILED') {
+      logToBridge(`[Auto Download] ❌ Card "${query}" render thất bại!`);
+      return { success: false, error: cardInfo?.error || "Render thất bại trên Flow" };
+    }
+  }
+
+  return { success: false, error: "Quá thời gian chờ render (timeout)" };
+}
+
+async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') {
+  logToBridge(`Bắt đầu theo dõi video: task ${taskId}${mediaId ? ', mediaId: ' + mediaId : ''}${promptText ? ', prompt: "' + promptText.slice(0, 30) + '..."' : ''}`);
   const maxAttempts = 120; // Poll up to 10-12 minutes (every 5s)
   const pollInterval = 5000;
+  const pollStartTime = Date.now();
+  let finalMediaId = mediaId || null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await new Promise(r => setTimeout(r, pollInterval));
@@ -2734,40 +5457,49 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId) {
       let isSuccess = false;
       let isFailed = false;
       let failMsg = '';
+      let directDownloadTarget = null;
 
-      // 1. Thử check qua API chuyên dụng batchCheckAsyncVideoGenerationStatus
-      try {
-        const data = await checkVideoStatusOnFlow([mediaId], projectId);
-        const mediaList = data?.media || [];
-        const item = mediaList.find(m => m.name === mediaId) || mediaList[0];
-
-        if (item) {
-          const genStatus = item.mediaMetadata?.mediaStatus?.mediaGenerationStatus || 
-                            item.mediaMetadata?.generationStatus || 
-                            item.status?.state || '';
-
-          if (genStatus.includes('SUCCESS')) {
-            isSuccess = true;
-          } else if (genStatus.includes('FAIL') || genStatus.includes('FILTER')) {
-            isFailed = true;
-            failMsg = item.mediaMetadata?.mediaStatus?.errorMessage || item.failureReason || `Google Flow báo lỗi: ${genStatus}`;
-          } else if (attempt % 4 === 0) {
-            logToBridge(`Task ${taskId} đang render (${genStatus || 'PROCESSING'})... [lần ${attempt}/${maxAttempts}]`);
-          }
-        }
-      } catch (checkErr) {
-        // Warning only, continue to fallback
+      const flowTab = await getFlowTab('video', projectId);
+      if (!flowTab?.id) {
+        if (attempt % 6 === 0) logToBridge(`Task ${taskId} đang đợi tab Flow sẵn sàng...`);
+        continue;
       }
 
-      // 2. Fallback: Nếu API trên chưa trả về hoặc trả về rỗng, kiểm tra qua Thư viện project (getProjectVideos)
+      // ── BƯỚC 1: Quét trạng thái thẻ bằng checkCardStatus (đồng bộ 100% cơ chế Tab Auto Click UI) ──
+      try {
+        const cardInfo = await checkCardStatus(projectId, promptText, promptText, finalMediaId, null, 'video');
+        if (cardInfo) {
+          if (cardInfo.mediaId && !finalMediaId) finalMediaId = cardInfo.mediaId;
+          if (cardInfo.status === 'READY') {
+            isSuccess = true;
+            if (cardInfo.videoUrl) directDownloadTarget = cardInfo.videoUrl;
+          } else if (cardInfo.status === 'FAILED') {
+            isFailed = true;
+            failMsg = cardInfo.error || 'Video tạo thất bại trên Flow';
+          } else if (cardInfo.status === 'RENDERING') {
+            if (attempt % 3 === 0) {
+              logToBridge(`Task ${taskId} đang render trên Flow (${cardInfo.progress || 'RENDERING'})... [lần ${attempt}/${maxAttempts}]`);
+            }
+          }
+        }
+      } catch (domErr) {
+        console.warn("[pollAndDeliverVideo] Lỗi checkCardStatus:", domErr);
+      }
+
+      // ── BƯỚC 2: Fallback kiểm tra thư viện project (getProjectVideos) ──
       if (!isSuccess && !isFailed) {
         try {
-          const pData = await getProjectVideos(projectId);
-          if (pData?.success && Array.isArray(pData.videos)) {
-            const vid = pData.videos.find(v => v.mediaId === mediaId || v.workflowId === mediaId);
+          const pData = await getProjectVideos(projectId, flowTab);
+          if (pData?.success && Array.isArray(pData.videos) && pData.videos.length > 0) {
+            const vid = pData.videos.find(v => 
+              (finalMediaId && (v.mediaId === finalMediaId || v.workflowId === finalMediaId)) ||
+              (promptText && v.prompt && v.prompt.toLowerCase().includes(promptText.slice(0, 15).toLowerCase()))
+            );
             if (vid) {
+              if (vid.mediaId && !finalMediaId) finalMediaId = vid.mediaId;
               if (vid.status === 'COMPLETED') {
                 isSuccess = true;
+                if (vid.videoUrl) directDownloadTarget = vid.videoUrl;
               } else if (vid.status === 'FAILED') {
                 isFailed = true;
                 failMsg = vid.failureReason || 'Video thất bại trong thư viện Flow';
@@ -2779,26 +5511,171 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId) {
         } catch (_) {}
       }
 
+      // ── BƯỚC 3: Xử lý khi video HOÀN THÀNH ──
       if (isSuccess) {
-        logToBridge(`🎉 Task ${taskId} (${mediaId}) HOÀN THÀNH! Đang tải video về máy thật qua Chrome...`);
+        logToBridge(`🎉 Task ${taskId} (${finalMediaId || 'Flow Video'}) HOÀN THÀNH! Đang lấy video về máy...`);
 
-        const dlRes = await downloadVideoFileToDisk(mediaId);
-        logToBridge(`✅ Đã tải xong về máy: ${dlRes.filePath} (${(dlRes.fileSize / 1024 / 1024).toFixed(2)} MB)! Gửi filePath cho tool_video...`);
+        let videoBase64 = null;
+        let videoSize = 0;
+        let downloadedFilePath = null;
+
+        // ── Cách 0: Thử tải trực tiếp Native 720p qua UI Flow (CDP Hardware Mouse) ──
+        if (flowTab?.id) {
+          try {
+            logToBridge(`[Download] Thử tải video 720p gốc qua Native UI cho "${promptText?.slice(0, 20)}"...`);
+            const nativeRes = await triggerNativeDownloadForCard(flowTab.id, promptText, promptText, finalMediaId, null, 'video', projectId);
+            if (nativeRes?.success && nativeRes?.downloadItem?.filename) {
+              downloadedFilePath = nativeRes.downloadItem.filename;
+              logToBridge(`[Download] ✅ Native UI tải thành công: ${downloadedFilePath}`);
+            }
+          } catch (nativeErr) {
+            console.warn("[Flow Extension] Native download error in pollAndDeliverVideo:", nativeErr.message);
+          }
+        }
+
+        // ── Cách 1: Tải trực tiếp qua chrome.downloads bằng mediaId (Chuẩn từ commit tối qua) ──
+        if (finalMediaId) {
+          try {
+            logToBridge(`[Download] Thử tải file trực tiếp qua chrome.downloads cho media: ${finalMediaId}...`);
+            const dlRes = await downloadVideoFileToDisk(finalMediaId);
+            if (dlRes?.filePath) {
+              downloadedFilePath = dlRes.filePath;
+              videoSize = dlRes.fileSize || 0;
+              logToBridge(`[Download] ✅ Tải file thành công: ${downloadedFilePath} (${(videoSize / 1024 / 1024).toFixed(2)} MB)`);
+              try { chrome.downloads.erase({ id: dlRes.downloadId }); } catch (_) {}
+            }
+          } catch (dlErr) {
+            console.warn("[Flow Extension] downloadVideoFileToDisk by mediaId error:", dlErr.message);
+          }
+        }
+
+        // ── Cách 2: In-Tab Fetch (Lấy blob từ thẻ <video> đang chiếu trên tab hoặc redirect trong tab) ──
+        if (!downloadedFilePath) {
+          try {
+            logToBridge(`[Download] Thử trích xuất video trực tiếp từ ngữ cảnh tab Flow...`);
+            const tabFetchRes = await chrome.scripting.executeScript({
+              target: { tabId: flowTab.id },
+              world: "MAIN",
+              args: [finalMediaId, directDownloadTarget],
+              func: async (mId, fallbackUrl) => {
+                try {
+                  // A. Quét tất cả thẻ <video> đang hiển thị trên trang (hỗ trợ cả blob: URLs và direct URLs)
+                  const vids = Array.from(document.querySelectorAll("video"));
+                  for (const v of vids) {
+                    const s = v.currentSrc || v.src || v.querySelector("source")?.src;
+                    if (s) {
+                      try {
+                        const r = await fetch(s);
+                        if (r.ok) {
+                          const b = await r.blob();
+                          if (b && b.size > 20000) {
+                            const reader = new FileReader();
+                            const base64 = await new Promise((res, rej) => {
+                              reader.onload = () => res(reader.result.split(",")[1]);
+                              reader.onerror = rej;
+                              reader.readAsDataURL(b);
+                            });
+                            return { success: true, base64, size: b.size, source: 'video_blob' };
+                          }
+                        }
+                      } catch (_) {}
+                    }
+                  }
+
+                  // B. Thử fetch redirect endpoint bên trong tab với cookies
+                  if (mId) {
+                    try {
+                      const redUrl = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${mId}&mediaUrlType=MEDIA_URL_TYPE_VIDEO`;
+                      const r = await fetch(redUrl, { credentials: "include", redirect: "follow" });
+                      if (r.ok) {
+                        const b = await r.blob();
+                        if (b && b.size > 20000) {
+                          const reader = new FileReader();
+                          const base64 = await new Promise((res, rej) => {
+                            reader.onload = () => res(reader.result.split(",")[1]);
+                            reader.onerror = rej;
+                            reader.readAsDataURL(b);
+                          });
+                          return { success: true, base64, size: b.size, source: 'trpc_redirect_blob' };
+                        }
+                      }
+                    } catch (_) {}
+                  }
+
+                  // C. Thử click nút Download trên card trong giao diện
+                  const cards = Array.from(document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id]"));
+                  const matchedCard = (mId ? cards.find(c => (c.getAttribute("data-media-id") || c.getAttribute("data-workflow-id")) === mId) : null) || cards[0];
+                  if (matchedCard) {
+                    const dlBtn = matchedCard.querySelector("button[aria-label*='Tải'], button[aria-label*='Download'], button[title*='Tải'], button[title*='Download'], svg[data-icon='download']");
+                    if (dlBtn) {
+                      const clickable = dlBtn.closest("button") || dlBtn;
+                      clickable.click();
+                      return { success: true, clickedDownload: true };
+                    }
+                  }
+
+                  return { success: false, error: "Không tìm thấy dữ liệu video trên trang" };
+                } catch (e) {
+                  return { success: false, error: e.message };
+                }
+              }
+            });
+
+            const tabRes = tabFetchRes?.[0]?.result;
+            if (tabRes?.success) {
+              if (tabRes.base64) {
+                videoBase64 = tabRes.base64;
+                videoSize = tabRes.size;
+                logToBridge(`[Download] ✅ Lấy xong video trực tiếp từ tab qua ${tabRes.source}!`);
+              } else if (tabRes.clickedDownload) {
+                logToBridge(`[Download] Đã click nút Tải xuống trên UI Flow, chờ nhận file...`);
+                await new Promise(r => setTimeout(r, 3000));
+                const recentDls = await chrome.downloads.search({ limit: 3, orderBy: ['-startTime'] });
+                const recentItem = recentDls.find(d => d.state === 'complete' && Date.now() - new Date(d.startTime).getTime() < 30000);
+                if (recentItem) {
+                  downloadedFilePath = recentItem.filename;
+                  videoSize = recentItem.fileSize || 0;
+                  logToBridge(`[Download] ✅ Bắt được file tải từ UI: ${downloadedFilePath}`);
+                }
+              }
+            }
+          } catch (fetchErr) {
+            console.warn("[Flow Extension] In-tab extraction error:", fetchErr);
+          }
+        }
+
+        // ── Cách 3: Thử tải qua directDownloadTarget nếu có link HTTP hợp lệ ──
+        if (!downloadedFilePath && !videoBase64 && directDownloadTarget && directDownloadTarget.startsWith("http")) {
+          try {
+            const dlRes = await downloadVideoFileToDisk(directDownloadTarget);
+            if (dlRes?.filePath) {
+              downloadedFilePath = dlRes.filePath;
+              videoSize = dlRes.fileSize || videoSize;
+              try { chrome.downloads.erase({ id: dlRes.downloadId }); } catch (_) {}
+            }
+          } catch (dlErr) {
+            console.warn("[Flow Extension] directDownloadTarget fallback error:", dlErr.message);
+          }
+        }
+
+        if (!videoBase64 && !downloadedFilePath) {
+          throw new Error("Đã xác nhận video hoàn thành nhưng không thể trích xuất dữ liệu video");
+        }
+
+        const sizeMb = (videoSize / 1024 / 1024).toFixed(2);
+        logToBridge(`✅ Đã lấy xong video (${sizeMb} MB)! Gửi kết quả về cho tool_video...`);
 
         if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
           _toolWs.send(JSON.stringify({
             type: 'VIDEO_RESULT',
             id: taskId,
-            mediaId: mediaId,
-            filePath: dlRes.filePath,
-            downloadUrl: dlRes.url,
+            mediaId: finalMediaId,
+            filePath: downloadedFilePath,
+            base64: videoBase64,
+            downloadUrl: directDownloadTarget,
             ok: true
           }));
         }
-
-        try {
-          chrome.downloads.erase({ id: dlRes.downloadId });
-        } catch (_) {}
 
         return;
       }
@@ -2809,7 +5686,7 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId) {
           _toolWs.send(JSON.stringify({
             type: 'VIDEO_RESULT',
             id: taskId,
-            mediaId: mediaId,
+            mediaId: finalMediaId,
             ok: false,
             error: failMsg
           }));
@@ -2825,7 +5702,7 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId) {
           _toolWs.send(JSON.stringify({
             type: 'VIDEO_RESULT',
             id: taskId,
-            mediaId: mediaId,
+            mediaId: finalMediaId,
             ok: false,
             error: `Timeout: ${e.message}`
           }));
@@ -2841,7 +5718,7 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId) {
     _toolWs.send(JSON.stringify({
       type: 'VIDEO_RESULT',
       id: taskId,
-      mediaId: mediaId,
+      mediaId: finalMediaId,
       ok: false,
       error: 'Timeout quá 10 phút chờ Google Flow render video'
     }));
@@ -2850,8 +5727,15 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId) {
 
 
 async function testUiStep(step, req) {
-  const tab = await getFlowTab('video', req.projectId);
-  if (!tab) return { success: false, error: "Cần mở ít nhất một tab Google Flow cho Video!" };
+  const isImageStep = typeof step === 'string' && step.startsWith("img_");
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  let tab = null;
+  if (activeTab && activeTab.url && (activeTab.url.includes("labs.google") || activeTab.url.includes("flow.google.com"))) {
+    tab = activeTab;
+  } else {
+    tab = await getFlowTab(isImageStep ? 'image' : 'video', req.projectId);
+  }
+  if (!tab) return { success: false, error: "Cần mở ít nhất một tab Google Flow!" };
   
   try {
     await chrome.tabs.update(tab.id, { active: true });
@@ -2862,8 +5746,9 @@ async function testUiStep(step, req) {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "MAIN",
-      args: [step, req.prompt || "", req.config || {}],
+      args: [step, req.prompt || req.query || "", req.config || {}],
       func: async (stepIdx, promptText, cfg) => {
+        try {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
         const queryDeep = (selector) => {
           const matches = [];
@@ -2924,20 +5809,29 @@ async function testUiStep(step, req) {
           return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send";
         });
 
+        const isElemVisible = (el) => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
+        };
+
         // Chỉ tìm Settings Chip xung quanh khu vực của submitBtn (để tránh click nhầm vào các video trong danh sách)
         let settingsChip = null;
         if (submitBtn) {
+           const sRect = submitBtn.getBoundingClientRect();
            let parent = submitBtn;
            for (let i = 0; i < 8 && parent; i++) {
              parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
              if (!parent) break;
              const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
              const candidate = buttonsHere.find(b => {
-                if (b === submitBtn) return false;
-                if (b.offsetParent === null) return false;
+                if (b === submitBtn || !isElemVisible(b)) return false;
                 const t = (b.textContent || "").trim().toLowerCase();
-                // Ưu tiên nút có chứa các thông số cài đặt
-                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.match(/\b(720p|1080p|4k|giây|fps)\b/i) || t.match(/^\d+s/i)) {
+                if (t.includes("tác nhân") || t.includes("agent")) return false;
+                // Ưu tiên nút có chứa các thông số cài đặt video hoặc ảnh
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || 
+                    t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") ||
+                    t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i)) {
                    return true;
                 }
                 return false;
@@ -2955,7 +5849,22 @@ async function testUiStep(step, req) {
                  parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
                  if (!parent) break;
                  const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
-                 const candidate = buttonsHere.find(b => b !== submitBtn && b.offsetParent !== null && !b.innerHTML.toLowerCase().includes("add") && (b.textContent || "").trim() !== "+");
+                 // Lấy các nút bên trái của submitBtn và sắp xếp theo thứ tự gần submitBtn nhất
+                 const leftOfSubmit = buttonsHere.filter(b => {
+                   if (b === submitBtn || !isElemVisible(b)) return false;
+                   const bRect = b.getBoundingClientRect();
+                   return bRect.left < sRect.left;
+                 });
+                 leftOfSubmit.sort((a, b) => {
+                   const ra = a.getBoundingClientRect();
+                   const rb = b.getBoundingClientRect();
+                   return Math.abs(sRect.left - ra.right) - Math.abs(sRect.left - rb.right);
+                 });
+                 const candidate = leftOfSubmit.find(b => {
+                   const t = (b.textContent || "").trim().toLowerCase();
+                   if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                   return true;
+                 });
                  if (candidate) {
                    settingsChip = candidate;
                    break;
@@ -3111,7 +6020,7 @@ async function testUiStep(step, req) {
 
 
         
-        if (Math.floor(stepIdx) === 4) {
+        if (Math.floor(Number(stepIdx)) === 4 || String(stepIdx).startsWith("4") || stepIdx === "4.0_frames" || stepIdx === "4.0b") {
           if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
 
         // STEP 2: Configure Video Settings (Mode, Ratio, Duration, Count, Model)
@@ -3128,79 +6037,14 @@ async function testUiStep(step, req) {
             return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
           };
 
-          // Find active popover container
-          const getPopover = () => {
-            const candidates = queryDeep("div[role='dialog'], div[data-radix-popper-content-wrapper], div[class*='popover'], div");
-            return candidates.find(d => {
-              if (!isElemVisible(d)) return false;
-              const t = d.textContent || "";
-              // check if it's actually a dialog containing these options
-              return (t.includes("9:16") || t.includes("16:9")) && (t.includes("Video") || t.includes("Hình ảnh") || t.includes("Khung hình")) && d.querySelectorAll("button, [role='tab'], [role='button']").length > 0;
-            });
-          };
-
-          let popover = getPopover();
-
-          // If not open, click the settings chip to open it
-          if (!popover && settingsChip) {
-            settingsChip.scrollIntoView({ block: "nearest" });
-            settingsChip.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-            settingsChip.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-            settingsChip.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-            settingsChip.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-            settingsChip.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-            settingsChip.click();
-            await sleep(600); // Wait for popup animation
-            popover = getPopover();
-          }
-
-          // Click option inside popover
-          const clickInsidePopover = async (textMatch) => {
-            const scope = popover || document;
-            const elements = queryScopeDeep(scope, "[role='tab'], button, [role='button'], div, span").filter(el => isElemVisible(el));
-
-            let match = elements.find(el => {
-              const t = (el.textContent || "").trim();
-              const aria = (el.getAttribute("aria-label") || "").trim();
-              return t === textMatch || aria === textMatch;
-            });
-
-            if (!match) {
-              match = elements.find(el => {
-                const t = (el.textContent || "").trim().toLowerCase();
-                const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
-                return t.includes(textMatch.toLowerCase()) || aria.includes(textMatch.toLowerCase());
-              });
-            }
-
-            if (match) {
-              const clickable = match.closest("[role='tab'], button, [role='button']") || match;
-              clickable.scrollIntoView({ block: "nearest" });
-              clickable.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-              clickable.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-              clickable.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-              clickable.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-              clickable.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-              clickable.click();
-              return true;
-            }
-            return false;
-          };
-
-          // Helper to trigger click with pointer + mouse events
-          const triggerClick = (el) => {
+          const safeClick = (el) => {
             if (!el) return false;
             el.scrollIntoView({ block: "nearest" });
-            
-            // Only send pointer/mouse events. Avoid calling el.click() to prevent double-toggling,
-            // or vice versa. Some components double-toggle if both are used.
-            el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-            el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-            
-            // Dispatching click manually is usually enough for React/Radix.
-            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            if (typeof el.click === "function") {
+              el.click();
+            } else {
+              el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            }
             return true;
           };
 
@@ -3217,170 +6061,444 @@ async function testUiStep(step, req) {
             await sleep(300);
             
             if (target.getAttribute("aria-expanded") !== "true" && !document.querySelector("[role='listbox']")) {
-                // Fallback to pointer events if it didn't open
                 target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
                 target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
                 target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
                 target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-                target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+                if (typeof target.click === "function") target.click();
+                else target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
                 await sleep(300);
             }
           };
 
-          if (stepIdx === 4 || stepIdx === 4.0) {
-          // 1. Select Mode: "Video" vs "Hình ảnh"
-          const modeScope = getPopover() || popover || document;
-          const modeButtons = queryScopeDeep(modeScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
-          if (cfg?.mode === 'image' || cfg?.mode === 'Hình ảnh') {
-            const imageBtn = modeButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              return t === "Hình ảnh" || t.includes("Hình ảnh") || t.toLowerCase().includes("image");
+          // Tìm tab "Video"
+          const findVideoTabElement = () => {
+            const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              if (r.width < 30 || r.height < 15) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+              const t = (el.textContent || "").trim();
+              const aria = (el.getAttribute("aria-label") || "").trim();
+              const id = (el.getAttribute("id") || "").toLowerCase();
+
+              if (t.includes("Khung hình") || aria.includes("Khung hình") || t.includes("Hình ảnh") || aria.includes("Hình ảnh")) return false;
+              if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1080p") || t.includes("fps")) return false;
+
+              return t === "Video" || aria === "Video" || 
+                     t.toLowerCase() === "video" || aria.toLowerCase() === "video" ||
+                     id.endsWith("-trigger-video") || id.endsWith("-trigger-VIDEO") || 
+                     (t.includes("Video") && t.length <= 10) ||
+                     (aria.includes("Video") && aria.length <= 10);
             });
-            if (imageBtn) triggerClick(imageBtn);
-            await sleep(400);
-          } else {
-            const videoBtn = modeButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              return (t === "Video" || t.includes("Video")) && !t.includes("Hình ảnh") && !t.includes("Khung hình");
+
+            if (candidates.length === 0) return null;
+
+            let best = candidates.find(el => {
+              const p = el.parentElement;
+              if (p && (p.textContent.includes("Hình ảnh") || p.getAttribute("role") === "tablist")) return true;
+              const gp = p?.parentElement;
+              if (gp && (gp.textContent.includes("Hình ảnh") || gp.getAttribute("role") === "tablist")) return true;
+              return false;
             });
-            if (videoBtn) triggerClick(videoBtn);
+
+            if (!best) {
+              best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+            }
+
+            return best.closest("[role='tab'], button, [role='button']") || best;
+          };
+
+          // Tìm tab "Hình ảnh"
+          const findImageTabElement = () => {
+            const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              if (r.width < 30 || r.height < 15) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+              const t = (el.textContent || "").trim();
+              const aria = (el.getAttribute("aria-label") || "").trim();
+              const id = (el.getAttribute("id") || "").toLowerCase();
+
+              if (t.includes("Khung hình") || aria.includes("Khung hình")) return false;
+
+              return t === "Hình ảnh" || aria === "Hình ảnh" || 
+                     t.toLowerCase() === "image" || aria.toLowerCase() === "image" ||
+                     id.endsWith("-trigger-image") || id.endsWith("-trigger-IMAGE") ||
+                     (t.includes("Hình ảnh") && t.length <= 15) ||
+                     (aria.includes("Hình ảnh") && aria.length <= 15);
+            });
+
+            if (candidates.length === 0) return null;
+
+            let best = candidates.find(el => {
+              const p = el.parentElement;
+              if (p && (p.textContent.includes("Video") || p.getAttribute("role") === "tablist")) return true;
+              const gp = p?.parentElement;
+              if (gp && (gp.textContent.includes("Video") || gp.getAttribute("role") === "tablist")) return true;
+              return false;
+            });
+
+            if (!best) {
+              best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+            }
+
+            return best.closest("[role='tab'], button, [role='button']") || best;
+          };
+
+          const isPopoverOpen = () => {
+            if (findVideoTabElement() || findImageTabElement()) return true;
+            const ratioBtn = queryDeep("button, [role='tab'], [role='radio']").find(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              const t = (el.textContent || "").trim();
+              return t === "16:9" || t === "9:16";
+            });
+            return !!ratioBtn;
+          };
+
+          // Mở popover an toàn nếu chưa mở
+          const ensurePopoverOpen = async () => {
+            if (!isPopoverOpen() && settingsChip) {
+              settingsChip.scrollIntoView({ block: "nearest" });
+              settingsChip.click();
+              await sleep(600);
+              if (!isPopoverOpen()) {
+                settingsChip.click();
+                await sleep(600);
+              }
+            }
+          };
+
+          // Helper to select the Video Tab
+          const selectVideoTab = async () => {
+            await ensurePopoverOpen();
+            const tabEl = findVideoTabElement();
+            if (tabEl) {
+              const isActive = tabEl.getAttribute("data-state") === "active" || 
+                               tabEl.getAttribute("aria-selected") === "true" ||
+                               tabEl.classList.contains("active") ||
+                               (tabEl.parentElement && tabEl.parentElement.getAttribute("data-state") === "active");
+              if (!isActive) {
+                safeClick(tabEl);
+                await sleep(400);
+              }
+              return { success: true, el: tabEl };
+            }
+            return { success: false };
+          };
+
+          // Helper to select the Image Tab
+          const selectImageTab = async () => {
+            await ensurePopoverOpen();
+            const tabEl = findImageTabElement();
+            if (tabEl) {
+              const isActive = tabEl.getAttribute("data-state") === "active" || 
+                               tabEl.getAttribute("aria-selected") === "true" ||
+                               tabEl.classList.contains("active") ||
+                               (tabEl.parentElement && tabEl.parentElement.getAttribute("data-state") === "active");
+              if (!isActive) {
+                safeClick(tabEl);
+                await sleep(400);
+              }
+              return { success: true, el: tabEl };
+            }
+            return { success: false };
+          };
+
+          // Helper to select the Khung hình (Frames) Tab
+          const selectFramesTab = async () => {
+            await ensurePopoverOpen();
+            // Đảm bảo tab Video đã được kích hoạt trước
+            await selectVideoTab();
             await sleep(400);
+
+            const isFramesMatch = (el) => {
+              if (!el) return false;
+              const t = (el.textContent || "").trim();
+              const tLower = t.toLowerCase();
+              const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
+              const id = (el.getAttribute("id") || "").toLowerCase();
+              const dataVal = (el.getAttribute("data-value") || "").toLowerCase();
+              const html = el.innerHTML || "";
+
+              // Loại trừ các tab khác
+              if (t === "Hình ảnh" || t === "Video" || aria === "video" || aria === "hình ảnh") return false;
+              if (t === "Thành phần" || aria === "thành phần" || tLower.includes("thành phần") || aria.includes("thành phần")) return false;
+
+              if (tLower === "khung hình" || tLower === "frames" || tLower === "frame") return true;
+              if (aria === "khung hình" || aria === "frames" || aria.includes("khung hình") || aria.includes("frames")) return true;
+              if (id.includes("video_frames") || id.includes("frames") || id.includes("frame")) return true;
+              if (dataVal === "frames" || dataVal === "video_frames") return true;
+              if (html.includes("crop_free") || tLower.includes("crop_free")) return true;
+              if ((tLower.includes("khung hình") || tLower.includes("frames")) && t.length <= 25) return true;
+              return false;
+            };
+
+            let target = null;
+            let lastAvailable = "";
+
+            for (let attempt = 0; attempt < 6; attempt++) {
+              const allButtons = queryDeep("[role='tab'], button, [role='button']").filter(el => {
+                if (!isElemVisible(el)) return false;
+                if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                const r = el.getBoundingClientRect();
+                return r.left >= 150;
+              });
+
+              target = allButtons.find(b => isFramesMatch(b));
+
+              if (!target) {
+                const subEls = queryDeep("span, div, svg, i, p").filter(el => {
+                  if (!isElemVisible(el)) return false;
+                  if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                  if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                  const r = el.getBoundingClientRect();
+                  if (r.left < 150) return false;
+                  const t = (el.textContent || "").trim();
+                  return t.length <= 30 && isFramesMatch(el);
+                });
+                for (const sub of subEls) {
+                  const pBtn = sub.closest("[role='tab'], button, [role='button']");
+                  if (pBtn && isElemVisible(pBtn) && (!settingsChip || !settingsChip.contains(pBtn))) {
+                    target = pBtn;
+                    break;
+                  }
+                }
+              }
+
+              if (target) break;
+
+              lastAvailable = allButtons.map(b => `[${b.tagName} role="${b.getAttribute("role")||""}" text="${(b.textContent||"").trim()}"]`).join(", ");
+              await sleep(250);
+            }
+
+            if (target) {
+              const clickable = target.closest("[role='tab'], button, [role='button']") || target;
+              safeClick(clickable);
+              await sleep(400);
+              return { success: true, el: clickable };
+            }
+
+            return { success: false, available: lastAvailable };
+          };
+
+          if (stepIdx === 4.0 || stepIdx === "4.0") {
+            const res = await selectVideoTab();
+            if (res.success) {
+              return `Đã bấm sang Tab Video thành công! (Tag: <${res.el.tagName.toLowerCase()}> text="${res.el.textContent.trim()}")`;
+            }
+            throw new Error("Không tìm thấy nút Tab Video trong bảng Popover!");
           }
 
-          // 1.1 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab
-          if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
-            const framesScope = getPopover() || popover || document;
-            const submodeButtons = queryScopeDeep(framesScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
-            const framesBtn = submodeButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              const id = b.getAttribute("id") || "";
-              return t === "Khung hình" || t.includes("Khung hình") || id.endsWith("-trigger-VIDEO_FRAMES") || b.innerHTML.includes("crop_free");
-            });
-            if (framesBtn) {
-              triggerClick(framesBtn);
+          if (stepIdx === 4.05 || stepIdx === "4.05" || stepIdx === "4.0_frames" || stepIdx === "4.0b") {
+            const res = await selectFramesTab();
+            if (res.success) {
+              return `Đã bấm sang Tab Khung hình thành công! (Tag: <${res.el.tagName.toLowerCase()}> text="${res.el.textContent.trim()}")`;
+            }
+            throw new Error("Không tìm thấy nút Tab Khung hình trong Popover! Các nút hiện có: " + (res.available || "Không tìm thấy"));
+          }
+
+          if (stepIdx === 4) {
+            // 1. Select Mode: "Video" vs "Hình ảnh"
+            if (cfg?.mode === 'image' || cfg?.mode === 'Hình ảnh') {
+              await selectImageTab();
+              await sleep(400);
+            } else {
+              await selectVideoTab();
               await sleep(400);
             }
           }
 
-          }
           if (stepIdx === 4 || stepIdx === 4.1) {
-          // 2. Select Aspect Ratio (9:16 vs 16:9)
-          const aspectScope = getPopover() || popover || document;
-          const aspectButtons = queryScopeDeep(aspectScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
-          const aspectBtn = aspectButtons.find(b => {
-            const t = (b.textContent || "").trim();
-            const aria = (b.getAttribute("aria-label") || "").trim();
-            if (targetRatio === "9:16") {
-              return (t.includes("9:16") || aria.includes("9:16")) && !t.includes("16:9");
-            } else {
-              return (t.includes("16:9") || aria.includes("16:9")) && !t.includes("9:16");
+            await ensurePopoverOpen();
+            // 2. Select Aspect Ratio (9:16 vs 16:9)
+            const aspectButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              const t = (el.textContent || "").trim();
+              return t.includes("16:9") || t.includes("9:16");
+            });
+            const aspectBtn = aspectButtons.find(b => {
+              const t = (b.textContent || "").trim();
+              const aria = (b.getAttribute("aria-label") || "").trim();
+              const comb = t + " " + aria;
+              if (targetRatio === "9:16") return comb.includes("9:16") && !comb.includes("16:9");
+              return comb.includes("16:9");
+            });
+            if (aspectBtn) {
+              safeClick(aspectBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || aspectBtn);
+              await sleep(400);
             }
-          });
-          if (aspectBtn) triggerClick(aspectBtn);
-          await sleep(400);
-
+            if (stepIdx === 4.1) {
+              return `Đã chọn Tỷ lệ ${targetRatio} thành công!`;
+            }
           }
+
           // If in Video mode, configure Duration, Count & Video Model
           if (cfg?.mode !== 'image' && cfg?.mode !== 'Hình ảnh') {
             if (stepIdx === 4 || stepIdx === 4.2) {
-            // 3. Select Duration: "8s"
-            const durScope = getPopover() || popover || document;
-            const durButtons = queryScopeDeep(durScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
-            const durNum = targetDuration.replace(/\D/g, "");
-            const durBtn = durButtons.find(b => {
-              const t = (b.textContent || "").trim().toLowerCase();
-              if (t.includes(durNum + "s") || t.includes(durNum + " giây") || t.includes(durNum + " sec") || t === durNum) {
-                 const others = ["4", "5", "6", "8", "10"].filter(x => x !== durNum);
-                 return !others.some(x => t.includes(x + "s") || t.includes(x + " giây"));
+              await ensurePopoverOpen();
+              // 3. Select Duration: "8s"
+              const durNum = targetDuration.replace(/\D/g, "");
+              const durButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+                if (!isElemVisible(el)) return false;
+                if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                const r = el.getBoundingClientRect();
+                if (r.left < 150) return false;
+                const t = (el.textContent || "").trim().toLowerCase();
+                return t.includes(durNum + "s") || t.includes(durNum + " giây") || t.includes(durNum + " sec") || t === durNum;
+              });
+              const durBtn = durButtons.find(b => {
+                const t = (b.textContent || "").trim().toLowerCase();
+                const others = ["4", "5", "6", "8", "10"].filter(x => x !== durNum);
+                return !others.some(x => t.includes(x + "s") || t.includes(x + " giây"));
+              });
+              if (durBtn) {
+                safeClick(durBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || durBtn);
+                await sleep(400);
               }
-              return false;
-            });
-            if (durBtn) triggerClick(durBtn);
-            await sleep(400);
-
+              if (stepIdx === 4.2) {
+                return `Đã chọn Thời lượng ${targetDuration} thành công!`;
+              }
             }
+
             if (stepIdx === 4 || stepIdx === 4.3) {
-            // 4. Select Count: "x1"
-            const countScope = getPopover() || popover || document;
-            const countButtons = queryScopeDeep(countScope, "[role='tab'], button, [role='button']").filter(isElemVisible);
-            const countBtn = countButtons.find(b => {
-              const t = (b.textContent || "").trim().toLowerCase();
+              await ensurePopoverOpen();
+              // 4. Select Count: "x1"
               const tc = targetCount.toLowerCase();
-              if (t === tc || t.includes(tc) || (tc==="x1" && t==="1x")) {
-                 const others = ["x1", "x2", "x3", "x4"].filter(x => x !== tc);
-                 return !others.some(x => t.includes(x));
+              const countButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+                if (!isElemVisible(el)) return false;
+                if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                const r = el.getBoundingClientRect();
+                if (r.left < 150) return false;
+                const t = (el.textContent || "").trim().toLowerCase();
+                return t === tc || t.includes(tc) || (tc === "x1" && t === "1x");
+              });
+              const countBtn = countButtons.find(b => {
+                const t = (b.textContent || "").trim().toLowerCase();
+                const others = ["x1", "x2", "x3", "x4"].filter(x => x !== tc);
+                return !others.some(x => t.includes(x));
+              });
+              if (countBtn) {
+                safeClick(countBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || countBtn);
+                await sleep(400);
               }
-              return false;
-            });
-            if (countBtn) triggerClick(countBtn);
-            await sleep(400);
-
+              if (stepIdx === 4.3) {
+                return `Đã chọn Số lượng ${targetCount} thành công!`;
+              }
             }
+
             if (stepIdx === 4 || stepIdx === 4.4) {
-            // 5. Select Model: Veo 3.1 - Lite [Lower Priority]
-            const scope = getPopover() || popover || document;
-            const mTxt = (cfg?.model || "veo_3_1_lite_low_priority").toLowerCase();
-            
-            const isMatch = (el) => {
+              await ensurePopoverOpen();
+              if (stepIdx === 4.4) {
+                // Đảm bảo tab Video đã được chọn
+                await selectVideoTab();
+                await sleep(300);
+              }
+
+              // 5. Select Model: Veo 3.1 - Lite [Lower Priority]
+              const modelDropdown = queryDeep("button, [role='combobox'], [role='button'], div").find(b => {
+                if (!isElemVisible(b)) return false;
+                if (settingsChip && (b === settingsChip || settingsChip.contains(b))) return false;
+                if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                if (b.closest("[role='listbox'], [role='menu']")) return false; 
+                const r = b.getBoundingClientRect();
+                if (r.left < 150) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                const isModelName = (t.includes("omni") || t.includes("veo") || t.includes("flash") || t.includes("lite") || t.includes("fast") || t.includes("quality")) && t.length < 50;
+                const isExcluded = t.includes("9:16") || t.includes("16:9") || t.includes("8s") || t.includes("4s") || t.includes("6s") || t.includes("10s") || t.includes("video") || t.includes("hình ảnh") || t.includes("khung hình") || t.includes("thành phần");
+                return isModelName && !isExcluded;
+              });
+
+              if (modelDropdown) {
+                await safeToggle(modelDropdown);
+                await sleep(400); // Give portal time to mount
+              }
+
+              const mTxt = (cfg?.model || "veo_3_1_lite_low_priority").toLowerCase();
+              const isMatch = (el) => {
+                if (el === modelDropdown || modelDropdown?.contains(el)) return false;
                 const ot = (el.textContent || "").toLowerCase();
+                if (ot.length > 80) return false;
                 
-                let matchCount = 0;
-                if (ot.includes("omni") || ot.includes("flash")) matchCount++;
-                if (ot.includes("lite")) matchCount++;
-                if (ot.includes("fast")) matchCount++;
-                if (ot.includes("quality")) matchCount++;
-                
-                if (matchCount > 1 || ot.length > 60) return false;
-                
-                if (mTxt.includes("low_priority")) return ot.includes("lower priority") || ot.includes("ưu tiên thấp") || ot.includes("lite [lower priority]");
-                if (mTxt.includes("lite")) return (ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp"));
-                if (mTxt.includes("fast")) return ot.includes("fast");
-                if (mTxt.includes("quality")) return ot.includes("quality");
-                if (mTxt.includes("abra")) return ot.includes("omni") || ot.includes("flash");
-                return false;
-            };
-
-            const allCandidates = queryScopeDeep(scope, "[role='option'], [role='menuitem'], [role='tab'], button, li").filter(isElemVisible);
-            let targetOpt = allCandidates.find(el => {
-                if (el.getAttribute("role") === "combobox" || el.hasAttribute("aria-haspopup")) return false;
-                return isMatch(el);
-            });
-
-            if (targetOpt) {
-                triggerClick(targetOpt);
-                await sleep(500);
-            } else {
-                const modelDropdown = queryScopeDeep(scope, "button, [role='combobox'], [role='button'], div").find(b => {
-                  if (!isElemVisible(b)) return false;
-                  const t = (b.textContent || "").trim().toLowerCase();
-                  const hasPopup = b.hasAttribute("aria-haspopup") || b.getAttribute("role") === "combobox";
-                  const isModelName = (t.includes("omni") || t.includes("veo") || t.includes("flash") || t.includes("lite") || t.includes("fast") || t.includes("quality")) && t.length < 40;
-                  const isExcluded = t.includes("9:16") || t.includes("16:9") || t.includes("8s") || t.includes("4s") || t.includes("6s") || t.includes("10s") || t.includes("video") || t.includes("hình ảnh");
-                  return (hasPopup || isModelName) && !isExcluded;
-                });
-
-                if (modelDropdown) {
-                  triggerClick(modelDropdown);
-                  await sleep(600);
-                  
-                  for (let attempt = 0; attempt < 15; attempt++) {
-                    await sleep(100);
-                    const portalCandidates = queryDeep("[role='option'], [role='menuitem'], button, div, span, li").filter(isElemVisible);
-                    const portalOpt = portalCandidates.find(el => isMatch(el));
-                    if (portalOpt) {
-                      const clickable = portalOpt.closest("[role='option'], [role='menuitem'], button, li") || portalOpt;
-                      triggerClick(clickable);
-                      await sleep(500);
-                      break;
-                    }
-                  }
+                if (mTxt.includes("low_priority") || mTxt.includes("ưu tiên thấp")) {
+                  return ot.includes("lower priority") || ot.includes("ưu tiên thấp") || ot.includes("lite [lower priority]") || ot.includes("lite (ưu tiên thấp)");
                 }
-            }
+                if (mTxt.includes("lite")) {
+                  return (ot.includes("lite") && !ot.includes("lower priority") && !ot.includes("ưu tiên thấp"));
+                }
+                if (mTxt.includes("fast")) return ot.includes("fast") || ot.includes("nhanh");
+                if (mTxt.includes("quality")) return ot.includes("quality") || ot.includes("chất lượng");
+                if (mTxt.includes("abra") || mTxt.includes("omni")) return ot.includes("omni") || ot.includes("flash");
+                return false;
+              };
+
+              let targetOpt = null;
+              let foundOptions = [];
+              for (let attempt = 0; attempt < 15; attempt++) {
+                const portalCandidates = queryDeep("[role='option'], [role='menuitem'], [role='tab'], button, div, span, li").filter(isElemVisible);
+                const actualOptions = portalCandidates.filter(el => {
+                  if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                  if (el === modelDropdown || modelDropdown?.contains(el)) return false;
+                  if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                  if (el.hasAttribute("aria-haspopup") || el.getAttribute("role") === "combobox" || el.getAttribute("aria-expanded") === "true") return false;
+                  return el.getAttribute("role") === "option" || el.getAttribute("role") === "menuitem" || el.closest("[role='listbox']");
+                });
+                if (actualOptions.length > 0) {
+                  foundOptions = actualOptions.map(o => (o.textContent || "").trim()).filter(Boolean);
+                  targetOpt = actualOptions.find(el => isMatch(el));
+                  if (targetOpt) break;
+                } else {
+                  targetOpt = portalCandidates.find(el => {
+                    if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                    if (el === modelDropdown || modelDropdown?.contains(el)) return false;
+                    if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                    if (el.hasAttribute("aria-haspopup") || el.getAttribute("role") === "combobox" || el.getAttribute("aria-expanded") === "true") return false;
+                    return isMatch(el);
+                  });
+                  if (targetOpt) break;
+                }
+                await sleep(100);
+              }
+
+              if (targetOpt) {
+                const clickable = targetOpt.closest("[role='option'], [role='menuitem'], [role='tab'], button, li") || targetOpt;
+                safeClick(clickable);
+                await sleep(500);
+                if (stepIdx === 4.4) {
+                  return `Đã chọn Model Video thành công: "${(clickable.textContent || "").trim()}"!`;
+                }
+              } else if (stepIdx === 4.4) {
+                const optsSummary = foundOptions.length > 0 ? foundOptions.join(" | ") : "Không mở được menu model hoặc không tìm thấy options";
+                throw new Error(`Không chọn được model '${cfg?.model}'. Các options trong dropdown: ${optsSummary}`);
+              }
             }
           }
 
           if (stepIdx === 4) {
-          // 6. Close popup gracefully and focus editor
+            // 5.5 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab
+            if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
+              await selectFramesTab();
+              await sleep(500);
+            }
+
+            // 6. Close popup gracefully and focus editor
           await sleep(300);
           document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
@@ -3400,9 +6518,1590 @@ async function testUiStep(step, req) {
           return `Đã test xong Bước ${stepIdx}! (Ratio: ${targetRatio}, Model: ${cfg?.model}, Dur: ${targetDuration}, Cnt: ${targetCount})`;
         }
 
+        // ══════════════════════════════════════════════════════════
+        // CÁC BƯỚC TEST CHO TẠO ẢNH (IMAGE UI: img_tab, img_ratio, img_model, img_count, img_all_config, img_full_create)
+        // ══════════════════════════════════════════════════════════
+        if (typeof stepIdx === 'string' && stepIdx.startsWith("img_")) {
+          if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
+
+          const isElemVisible = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
+          };
+
+          const triggerClick = (el) => {
+            if (!el) return false;
+            el.scrollIntoView({ block: "nearest" });
+            el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            if (typeof el.click === "function") el.click();
+            return true;
+          };
+
+          // Tìm tab "Hình ảnh" đang hiển thị trên giao diện
+          const findImageTabElement = () => {
+            const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              if (r.width < 30 || r.height < 15) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+              const t = (el.textContent || "").trim();
+              const aria = (el.getAttribute("aria-label") || "").trim();
+              const id = (el.getAttribute("id") || "").toLowerCase();
+
+              // Loại bỏ nút Khung hình
+              if (t.includes("Khung hình") || aria.includes("Khung hình")) return false;
+
+              // Khớp chính xác hoặc chứa 'Hình ảnh'/'Image'
+              return t === "Hình ảnh" || aria === "Hình ảnh" || 
+                     t.toLowerCase() === "image" || aria.toLowerCase() === "image" ||
+                     id.endsWith("-trigger-image") || id.endsWith("-trigger-IMAGE") ||
+                     (t.includes("Hình ảnh") && t.length <= 15) ||
+                     (aria.includes("Hình ảnh") && aria.length <= 15);
+            });
+
+            if (candidates.length === 0) return null;
+
+            // Ưu tiên phần tử có cha/anh em chứa "Video" hoặc role="tab"
+            let best = candidates.find(el => {
+              const p = el.parentElement;
+              if (p && (p.textContent.includes("Video") || p.getAttribute("role") === "tablist")) return true;
+              const gp = p?.parentElement;
+              if (gp && (gp.textContent.includes("Video") || gp.getAttribute("role") === "tablist")) return true;
+              return false;
+            });
+
+            if (!best) {
+              best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+            }
+
+            return best.closest("[role='tab'], button, [role='button']") || best;
+          };
+
+          // Kiểm tra xem Popover Settings có đang mở không
+          const isPopoverOpen = () => {
+            if (findImageTabElement()) return true;
+            const ratioBtn = queryDeep("button, [role='tab'], [role='radio']").find(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              const t = (el.textContent || "").trim();
+              return t === "16:9" || t === "9:16";
+            });
+            return !!ratioBtn;
+          };
+
+          // Mở popover an toàn: Chỉ click settingsChip nếu popover CHƯA mở
+          const ensurePopoverOpen = async () => {
+            if (isPopoverOpen()) {
+              return true;
+            }
+            if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
+
+            triggerClick(settingsChip);
+            await sleep(600);
+
+            if (isPopoverOpen()) return true;
+
+            // Thử click lần 2 nếu lần đầu chưa ăn
+            await sleep(300);
+            triggerClick(settingsChip);
+            await sleep(600);
+
+            if (isPopoverOpen()) return true;
+
+            const visibleTexts = queryDeep("button, [role='tab'], [role='button']").filter(b => {
+              if (!isElemVisible(b)) return false;
+              const r = b.getBoundingClientRect();
+              return r.left >= 150 && r.width > 20;
+            }).map(b => (b.textContent || b.getAttribute("aria-label") || b.tagName).trim().substring(0, 30)).filter(Boolean);
+
+            throw new Error(`Đã bấm Settings Chip nhưng Popover không mở. Các nút đang hiển thị: [${visibleTexts.slice(0, 10).join(" | ")}]`);
+          };
+
+          // 1. Hàm chọn Tab "Hình ảnh"
+          const selectImageTab = async () => {
+            await ensurePopoverOpen();
+            await sleep(300);
+
+            const tab = findImageTabElement();
+            if (!tab) {
+              const visibleTexts = queryDeep("button, [role='tab'], [role='button'], div, span").filter(b => {
+                if (!isElemVisible(b)) return false;
+                const r = b.getBoundingClientRect();
+                return r.left >= 150 && r.width > 20;
+              }).map(b => (b.textContent || "").trim()).filter(t => t.length > 1 && t.length < 30);
+              throw new Error(`Không tìm thấy Tab 'Hình ảnh' trong bảng Cài đặt. Các nút trên màn hình: [${visibleTexts.slice(0, 15).join(" | ")}]`);
+            }
+
+            const isActive = tab.getAttribute("data-state") === "active" || 
+                             tab.getAttribute("aria-selected") === "true" ||
+                             tab.classList.contains("active") ||
+                             (tab.parentElement && tab.parentElement.getAttribute("data-state") === "active");
+
+            if (isActive) {
+              return { success: true, el: tab, alreadyActive: true };
+            }
+
+            triggerClick(tab);
+            await sleep(400);
+            return { success: true, el: tab };
+          };
+
+          // 2. Hàm chọn Tỉ lệ Ảnh (16:9, 4:3, 1:1, 3:4, 9:16)
+          const selectImageRatio = async (ratioStr = "9:16") => {
+            await selectImageTab();
+            await sleep(300);
+
+            const cleanTarget = (ratioStr || "9:16").trim();
+
+            const ratioButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+              if (!isElemVisible(el)) return false;
+              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              const r = el.getBoundingClientRect();
+              if (r.left < 150) return false;
+              const t = (el.textContent || "").trim();
+              return t.includes("16:9") || t.includes("4:3") || t.includes("1:1") || t.includes("3:4") || t.includes("9:16");
+            });
+
+            const target = ratioButtons.find(b => {
+              const t = (b.textContent || "").trim();
+              const aria = (b.getAttribute("aria-label") || "").trim();
+              const combined = t + " " + aria;
+              if (cleanTarget === "9:16") return combined.includes("9:16") && !combined.includes("16:9");
+              if (cleanTarget === "16:9") return combined.includes("16:9");
+              if (cleanTarget === "1:1") return combined.includes("1:1");
+              if (cleanTarget === "4:3") return combined.includes("4:3") && !combined.includes("3:4");
+              if (cleanTarget === "3:4") return combined.includes("3:4") && !combined.includes("4:3");
+              return combined.includes(cleanTarget);
+            });
+
+            if (target) {
+              const clickable = target.closest("[role='tab'], [role='radio'], button, [role='button']") || target;
+              triggerClick(clickable);
+              await sleep(350);
+              return { success: true, text: (clickable.textContent || "").trim() };
+            }
+
+            const available = ratioButtons.map(b => (b.textContent || "").trim()).filter(Boolean);
+            return { success: false, error: `Không tìm thấy nút tỉ lệ ${cleanTarget}. Có sẵn: [${available.join(", ")}]` };
+          };
+
+          // 3. Hàm chọn Model Ảnh (Nano Banana Pro, Nano Banana 2, Nano Banana 2 Lite)
+          const selectImageModel = async (modelKey = "banana_pro") => {
+            await selectImageTab();
+            await sleep(300);
+
+            const isMatch = (text, requestedModel) => {
+              const tl = (text || "").toLowerCase().trim();
+              const req = (requestedModel || "banana_pro").toLowerCase().trim();
+              if (req.includes("lite") || req.includes("2_lite") || req.includes("2 lite")) {
+                return tl.includes("lite");
+              }
+              if (req.includes("banana 2") || req.includes("banana_2")) {
+                return (tl.includes("banana 2") || tl.includes("nano banana 2")) && !tl.includes("lite");
+              }
+              return (tl.includes("pro") || tl.includes("banana pro")) && !tl.includes("banana 2") && !tl.includes("lite");
+            };
+
+            const findModelDropdown = () => {
+              const candidates = queryDeep("button, [role='combobox'], [role='button']").filter(b => {
+                if (!isElemVisible(b)) return false;
+                if (settingsChip && (b === settingsChip || settingsChip.contains(b))) return false;
+                if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                if (b.closest("[role='listbox'], [role='menu']")) return false;
+                const r = b.getBoundingClientRect();
+                if (r.left < 150 || r.width < 50 || r.height < 20) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                const isModel = (t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.includes("imagen")) && t.length < 50;
+                const isExcluded = t.includes("16:9") || t.includes("9:16") || t.includes("1:1") || t.includes("4:3") || t.includes("3:4") || t.includes("x1") || t.includes("x2") || t.includes("x3") || t.includes("x4") || t.includes("video") || t.includes("hình ảnh");
+                return isModel && !isExcluded;
+              });
+              if (candidates.length > 0) return candidates[0];
+
+              const divCandidates = queryDeep("div[role='button'], div").filter(b => {
+                if (!isElemVisible(b)) return false;
+                if (settingsChip && (b === settingsChip || settingsChip.contains(b))) return false;
+                if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                if (b.closest("[role='listbox'], [role='menu']")) return false;
+                const r = b.getBoundingClientRect();
+                if (r.left < 150 || r.width < 50 || r.height < 20) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                const isModel = (t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.includes("imagen")) && t.length < 50;
+                const isExcluded = t.includes("16:9") || t.includes("9:16") || t.includes("1:1") || t.includes("4:3") || t.includes("3:4") || t.includes("x1") || t.includes("x2") || t.includes("x3") || t.includes("x4") || t.includes("video") || t.includes("hình ảnh");
+                return isModel && !isExcluded;
+              });
+              if (divCandidates.length > 0) {
+                const best = divCandidates.find(d => d.getAttribute("role") === "button") || divCandidates[divCandidates.length - 1];
+                return best.closest("button, [role='combobox'], [role='button']") || best;
+              }
+              return null;
+            };
+
+            const modelDropdown = findModelDropdown();
+            if (!modelDropdown) {
+              return { success: false, error: "Không tìm thấy nút Dropdown Model Ảnh (Nano Banana)" };
+            }
+
+            const currentText = (modelDropdown.textContent || "").trim();
+            if (isMatch(currentText, modelKey)) {
+              return { success: true, text: currentText, alreadySelected: true };
+            }
+
+            const btn = modelDropdown.closest("button, [role='combobox'], [role='button']") || modelDropdown;
+            btn.scrollIntoView({ block: "nearest" });
+
+            // Click mở menu dropdown 1 lần duy nhất
+            btn.click();
+            await sleep(400);
+
+            const checkMenuOpen = () => {
+              const items = queryDeep("[role='option'], [role='menuitem'], li, button, div, span").filter(isElemVisible);
+              return items.some(el => {
+                if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                if (el === modelDropdown || modelDropdown.contains(el)) return false;
+                const t = (el.textContent || "").trim();
+                return t.length >= 4 && t.length <= 35 && (t.includes("Banana") || t.includes("Nano"));
+              });
+            };
+
+            if (!checkMenuOpen()) {
+              btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+              await sleep(400);
+            }
+
+            let targetOpt = null;
+            let foundOptions = [];
+            for (let attempt = 0; attempt < 15; attempt++) {
+              const portalCandidates = queryDeep("[role='option'], [role='menuitem'], button, [role='button'], li, div, span").filter(isElemVisible);
+              const actualOptions = portalCandidates.filter(el => {
+                if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+                if (el === modelDropdown || modelDropdown.contains(el)) return false;
+                if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+                const t = (el.textContent || "").trim();
+                if (t.length < 4 || t.length > 35) return false;
+                const tl = t.toLowerCase();
+                return tl.includes("banana") || tl.includes("nano");
+              });
+
+              if (actualOptions.length > 0) {
+                foundOptions = actualOptions.map(o => (o.textContent || "").trim());
+                targetOpt = actualOptions.find(el => isMatch((el.textContent || "").trim(), modelKey));
+                if (targetOpt) break;
+              }
+              await sleep(150);
+            }
+
+            if (targetOpt) {
+              const clickable = targetOpt.closest("[role='option'], [role='menuitem'], button, [role='button'], li") || targetOpt;
+              clickable.scrollIntoView({ block: "nearest" });
+              clickable.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+              clickable.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+              clickable.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+              clickable.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+              if (typeof clickable.click === "function") {
+                clickable.click();
+              } else {
+                clickable.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+              }
+              await sleep(400);
+              return { success: true, text: (clickable.textContent || "").trim() };
+            }
+            return { success: false, error: `Không tìm thấy option khớp với '${modelKey}'. Menu hiện có: ${foundOptions.join(" | ") || 'trống'}` };
+          };
+
+          // 4. Hàm chọn Số lượng Ảnh (x1, x2, x3, x4)
+          const selectImageCount = async (countStr = "x1") => {
+            await selectImageTab();
+            await sleep(250);
+
+            const tc = (countStr || "x1").toLowerCase().trim();
+            const countButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(b => {
+              if (!isElemVisible(b)) return false;
+              if (settingsChip && (b === settingsChip || settingsChip.contains(b))) return false;
+              if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+              const r = b.getBoundingClientRect();
+              if (r.left < 150) return false;
+              const t = (b.textContent || "").trim().toLowerCase();
+              return t === "x1" || t === "x2" || t === "x3" || t === "x4" || t === "1x" || t === "2x" || t === "3x" || t === "4x";
+            });
+
+            const countBtn = countButtons.find(b => {
+              const t = (b.textContent || "").trim().toLowerCase();
+              if (tc === "x1" || tc === "1x") return t === "x1" || t === "1x";
+              if (tc === "x2" || tc === "2x") return t === "x2" || t === "2x";
+              if (tc === "x3" || tc === "3x") return t === "x3" || t === "3x";
+              if (tc === "x4" || tc === "4x") return t === "x4" || t === "4x";
+              return t === tc;
+            });
+
+            if (countBtn) {
+              const clickable = countBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || countBtn;
+              triggerClick(clickable);
+              await sleep(350);
+              return { success: true, text: (clickable.textContent || "").trim() };
+            }
+            const available = countButtons.map(b => (b.textContent || "").trim()).filter(Boolean);
+            return { success: false, error: `Không tìm thấy nút số lượng ${countStr}. Có sẵn: [${available.join(", ")}]` };
+          };
+
+          // 5. Đóng popover
+          const closePopover = async () => {
+            await sleep(300);
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+            await sleep(300);
+            try {
+              if (editor) {
+                editor.click();
+                editor.focus();
+              }
+            } catch (_) {}
+            await sleep(200);
+            // Nếu popover vẫn còn mở, bấm lại settingsChip để đóng
+            if (isPopoverOpen() && settingsChip) {
+              triggerClick(settingsChip);
+              await sleep(300);
+            }
+          };
+
+          if (stepIdx === "img_tab") {
+            const r = await selectImageTab();
+            if (r.success) {
+              return `Đã bấm sang Tab "Hình ảnh" thành công! (<${r.el.tagName.toLowerCase()}> text="${r.el.textContent.trim()}")`;
+            }
+            throw new Error(r.error || "Không tìm thấy Tab 'Hình ảnh' trong Popover Settings!");
+          }
+
+          if (stepIdx === "img_ratio") {
+            const targetR = cfg?.aspectRatio || "9:16";
+            const r = await selectImageRatio(targetR);
+            if (r.success) return `Đã chọn Tỉ lệ ảnh thành công: "${r.text}"!`;
+            throw new Error(r.error || `Không chọn được tỉ lệ ${targetR}`);
+          }
+
+          if (stepIdx === "img_count") {
+            const targetC = cfg?.count || "x1";
+            const r = await selectImageCount(targetC);
+            if (r.success) return `Đã chọn Số lượng ảnh thành công: "${r.text}"!`;
+            throw new Error(r.error || `Không chọn được số lượng ${targetC}`);
+          }
+
+          if (stepIdx === "img_model") {
+            const targetM = cfg?.model || "banana_pro";
+            const r = await selectImageModel(targetM);
+            if (r.success) return `Đã chọn Model ảnh thành công: "${r.text}"!`;
+            throw new Error(r.error || `Không chọn được model ${targetM}`);
+          }
+
+          if (stepIdx === "img_all_config") {
+            const targetR = cfg?.aspectRatio || "9:16";
+            const targetM = cfg?.model || "banana_pro";
+            const targetC = cfg?.count || "x1";
+
+            const log = [];
+
+            // 1. Mở Cài đặt nếu chưa mở
+            await ensurePopoverOpen();
+            log.push("Mở Cài đặt");
+            await sleep(350);
+
+            // 2. Chọn Tab "Hình ảnh"
+            const rTab = await selectImageTab();
+            if (!rTab.success) throw new Error("Bước chọn Tab: " + (rTab.error || "Không bấm được Tab Hình ảnh"));
+            log.push(rTab.alreadyActive ? "Tab: Hình ảnh (đã bật sẵn)" : "Tab: Hình ảnh (vừa chọn)");
+            await sleep(350);
+
+            // 3. Chọn Tỉ lệ
+            const rR = await selectImageRatio(targetR);
+            if (!rR.success) throw new Error(`Bước chọn Tỉ lệ: ${rR.error || 'Lỗi chọn tỉ lệ ' + targetR}`);
+            log.push(`Tỉ lệ: ${rR.text || targetR}`);
+            await sleep(350);
+
+            // 4. Chọn Model
+            const rM = await selectImageModel(targetM);
+            if (!rM.success) throw new Error(`Bước chọn Model: ${rM.error || 'Lỗi chọn model ' + targetM}`);
+            log.push(`Model: ${rM.text || targetM}`);
+            await sleep(350);
+
+            // 5. Chọn Số lượng
+            const rC = await selectImageCount(targetC);
+            if (!rC.success) throw new Error(`Bước chọn Số lượng: ${rC.error || 'Lỗi chọn số lượng ' + targetC}`);
+            log.push(`Số lượng: ${rC.text || targetC}`);
+            await sleep(350);
+
+            // 6. Đóng popover
+            await closePopover();
+
+            return `🎉 Hoàn tất cấu hình Ảnh thành công! [${log.join(" | ")}]`;
+          }
+
+          if (stepIdx === "img_full_create") {
+            if (!editor) throw new Error("Không tìm thấy ô nhập prompt (Editor)");
+            const promptToUse = promptText || "A majestic golden eagle soaring above misty mountains at sunrise, ultra high quality, 8k";
+            
+            // 1. Điền prompt
+            editor.focus();
+            document.execCommand('selectAll', false, null);
+            document.execCommand('insertText', false, promptToUse);
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+            await sleep(400);
+
+            // 2. Chạy cấu hình
+            const targetR = cfg?.aspectRatio || "9:16";
+            const targetM = cfg?.model || "banana_pro";
+            const targetC = cfg?.count || "x1";
+
+            await ensurePopoverOpen();
+            await sleep(350);
+
+            const rTab = await selectImageTab();
+            if (!rTab.success) throw new Error("Không bấm được Tab Hình ảnh");
+            await sleep(350);
+
+            const rR = await selectImageRatio(targetR);
+            if (!rR.success) throw new Error(rR.error || `Không chọn được Tỉ lệ ${targetR}`);
+            await sleep(350);
+
+            const rM = await selectImageModel(targetM);
+            if (!rM.success) throw new Error(rM.error || `Không chọn được Model ${targetM}`);
+            await sleep(350);
+
+            const rC = await selectImageCount(targetC);
+            if (!rC.success) throw new Error(rC.error || `Không chọn được Số lượng ${targetC}`);
+            await sleep(350);
+
+            await closePopover();
+            await sleep(400);
+
+            // 3. Click Submit
+            if (!submitBtn) throw new Error("Không tìm thấy nút Submit");
+            for (let waitSub = 0; waitSub < 15; waitSub++) {
+              const isDisabled = submitBtn.disabled || submitBtn.getAttribute("aria-disabled") === "true";
+              if (!isDisabled) break;
+              await sleep(200);
+            }
+            submitBtn.removeAttribute("disabled");
+            submitBtn.setAttribute("aria-disabled", "false");
+            submitBtn.click(); // Đúng chuẩn Test B3: Chỉ 1 click duy nhất!
+
+            return `🚀 Đã điền prompt, cấu hình [${targetR} | ${rM.text || targetM} | ${targetC}] và bấm nút Submit tạo ảnh trên Flow!`;
+          }
+        }
+
+        if (stepIdx === 5 || stepIdx === 5.0 || stepIdx === "5.0" || stepIdx === "5") {
+          const info = [];
+          info.push(`🌐 URL Tab: ${window.location.href}`);
+
+          // 1. Check window.__flowRecentMedia (captured from RPCs)
+          const recent = window.__flowRecentMedia || [];
+          info.push(`📡 Captured RPC Media: ${recent.length} lượt`);
+          if (recent.length > 0) {
+            recent.slice(0, 3).forEach((m, idx) => {
+              info.push(`  [RPC ${idx+1}] RPC: [${m.rpcId || 'batchexecute'}], Primary ID: ${m.primaryId}`);
+              if (m.mediaIds?.length) info.push(`   Media IDs: ${m.mediaIds.join(', ')}`);
+              if (m.workflows?.length) info.push(`   Workflows: ${m.workflows.join(', ')}`);
+              if (m.videoUrls?.length) info.push(`   Video URLs: ${m.videoUrls.join(', ')}`);
+            });
+          }
+
+          // 2. Check DOM Elements for media IDs
+          const allElements = document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id]");
+          info.push(`🔍 DOM Elements có ID: ${allElements.length} phần tử`);
+          allElements.forEach((el, i) => {
+            if (i < 5) {
+              info.push(`  [DOM ${i+1}] <${el.tagName.toLowerCase()}> media-id="${el.getAttribute('data-media-id') || ''}" workflow-id="${el.getAttribute('data-workflow-id') || ''}" id="${el.getAttribute('data-id') || ''}"`);
+            }
+          });
+
+          // 3. Check video elements
+          const videos = document.querySelectorAll("video");
+          info.push(`🎬 Thẻ <video>: ${videos.length} video`);
+          videos.forEach((v, i) => {
+            if (i < 3) info.push(`  [Video ${i+1}] src: ${v.currentSrc || v.src || '(chưa có src)'}`);
+          });
+
+          // 4. Test fetch in tab
+          try {
+            const urlMatch = window.location.href.match(/project\/([a-zA-Z0-9_-]+)/);
+            if (urlMatch) {
+              const pId = urlMatch[1];
+              const inp = JSON.stringify({ json: { projectId: pId } });
+              const res = await fetch(`https://labs.google/fx/api/trpc/flow.projectInitialData?input=${encodeURIComponent(inp)}`, { credentials: "include" });
+              info.push(`📋 In-Tab tRPC flow.projectInitialData: HTTP ${res.status}`);
+              if (res.ok) {
+                const d = await res.json();
+                const mList = d?.result?.data?.json?.projectContents?.media || [];
+                info.push(`  -> Thành công! Có ${mList.length} media items trong dự án!`);
+              }
+            }
+          } catch (tErr) {
+            info.push(`📋 In-Tab tRPC test: Lỗi ${tErr.message}`);
+          }
+
+          return info.join("\n");
+        }
+
+        if (stepIdx === 6 || stepIdx === 6.0 || stepIdx === "6.0" || stepIdx === "6") {
+          const info = [];
+          info.push(`🌐 URL Tab: ${window.location.href}`);
+          const urlMatch = window.location.href.match(/project\/([a-zA-Z0-9_-]+)/);
+          const pId = urlMatch ? urlMatch[1] : null;
+
+          if (!pId) {
+            return "❌ Tab hiện tại không ở trong trang dự án (không tìm thấy Project ID trong URL)!";
+          }
+
+          info.push(`🆔 Project ID: ${pId}`);
+          info.push(`──────────────────────────────────────────`);
+
+          // 1. Test In-Tab tRPC: flow.projectInitialData
+          try {
+            const inp = JSON.stringify({ json: { projectId: pId } });
+            const u = `https://labs.google/fx/api/trpc/flow.projectInitialData?input=${encodeURIComponent(inp)}`;
+            info.push(`📡 [1] Test Gọi tRPC flow.projectInitialData...`);
+            const res = await fetch(u, { credentials: "include" });
+            info.push(`   ➔ HTTP Status: ${res.status} (${res.statusText})`);
+            const txt = await res.text();
+            if (res.ok) {
+              try {
+                const j = JSON.parse(txt);
+                const mList = j?.result?.data?.json?.projectContents?.media || [];
+                info.push(`   ✅ THÀNH CÔNG! Trả về ${mList.length} media items trong project!`);
+              } catch (_) {
+                info.push(`   ⚠️ Phản hồi không phải JSON: ${txt.slice(0, 150)}`);
+              }
+            } else {
+              info.push(`   ❌ Google trả về lỗi (${res.status}): ${txt.slice(0, 200)}`);
+            }
+          } catch (e) {
+            info.push(`   ❌ Network/CORS Error: ${e.message}`);
+          }
+
+          info.push(`──────────────────────────────────────────`);
+
+          // 2. Test In-Tab batchCheckAsyncVideoGenerationStatus
+          try {
+            info.push(`📡 [2] Test Gọi batchCheckAsyncVideoGenerationStatus...`);
+            const payload = { media: [{ name: "test-id", projectId: pId }] };
+            const res2 = await fetch("https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "text/plain;charset=UTF-8" },
+              body: JSON.stringify(payload)
+            });
+            info.push(`   ➔ HTTP Status: ${res2.status} (${res2.statusText})`);
+            const txt2 = await res2.text();
+            if (res2.ok) {
+              info.push(`   ✅ API hoạt động!`);
+            } else {
+              info.push(`   ❌ Google từ chối (${res2.status}): ${txt2.slice(0, 200)}`);
+            }
+          } catch (e2) {
+            info.push(`   ❌ Network/CORS Error: ${e2.message}`);
+          }
+
+          info.push(`──────────────────────────────────────────`);
+
+          // 3. Test getMediaUrlRedirect
+          try {
+            info.push(`📡 [3] Test Gọi media.getMediaUrlRedirect...`);
+            const u3 = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=test-media-id&mediaUrlType=MEDIA_URL_TYPE_VIDEO`;
+            const res3 = await fetch(u3, { credentials: "include", redirect: "follow" });
+            info.push(`   ➔ HTTP Status: ${res3.status} (${res3.statusText}), Final URL: ${res3.url?.slice(0, 60)}...`);
+            const txt3 = await res3.text();
+            if (res3.ok) {
+              info.push(`   ✅ API chuyển hướng thành công!`);
+            } else {
+              info.push(`   ❌ Google từ chối (${res3.status}): ${txt3.slice(0, 150)}`);
+            }
+          } catch (e3) {
+            info.push(`   ❌ Network/CORS Error: ${e3.message}`);
+          }
+
+          return info.join("\n");
+        }
+
+        if (stepIdx === 7 || stepIdx === 7.0 || stepIdx === "7.0" || stepIdx === "7") {
+          const info = [];
+          info.push(`🌐 URL Tab: ${window.location.href}`);
+          info.push(`──────────────────────────────────────────`);
+
+          // 1. Quét TẤT CẢ các thẻ <video> đang có trên toàn bộ trang
+          let vids = Array.from(document.querySelectorAll("video"));
+          
+          // Nếu chưa có thẻ <video>, thử tự động hover vào tất cả các card để kích hoạt Google Flow nạp video
+          if (vids.length === 0) {
+            info.push(`⚠️ Chưa có thẻ <video> nào trong DOM. Đang tự động rê chuột (hover) vào các card video...`);
+            const cards = Array.from(document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], .container, img.image"));
+            for (const c of cards) {
+              c.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
+              c.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+              c.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+            }
+            // Đợi 1 giây để Angular/Wiz render thẻ video
+            await new Promise(r => setTimeout(r, 1000));
+            vids = Array.from(document.querySelectorAll("video"));
+          }
+
+          info.push(`🎬 Phát hiện ${vids.length} thẻ <video> đang hiển thị trên trang:`);
+          
+          const foundUrls = [];
+          vids.forEach((v, i) => {
+            const s = v.currentSrc || v.src || v.querySelector("source")?.src || "";
+            if (s && s.startsWith("http")) foundUrls.push(s);
+            info.push(`  [Video ${i + 1}] src: ${s.slice(0, 80)}...`);
+            info.push(`     duration: ${v.duration}s | readyState: ${v.readyState}`);
+          });
+
+          // 2. Nếu vẫn chưa có thẻ <video>, lấy URL từ window.__flowRecentMedia (các video đã render)
+          if (foundUrls.length === 0) {
+            info.push(`\n📡 Tìm URL dự phòng từ window.__flowRecentMedia...`);
+            const recent = window.__flowRecentMedia || [];
+            for (const r of recent) {
+              if (r.videoUrls?.length) {
+                for (const u of r.videoUrls) {
+                  if (u && u.startsWith("http") && !foundUrls.includes(u)) {
+                    foundUrls.push(u);
+                  }
+                }
+              }
+            }
+            info.push(`   -> Tìm thấy ${foundUrls.length} URL video từ RPC gần nhất.`);
+          }
+
+          // 3. Nếu vẫn chưa có, quét các thẻ có ID trong project
+          if (foundUrls.length === 0) {
+            const idElements = Array.from(document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id]"));
+            for (const el of idElements) {
+              const id = el.getAttribute("data-media-id") || el.getAttribute("data-workflow-id") || el.getAttribute("data-id");
+              if (id && /^[a-f0-9\-]{36}$/i.test(id)) {
+                foundUrls.push(`https://flow-content.google/video/${id}`);
+              }
+            }
+            info.push(`   -> Tạo ${foundUrls.length} link chuẩn flow-content.google từ ID trên DOM.`);
+          }
+
+          return {
+            log: info.join("\n"),
+            videoUrls: foundUrls
+          };
+        }
+
+        // Shared Helpers for Step 8.x
+        const findCardByQuery = (q) => {
+          const allMedia = Array.from(document.querySelectorAll("img, video")).filter(el => {
+            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            const src = el.src || el.currentSrc || "";
+            if (src.includes("googleusercontent.com/a/") || src.includes("avatar")) return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 60 && r.height > 60;
+          });
+
+          const cardCandidates = [];
+          for (const m of allMedia) {
+            let c = m;
+            let cur = m.parentElement;
+            while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
+              const childMedia = allMedia.filter(x => cur.contains(x));
+              const distinctPos = new Set(childMedia.map(x => {
+                const r = x.getBoundingClientRect();
+                return `${Math.round(r.left / 25)},${Math.round((r.top + window.scrollY) / 35)}`;
+              }));
+              if (distinctPos.size > 1) break;
+              c = cur;
+              cur = cur.parentElement;
+            }
+            if (c && !cardCandidates.includes(c)) {
+              cardCandidates.push(c);
+            }
+          }
+
+          let matched = cardCandidates.find(card => {
+            const t = (card.textContent || "").toLowerCase();
+            const titled = Array.from(card.querySelectorAll("[title], [aria-label]")).map(el => (el.getAttribute("title") || el.getAttribute("aria-label") || "").toLowerCase()).join(" ");
+            return t.includes(q.toLowerCase()) || titled.includes(q.toLowerCase());
+          });
+
+          if (!matched) {
+            const allElementsWithText = Array.from(document.querySelectorAll("button, span, p, div")).filter(el => {
+              if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+              const directText = (el.innerText || el.textContent || "").trim();
+              return directText.includes(q);
+            });
+            if (allElementsWithText.length > 0) {
+              matched = allElementsWithText[0].closest(".container, [class*='card']") || allElementsWithText[0].parentElement;
+            }
+          }
+          return matched;
+        };
+
+        const dispatchRightClick = async (target) => {
+          const rect = target.getBoundingClientRect();
+          const clientX = Math.round(rect.left + rect.width / 2);
+          const clientY = Math.round(rect.top + rect.height / 2);
+          const mouseOpts = {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            button: 2,
+            buttons: 2,
+            clientX,
+            clientY,
+            screenX: window.screenX + clientX,
+            screenY: window.screenY + clientY
+          };
+          target.dispatchEvent(new PointerEvent('pointerover', mouseOpts));
+          target.dispatchEvent(new PointerEvent('pointerenter', mouseOpts));
+          target.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
+          target.dispatchEvent(new MouseEvent('mouseenter', mouseOpts));
+          target.dispatchEvent(new MouseEvent('mousemove', mouseOpts));
+          target.dispatchEvent(new PointerEvent('pointerdown', mouseOpts));
+          target.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+          await sleep(50);
+          target.dispatchEvent(new PointerEvent('pointerup', mouseOpts));
+          target.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+          target.dispatchEvent(new MouseEvent('contextmenu', mouseOpts));
+          return { clientX, clientY };
+        };
+
+        // Helper to close stray config panel if open from bottom prompt
+        const closeConfigPanelIfOpen = async () => {
+          const configPanels = Array.from(document.querySelectorAll("[role='dialog'], [class*='popover'], [class*='panel']")).filter(el => {
+            const t = el.textContent || "";
+            return t.includes("Khung hình") && t.includes("Thành phần") && t.includes("Hình ảnh");
+          });
+          if (configPanels.length > 0) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+            await sleep(250);
+          }
+        };
+
+        const findDownloadMenuItem = () => {
+          // Find open context menus on card
+          const candidateMenus = Array.from(document.querySelectorAll("[role='menu'], [class*='menu'], [class*='context'], [class*='popover'], [class*='cdk-overlay']")).filter(el => {
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = el.textContent || "";
+            return t.includes("Sao chép") || t.includes("Đổi tên") || t.includes("Chia sẻ") || t.includes("Chuyển vào thùng rác");
+          });
+
+          for (const m of candidateMenus) {
+            const items = Array.from(m.querySelectorAll("*")).filter(el => {
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 || r.height === 0 || r.width > 350 || r.height > 80) return false;
+              const t = (el.innerText || el.textContent || "").trim();
+              if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+              return t === "Tải xuống" || t.startsWith("Tải xuống") || t === "Download" || t.startsWith("Download");
+            });
+            if (items.length > 0) {
+              const exact = items.find(el => (el.innerText || el.textContent || "").trim() === "Tải xuống") || items[0];
+              return exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact;
+            }
+          }
+
+          // Fallback: search anywhere except bottom composer
+          const all = Array.from(document.querySelectorAll("*")).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.width > 350 || r.height > 80) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = (el.innerText || el.textContent || "").trim();
+            if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+            return t === "Tải xuống" || t.startsWith("Tải xuống") || t === "Download" || t.startsWith("Download");
+          });
+
+          if (all.length > 0) {
+            const exact = all.find(el => (el.innerText || el.textContent || "").trim() === "Tải xuống") || all[0];
+            return exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact;
+          }
+          return null;
+        };
+
+        const findDownload720pOption = () => {
+          // 1. All elements on page matching exact 720p row criteria
+          const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width < 50 || r.width > 350 || r.height < 18 || r.height > 75) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = (el.innerText || el.textContent || "").trim();
+            if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+            // CRITICAL: A single 720p menu row MUST NOT contain other resolution names!
+            if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+            return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+          });
+
+          if (allEls.length > 0) {
+            allEls.sort((a, b) => {
+              const ta = (a.innerText || a.textContent || "");
+              const tb = (b.innerText || b.textContent || "");
+              const aGoc = ta.includes("Kích thước gốc") || ta.toLowerCase().includes("gốc") || ta.toLowerCase().includes("original") ? 1 : 0;
+              const bGoc = tb.includes("Kích thước gốc") || tb.toLowerCase().includes("gốc") || tb.toLowerCase().includes("original") ? 1 : 0;
+              if (aGoc !== bGoc) return bGoc - aGoc;
+              const aBtn = a.tagName === 'BUTTON' || a.getAttribute('role') === 'menuitem' ? 1 : 0;
+              const bBtn = b.tagName === 'BUTTON' || b.getAttribute('role') === 'menuitem' ? 1 : 0;
+              if (aBtn !== bBtn) return bBtn - aBtn;
+              const ra = a.getBoundingClientRect();
+              const rb = b.getBoundingClientRect();
+              return (rb.width * rb.height) - (ra.width * ra.height);
+            });
+            return allEls[0];
+          }
+
+          // 2. Fallback: Search from "Kích thước gốc" text and walk up safely
+          const directText = Array.from(document.querySelectorAll("*")).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.height > 60) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = (el.innerText || el.textContent || "").trim();
+            if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+            if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+            return t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+          });
+
+          if (directText.length > 0) {
+            let cur = directText[0];
+            while (cur && cur.parentElement && cur.parentElement !== document.body) {
+              const p = cur.parentElement;
+              const pr = p.getBoundingClientRect();
+              const pt = (p.innerText || p.textContent || "").trim();
+              if (pr.height > 75 || pt.includes("270p") || pt.includes("1080p") || pt.includes("4K")) {
+                break; // Stop before ascending to container!
+              }
+              cur = p;
+              if (cur.tagName === 'BUTTON' || cur.getAttribute('role') === 'menuitem') {
+                break;
+              }
+            }
+            return cur;
+          }
+
+          return null;
+        };
+
+        const dispatchHover = (target, color = '#00e5ff') => {
+          const rect = target.getBoundingClientRect();
+          const clientX = Math.round(rect.left + rect.width / 2);
+          const clientY = Math.round(rect.top + rect.height / 2);
+          const opts = {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX,
+            clientY,
+            screenX: window.screenX + clientX,
+            screenY: window.screenY + clientY
+          };
+          target.dispatchEvent(new PointerEvent('pointerover', opts));
+          target.dispatchEvent(new PointerEvent('pointerenter', opts));
+          target.dispatchEvent(new MouseEvent('mouseover', opts));
+          target.dispatchEvent(new MouseEvent('mouseenter', opts));
+          target.dispatchEvent(new PointerEvent('pointermove', opts));
+          target.dispatchEvent(new MouseEvent('mousemove', opts));
+
+          // Visual highlight
+          target.style.outline = `4px solid ${color}`;
+          target.style.boxShadow = `0 0 25px ${color}`;
+          target.style.backgroundColor = color === '#00e676' ? 'rgba(0, 230, 118, 0.25)' : 'rgba(0, 229, 255, 0.2)';
+          target.style.transition = 'all 0.2s ease';
+          return { clientX, clientY, rect };
+        };
+
+        const dispatchClick = (target) => {
+          const rect = target.getBoundingClientRect();
+          const clientX = Math.round(rect.left + rect.width / 2);
+          const clientY = Math.round(rect.top + rect.height / 2);
+          const opts = {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            button: 0,
+            buttons: 1,
+            clientX,
+            clientY,
+            screenX: window.screenX + clientX,
+            screenY: window.screenY + clientY
+          };
+          target.dispatchEvent(new PointerEvent('pointerdown', opts));
+          target.dispatchEvent(new MouseEvent('mousedown', opts));
+          target.dispatchEvent(new PointerEvent('pointerup', opts));
+          target.dispatchEvent(new MouseEvent('mouseup', opts));
+          target.dispatchEvent(new MouseEvent('click', opts));
+          if (typeof target.click === 'function') target.click();
+          return { clientX, clientY, rect };
+        };
+
+        const findSubmenuOptions = () => {
+          const allElements = Array.from(document.querySelectorAll("*")).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.width > 300 || r.height > 80) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+            const t = (el.innerText || el.textContent || "").trim();
+            if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+            return t.includes("270p") || t.includes("720p") || t.includes("1080p") || t.includes("4K");
+          });
+
+          const distinctRows = [];
+          for (const el of allElements) {
+            const row = el.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || el;
+            const r = row.getBoundingClientRect();
+            if (r.width > 30 && r.height > 15 && !distinctRows.includes(row)) {
+              distinctRows.push(row);
+            }
+          }
+          return distinctRows;
+        };
+
+        // STEP 8.0: Click Chuột Phải vào Card
+        if (stepIdx === 8 || stepIdx === 8.0 || stepIdx === "8.0" || stepIdx === "8") {
+          const query = (promptText || "001.").trim();
+          const info = [];
+          info.push(`🌐 URL Tab: ${window.location.href}`);
+          info.push(`🔍 Tìm kiếm card có từ khoá: "${query}"`);
+          info.push(`──────────────────────────────────────────`);
+
+          await closeConfigPanelIfOpen();
+
+          const matchedCard = findCardByQuery(query);
+          if (!matchedCard) {
+            info.push(`❌ Không tìm thấy card nào chứa "${query}" trên màn hình!`);
+            info.push(`💡 Bạn hãy kiểm tra xem card có hiển thị chữ "${query}" trên tab Flow không.`);
+            return info.join("\n");
+          }
+
+          matchedCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          matchedCard.style.outline = '4px dashed #ff007f';
+          matchedCard.style.boxShadow = '0 0 25px rgba(255, 0, 127, 0.9)';
+          matchedCard.style.transition = 'all 0.3s ease';
+
+          const clickTarget = matchedCard.querySelector("video") || matchedCard.querySelector("img") || matchedCard;
+          const { clientX, clientY } = await dispatchRightClick(clickTarget);
+
+          info.push(`🎯 Đã định vị chính xác card:`);
+          info.push(`   Text: "${(matchedCard.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60)}..."`);
+          info.push(`   Toạ độ: X=${clientX}, Y=${clientY}`);
+          info.push(`   Thẻ nhận click: <${clickTarget.tagName.toLowerCase()}> (đã tạo VIỀN HỒNG PHÁT SÁNG trên tab Flow)`);
+          info.push(`🖱️ Đã bắn thành công sự kiện: contextmenu (button: 2 / Chuột phải)`);
+
+          await sleep(400);
+          const openMenus = Array.from(document.querySelectorAll("[role='menu'], [role='menuitem'], [class*='menu'], [class*='dropdown'], [class*='popover'], [class*='context']")).filter(m => {
+            const r = m.getBoundingClientRect();
+            return r.width > 10 && r.height > 10;
+          });
+
+          if (openMenus.length > 0) {
+            info.push(`📋 Menu xuất hiện (${openMenus.length} phần tử):`);
+            openMenus.slice(0, 6).forEach((m, i) => {
+              info.push(`   [${i+1}] ${m.textContent.trim().slice(0, 40)}`);
+            });
+          }
+
+          const v = matchedCard.querySelector("video");
+          const vSrc = v?.currentSrc || v?.src;
+          if (vSrc) {
+            info.push(`🎬 Thẻ <video> có link: ${vSrc.slice(0, 65)}...`);
+          }
+
+          return info.join("\n");
+        }
+
+        // STEP 8.1: Rê Chuột (Hover) Vào Mục "Tải xuống"
+        if (stepIdx === 8.1 || stepIdx === "8.1") {
+          const query = (promptText || "001.").trim();
+          const info = [];
+          info.push(`🌐 URL Tab: ${window.location.href}`);
+          info.push(`🎯 Thao tác: Di chuột (Hover) vào mục "Tải xuống"`);
+          info.push(`──────────────────────────────────────────`);
+
+          await closeConfigPanelIfOpen();
+
+          let dlItem = findDownloadMenuItem();
+          if (!dlItem) {
+            info.push(`ℹ️ Context menu chưa mở, đang tự động click chuột phải vào card "${query}"...`);
+            const card = findCardByQuery(query);
+            if (!card) {
+              info.push(`❌ Không tìm thấy card nào chứa "${query}" trên màn hình!`);
+              return { log: info.join("\n") };
+            }
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const clickTarget = card.querySelector("video") || card.querySelector("img") || card;
+            await dispatchRightClick(clickTarget);
+            await sleep(450);
+            dlItem = findDownloadMenuItem();
+          }
+
+          if (!dlItem) {
+            info.push(`❌ Không tìm thấy mục "Tải xuống" trong menu chuột phải của card!`);
+            return { log: info.join("\n") };
+          }
+
+          const coords = dispatchHover(dlItem);
+          info.push(`🎯 Đã tìm thấy mục: "Tải xuống" tại toạ độ X=${coords.clientX}, Y=${coords.clientY}`);
+          info.push(`✨ Đã tô VIỀN XANH CYAN phát sáng vào mục "Tải xuống" trên tab Flow!`);
+
+          return {
+            log: info.join("\n"),
+            needCdpHover: { x: coords.clientX, y: coords.clientY },
+            checkSubmenuAfterHover: true
+          };
+        }
+
+        // STEP 8.2: Rê Chuột (Hover) Vào "720p (Kích thước gốc)"
+        if (stepIdx === 8.2 || stepIdx === "8.2") {
+          const query = (promptText || "001.").trim();
+          const info = [];
+          info.push(`🌐 URL Tab: ${window.location.href}`);
+          info.push(`🎯 Thao tác: Di chuột (Hover) vào dòng "720p (Kích thước gốc)"`);
+          info.push(`──────────────────────────────────────────`);
+
+          await closeConfigPanelIfOpen();
+
+          // 1. Kiểm tra xem Submenu Tải Xuống có sẵn 720p chưa
+          const opt720 = findDownload720pOption();
+          if (opt720) {
+            const coords = dispatchHover(opt720, '#00e676');
+            const optText = (opt720.innerText || opt720.textContent || '').replace(/\s+/g, ' ').trim();
+            info.push(`🎯 Đã phát hiện Submenu Tải Xuống đang mở sẵn!`);
+            info.push(`🎯 Định vị lựa chọn: "${optText}" tại X=${coords.clientX}, Y=${coords.clientY}`);
+            info.push(`✨ Đã tô VIỀN XANH LÁ phát sáng trên tab Flow!`);
+            return {
+              log: info.join("\n"),
+              needCdpHover720: { x: coords.clientX, y: coords.clientY, text: optText }
+            };
+          }
+
+          // 2. Nếu chưa mở submenu: tìm "Tải xuống" trong context menu
+          let dlItem = findDownloadMenuItem();
+          if (!dlItem) {
+            info.push(`ℹ️ Context menu chưa mở, đang tự động click chuột phải vào card "${query}"...`);
+            const card = findCardByQuery(query);
+            if (!card) {
+              info.push(`❌ Không tìm thấy card nào chứa "${query}" trên màn hình!`);
+              return { log: info.join("\n") };
+            }
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const clickTarget = card.querySelector("video") || card.querySelector("img") || card;
+            await dispatchRightClick(clickTarget);
+            await sleep(450);
+            dlItem = findDownloadMenuItem();
+          }
+
+          if (!dlItem) {
+            info.push(`❌ Không tìm thấy mục "Tải xuống" trong menu chuột phải của card!`);
+            return { log: info.join("\n") };
+          }
+
+          const dlCoords = dispatchHover(dlItem, '#00e5ff');
+          info.push(`🎯 Đã định vị mục "Tải xuống" tại X=${dlCoords.clientX}, Y=${dlCoords.clientY}`);
+          info.push(`🖱️ Đang rê chuột vào "Tải xuống" để mở submenu, sau đó sẽ rê tiếp vào "720p (Kích thước gốc)"...`);
+
+          return {
+            log: info.join("\n"),
+            needCdpHover: { x: dlCoords.clientX, y: dlCoords.clientY },
+            thenHover720: true
+          };
+        }
+
+        // STEP 8.3: Bấm Chọn "720p (Kích thước gốc)" để Tải Video (Rê chuột lại trước ➔ Click)
+        if (stepIdx === 8.3 || stepIdx === "8.3") {
+          const query = (promptText || "001.").trim();
+          const info = [];
+          info.push(`🌐 URL Tab: ${window.location.href}`);
+          info.push(`🎯 Thao tác: Di chuột vào "720p (Kích thước gốc)" ➔ Bấm Click tải video`);
+          info.push(`──────────────────────────────────────────`);
+
+          await closeConfigPanelIfOpen();
+
+          // 1. Kiểm tra xem Submenu Tải Xuống có sẵn 720p chưa
+          const opt720 = findDownload720pOption();
+          if (opt720) {
+            const coords = dispatchHover(opt720, '#00e676');
+            const optText = (opt720.innerText || opt720.textContent || '').replace(/\s+/g, ' ').trim();
+            info.push(`🎯 Đã phát hiện Submenu Tải Xuống đang mở sẵn!`);
+            info.push(`🎯 Định vị lựa chọn: "${optText}" tại X=${coords.clientX}, Y=${coords.clientY}`);
+            info.push(`✨ Đã tô VIỀN XANH LÁ phát sáng! Chuẩn bị rê con trỏ chuột đến và click...`);
+            return {
+              log: info.join("\n"),
+              needCdpHoverThenClick720: { x: coords.clientX, y: coords.clientY, text: optText }
+            };
+          }
+
+          // 2. Nếu chưa mở submenu: tìm "Tải xuống" trong context menu
+          let dlItem = findDownloadMenuItem();
+          if (!dlItem) {
+            info.push(`ℹ️ Context menu chưa mở, đang tự động click chuột phải vào card "${query}"...`);
+            const card = findCardByQuery(query);
+            if (!card) {
+              info.push(`❌ Không tìm thấy card nào chứa "${query}" trên màn hình!`);
+              return { log: info.join("\n") };
+            }
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const clickTarget = card.querySelector("video") || card.querySelector("img") || card;
+            await dispatchRightClick(clickTarget);
+            await sleep(450);
+            dlItem = findDownloadMenuItem();
+          }
+
+          if (!dlItem) {
+            info.push(`❌ Không tìm thấy mục "Tải xuống" trong menu chuột phải của card!`);
+            return { log: info.join("\n") };
+          }
+
+          const dlCoords = dispatchHover(dlItem, '#00e5ff');
+          info.push(`🎯 Đã định vị mục "Tải xuống" tại X=${dlCoords.clientX}, Y=${dlCoords.clientY}`);
+          info.push(`🖱️ Đang rê chuột vào "Tải xuống" để mở submenu, sau đó sẽ rê vào "720p" và click tải...`);
+
+          return {
+            log: info.join("\n"),
+            needCdpHover: { x: dlCoords.clientX, y: dlCoords.clientY },
+            thenClick720WithHover: true
+          };
+        }
+
         return "Unknown step";
+        } catch (scriptErr) {
+          return { error: scriptErr?.message || String(scriptErr) };
+        }
       }
     });
+
+    const resObj = results?.[0]?.result;
+    if (resObj && typeof resObj === 'object' && resObj.error) {
+      return { success: false, error: resObj.error };
+    }
+    if (resObj && typeof resObj === 'object' && resObj.log) {
+      const logs = [resObj.log];
+      let cdpAttached = false;
+
+      const ensureCdp = async () => {
+        if (!cdpAttached) {
+          try {
+            await chrome.debugger.attach({ tabId: tab.id }, "1.3");
+            cdpAttached = true;
+          } catch (err) {
+            if (err.message?.includes("Already attached")) cdpAttached = true;
+          }
+        }
+      };
+
+      try {
+        // 1. Rê chuột thật bằng CDP Native Hardware Mouse (cho mục "Tải xuống" nếu cần)
+        if (resObj.needCdpHover) {
+          await ensureCdp();
+          if (cdpAttached) {
+            logs.push(`🖱️ [CDP Hardware] Đang rê con trỏ chuột tới "Tải xuống" (X=${resObj.needCdpHover.x}, Y=${resObj.needCdpHover.y})...`);
+            await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
+              type: "mouseMoved",
+              x: resObj.needCdpHover.x,
+              y: resObj.needCdpHover.y
+            });
+            await new Promise(r => setTimeout(r, 450));
+          }
+        }
+
+        // 2. Kiểm tra submenu sau khi hover (cho B8.1)
+        if (resObj.checkSubmenuAfterHover) {
+          const checkRes = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world: "MAIN",
+            func: () => {
+              const els = Array.from(document.querySelectorAll("*")).filter(el => {
+                const r = el.getBoundingClientRect();
+                if (r.width === 0 || r.height === 0 || r.width > 300 || r.height > 80) return false;
+                const t = (el.innerText || el.textContent || "").trim();
+                return t.includes("270p") || t.includes("720p") || t.includes("1080p") || t.includes("4K");
+              });
+              const distinct = [];
+              for (const el of els) {
+                const row = el.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || el;
+                if (!distinct.includes(row)) distinct.push(row);
+              }
+              return distinct.map(r => (r.innerText || r.textContent || "").replace(/\s+/g, ' ').trim());
+            }
+          });
+          const subList = checkRes?.[0]?.result || [];
+          if (subList.length > 0) {
+            logs.push(`\n📋 🎉 ĐÃ MỞ SUBMENU TẢI XUỐNG THÀNH CÔNG!`);
+            logs.push(`   Phát hiện ${subList.length} lựa chọn độ phân giải:`);
+            subList.forEach((it, i) => logs.push(`   [${i+1}] ${it}`));
+            logs.push(`\n👉 Bạn có thể bấm "Test B8.2: Rê 720p Gốc" để kiểm tra di chuột!`);
+          } else {
+            logs.push(`ℹ️ Con trỏ chuột đã nằm ngay trên "Tải xuống". Bạn hãy nhìn tab Flow xem submenu đã mở chưa.`);
+          }
+        }
+
+        // 3. Rê chuột trực tiếp vào 720p (cho B8.2 khi submenu mở sẵn)
+        if (resObj.needCdpHover720) {
+          await ensureCdp();
+          if (cdpAttached) {
+            logs.push(`🖱️ [CDP Hardware] Đang di chuyển con trỏ chuột đến dòng "${resObj.needCdpHover720.text}" (X=${resObj.needCdpHover720.x}, Y=${resObj.needCdpHover720.y})...`);
+            await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
+              type: "mouseMoved",
+              x: resObj.needCdpHover720.x,
+              y: resObj.needCdpHover720.y
+            });
+            logs.push(`\n🎉 THÀNH CÔNG! Con trỏ chuột đã di chuyển chính xác vào dòng "720p (Kích thước gốc)"!`);
+            logs.push(`✨ Ô này đang được tô VIỀN XANH LÁ phát sáng trên màn hình Flow.`);
+            logs.push(`👉 Bạn có thể bấm "Test B8.3: Bấm Tải 720p" để tải video về.`);
+          }
+        }
+
+        // 4. Rê chuột vào 720p sau khi vừa mở submenu (cho B8.2 khi submenu lúc đầu chưa mở)
+        if (resObj.thenHover720) {
+          await new Promise(r => setTimeout(r, 450));
+          const get720Res = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world: "MAIN",
+            func: () => {
+              let opt = null;
+              const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
+                const r = el.getBoundingClientRect();
+                if (r.width < 50 || r.width > 350 || r.height < 18 || r.height > 75) return false;
+                if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+                const t = (el.innerText || el.textContent || "").trim();
+                if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+                if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+                return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+              });
+
+              if (allEls.length > 0) {
+                allEls.sort((a, b) => {
+                  const ta = (a.innerText || a.textContent || "");
+                  const tb = (b.innerText || b.textContent || "");
+                  const aGoc = ta.includes("Kích thước gốc") || ta.toLowerCase().includes("gốc") || ta.toLowerCase().includes("original") ? 1 : 0;
+                  const bGoc = tb.includes("Kích thước gốc") || tb.toLowerCase().includes("gốc") || tb.toLowerCase().includes("original") ? 1 : 0;
+                  if (aGoc !== bGoc) return bGoc - aGoc;
+                  const aBtn = a.tagName === 'BUTTON' || a.getAttribute('role') === 'menuitem' ? 1 : 0;
+                  const bBtn = b.tagName === 'BUTTON' || b.getAttribute('role') === 'menuitem' ? 1 : 0;
+                  if (aBtn !== bBtn) return bBtn - aBtn;
+                  const ra = a.getBoundingClientRect();
+                  const rb = b.getBoundingClientRect();
+                  return (rb.width * rb.height) - (ra.width * ra.height);
+                });
+                opt = allEls[0];
+              }
+
+              if (!opt) {
+                const directText = Array.from(document.querySelectorAll("*")).filter(el => {
+                  const r = el.getBoundingClientRect();
+                  if (r.width === 0 || r.height === 0 || r.height > 60) return false;
+                  if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+                  const t = (el.innerText || el.textContent || "").trim();
+                  if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+                  if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+                  return t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+                });
+                if (directText.length > 0) {
+                  let cur = directText[0];
+                  while (cur && cur.parentElement && cur.parentElement !== document.body) {
+                    const p = cur.parentElement;
+                    const pr = p.getBoundingClientRect();
+                    const pt = (p.innerText || p.textContent || "").trim();
+                    if (pr.height > 75 || pt.includes("270p") || pt.includes("1080p") || pt.includes("4K")) {
+                      break;
+                    }
+                    cur = p;
+                    if (cur.tagName === 'BUTTON' || cur.getAttribute('role') === 'menuitem') break;
+                  }
+                  opt = cur;
+                }
+              }
+
+              if (!opt) return null;
+              const rect = opt.getBoundingClientRect();
+              opt.style.outline = '4px solid #00e676';
+              opt.style.boxShadow = '0 0 25px rgba(0, 230, 118, 0.95)';
+              opt.style.backgroundColor = 'rgba(0, 230, 118, 0.25)';
+              opt.style.transition = 'all 0.2s ease';
+              const cx = Math.round(rect.left + rect.width / 2);
+              const cy = Math.round(rect.top + rect.height / 2);
+              const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+              opt.dispatchEvent(new PointerEvent('pointerover', opts));
+              opt.dispatchEvent(new PointerEvent('pointerenter', opts));
+              opt.dispatchEvent(new MouseEvent('mouseover', opts));
+              opt.dispatchEvent(new MouseEvent('mouseenter', opts));
+              opt.dispatchEvent(new PointerEvent('pointermove', opts));
+              opt.dispatchEvent(new MouseEvent('mousemove', opts));
+              return { x: cx, y: cy, text: (opt.innerText || opt.textContent || "").replace(/\s+/g, ' ').trim() };
+            }
+          });
+
+          const opt720 = get720Res?.[0]?.result;
+          if (opt720) {
+            await ensureCdp();
+            if (cdpAttached) {
+              logs.push(`🖱️ [CDP Hardware] Đang di chuyển con trỏ chuột đến "${opt720.text}" (X=${opt720.x}, Y=${opt720.y})...`);
+              await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
+                type: "mouseMoved",
+                x: opt720.x,
+                y: opt720.y
+              });
+              logs.push(`\n🎉 THÀNH CÔNG! Con trỏ chuột đã di chuyển chính xác vào dòng "720p (Kích thước gốc)"!`);
+              logs.push(`✨ Ô này đang được tô VIỀN XANH LÁ phát sáng trên màn hình Flow.`);
+            }
+          } else {
+            logs.push(`❌ Chưa thấy lựa chọn "720p (Kích thước gốc)" xuất hiện trong submenu sau khi rê chuột.`);
+          }
+        }
+
+        // 5. Rê chuột rồi Click 720p (cho B8.3)
+        let clickTargetCoord = null;
+        if (resObj.needCdpHoverThenClick720) {
+          clickTargetCoord = resObj.needCdpHoverThenClick720;
+        } else if (resObj.thenClick720WithHover) {
+          await new Promise(r => setTimeout(r, 450));
+          const get720Res = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world: "MAIN",
+            func: () => {
+              let opt = null;
+              const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
+                const r = el.getBoundingClientRect();
+                if (r.width < 50 || r.width > 350 || r.height < 18 || r.height > 75) return false;
+                if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+                const t = (el.innerText || el.textContent || "").trim();
+                if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+                if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+                return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+              });
+
+              if (allEls.length > 0) {
+                allEls.sort((a, b) => {
+                  const ta = (a.innerText || a.textContent || "");
+                  const tb = (b.innerText || b.textContent || "");
+                  const aGoc = ta.includes("Kích thước gốc") || ta.toLowerCase().includes("gốc") || ta.toLowerCase().includes("original") ? 1 : 0;
+                  const bGoc = tb.includes("Kích thước gốc") || tb.toLowerCase().includes("gốc") || tb.toLowerCase().includes("original") ? 1 : 0;
+                  if (aGoc !== bGoc) return bGoc - aGoc;
+                  const aBtn = a.tagName === 'BUTTON' || a.getAttribute('role') === 'menuitem' ? 1 : 0;
+                  const bBtn = b.tagName === 'BUTTON' || b.getAttribute('role') === 'menuitem' ? 1 : 0;
+                  if (aBtn !== bBtn) return bBtn - aBtn;
+                  const ra = a.getBoundingClientRect();
+                  const rb = b.getBoundingClientRect();
+                  return (rb.width * rb.height) - (ra.width * ra.height);
+                });
+                opt = allEls[0];
+              }
+
+              if (!opt) {
+                const directText = Array.from(document.querySelectorAll("*")).filter(el => {
+                  const r = el.getBoundingClientRect();
+                  if (r.width === 0 || r.height === 0 || r.height > 60) return false;
+                  if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+                  const t = (el.innerText || el.textContent || "").trim();
+                  if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+                  if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+                  return t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+                });
+                if (directText.length > 0) {
+                  let cur = directText[0];
+                  while (cur && cur.parentElement && cur.parentElement !== document.body) {
+                    const p = cur.parentElement;
+                    const pr = p.getBoundingClientRect();
+                    const pt = (p.innerText || p.textContent || "").trim();
+                    if (pr.height > 75 || pt.includes("270p") || pt.includes("1080p") || pt.includes("4K")) {
+                      break;
+                    }
+                    cur = p;
+                    if (cur.tagName === 'BUTTON' || cur.getAttribute('role') === 'menuitem') break;
+                  }
+                  opt = cur;
+                }
+              }
+
+              if (!opt) return null;
+              const rect = opt.getBoundingClientRect();
+              opt.style.outline = '4px solid #00e676';
+              opt.style.boxShadow = '0 0 25px rgba(0, 230, 118, 0.95)';
+              opt.style.backgroundColor = 'rgba(0, 230, 118, 0.25)';
+              opt.style.transition = 'all 0.2s ease';
+              const cx = Math.round(rect.left + rect.width / 2);
+              const cy = Math.round(rect.top + rect.height / 2);
+              const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+              opt.dispatchEvent(new PointerEvent('pointerover', opts));
+              opt.dispatchEvent(new PointerEvent('pointerenter', opts));
+              opt.dispatchEvent(new MouseEvent('mouseover', opts));
+              opt.dispatchEvent(new MouseEvent('mouseenter', opts));
+              opt.dispatchEvent(new PointerEvent('pointermove', opts));
+              opt.dispatchEvent(new MouseEvent('mousemove', opts));
+              return { x: cx, y: cy, text: (opt.innerText || opt.textContent || "").replace(/\s+/g, ' ').trim() };
+            }
+          });
+          clickTargetCoord = get720Res?.[0]?.result;
+        }
+
+        if (clickTargetCoord) {
+          await ensureCdp();
+          if (cdpAttached) {
+            // Bước 1: RÊ CHUỘT LẠI VÀO 720P
+            logs.push(`🖱️ [Bước 1/2: Di Chuột] Đang rê con trỏ chuột đến dòng 720p (X=${clickTargetCoord.x}, Y=${clickTargetCoord.y})...`);
+            await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
+              type: "mouseMoved",
+              x: clickTargetCoord.x,
+              y: clickTargetCoord.y
+            });
+            // Tạm dừng 650ms để người dùng và trình duyệt nhìn thấy con trỏ chuột dừng tại 720p
+            await new Promise(r => setTimeout(r, 650));
+
+            // Bước 2: BẤM CLICK CHUỘT TRÁI THẬT
+            logs.push(`🖱️ [Bước 2/2: Click] Đang gửi click chuột trái thật vào "720p (Kích thước gốc)"...`);
+            await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
+              type: "mousePressed",
+              x: clickTargetCoord.x,
+              y: clickTargetCoord.y,
+              button: "left",
+              clickCount: 1
+            });
+            await new Promise(r => setTimeout(r, 80));
+            await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
+              type: "mouseReleased",
+              x: clickTargetCoord.x,
+              y: clickTargetCoord.y,
+              button: "left",
+              clickCount: 1
+            });
+            logs.push(`🎉 Đã bấm click chuột thật vào "720p (Kích thước gốc)"!`);
+
+            // Fallback: gọi trực tiếp .click() trên phần tử để đảm bảo 100%
+            try {
+              await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                world: "MAIN",
+                func: () => {
+                  const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
+                    const r = el.getBoundingClientRect();
+                    if (r.width < 50 || r.width > 350 || r.height < 18 || r.height > 75) return false;
+                    if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+                    const t = (el.innerText || el.textContent || "").trim();
+                    if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+                    if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+                    return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+                  });
+                  if (allEls.length > 0) {
+                    allEls.sort((a, b) => {
+                      const ta = (a.innerText || a.textContent || "");
+                      const tb = (b.innerText || b.textContent || "");
+                      const aGoc = ta.includes("Kích thước gốc") || ta.toLowerCase().includes("gốc") || ta.toLowerCase().includes("original") ? 1 : 0;
+                      const bGoc = tb.includes("Kích thước gốc") || tb.toLowerCase().includes("gốc") || tb.toLowerCase().includes("original") ? 1 : 0;
+                      if (aGoc !== bGoc) return bGoc - aGoc;
+                      const aBtn = a.tagName === 'BUTTON' || a.getAttribute('role') === 'menuitem' ? 1 : 0;
+                      const bBtn = b.tagName === 'BUTTON' || b.getAttribute('role') === 'menuitem' ? 1 : 0;
+                      if (aBtn !== bBtn) return bBtn - aBtn;
+                      const ra = a.getBoundingClientRect();
+                      const rb = b.getBoundingClientRect();
+                      return (rb.width * rb.height) - (ra.width * ra.height);
+                    });
+                    if (typeof allEls[0].click === 'function') allEls[0].click();
+                  }
+                }
+              });
+            } catch (_) {}
+          }
+
+          // Bước 3: Lắng nghe xem Chrome Downloads có bắt đầu tải file không
+          logs.push(`⏳ Đang kiểm tra xem Chrome có bắt đầu tải video .mp4 về không...`);
+          const dlPromise = new Promise((resolve) => {
+            const listener = (item) => {
+              chrome.downloads.onCreated.removeListener(listener);
+              resolve(item);
+            };
+            chrome.downloads.onCreated.addListener(listener);
+            setTimeout(() => {
+              chrome.downloads.onCreated.removeListener(listener);
+              resolve(null);
+            }, 5000);
+          });
+
+          const startedDl = await dlPromise;
+          if (startedDl) {
+            logs.push(`\n🎉 THÀNH CÔNG 100%! Trình duyệt Chrome đã nhận lệnh và bắt đầu tải file!`);
+            logs.push(`📁 File: ${startedDl.filename || 'Google Flow Video'}`);
+            logs.push(`🌐 URL: ${startedDl.url ? startedDl.url.slice(0, 75) + '...' : ''}`);
+            logs.push(`💡 Bạn hãy kiểm tra khay download của Chrome.`);
+          } else {
+            logs.push(`\n✅ Đã gửi lệnh click hoàn tất! Nếu video cần xử lý trước khi xuất, file sẽ bắt đầu tải về sau ít giây.`);
+          }
+        }
+      } finally {
+        if (cdpAttached) {
+          try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
+        }
+      }
+
+      // Xử lý download url cũ (nếu có từ step 7)
+      if (resObj.videoUrls?.length > 0) {
+        const targetVideoUrl = resObj.videoUrls[0];
+        logs.push(`\n──────────────────────────────────────────`);
+        logs.push(`📥 [Extension Background] Đang gửi lệnh tải trực tiếp qua chrome.downloads...`);
+        logs.push(`   Link: ${targetVideoUrl.slice(0, 85)}...`);
+
+        try {
+          const dlPromise = new Promise((resolve, reject) => {
+            chrome.downloads.download({
+              url: targetVideoUrl,
+              filename: `flow_video_${Date.now()}.mp4`,
+              saveAs: false
+            }, (downloadId) => {
+              if (chrome.runtime.lastError || !downloadId) {
+                return reject(new Error(chrome.runtime.lastError?.message || 'Lỗi bắt đầu download'));
+              }
+
+              let timer = null;
+              const timeout = setTimeout(() => {
+                if (timer) clearInterval(timer);
+                resolve({ downloadId, status: 'TIMEOUT' });
+              }, 15000);
+
+              timer = setInterval(() => {
+                chrome.downloads.search({ id: downloadId }, (items) => {
+                  if (items && items.length > 0) {
+                    const it = items[0];
+                    if (it.state === 'complete') {
+                      clearInterval(timer);
+                      clearTimeout(timeout);
+                      resolve({ downloadId, status: 'COMPLETE', item: it });
+                    } else if (it.state === 'interrupted') {
+                      clearInterval(timer);
+                      clearTimeout(timeout);
+                      resolve({ downloadId, status: 'FAILED', error: it.error });
+                    }
+                  }
+                });
+              }, 500);
+            });
+          });
+
+          const dlResult = await dlPromise;
+          if (dlResult.status === 'COMPLETE') {
+            const it = dlResult.item;
+            const mb = it.fileSize ? (it.fileSize / 1024 / 1024).toFixed(2) + " MB" : "đã xong";
+            logs.push(`🎉 THÀNH CÔNG 100%! chrome.downloads đã tải xong video!`);
+            logs.push(`📁 File: ${it.filename}`);
+            logs.push(`📊 Dung lượng: ${mb} | MIME: ${it.mime}`);
+            logs.push(`💡 Bạn hãy kiểm tra thư mục Downloads, video .mp4 đã về máy!`);
+          } else if (dlResult.status === 'FAILED') {
+            logs.push(`⚠️ chrome.downloads báo lỗi: ${dlResult.error}`);
+          } else {
+            logs.push(`⏳ Download ID ${dlResult.downloadId} đang tiếp tục chạy ngầm...`);
+          }
+        } catch (dlErr) {
+          logs.push(`❌ Lỗi chrome.downloads: ${dlErr.message}`);
+        }
+      }
+
+      return { success: true, message: logs.join("\n") };
+    }
 
     return { success: true, message: results[0].result };
   } catch (e) {

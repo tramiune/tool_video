@@ -47,6 +47,54 @@
     }
   });
 
+  // Lắng nghe cập nhật trạng thái download trực tiếp từ background
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg?.action === "DOWNLOAD_STATUS_UPDATE") {
+        const logEl = document.getElementById("testStepLog");
+        if (logEl && (logEl.textContent.includes(msg.query) || logEl.textContent.includes("B8.Full"))) {
+          logEl.textContent += `\n[Trạng thái] ${msg.status}: ${msg.progress || ''}`;
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // Cập nhật cho batchTasks và uiBatchTasks nếu có query cụ thể
+        if (msg.query && msg.query.trim()) {
+          const qClean = msg.query.trim().toLowerCase();
+
+          if (typeof batchTasks !== 'undefined' && Array.isArray(batchTasks)) {
+            const t = batchTasks.find(x => (x.status === "RENDERING" || x.status === "SUBMITTED") && (
+              (x.seq && x.seq.toLowerCase().includes(qClean)) ||
+              (x.prompt && x.prompt.toLowerCase().includes(qClean))
+            ));
+            if (t) {
+              t.status = msg.status === 'READY' ? 'DOWNLOADING' : 'RENDERING';
+              t.downloadStatus = msg.status === 'READY' ? 'Render xong! Đang tải 720p...' : (msg.progress || 'Đang render...');
+              renderQueueUI();
+            }
+          }
+
+          if (typeof uiBatchTasks !== 'undefined' && Array.isArray(uiBatchTasks)) {
+            const t = uiBatchTasks.find(x => (x.status === "RENDERING" || x.status === "SUBMITTED") && (
+              (x.seq && x.seq.toLowerCase().includes(qClean)) ||
+              (x.prompt && x.prompt.toLowerCase().includes(qClean))
+            ));
+            if (t) {
+              t.status = msg.status === 'READY' ? 'DOWNLOADING' : 'RENDERING';
+              t.downloadStatus = msg.status === 'READY' ? 'Render xong! Đang tải 720p...' : (msg.progress || 'Đang render...');
+              renderUiBatchUI();
+            }
+          }
+        }
+
+        // Cập nhật cho Single UI Create nếu đang theo dõi
+        const singleDlEl = document.getElementById("uiSingleDlStatus");
+        if (singleDlEl) {
+          singleDlEl.innerHTML = `⏳ <b>${msg.status === 'READY' ? 'Render xong! Đang tải 720p...' : (msg.progress || 'Đang render...')}</b>`;
+        }
+      }
+    });
+  }
+
     function callExt(action, data = {}) {
     return new Promise((resolve, reject) => {
       if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
@@ -61,6 +109,26 @@
         reject(new Error("chrome.runtime.sendMessage is not available."));
       }
     });
+  }
+
+  // ──────────────────────────
+  // UI Mutex Lock (Điều phối tránh va chạm chuột giữa Luồng Submit và Luồng Tải)
+  // ──────────────────────────
+  let isUiLockBusy = false;
+  async function acquireUiLock(timeoutMs = 25000) {
+    const start = Date.now();
+    while (isUiLockBusy) {
+      if (Date.now() - start > timeoutMs) {
+        console.warn("[UI Lock] Timeout, tự động giải phóng lock!");
+        isUiLockBusy = false;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    isUiLockBusy = true;
+  }
+  function releaseUiLock() {
+    isUiLockBusy = false;
   }
 
   // ──────────────────────────
@@ -446,14 +514,13 @@
   // ──────────────────────────
   let batchTasks = [];
   let isBatchRunning = false;
-  let activeWorkers = 0;
 
   window.startBatchQueue = async function() {
     const rawInput = document.getElementById("batchInput").value.trim();
     const projectId = document.getElementById("batchProjectId").value.trim();
     const defaultModel = document.getElementById("batchModel").value;
     const defaultAspect = document.getElementById("batchAspectRatio").value;
-    const concurrency = 1;
+    const autoDownload = document.getElementById("batchAutoDownload")?.checked !== false;
 
     if (!projectId) { toast("Nhập Project ID!", "error"); return; }
 
@@ -463,6 +530,15 @@
 
       const lines = rawInput.split("\n").map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith("//") && !l.startsWith("#"));
       if (!lines.length) { toast("Không có dòng prompt hợp lệ nào!", "error"); return; }
+
+      // LẤY STT LỚN NHẤT ĐÃ CÓ TRONG PROJECT ĐỂ TỰ ĐỘNG TĂNG TIẾP (KHÔNG BAO GIỜ TRÙNG)
+      let startSeq = 1;
+      try {
+        const seqRes = await callExt("GET_MAX_SEQ", { projectId });
+        if (seqRes?.success && typeof seqRes.maxSeq === 'number' && seqRes.maxSeq > 0) {
+          startSeq = seqRes.maxSeq + 1;
+        }
+      } catch (_) {}
 
       batchTasks = lines.map((line, idx) => {
         const parts = line.split("|").map(p => p.trim());
@@ -484,8 +560,20 @@
           endImage = parts[2];
         }
 
+        // TỰ ĐỘNG ĐÁNH SỐ THỨ TỰ TIẾP THEO (KHÔNG TRÙNG LẶP)
+        const currentNum = startSeq + idx;
+        const seqIndex = String(currentNum).padStart(3, '0') + ".";
+        let seqStr = seqIndex;
+        const matchSeq = prompt.match(/^(\d+[\.\-_:\s])/);
+        if (matchSeq) {
+          seqStr = matchSeq[1].trim();
+        } else {
+          prompt = `${seqIndex} ${prompt}`;
+        }
+
         return {
           id: idx + 1,
+          seq: seqStr,
           prompt,
           startImage,
           endImage,
@@ -493,26 +581,29 @@
           model: defaultModel,
           aspectRatio: defaultAspect,
           status: "PENDING",
+          downloadStatus: "Chờ submit...",
           workerId: null,
           mediaId: null,
           error: null,
           retryCount: 0
         };
       });
+
+      // Lưu STT lớn nhất mới vào storage
+      callExt("UPDATE_MAX_SEQ", { projectId, newMax: startSeq + lines.length - 1 }).catch(() => {});
     }
 
     isBatchRunning = true;
     document.getElementById("btnStartBatch").style.display = "none";
     document.getElementById("btnPauseBatch").style.display = "inline-flex";
-    toast(`🚀 Bắt đầu chạy ${concurrency} luồng song song!`, "success");
+    toast(`🚀 [2 Luồng Song Song] Bắt đầu: Luồng Submit & ${autoDownload ? 'Luồng Tải 720p song song' : 'Không tải'}!`, "info");
 
     renderQueueUI();
 
-    const workerPromises = [];
-    for (let i = 1; i <= concurrency; i++) {
-      workerPromises.push(runQueueWorker(i));
-    }
-    await Promise.all(workerPromises);
+    const submitWorker = runBatchSubmitWorker(projectId);
+    const downloadWorker = autoDownload ? runBatchDownloadWorker(projectId) : Promise.resolve();
+
+    await Promise.all([submitWorker, downloadWorker]);
 
     isBatchRunning = false;
     document.getElementById("btnStartBatch").style.display = "inline-flex";
@@ -523,10 +614,11 @@
 
   window.retryFailedTasks = function() {
     batchTasks.forEach(t => {
-      if (t.status === "ERROR") {
+      if (t.status === "ERROR" || t.status === "WARNING") {
         t.status = "PENDING";
+        t.downloadStatus = "Chờ submit...";
         t.error = null;
-        t.retryCount = 0;
+        t.retryCount = (t.retryCount || 0) + 1;
       }
     });
     startBatchQueue();
@@ -550,29 +642,22 @@
     toast("🗑️ Đã xoá hàng đợi!", "info");
   };
 
-  async function runQueueWorker(workerId) {
-    activeWorkers++;
-    // Stagger worker start by 2s so they don't request reCAPTCHA at the exact same millisecond
-    if (workerId > 1) {
-      await new Promise(r => setTimeout(r, (workerId - 1) * 2000));
-    }
-
-
-
+  async function runBatchSubmitWorker(projectId) {
     let videoSuccessCount = 0;
 
-    while (isBatchRunning) {
-      const task = batchTasks.find(t => t.status === "PENDING");
-      if (!task) break;
+    for (let i = 0; i < batchTasks.length; i++) {
+      if (!isBatchRunning) break;
+      const task = batchTasks[i];
+      if (task.status !== "PENDING") continue;
 
-      task.status = "RUNNING";
-      task.workerId = workerId;
+      task.status = "SUBMITTING";
+      task.downloadStatus = "Đang gửi API...";
       renderQueueUI();
 
       try {
         const res = await callExt("CREATE_VIDEO", {
           prompt: task.prompt,
-          projectId: task.projectId,
+          projectId: task.projectId || projectId,
           model: task.model,
           aspectRatio: task.aspectRatio,
           startImage: task.startImage,
@@ -580,10 +665,20 @@
         });
 
         if (res?.success) {
-          task.status = "SUCCESS";
           task.mediaId = res.apiResponse?.media?.[0]?.name || "Đã gửi";
+          task.submittedAt = Date.now();
           task.error = null;
           videoSuccessCount++;
+
+          const autoDownload = document.getElementById("batchAutoDownload")?.checked !== false;
+          if (autoDownload) {
+            task.status = "SUBMITTED";
+            task.downloadStatus = "Đã gửi Flow! Đang chờ render...";
+          } else {
+            task.status = "SUCCESS";
+            task.downloadStatus = "Hoàn thành (Không tải)";
+          }
+          toast(`✅ [#${task.id}] Đã submit Flow: ${task.seq}`, "success");
 
           // Tự động tạo và chuyển sang Project mới sau mỗi 10 video thành công
           if (videoSuccessCount > 0 && videoSuccessCount % 10 === 0 && isBatchRunning) {
@@ -614,6 +709,8 @@
           const isBlock = errStr.includes("429") || errStr.includes("UNUSUAL") || errStr.includes("Too Many");
           task.status = "ERROR";
           task.error = res?.error || "Lỗi tạo video";
+          task.downloadStatus = `Lỗi submit: ${task.error}`;
+          toast(`❌ [#${task.id}] ${task.error}`, "error");
 
           if (isBlock && isBatchRunning) {
             for (let c = 600; c > 0 && isBatchRunning; c--) {
@@ -628,6 +725,7 @@
       } catch (e) {
         task.status = "ERROR";
         task.error = e.message;
+        task.downloadStatus = `Lỗi: ${e.message}`;
       }
 
       renderQueueUI();
@@ -642,18 +740,156 @@
       }
 
       // Delay between jobs
-      await new Promise(r => setTimeout(r, getDelay("batchDelay", 2000)));
+      if (i < batchTasks.length - 1 && isBatchRunning) {
+        await new Promise(r => setTimeout(r, getDelay("batchDelay", 2000)));
+      }
     }
-    activeWorkers--;
+  }
+
+  async function runBatchDownloadWorker(projectId) {
+    while (isBatchRunning) {
+      const activeTasks = batchTasks.filter(t => t.status === "SUBMITTED" || t.status === "RENDERING");
+      const hasUnsubmitted = batchTasks.some(t => t.status === "PENDING" || t.status === "SUBMITTING");
+
+      if (!activeTasks.length) {
+        if (!hasUnsubmitted) {
+          // Tất cả các task đã hoàn thành hoặc thất bại
+          break;
+        }
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+
+      for (const task of activeTasks) {
+        if (!isBatchRunning) break;
+
+        try {
+          const targetPid = task.projectId || projectId;
+          const statusRes = await callExt("CHECK_CARD_STATUS", {
+            projectId: targetPid,
+            query: task.seq || task.prompt,
+            prompt: task.prompt,
+            seq: task.seq,
+            mediaId: task.mediaId,
+            workflowId: task.workflowId
+          });
+          if (statusRes?.status === 'RENDERING') {
+            const curProg = statusRes.progress || '';
+            if (task.lastProgress !== curProg) {
+              task.lastProgress = curProg;
+              task.lastProgressAt = Date.now();
+            }
+            task.missingCount = 0;
+            task.status = "RENDERING";
+            task.downloadStatus = `Đang render (${curProg || '...'})`;
+            renderQueueUI();
+
+            // Timeout kẹt % render quá 75 giây
+            if (task.lastProgressAt && (Date.now() - task.lastProgressAt > 75000)) {
+              console.warn(`[Batch Worker] Task #${task.id} bị kẹt ở tiến độ "${curProg}" quá 75s`);
+              task.status = "ERROR";
+              task.error = `Kẹt tiến độ render (${curProg || 'đứng im'}) quá 75s - Thất bại`;
+              task.downloadStatus = task.error;
+              toast(`⚠️ [#${task.id}] Render đứng im ở ${curProg} quá 75s (${task.seq || ''})`, "warning");
+              renderQueueUI();
+              continue;
+            }
+          } else if (statusRes?.status === 'READY') {
+            const elapsed = Date.now() - (task.submittedAt || 0);
+            if (elapsed < 15000) {
+              task.status = "RENDERING";
+              task.downloadStatus = "Khởi tạo render...";
+              renderQueueUI();
+              continue;
+            }
+            task.status = "DOWNLOADING";
+            task.downloadStatus = "Render xong! Đang tải 720p...";
+            renderQueueUI();
+
+            toast(`🎯 [#${task.id}] Card ${task.seq} render xong! Đang tải 720p...`, "info");
+
+            await acquireUiLock();
+            let dlRes = null;
+            try {
+              dlRes = await callExt("DOWNLOAD_CARD_NATIVE", {
+                query: task.seq || task.prompt,
+                prompt: task.prompt,
+                seq: task.seq,
+                mediaId: task.mediaId,
+                workflowId: task.workflowId
+              });
+              if (!dlRes?.success) {
+                console.warn(`[Batch Worker] Thử lại tải 720p lần 2 cho task #${task.id}...`);
+                await new Promise(r => setTimeout(r, 1200));
+                dlRes = await callExt("DOWNLOAD_CARD_NATIVE", {
+                  query: task.seq || task.prompt,
+                  prompt: task.prompt,
+                  seq: task.seq,
+                  mediaId: task.mediaId,
+                  workflowId: task.workflowId
+                });
+              }
+            } finally {
+              releaseUiLock();
+              callExt("SCROLL_FLOW_TO_TOP", { projectId: targetPid }).catch(() => {});
+            }
+
+            if (dlRes?.success) {
+              task.status = "SUCCESS";
+              task.downloadStatus = `Đã tải 720p (${dlRes.filename || 'OK'})`;
+              toast(`📥 [#${task.id}] Đã tải xong video 720p (${task.seq})!`, "success");
+            } else {
+              task.status = "WARNING";
+              task.downloadStatus = `Lỗi tải: ${dlRes?.error || 'timeout'}`;
+              toast(`⚠️ [#${task.id}] Video tạo xong nhưng lỗi tải: ${dlRes?.error}`, "warning");
+            }
+            renderQueueUI();
+          } else if (statusRes?.status === 'FAILED') {
+            task.status = "ERROR";
+            task.error = statusRes.error || "Render thất bại trên Flow";
+            task.downloadStatus = statusRes.error || "Render thất bại trên Flow";
+            toast(`❌ [#${task.id}] ${task.error} (${task.seq || ''})`, "error");
+            renderQueueUI();
+          } else if (task.status === "RENDERING") {
+            // Thẻ đã từng rendering nhưng hiện tại không tìm thấy (Flow xoá hoặc chuyển sang lỗi)
+            task.missingCount = (task.missingCount || 0) + 1;
+            if (task.missingCount >= 4) {
+              task.status = "ERROR";
+              task.error = "Vi phạm chính sách / Thẻ render không thành công trên Flow";
+              task.downloadStatus = task.error;
+              toast(`❌ [#${task.id}] ${task.error} (${task.seq || ''})`, "error");
+              renderQueueUI();
+              continue;
+            }
+          }
+
+          // Global Render Timeout: Quá 4 phút kể từ khi submit
+          const totalElapsed = Date.now() - (task.submittedAt || Date.now());
+          if (totalElapsed > 240000 && (task.status === "RENDERING" || task.status === "SUBMITTED")) {
+            task.status = "ERROR";
+            task.error = "Quá thời gian render (> 4 phút)";
+            task.downloadStatus = task.error;
+            toast(`⏱️ [#${task.id}] Hết thời gian chờ render (> 4 phút) (${task.seq || ''})`, "error");
+            renderQueueUI();
+            continue;
+          }
+        } catch (e) {
+          console.warn(`[Batch Download Worker] Lỗi kiểm tra task ${task.id}:`, e);
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 
   function renderQueueUI() {
     const total = batchTasks.length;
     const pending = batchTasks.filter(t => t.status === "PENDING").length;
-    const running = batchTasks.filter(t => t.status === "RUNNING").length;
+    const running = batchTasks.filter(t => t.status === "SUBMITTING" || t.status === "RUNNING" || t.status === "SUBMITTED" || t.status === "RENDERING" || t.status === "DOWNLOADING").length;
     const success = batchTasks.filter(t => t.status === "SUCCESS").length;
+    const warning = batchTasks.filter(t => t.status === "WARNING").length;
     const error = batchTasks.filter(t => t.status === "ERROR").length;
-    const doneCount = success + error;
+    const doneCount = success + warning + error;
 
     if (document.getElementById("statTotal")) document.getElementById("statTotal").textContent = total;
     if (document.getElementById("statPending")) document.getElementById("statPending").textContent = pending;
@@ -662,7 +898,7 @@
     if (document.getElementById("statError")) document.getElementById("statError").textContent = error;
 
     const retryBtn = document.getElementById("btnRetryFailed");
-    if (retryBtn) retryBtn.style.display = (error > 0 && !isBatchRunning) ? "inline-flex" : "none";
+    if (retryBtn) retryBtn.style.display = ((error > 0 || warning > 0) && !isBatchRunning) ? "inline-flex" : "none";
 
     const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
     if (document.getElementById("queueProgressFill")) document.getElementById("queueProgressFill").style.width = pct + "%";
@@ -677,17 +913,29 @@
     listEl.innerHTML = batchTasks.map(t => {
       let statusBadge = '<span style="color:var(--text2);font-size:11px;">⏳ Chờ...</span>';
       let itemClass = "";
-      if (t.status === "RUNNING") {
+      if (t.status === "SUBMITTING" || t.status === "RUNNING") {
         itemClass = "running";
         const retryNote = t.retryCount > 0 ? ` (Thử lại L${t.retryCount})` : "";
-        const hue = ((t.workerId || 1) * 67) % 360;
-        statusBadge = `<span class="worker-tag" style="background: hsla(${hue}, 70%, 50%, 0.2); color: hsl(${hue}, 80%, 75%); border: 1px solid hsla(${hue}, 70%, 50%, 0.4);">⚡ Luồng ${t.workerId} đang gửi...${retryNote}</span>`;
+        statusBadge = `<span class="worker-tag" style="background:rgba(255, 153, 0, 0.2); color:#ff9800; border:1px solid rgba(255, 153, 0, 0.4);">⚡ Đang gửi...${retryNote}</span>`;
+      } else if (t.status === "SUBMITTED") {
+        itemClass = "running";
+        statusBadge = `<span class="worker-tag" style="background:rgba(108, 92, 231, 0.2); color:var(--accent2); border:1px solid rgba(108, 92, 231, 0.4);">⏳ Đã gửi (Chờ render...)</span>`;
+      } else if (t.status === "RENDERING") {
+        itemClass = "running";
+        statusBadge = `<span class="worker-tag" style="background:rgba(0, 229, 255, 0.2); color:var(--accent2); border:1px solid rgba(0, 229, 255, 0.4);">⏳ ${esc(t.downloadStatus || 'Đang render...')}</span>`;
+      } else if (t.status === "DOWNLOADING") {
+        itemClass = "running";
+        statusBadge = `<span class="worker-tag" style="background:rgba(255, 0, 127, 0.2); color:#ff007f; border:1px solid rgba(255, 0, 127, 0.4);">📥 Đang tải 720p...</span>`;
       } else if (t.status === "SUCCESS") {
         itemClass = "success";
-        statusBadge = `<span style="color:var(--green);font-size:11px;font-weight:700;">✅ Đã gửi Flow (${t.mediaId ? t.mediaId.slice(0,8) : 'OK'})</span>`;
+        const successLabel = t.downloadStatus ? `✅ ${esc(t.downloadStatus)}` : `✅ Đã gửi Flow (${t.mediaId ? t.mediaId.slice(0,8) : 'OK'})`;
+        statusBadge = `<span style="color:var(--green);font-size:11px;font-weight:700;">${successLabel}</span>`;
+      } else if (t.status === "WARNING") {
+        itemClass = "error";
+        statusBadge = `<span style="color:var(--yellow);font-size:11px;" title="${esc(t.downloadStatus || t.error)}">⚠️ ${esc(t.downloadStatus?.slice(0, 50) || 'Cảnh báo tải')}</span>`;
       } else if (t.status === "ERROR") {
         itemClass = "error";
-        statusBadge = `<span style="color:var(--red);font-size:11px;" title="${esc(t.error)}">❌ ${esc(t.error?.slice(0, 30) || 'Lỗi')}</span>`;
+        statusBadge = `<span style="color:var(--red);font-size:11px;font-weight:600;" title="${esc(t.error)}">❌ ${esc(t.error?.slice(0, 50) || 'Lỗi')}</span>`;
       }
 
       const imgInfo = [];
@@ -792,9 +1040,19 @@
   // Fetch Videos
   // ──────────────────────────
   window.fetchVideos = async function(silent) {
-    const projectId = document.getElementById("projectId2").value.trim();
+    let projectId = document.getElementById("projectId2").value.trim();
     const btn = document.getElementById("btnFetch");
     const grid = document.getElementById("videoGrid");
+
+    try {
+      const tabs = await chrome.tabs.query({ url: ["https://flow.google.com/*", "https://labs.google/*"] });
+      const currentTab = tabs.find(t => t.active) || tabs[0];
+      const urlMatch = currentTab?.url?.match(/project\/([a-f0-9\-]{36})/i);
+      if (urlMatch && urlMatch[1]) {
+        projectId = urlMatch[1];
+        if (document.getElementById("projectId2")) document.getElementById("projectId2").value = projectId;
+      }
+    } catch (_) {}
 
     if (!projectId) { if (!silent) toast("Nhập Project ID!", "error"); return; }
     if (!silent) btn.disabled = true;
@@ -844,41 +1102,59 @@
       return;
     }
     const countInfo = filter ? `<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">🔍 ${videos.length}/${total} video khớp</div>` : "";
-    grid.innerHTML = videos.map(v => {
+    grid.innerHTML = videos.map((v, idx) => {
       const done = v.status === "COMPLETED";
       const failed = v.status === "FAILED";
+      const numPrefix = String(idx + 1).padStart(2, "0");
+      const progressLabel = v.progress ? ` (${v.progress})` : "";
       const statusBadge = done
         ? '<span class="v-tag done">✅ Xong</span>'
         : failed
         ? `<span class="v-tag" style="background:rgba(239,68,68,0.2);color:#ef4444;" title="${esc(v.failureReason)}">❌ Thất bại</span>`
-        : '<span class="v-tag pending">⏳ Đang render...</span>';
+        : `<span class="v-tag pending">⏳ Đang render${progressLabel}...</span>`;
 
-      return `<div class="video-card">
-        <div class="v-prompt">${esc(v.prompt)}</div>
-        <div class="v-id">${v.mediaId}</div>
-        <div class="v-tags">
-          <span class="v-tag model">🤖 ${esc(v.model)}</span>
-          <span class="v-tag res">📺 ${v.resolution}</span>
+      const displayPrompt = (v.prompt && v.prompt !== "Video Veo" && v.prompt !== "Flow Media") 
+        ? v.prompt 
+        : `Video Veo #${idx + 1}`;
+
+      return `<div class="video-card" style="padding:10px; border-radius:8px; background:var(--surface, #1e2029); margin-bottom:8px; border:1px solid var(--border, #2a2d3d);">
+        <div class="v-prompt" style="font-size:13px;font-weight:600;line-height:1.4;margin-bottom:6px;" title="${esc(v.prompt)}">
+          <span style="color:var(--accent);font-weight:700;margin-right:6px;font-size:14px;">#${idx + 1}</span>
+          <span style="color:#ffffff;">${esc(displayPrompt)}</span>
+        </div>
+        <div class="v-id" style="font-size:10px;color:var(--text2, #888);font-family:monospace;margin-bottom:8px;">ID: ${v.mediaId}</div>
+        <div class="v-tags" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">
+          <span class="v-tag model">🤖 ${esc(v.model || "Veo 3.1")}</span>
+          <span class="v-tag res">📺 ${esc(v.resolution || "720P")}</span>
           ${statusBadge}
         </div>
         <div class="v-actions" style="display:flex; gap:6px;">
-          ${done ? `<button class="btn btn-green btn-sm" data-action="downloadVid" data-id="${v.mediaId}" data-prompt="${esc(v.prompt).replace(/'/g,'').slice(0,30)}">📥 Tải MP4</button>` : `<span class="btn btn-sm" style="background:var(--border);cursor:default;">⏳ Chờ...</span>`}
-          <button class="btn btn-sm btn-delete-vid" data-action="deleteVid" data-workflow="${v.workflowId || v.mediaId}" data-project="${v.projectId}" data-media="${v.mediaId}" data-prompt="${esc(v.prompt).replace(/'/g,'').slice(0,30)}">🗑️ Xoá</button>
+          ${(() => {
+            const hasNumPrefix = /^\d+[\.\-_]/.test(displayPrompt.trim());
+            const fileSlug = hasNumPrefix
+              ? esc(displayPrompt).replace(/'/g, '').slice(0, 35)
+              : `${numPrefix}_${esc(displayPrompt).replace(/'/g, '').slice(0, 30)}`;
+            return done ? `<button class="btn btn-green btn-sm" data-action="downloadVid" data-id="${v.mediaId}" data-url="${v.videoUrl || ''}" data-index="${v.cardIndex !== undefined ? v.cardIndex : idx}" data-prompt="${fileSlug}">📥 Tải MP4 (#${idx + 1})</button>` : `<span class="btn btn-sm" style="background:var(--border);color:var(--text2);cursor:not-allowed;">⏳ Chờ${progressLabel}...</span>`;
+          })()}
+          <button class="btn btn-sm btn-delete-vid" data-action="deleteVid" data-workflow="${v.workflowId || v.mediaId}" data-project="${v.projectId}" data-media="${v.mediaId}" data-prompt="${esc(displayPrompt).replace(/'/g,'').slice(0,30)}">🗑️ Xoá</button>
         </div>
       </div>`;
     }).join("");
     grid.innerHTML = countInfo + grid.innerHTML;
   }
 
-  window.downloadVid = async function(mediaId, promptSlug) {
-    toast("📥 Đang tải video...", "info");
+  window.downloadVid = async function(mediaId, promptSlug, directUrl = null, cardIndex = -1) {
+    toast("📥 Đang chuẩn bị tải video...", "info");
     try {
-      const filename = (promptSlug || mediaId.slice(0,8)).replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF ]/g, "").trim().replace(/\s+/g, "_").slice(0, 40) + ".mp4";
-      const res = await callExt("DOWNLOAD_VIDEO", { mediaId, filename });
+      const item = (allVideos || []).find(x => x.mediaId === mediaId || x.workflowId === mediaId);
+      const effectiveUrl = directUrl || item?.videoUrl || null;
+      const effectiveIdx = (typeof cardIndex === 'number' && cardIndex >= 0) ? cardIndex : (allVideos ? allVideos.findIndex(x => x.mediaId === mediaId) : -1);
+      const filename = (promptSlug || mediaId.slice(0,8)).replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF _-]/g, "").trim().replace(/\s+/g, "_").slice(0, 50) + ".mp4";
+      const res = await callExt("DOWNLOAD_VIDEO", { mediaId, filename, videoUrl: effectiveUrl, cardIndex: effectiveIdx });
       if (res?.success) {
-        toast("✅ Video đang được tải về!", "success");
+        toast("✅ " + (res.message || "Video đang được tải về!"), "success");
       } else {
-        toast("❌ " + (res?.error || "Lỗi tải"), "error");
+        toast("❌ " + (res?.error || "Lỗi tải video"), "error");
       }
     } catch (e) {
       toast("❌ " + e.message, "error");
@@ -1000,6 +1276,37 @@
 
         // Auto refresh library data
         if (typeof fetchVideos === "function") fetchVideos(true);
+
+        const autoDownload = document.getElementById("uiSingleAutoDownload")?.checked !== false;
+        if (autoDownload) {
+          if (btn) btn.textContent = "⏳ Đang chờ video render trên Flow để tải 720p...";
+          const statusDiv = document.createElement("div");
+          statusDiv.id = "uiSingleDlStatus";
+          statusDiv.style.cssText = "color:var(--accent2); font-size:11px; margin-top:8px; padding:6px 8px; background:rgba(0,229,255,0.08); border-radius:6px; border:1px solid rgba(0,229,255,0.2);";
+          statusDiv.innerHTML = "⏳ Đang theo dõi tiến độ render của video trên Flow...";
+          if (resDiv) resDiv.appendChild(statusDiv);
+
+          toast("⏳ Đang chờ video render để tự động tải 720p gốc...", "info");
+          try {
+            const dlRes = await callExt("WAIT_AND_DOWNLOAD_CARD", {
+              projectId,
+              prompt: prompt || "",
+              timeoutMs: 600000
+            });
+            if (dlRes?.success) {
+              toast(`📥 Đã tải thành công video 720p!`, "success");
+              statusDiv.style.borderColor = "rgba(0,214,143,0.4)";
+              statusDiv.style.background = "rgba(0,214,143,0.08)";
+              statusDiv.innerHTML = `🎉 <b>Đã tải video 720p gốc:</b> ${esc(dlRes.filename || 'flow_video.mp4')}<div style="font-size:10px; color:var(--text2); margin-top:2px;">Kiểm tra thư mục Downloads của máy tính.</div>`;
+            } else {
+              toast(`⚠️ Video đã tạo nhưng lỗi tải: ${dlRes?.error}`, "warning");
+              statusDiv.style.borderColor = "rgba(255,212,59,0.4)";
+              statusDiv.innerHTML = `⚠️ <b>Cảnh báo tải:</b> ${esc(dlRes?.error || 'timeout')}`;
+            }
+          } catch (dlErr) {
+            statusDiv.innerHTML = `❌ <b>Lỗi tải:</b> ${esc(dlErr.message)}`;
+          }
+        }
       } else {
         toast(`❌ ${res?.error || "Không thể tương tác tab Flow"}`, "error");
         if (resDiv) resDiv.innerHTML = `<div style="color:var(--red); font-size:11px; padding:6px 0;">❌ ${esc(res?.error || "Lỗi tương tác")}</div>`;
@@ -1012,12 +1319,23 @@
     }
   }
 
-  // Batch UI Click Queue
-  function startUiBatchQueue() {
+  // Batch UI Click Queue (2 Luồng Song Song: Submit riêng - Tải kết quả riêng)
+  async function startUiBatchQueue() {
     if (isUiBatchRunning) return;
     const raw = document.getElementById("uiBatchPromptInput")?.value || "";
     const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
     if (!lines.length) { toast("Nhập ít nhất 1 prompt!", "error"); return; }
+
+    const projectId = document.getElementById("projectId")?.value || document.getElementById("projectId2")?.value || "";
+
+    // LẤY STT LỚN NHẤT ĐÃ CÓ TRONG PROJECT ĐỂ TỰ ĐỘNG TĂNG TIẾP (KHÔNG BAO GIỜ TRÙNG)
+    let startSeq = 1;
+    try {
+      const seqRes = await callExt("GET_MAX_SEQ", { projectId });
+      if (seqRes?.success && typeof seqRes.maxSeq === 'number' && seqRes.maxSeq > 0) {
+        startSeq = seqRes.maxSeq + 1;
+      }
+    } catch (_) {}
 
     uiBatchTasks = lines.map((line, i) => {
       let prompt = line;
@@ -1039,16 +1357,32 @@
         }
       }
 
+      // TỰ ĐỘNG ĐÁNH SỐ THỨ TỰ TIẾP THEO (KHÔNG TRÙNG LẶP)
+      const currentNum = startSeq + i;
+      const seqIndex = String(currentNum).padStart(3, '0') + ".";
+      let seqStr = seqIndex;
+      const matchSeq = prompt.match(/^(\d+[\.\-_:\s])/);
+      if (matchSeq) {
+        seqStr = matchSeq[1].trim();
+      } else {
+        prompt = `${seqIndex} ${prompt}`;
+      }
+
       return {
         id: i + 1,
+        seq: seqStr,
         prompt: prompt,
         startImage: startImage,
         endImage: endImage,
         isFrames: isFrames,
         status: "PENDING",
+        downloadStatus: "Chờ submit...",
         error: null
       };
     });
+
+    // Lưu STT lớn nhất mới vào storage
+    callExt("UPDATE_MAX_SEQ", { projectId, newMax: startSeq + lines.length - 1 }).catch(() => {});
 
     isUiBatchRunning = true;
     const startBtn = document.getElementById("btnUiStartBatch");
@@ -1070,16 +1404,14 @@
     renderUiBatchUI();
   }
 
-  async function processUiBatchQueue() {
-    const delayMs = parseInt(document.getElementById("uiClickDelay")?.value || "5000", 10);
-    const config = getUiConfig();
-
+  async function runUiSubmitWorker(projectId, config, delayMs) {
     for (let i = 0; i < uiBatchTasks.length; i++) {
       if (!isUiBatchRunning) break;
       const task = uiBatchTasks[i];
-      if (task.status === "SUCCESS") continue;
+      if (task.status !== "PENDING") continue;
 
-      task.status = "RUNNING";
+      task.status = "SUBMITTING";
+      task.downloadStatus = "Đang gõ & submit...";
       renderUiBatchUI();
 
       try {
@@ -1089,35 +1421,192 @@
           startImage: task.startImage || config.startImage,
           endImage: task.endImage || config.endImage
         };
-        const projectId = document.getElementById("projectId")?.value || document.getElementById("projectId2")?.value || "";
-        const res = await callExt("CREATE_VIDEO_UI", { prompt: task.prompt, projectId, config: taskConfig });
+
+        // Chờ UI Lock để không xung đột thao tác chuột với luồng tải
+        await acquireUiLock();
+        let res = null;
+        try {
+          res = await callExt("CREATE_VIDEO_UI", { prompt: task.prompt, projectId, config: taskConfig });
+        } finally {
+          releaseUiLock();
+        }
+
         if (res?.success) {
-          task.status = "SUCCESS";
           task.mediaId = res.newVideo?.mediaId || null;
           task.workflowId = res.newVideo?.workflowId || null;
-          if (task.mediaId) {
-            toast(`✅ [#${task.id}] Đã tạo video: [${task.mediaId.slice(0, 8)}...]`, "success");
-          } else {
-            toast(`✅ [#${task.id}] Đã click tạo: ${task.prompt.slice(0, 25)}...`, "success");
-          }
+          task.submittedAt = Date.now();
+          task.status = "SUBMITTED";
+          task.downloadStatus = "Đã gửi Flow! Đang chờ render...";
+          toast(`✅ [#${task.id}] Đã submit: ${task.seq}`, "success");
           if (typeof fetchVideos === "function") fetchVideos(true);
         } else {
           task.status = "ERROR";
           task.error = res?.error || "Lỗi tương tác UI";
+          task.downloadStatus = `Lỗi submit: ${task.error}`;
           toast(`❌ [#${task.id}] ${task.error}`, "error");
         }
       } catch (err) {
         task.status = "ERROR";
         task.error = err.message;
+        task.downloadStatus = `Lỗi: ${err.message}`;
       }
 
       renderUiBatchUI();
 
-      // Delay before next prompt
+      // Delay giữa các lần submit (chống throttle Flow)
       if (i < uiBatchTasks.length - 1 && isUiBatchRunning) {
         await new Promise(r => setTimeout(r, delayMs));
       }
     }
+  }
+
+  async function runUiDownloadWorker(projectId) {
+    while (isUiBatchRunning) {
+      const activeTasks = uiBatchTasks.filter(t => t.status === "SUBMITTED" || t.status === "RENDERING");
+      const hasUnsubmitted = uiBatchTasks.some(t => t.status === "PENDING" || t.status === "SUBMITTING");
+
+      if (!activeTasks.length) {
+        if (!hasUnsubmitted) {
+          // Tất cả các task đã hoàn thành hoặc thất bại
+          break;
+        }
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+
+      for (const task of activeTasks) {
+        if (!isUiBatchRunning) break;
+
+        try {
+          const statusRes = await callExt("CHECK_CARD_STATUS", {
+            projectId,
+            query: task.seq || task.prompt,
+            prompt: task.prompt,
+            seq: task.seq,
+            mediaId: task.mediaId,
+            workflowId: task.workflowId
+          });
+          if (statusRes?.status === 'RENDERING') {
+            const curProg = statusRes.progress || '';
+            if (task.lastProgress !== curProg) {
+              task.lastProgress = curProg;
+              task.lastProgressAt = Date.now();
+            }
+            task.missingCount = 0;
+            task.status = "RENDERING";
+            task.downloadStatus = `Đang render (${curProg || '...'})`;
+            renderUiBatchUI();
+
+            // Timeout kẹt % render quá 75 giây
+            if (task.lastProgressAt && (Date.now() - task.lastProgressAt > 75000)) {
+              console.warn(`[Ui Worker] Task #${task.id} bị kẹt ở tiến độ "${curProg}" quá 75s`);
+              task.status = "ERROR";
+              task.error = `Kẹt tiến độ render (${curProg || 'đứng im'}) quá 75s - Thất bại`;
+              task.downloadStatus = task.error;
+              toast(`⚠️ [#${task.id}] Render đứng im ở ${curProg} quá 75s (${task.seq || ''})`, "warning");
+              renderUiBatchUI();
+              continue;
+            }
+          } else if (statusRes?.status === 'READY') {
+            const elapsed = Date.now() - (task.submittedAt || 0);
+            if (elapsed < 15000) {
+              task.status = "RENDERING";
+              task.downloadStatus = "Khởi tạo render...";
+              renderUiBatchUI();
+              continue;
+            }
+            task.status = "DOWNLOADING";
+            task.downloadStatus = "Render xong! Đang tải 720p...";
+            renderUiBatchUI();
+
+            toast(`🎯 [#${task.id}] Card ${task.seq} render xong! Đang tải 720p...`, "info");
+
+            await acquireUiLock();
+            let dlRes = null;
+            try {
+              dlRes = await callExt("DOWNLOAD_CARD_NATIVE", {
+                query: task.seq || task.prompt,
+                prompt: task.prompt,
+                seq: task.seq,
+                mediaId: task.mediaId,
+                workflowId: task.workflowId
+              });
+              if (!dlRes?.success) {
+                console.warn(`[Ui Worker] Thử lại tải 720p lần 2 cho task #${task.id}...`);
+                await new Promise(r => setTimeout(r, 1200));
+                dlRes = await callExt("DOWNLOAD_CARD_NATIVE", {
+                  query: task.seq || task.prompt,
+                  prompt: task.prompt,
+                  seq: task.seq,
+                  mediaId: task.mediaId,
+                  workflowId: task.workflowId
+                });
+              }
+            } finally {
+              releaseUiLock();
+              callExt("SCROLL_FLOW_TO_TOP", { projectId }).catch(() => {});
+            }
+
+            if (dlRes?.success) {
+              task.status = "SUCCESS";
+              task.downloadStatus = `Đã tải 720p (${dlRes.filename || 'OK'})`;
+              toast(`📥 [#${task.id}] Đã tải xong video 720p (${task.seq})!`, "success");
+            } else {
+              task.status = "WARNING";
+              task.downloadStatus = `Lỗi tải: ${dlRes?.error || 'timeout'}`;
+              toast(`⚠️ [#${task.id}] Video tạo xong nhưng lỗi tải: ${dlRes?.error}`, "warning");
+            }
+            renderUiBatchUI();
+          } else if (statusRes?.status === 'FAILED') {
+            task.status = "ERROR";
+            task.error = statusRes.error || "Render thất bại trên Flow";
+            task.downloadStatus = statusRes.error || "Render thất bại trên Flow";
+            toast(`❌ [#${task.id}] ${task.error} (${task.seq || ''})`, "error");
+            renderUiBatchUI();
+          } else if (task.status === "RENDERING") {
+            // Thẻ đã từng rendering nhưng hiện tại không tìm thấy (Flow xoá hoặc chuyển sang lỗi)
+            task.missingCount = (task.missingCount || 0) + 1;
+            if (task.missingCount >= 4) {
+              task.status = "ERROR";
+              task.error = "Vi phạm chính sách / Thẻ render không thành công trên Flow";
+              task.downloadStatus = task.error;
+              toast(`❌ [#${task.id}] ${task.error} (${task.seq || ''})`, "error");
+              renderUiBatchUI();
+              continue;
+            }
+          }
+
+          // Global Render Timeout: Quá 4 phút kể từ khi submit
+          const totalElapsed = Date.now() - (task.submittedAt || Date.now());
+          if (totalElapsed > 240000 && (task.status === "RENDERING" || task.status === "SUBMITTED")) {
+            task.status = "ERROR";
+            task.error = "Quá thời gian render (> 4 phút)";
+            task.downloadStatus = task.error;
+            toast(`⏱️ [#${task.id}] Hết thời gian chờ render (> 4 phút) (${task.seq || ''})`, "error");
+            renderUiBatchUI();
+            continue;
+          }
+        } catch (e) {
+          console.warn(`[Download Worker] Lỗi kiểm tra task ${task.id}:`, e);
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
+  async function processUiBatchQueue() {
+    const delayMs = parseInt(document.getElementById("uiClickDelay")?.value || "5000", 10);
+    const config = getUiConfig();
+    const projectId = document.getElementById("projectId")?.value || document.getElementById("projectId2")?.value || "";
+    const autoDownload = document.getElementById("uiBatchAutoDownload")?.checked !== false;
+
+    toast(`🚀 [Auto Click 2 Luồng] Bắt đầu: Luồng Submit & ${autoDownload ? 'Luồng Tải 720p song song' : 'Không tải'}!`, "info");
+
+    const submitWorker = runUiSubmitWorker(projectId, config, delayMs);
+    const downloadWorker = autoDownload ? runUiDownloadWorker(projectId) : Promise.resolve();
+
+    await Promise.all([submitWorker, downloadWorker]);
 
     isUiBatchRunning = false;
     const startBtn = document.getElementById("btnUiStartBatch");
@@ -1125,16 +1614,17 @@
     if (startBtn) startBtn.style.display = "inline-flex";
     if (stopBtn) stopBtn.style.display = "none";
     renderUiBatchUI();
-    toast("🎉 Đã hoàn thành danh sách Auto Click!", "success");
+    toast("🎉 Đã hoàn thành tất cả các task Auto Click & Tải video!", "success");
   }
 
   function renderUiBatchUI() {
     const total = uiBatchTasks.length;
     const pending = uiBatchTasks.filter(t => t.status === "PENDING").length;
-    const running = uiBatchTasks.filter(t => t.status === "RUNNING").length;
+    const running = uiBatchTasks.filter(t => t.status === "SUBMITTING" || t.status === "SUBMITTED" || t.status === "RENDERING" || t.status === "DOWNLOADING").length;
     const success = uiBatchTasks.filter(t => t.status === "SUCCESS").length;
+    const warning = uiBatchTasks.filter(t => t.status === "WARNING").length;
     const error = uiBatchTasks.filter(t => t.status === "ERROR").length;
-    const doneCount = success + error;
+    const doneCount = success + warning + error;
 
     if (document.getElementById("uiStatTotal")) document.getElementById("uiStatTotal").textContent = total;
     if (document.getElementById("uiStatPending")) document.getElementById("uiStatPending").textContent = pending;
@@ -1153,17 +1643,30 @@
     }
 
     listEl.innerHTML = uiBatchTasks.map(t => {
-      let statusBadge = '<span style="color:var(--text2);font-size:11px;">⏳ Chờ...</span>';
+      let statusBadge = '<span style="color:var(--text2);font-size:11px;">⏳ Chờ submit...</span>';
       let itemClass = "";
-      if (t.status === "RUNNING") {
+      if (t.status === "SUBMITTING") {
         itemClass = "running";
-        statusBadge = '<span class="worker-tag" style="background:rgba(0, 214, 143, 0.2); color:var(--green); border:1px solid rgba(0, 214, 143, 0.4);">⚡ Đang gõ & click...</span>';
+        statusBadge = '<span class="worker-tag" style="background:rgba(255, 153, 0, 0.2); color:#ff9800; border:1px solid rgba(255, 153, 0, 0.4);">⚡ Đang gõ & submit...</span>';
+      } else if (t.status === "SUBMITTED") {
+        itemClass = "running";
+        statusBadge = '<span class="worker-tag" style="background:rgba(108, 92, 231, 0.2); color:var(--accent2); border:1px solid rgba(108, 92, 231, 0.4);">⏳ Đã gửi (Chờ render...)</span>';
+      } else if (t.status === "RENDERING") {
+        itemClass = "running";
+        statusBadge = `<span class="worker-tag" style="background:rgba(0, 229, 255, 0.2); color:var(--accent2); border:1px solid rgba(0, 229, 255, 0.4);">⏳ ${esc(t.downloadStatus || 'Đang render...')}</span>`;
+      } else if (t.status === "DOWNLOADING") {
+        itemClass = "running";
+        statusBadge = '<span class="worker-tag" style="background:rgba(255, 0, 127, 0.2); color:#ff007f; border:1px solid rgba(255, 0, 127, 0.4);">📥 Đang tải 720p...</span>';
       } else if (t.status === "SUCCESS") {
         itemClass = "success";
-        statusBadge = '<span style="color:var(--green);font-size:11px;font-weight:700;">✅ Đã Click</span>';
+        const successLabel = t.downloadStatus ? `✅ ${esc(t.downloadStatus)}` : '✅ Đã Hoàn Thành';
+        statusBadge = `<span style="color:var(--green);font-size:11px;font-weight:700;">${successLabel}</span>`;
+      } else if (t.status === "WARNING") {
+        itemClass = "error";
+        statusBadge = `<span style="color:var(--yellow);font-size:11px;" title="${esc(t.downloadStatus || t.error)}">⚠️ ${esc(t.downloadStatus?.slice(0, 50) || 'Cảnh báo tải')}</span>`;
       } else if (t.status === "ERROR") {
         itemClass = "error";
-        statusBadge = `<span style="color:var(--red);font-size:11px;" title="${esc(t.error)}">❌ ${esc(t.error?.slice(0, 30) || 'Lỗi')}</span>`;
+        statusBadge = `<span style="color:var(--red);font-size:11px;font-weight:600;" title="${esc(t.error)}">❌ ${esc(t.error?.slice(0, 50) || 'Lỗi')}</span>`;
       }
 
       const mediaInfo = t.mediaId ? `<div style="font-size:10px; color:var(--accent2); margin-top:2px;">🆔 <code>${esc(t.mediaId.slice(0, 16))}...</code></div>` : '';
@@ -1178,6 +1681,350 @@
           ${statusBadge}
         </div>
       </div>`;
+    }).join("");
+  }
+
+  // ──────────────────────────
+  // Auto Click UI CHO ẢNH (Image Auto Click)
+  // ──────────────────────────
+  let isUiImgBatchRunning = false;
+  let uiImgBatchTasks = [];
+
+  function getUiImageConfig() {
+    return {
+      aspectRatio: document.getElementById("uiImgConfigRatio")?.value || "9:16",
+      model: document.getElementById("uiImgConfigModel")?.value || "banana_pro",
+      count: document.getElementById("uiImgConfigCount")?.value || "x1"
+    };
+  }
+
+  // Single Image UI Click
+  async function submitSingleImageUi() {
+    const prompt = document.getElementById("uiImgPromptInput")?.value?.trim();
+    const config = getUiImageConfig();
+    if (!prompt) { toast("Nhập nội dung prompt tạo ảnh!", "error"); return; }
+
+    const btn = document.getElementById("btnUiSubmitSingleImage");
+    const resDiv = document.getElementById("uiSingleImageResult");
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Đang cấu hình & click tạo ảnh trên Flow..."; }
+    if (resDiv) {
+      resDiv.innerHTML = '<div style="color:var(--accent2); font-size:11px; padding:6px 0;">🔍 Đang gửi lệnh cấu hình và click tạo ảnh trên tab Flow...</div>';
+    }
+
+    try {
+      const projectId = document.getElementById("projectId")?.value || document.getElementById("imageProjectId")?.value || "";
+      const res = await callExt("CREATE_IMAGE_UI", { prompt, projectId, config });
+      if (res?.success) {
+        toast(`✅ ${res.message || "Đã tạo ảnh trên tab Flow!"}`, "success");
+        if (resDiv) {
+          resDiv.innerHTML = `<div style="color:var(--green); font-size:11px; background:rgba(0,214,143,0.08); border-radius:6px; padding:8px 10px; border:1px solid rgba(0,214,143,0.2);">✅ ${esc(res.message || "Đã gửi lệnh tạo ảnh thành công")}</div>`;
+        }
+        if (typeof fetchVideos === "function") fetchVideos(true);
+      } else {
+        toast(`❌ ${res?.error || "Lỗi tương tác tab Flow"}`, "error");
+        if (resDiv) resDiv.innerHTML = `<div style="color:var(--red); font-size:11px; padding:6px 0;">❌ ${esc(res?.error || "Lỗi tương tác")}</div>`;
+      }
+    } catch (e) {
+      toast(`❌ Lỗi: ${e.message}`, "error");
+      if (resDiv) resDiv.innerHTML = `<div style="color:var(--red); font-size:11px; padding:6px 0;">❌ ${esc(e.message)}</div>`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "🚀 Config & Click Tạo Ảnh Trên Tab Flow"; }
+    }
+  }
+
+  // Batch Image UI Click Queue (Auto Click Ảnh Hàng Loạt)
+  async function startUiImageBatchQueue() {
+    if (isUiImgBatchRunning) return;
+    const raw = document.getElementById("uiBatchImgPromptInput")?.value || "";
+    const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
+    if (!lines.length) { toast("Nhập ít nhất 1 prompt tạo ảnh!", "error"); return; }
+
+    const projectId = document.getElementById("projectId")?.value || document.getElementById("imageProjectId")?.value || "";
+    const autoSeq = document.getElementById("uiImgAutoSeq")?.checked ?? true;
+    const autoDownload = document.getElementById("uiImgAutoDownload")?.checked ?? true;
+
+    // LẤY STT LỚN NHẤT ĐÃ CÓ TRONG PROJECT ĐỂ TỰ ĐỘNG TĂNG TIẾP (KHÔNG BAO GIỜ TRÙNG)
+    let startSeq = 1;
+    if (autoSeq) {
+      try {
+        const seqRes = await callExt("GET_MAX_SEQ", { projectId });
+        if (seqRes?.success && typeof seqRes.maxSeq === 'number' && seqRes.maxSeq > 0) {
+          startSeq = seqRes.maxSeq + 1;
+        }
+      } catch (_) {}
+    }
+
+    uiImgBatchTasks = lines.map((line, i) => {
+      let prompt = line;
+      let seqStr = "";
+
+      if (autoSeq) {
+        const currentNum = startSeq + i;
+        const seqIndex = String(currentNum).padStart(3, '0') + ".";
+        seqStr = seqIndex;
+        const matchSeq = prompt.match(/^(\d+[\.\-_:\s])/);
+        if (matchSeq) {
+          seqStr = matchSeq[1].trim();
+        } else {
+          prompt = `${seqIndex} ${prompt}`;
+        }
+      } else {
+        const matchSeq = prompt.match(/^(\d+[\.\-_:\s])/);
+        if (matchSeq) seqStr = matchSeq[1].trim();
+      }
+
+      return {
+        id: i + 1,
+        seq: seqStr,
+        prompt: prompt,
+        status: "PENDING",
+        downloadStatus: autoDownload ? "Chờ submit..." : "Chờ tạo...",
+        submittedAt: null,
+        error: null
+      };
+    });
+
+    if (autoSeq) {
+      callExt("UPDATE_MAX_SEQ", { projectId, newMax: startSeq + lines.length - 1 }).catch(() => {});
+    }
+
+    isUiImgBatchRunning = true;
+    const startBtn = document.getElementById("btnUiStartBatchImage");
+    const stopBtn = document.getElementById("btnUiStopBatchImage");
+    if (startBtn) startBtn.style.display = "none";
+    if (stopBtn) stopBtn.style.display = "inline-flex";
+
+    renderUiImageBatchUI();
+    toast(`🚀 Bắt đầu Auto Click Ảnh (${uiImgBatchTasks.length} ảnh) ${autoDownload ? 'kèm Tự động tải về' : ''}!`, "info");
+
+    // 1. Chạy Luồng Submit tuần tự
+    processUiImageBatchQueue(projectId, autoDownload);
+
+    // 2. Chạy Luồng Download Worker ngầm song song (nếu bật Tự động tải)
+    if (autoDownload) {
+      runUiImageDownloadWorker(projectId);
+    }
+  }
+
+  function stopUiImageBatchQueue() {
+    isUiImgBatchRunning = false;
+    const startBtn = document.getElementById("btnUiStartBatchImage");
+    const stopBtn = document.getElementById("btnUiStopBatchImage");
+    if (startBtn) startBtn.style.display = "inline-flex";
+    if (stopBtn) stopBtn.style.display = "none";
+    toast("🛑 Đã dừng Auto Click Ảnh hàng loạt.", "info");
+    renderUiImageBatchUI();
+  }
+
+  async function processUiImageBatchQueue(projectId, autoDownload = true) {
+    const delayMs = parseInt(document.getElementById("uiImgClickDelay")?.value || "5000", 10);
+    const config = getUiImageConfig();
+
+    for (let i = 0; i < uiImgBatchTasks.length; i++) {
+      if (!isUiImgBatchRunning) break;
+      const task = uiImgBatchTasks[i];
+      if (task.status !== "PENDING") continue;
+
+      task.status = "RUNNING";
+      task.downloadStatus = "Đang điền prompt & submit...";
+      renderUiImageBatchUI();
+
+      try {
+        const res = await callExt("CREATE_IMAGE_UI", { prompt: task.prompt, projectId, config });
+        if (res?.success) {
+          task.submittedAt = Date.now();
+          if (autoDownload) {
+            task.status = "SUBMITTED";
+            task.downloadStatus = "Đã gửi Flow! Đang chờ tạo ảnh...";
+            toast(`✅ [#${task.id}] Đã submit ảnh ${task.seq || ''}! Đang chờ tạo...`, "success");
+          } else {
+            task.status = "SUCCESS";
+            task.downloadStatus = "Hoàn thành (Không tải)";
+            toast(`✅ [#${task.id}] Đã click tạo ảnh: ${task.prompt.slice(0, 30)}...`, "success");
+          }
+        } else {
+          task.status = "ERROR";
+          task.error = res?.error || "Lỗi tạo ảnh";
+          task.downloadStatus = `Lỗi submit: ${task.error}`;
+          toast(`❌ [#${task.id}] ${task.error}`, "error");
+        }
+      } catch (err) {
+        task.status = "ERROR";
+        task.error = err.message;
+        task.downloadStatus = `Lỗi: ${err.message}`;
+      }
+
+      renderUiImageBatchUI();
+
+      // Delay giữa các lần click
+      if (i < uiImgBatchTasks.length - 1 && isUiImgBatchRunning) {
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+
+    if (!autoDownload) {
+      isUiImgBatchRunning = false;
+      const startBtn = document.getElementById("btnUiStartBatchImage");
+      const stopBtn = document.getElementById("btnUiStopBatchImage");
+      if (startBtn) startBtn.style.display = "inline-flex";
+      if (stopBtn) stopBtn.style.display = "none";
+      renderUiImageBatchUI();
+      toast("🎉 Hoàn tất Auto Click Ảnh hàng loạt!", "success");
+      if (typeof fetchVideos === "function") fetchVideos(true);
+    }
+  }
+
+  async function runUiImageDownloadWorker(projectId) {
+    while (isUiImgBatchRunning) {
+      const activeTasks = uiImgBatchTasks.filter(t => t.status === "SUBMITTED" || t.status === "RENDERING");
+      const hasUnsubmitted = uiImgBatchTasks.some(t => t.status === "PENDING" || t.status === "RUNNING");
+
+      if (!activeTasks.length) {
+        if (!hasUnsubmitted) {
+          // Tất cả các task đã hoàn thành hoặc thất bại
+          break;
+        }
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+
+      for (const task of activeTasks) {
+        if (!isUiImgBatchRunning) break;
+
+        try {
+          const statusRes = await callExt("CHECK_CARD_STATUS", {
+            projectId,
+            query: task.seq || task.prompt,
+            prompt: task.prompt,
+            seq: task.seq,
+            mediaType: 'image'
+          });
+
+          if (statusRes?.status === 'RENDERING') {
+            const curProg = statusRes.progress || '';
+            task.status = "RENDERING";
+            task.downloadStatus = `Đang render (${curProg || '...'})`;
+            renderUiImageBatchUI();
+          } else if (statusRes?.status === 'READY') {
+            task.status = "DOWNLOADING";
+            task.downloadStatus = "Tạo xong! Đang tải ảnh về máy...";
+            renderUiImageBatchUI();
+            toast(`🎯 [#${task.id}] Ảnh ${task.seq || ''} tạo xong! Đang tải về...`, "info");
+
+            await acquireUiLock();
+            let dlRes = null;
+            try {
+              dlRes = await callExt("DOWNLOAD_IMAGE_CARD", {
+                projectId,
+                query: task.seq || task.prompt,
+                prompt: task.prompt,
+                seq: task.seq,
+                imgSrc: statusRes?.imgSrc || null
+              });
+            } finally {
+              releaseUiLock();
+              callExt("SCROLL_FLOW_TO_TOP", { projectId }).catch(() => {});
+            }
+
+            if (dlRes?.success) {
+              task.status = "SUCCESS";
+              task.downloadStatus = `Đã tải (${dlRes.filename || 'OK'})`;
+              toast(`📥 [#${task.id}] Đã tải xong ảnh (${task.seq || ''})!`, "success");
+            } else {
+              task.status = "WARNING";
+              task.downloadStatus = `Lỗi tải: ${dlRes?.error || 'timeout'}`;
+              toast(`⚠️ [#${task.id}] Ảnh tạo xong nhưng lỗi tải: ${dlRes?.error}`, "warning");
+            }
+            renderUiImageBatchUI();
+          } else if (statusRes?.status === 'FAILED') {
+            task.status = "ERROR";
+            task.error = statusRes.error || "Tạo ảnh thất bại trên Flow";
+            task.downloadStatus = statusRes.error || "Tạo ảnh thất bại trên Flow";
+            toast(`❌ [#${task.id}] ${task.error} (${task.seq || ''})`, "error");
+            renderUiImageBatchUI();
+          }
+        } catch (e) {
+          console.warn(`[Image Download Worker] Error checking task #${task.id}:`, e);
+        }
+
+        await new Promise(r => setTimeout(r, 1200));
+      }
+
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    if (!uiImgBatchTasks.some(t => t.status === "PENDING" || t.status === "RUNNING" || t.status === "SUBMITTED" || t.status === "RENDERING")) {
+      isUiImgBatchRunning = false;
+      const startBtn = document.getElementById("btnUiStartBatchImage");
+      const stopBtn = document.getElementById("btnUiStopBatchImage");
+      if (startBtn) startBtn.style.display = "inline-flex";
+      if (stopBtn) stopBtn.style.display = "none";
+      renderUiImageBatchUI();
+      toast("🎉 Hoàn tất Auto Click và Tải Ảnh hàng loạt!", "success");
+      if (typeof fetchVideos === "function") fetchVideos(true);
+    }
+  }
+
+  function renderUiImageBatchUI() {
+    const total = uiImgBatchTasks.length;
+    const pending = uiImgBatchTasks.filter(t => t.status === "PENDING").length;
+    const running = uiImgBatchTasks.filter(t => t.status === "RUNNING" || t.status === "SUBMITTED" || t.status === "RENDERING" || t.status === "DOWNLOADING").length;
+    const success = uiImgBatchTasks.filter(t => t.status === "SUCCESS").length;
+    const error = uiImgBatchTasks.filter(t => t.status === "ERROR" || t.status === "WARNING").length;
+
+    const elTotal = document.getElementById("uiImgStatTotal");
+    const elPending = document.getElementById("uiImgStatPending");
+    const elRunning = document.getElementById("uiImgStatRunning");
+    const elSuccess = document.getElementById("uiImgStatSuccess");
+    const elError = document.getElementById("uiImgStatError");
+    const elFill = document.getElementById("uiImgQueueProgressFill");
+
+    if (elTotal) elTotal.textContent = total;
+    if (elPending) elPending.textContent = pending;
+    if (elRunning) elRunning.textContent = running;
+    if (elSuccess) elSuccess.textContent = success;
+    if (elError) elError.textContent = error;
+
+    const doneCount = success + error;
+    const pct = total ? Math.round((doneCount / total) * 100) : 0;
+    if (elFill) elFill.style.width = pct + "%";
+
+    const listDiv = document.getElementById("uiBatchImgQueueList");
+    if (!listDiv) return;
+
+    listDiv.innerHTML = uiImgBatchTasks.map(t => {
+      let badgeClass = "badge-muted";
+      let badgeText = "⏳ Chờ...";
+      if (t.status === "RUNNING") {
+        badgeClass = "badge-primary";
+        badgeText = "⚡ Đang submit...";
+      } else if (t.status === "SUBMITTED" || t.status === "RENDERING") {
+        badgeClass = "badge-primary";
+        badgeText = `⏳ ${esc(t.downloadStatus || 'Đang tạo ảnh...')}`;
+      } else if (t.status === "DOWNLOADING") {
+        badgeClass = "badge-primary";
+        badgeText = "📥 Đang tải ảnh...";
+      } else if (t.status === "SUCCESS") {
+        badgeClass = "badge-success";
+        badgeText = t.downloadStatus?.includes("Đã tải") ? `✅ ${esc(t.downloadStatus)}` : "✅ Hoàn thành";
+      } else if (t.status === "WARNING") {
+        badgeClass = "badge-warning";
+        badgeText = `⚠️ ${esc(t.downloadStatus || 'Cảnh báo tải')}`;
+      } else if (t.status === "ERROR") {
+        badgeClass = "badge-danger";
+        badgeText = "❌ Lỗi";
+      }
+
+      return `
+        <div style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin-bottom:6px; font-size:11px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+            <span style="font-weight:700; color:var(--text);">${t.seq ? `<b style="color:var(--accent2);">${esc(t.seq)}</b> ` : ''}#${t.id}</span>
+            <span class="badge ${badgeClass}" style="font-size:10px; padding:2px 6px;">${badgeText}</span>
+          </div>
+          <div style="color:var(--text2); word-break:break-word;">${esc(t.prompt)}</div>
+          ${t.error ? `<div style="color:var(--red); font-size:10px; margin-top:2px;">⚠️ ${esc(t.error)}</div>` : ''}
+        </div>
+      `;
     }).join("");
   }
 
@@ -1225,7 +2072,8 @@
       document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
     };
 
-    bindClick('btnTestStep4_0', () => runTest4(4.0, "Chế độ (Mode)"));
+    bindClick('btnTestStep4_0', () => runTest4(4.0, "Bấm Tab Video"));
+    bindClick('btnTestStep4_0_frames', () => runTest4(4.05, "Bấm Tab Khung Hình"));
     bindClick('btnTestStep4_1', () => runTest4(4.1, "Tỷ lệ"));
     bindClick('btnTestStep4_2', () => runTest4(4.2, "Thời lượng"));
     bindClick('btnTestStep4_3', () => runTest4(4.3, "Số lượng"));
@@ -1234,6 +2082,103 @@
     bindClick('btnTestStep4_7', () => runTest4(4.7, "Focus Text"));
     bindClick('btnTestStep4_8', () => runTest4(4.8, "Auto Paste"));
     bindClick('btnTestStep4', () => runTest4(4, "All Config"));
+    bindClick('btnTestStep5', () => runTest4(5.0, "Quét Media ID & DOM"));
+    bindClick('btnTestOldApi', () => runTest4(6.0, "Test API Cũ (tRPC flow.projectInitialData)"));
+    bindClick('btnTestDownload', () => runTest4(7.0, "Test Tải Video Trực Tiếp Trên Tab Flow"));
+    bindClick('btnTestRightClick', async () => {
+      const pid = document.getElementById("projectId")?.value || "";
+      const query = document.getElementById("testRightClickQuery")?.value || "001.";
+      document.getElementById("testStepLog").textContent = `⏳ Đang tìm và click chuột phải vào card "${query}" trên tab Flow...`;
+      const r = await callExt("TEST_UI_STEP", { step: 8.0, projectId: pid, query });
+      document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
+    });
+
+    bindClick('btnTestHoverDownload', async () => {
+      const pid = document.getElementById("projectId")?.value || "";
+      const query = document.getElementById("testRightClickQuery")?.value || "001.";
+      document.getElementById("testStepLog").textContent = `⏳ Đang di chuột vào mục "Tải xuống" cho card "${query}"...`;
+      const r = await callExt("TEST_UI_STEP", { step: 8.1, projectId: pid, query });
+      document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
+    });
+
+    bindClick('btnTestHover720p', async () => {
+      const pid = document.getElementById("projectId")?.value || "";
+      const query = document.getElementById("testRightClickQuery")?.value || "001.";
+      document.getElementById("testStepLog").textContent = `⏳ Đang di chuột vào "720p (Kích thước gốc)" cho card "${query}"...`;
+      const r = await callExt("TEST_UI_STEP", { step: 8.2, projectId: pid, query });
+      document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
+    });
+
+    bindClick('btnTestClick720p', async () => {
+      const pid = document.getElementById("projectId")?.value || "";
+      const query = document.getElementById("testRightClickQuery")?.value || "001.";
+      document.getElementById("testStepLog").textContent = `⏳ Đang rê chuột và bấm tải 720p cho card "${query}"...`;
+      const r = await callExt("TEST_UI_STEP", { step: 8.3, projectId: pid, query });
+      document.getElementById("testStepLog").textContent = r.success ? ("✅ " + r.message) : ("❌ Lỗi: " + r.error);
+    });
+
+    bindClick('btnTestFullDownloadFlow', async () => {
+      const pid = document.getElementById("projectId")?.value || "";
+      const query = document.getElementById("testRightClickQuery")?.value || "001.";
+      const logEl = document.getElementById("testStepLog");
+      logEl.textContent = `⏳ [B8.Full] Bắt đầu luồng kiểm tra tự động:\n- Card tìm kiếm: "${query}"\n- Trạng thái: Đang theo dõi card trên tab Flow...\n(Nếu video đang render sẽ chờ đến khi render xong ➔ Tự động Click phải ➔ Rê Tải xuống ➔ Rê 720p ➔ Bấm tải 720p gốc)`;
+
+      try {
+        const r = await callExt("WAIT_AND_DOWNLOAD_CARD", {
+          projectId: pid,
+          prompt: query,
+          timeoutMs: 600000
+        });
+        if (r?.success) {
+          logEl.textContent += `\n\n🎉 THÀNH CÔNG 100%! Đã kích hoạt tải video 720p gốc:\n📁 File: ${r.filename || 'flow_video.mp4'}\n💡 Kiểm tra danh sách download của Chrome!`;
+          toast(`📥 Đã tải thành công video 720p cho "${query}"!`, "success");
+        } else {
+          logEl.textContent += `\n\n❌ Thất bại: ${r?.error || "Không tải được video"}`;
+          toast(`❌ Lỗi tải: ${r?.error}`, "error");
+        }
+      } catch (err) {
+        logEl.textContent += `\n\n❌ Exception: ${err.message}`;
+        toast(`❌ Lỗi: ${err.message}`, "error");
+      }
+    });
+
+    const runTestImg = async (subStep, label) => {
+      const pid = document.getElementById("projectId")?.value || "";
+      const ratio = document.getElementById("testImgRatio")?.value || "9:16";
+      const model = document.getElementById("testImgModel")?.value || "banana_pro";
+      const count = document.getElementById("testImgCount")?.value || "x1";
+      const prompt = document.getElementById("testStepPrompt")?.value || "A majestic golden eagle soaring above misty mountains at sunrise, ultra high quality, 8k";
+
+      document.getElementById("testStepLog").textContent = `⏳ [Image UI] Đang chạy ${label} (Tỉ lệ: ${ratio}, Model: ${model}, Số lượng: ${count})...`;
+      try {
+        const r = await callExt("TEST_UI_STEP", {
+          step: subStep,
+          projectId: pid,
+          prompt,
+          config: {
+            aspectRatio: ratio,
+            model,
+            count
+          }
+        });
+        document.getElementById("testStepLog").textContent = r.success ? ("✅ " + (r.message || r.result || "Thành công!")) : ("❌ Lỗi: " + r.error);
+        if (r.success) {
+          toast(`✅ [Image Test] ${label} thành công!`, "success");
+        } else {
+          toast(`❌ [Image Test] ${r.error}`, "error");
+        }
+      } catch (err) {
+        document.getElementById("testStepLog").textContent = `❌ Exception: ${err.message}`;
+        toast(`❌ Lỗi: ${err.message}`, "error");
+      }
+    };
+
+    bindClick('btnTestImgTab', () => runTestImg("img_tab", "Bấm Tab Hình ảnh"));
+    bindClick('btnTestImgRatio', () => runTestImg("img_ratio", "Chọn Tỉ lệ Ảnh"));
+    bindClick('btnTestImgCount', () => runTestImg("img_count", "Chọn Số lượng Ảnh"));
+    bindClick('btnTestImgModel', () => runTestImg("img_model", "Chọn Model Ảnh"));
+    bindClick('btnTestImgAllConfig', () => runTestImg("img_all_config", "Toàn Bộ Config Ảnh"));
+    bindClick('btnTestImgFullCreate', () => runTestImg("img_full_create", "Tạo Hoàn Chỉnh 1 Ảnh"));
     
     bindClick('btnCreate', createVideo);
 
@@ -1252,6 +2197,9 @@
     bindClick('btnUiSubmitSingle', submitSingleUi);
     bindClick('btnUiStartBatch', startUiBatchQueue);
     bindClick('btnUiStopBatch', stopUiBatchQueue);
+    bindClick('btnUiSubmitSingleImage', submitSingleImageUi);
+    bindClick('btnUiStartBatchImage', startUiImageBatchQueue);
+    bindClick('btnUiStopBatchImage', stopUiImageBatchQueue);
     bindClick('btnSelectUiStartFile', () => document.getElementById('uiStartFile')?.click());
     bindClick('btnSelectUiEndFile', () => document.getElementById('uiEndFile')?.click());
     bindClick('btnLoadProjectImages', () => loadProjectImages());
@@ -1325,7 +2273,7 @@
       
       if (action === 'downloadImage') downloadImageDirect(btn.dataset.id);
       if (action === 'copyId') copyMediaId(btn.dataset.id);
-      if (action === 'downloadVid') downloadVid(btn.dataset.id, btn.dataset.prompt);
+      if (action === 'downloadVid') downloadVid(btn.dataset.id, btn.dataset.prompt, btn.dataset.url, parseInt(btn.dataset.index, 10));
       if (action === 'deleteVid') deleteVid(btn.dataset.workflow, btn.dataset.project, btn.dataset.media, btn.dataset.prompt);
     });
   }
