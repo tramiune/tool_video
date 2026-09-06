@@ -606,7 +606,14 @@ async function getProjectVideos(projectId, targetTab = null) {
               container.querySelector("button[aria-label*='Phát' i], button[aria-label*='Play' i], button[title*='Phát' i], [class*='play'], svg")
             ) || txt.includes("play_arrow") || txt.includes("play");
             const hasVideoText = prompt.toLowerCase().includes("video") || txt.includes("video") || /\b\d+s\b/i.test(txt);
-            const isVideo = Boolean(v || vidUrl || hasPlay || hasVideoText || isProcessing || !prompt.toLowerCase().includes("ảnh"));
+
+            // BẢO VỆ CHỐNG BẮT NHẦM ẢNH START_FRAME / END_FRAME / ASSET:
+            const isImgAsset = !v && !vidUrl && !isProcessing && (
+              txt.includes("start_fra") || txt.includes("end_fra") || txt.includes("start frame") || txt.includes("end frame") ||
+              txt.includes("frame_") || /\.(png|jpg|jpeg|webp)\b/i.test(txt) ||
+              Boolean(container.querySelector("svg.lucide-image, [data-icon*='image'], [aria-label*='ảnh' i]"))
+            );
+            const isVideo = !isImgAsset && Boolean(v || vidUrl || hasPlay || hasVideoText || isProcessing || (!prompt.toLowerCase().includes("ảnh") && !prompt.toLowerCase().includes(".png") && !prompt.toLowerCase().includes(".jpg")));
 
             const cleanPrompt = prompt || `Video Veo #${idx + 1}`;
 
@@ -2563,11 +2570,13 @@ func: async (promptText, cfg) => {
 
       // ── TẦNG 2: Kiểm tra biến toàn cục & DOM trực tiếp trên tab Flow ──
       try {
+        const seqMatch = prompt ? prompt.trim().match(/^(\d{1,4})[\.\-_:\s]/i) : null;
+        const submitNumOnly = seqMatch ? seqMatch[1] : "";
         const tabCheck = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           world: "MAIN",
-          args: [effectiveSubmitTime, prompt, Array.from(preSubmitCapturedIds)],
-          func: (startTime, promptText, excludedList) => {
+          args: [effectiveSubmitTime, prompt, Array.from(preSubmitCapturedIds), submitNumOnly],
+          func: (startTime, promptText, excludedList, numOnly) => {
             const excluded = new Set(excludedList || []);
             const recent = window.__flowRecentMedia || [];
             const fresh = recent.find(item => item.time >= startTime - 500 && item.primaryId && !excluded.has(item.primaryId));
@@ -2576,21 +2585,28 @@ func: async (promptText, cfg) => {
             }
 
             // Check DOM attributes
-            const allElements = document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id]");
+            const allElements = document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], [role='listitem']");
             for (const el of allElements) {
               // LOẠI TRỪ: Các phần tử nằm trong composer, prompt editor, frame slot
               if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='frame-slot'], [class*='upload']")) {
                 continue;
               }
 
-              // LOẠI TRỪ: Thẻ chỉ chứa ảnh mà không có video/loading
-              const hasVideo = el.querySelector("video");
-              // Card mới tạo phải có spinner / chữ đang tạo HOẶC phải chứa nội dung prompt của task này!
+              const text = (el.innerText || el.textContent || "").toLowerCase();
+              const hasSpinner = Boolean(el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin"));
+              const hasGeneratingText = text.includes("đang tạo") || text.includes("generating") || text.includes("đang kết xuất") || /\b\d+\s*%/.test(text);
               const promptSub = (promptText || "").trim().slice(0, 15).toLowerCase();
-              const textMatchesPrompt = promptSub && text.includes(promptSub);
+              const textMatchesPrompt = Boolean(promptSub && text.includes(promptSub));
+              const hasSeqMatch = Boolean(numOnly && new RegExp(`(^|[^0-9])${numOnly}([\\.\\-_:\\s]|$)`).test(text));
 
-              if (!hasSpinner && !hasGeneratingText && !textMatchesPrompt) {
+              if (!hasSpinner && !hasGeneratingText && !textMatchesPrompt && !hasSeqMatch) {
                 continue; // Bỏ qua các card cũ đã hoàn thành từ trước
+              }
+
+              // Đóng dấu DOM attribute ngay lập tức khi phát hiện card video mới
+              if (numOnly) {
+                el.setAttribute("data-flow-task-seq-num", numOnly);
+                el.dataset.flowTaskSeqNum = numOnly;
               }
 
               const mId = el.getAttribute("data-media-id");
@@ -4708,7 +4724,14 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         function isCardImageAsset(el) {
           if (!el) return false;
           const text = (el.innerText || el.textContent || "").toLowerCase();
-          if (isCardVideo(el)) return false;
+          // Nếu thẻ đang trong tiến trình render (có spinner, progress %, đang tạo...) thì là thẻ VIDEO đang tạo, KHÔNG PHẢI ảnh asset!
+          if (el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d{1,3}\s*%/i.test(text) || text.includes("đang tạo") || text.includes("generating") || text.includes("đang kết xuất")) {
+            return false;
+          }
+          if (el.querySelector("video")) return false;
+          if (el.querySelector("svg.lucide-play, [data-icon*='play'], button[aria-label*='phát' i], button[aria-label*='play' i]")) return false;
+          if (text.includes("▶") || text.includes("►") || text.includes("play_arrow") || /\b\d+s\b/i.test(text) || /\b\d+\s*giây\b/i.test(text)) return false;
+
           if (text.includes("start_fra") || text.includes("end_fra") || text.includes("start frame") || text.includes("end frame") ||
               /\.(png|jpg|jpeg|webp)\b/i.test(text) || text.includes("frame_")) {
             return true;
@@ -4722,11 +4745,25 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         // Helper leo lên container cha của thẻ card
         function getCardContainer(el) {
           if (!el) return null;
+          const tagged = el.closest("[data-flow-task-seq-num]");
+          if (tagged) return tagged;
+
+          const directItem = el.closest("[role='listitem'], div[class*='card'], div[data-id], div[data-media-id], div[data-workflow-id]");
+          if (directItem) {
+            const r = directItem.getBoundingClientRect();
+            if (r.width >= 120 && r.width <= 550 && r.height >= 150 && r.height <= 850) {
+              return directItem;
+            }
+          }
+
           let card = el;
           let cur = el.parentElement;
           while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
             const r = cur.getBoundingClientRect();
             if (r.width > 550 || r.height > 850 || r.width > window.innerWidth * 0.8) break;
+
+            const mediaCount = cur.querySelectorAll("video, img:not([src*='avatar']):not([src*='profile'])").length;
+            if (mediaCount > 2) break;
 
             const curText = cur.textContent || "";
             const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
@@ -4765,16 +4802,31 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             if (isVid) return -999999;
           }
 
-          let score = 0;
-          if (isVideoTask && isVid) score += 10000;
-          if (mType === 'image' && isImgAsset) score += 5000;
-
           const cardText = (card.innerText || card.textContent || "").trim();
           const cardTextLower = cardText.toLowerCase();
           const cardTextNoAccents = removeDiacritics(cardTextLower);
 
+          // BẢO VỆ TUYỆT ĐỐI: Loại bỏ triệt để các card có STT khác (chống tải nhầm video của task khác)
+          if (numOnly) {
+            const targetNum = parseInt(numOnly, 10);
+            const rawSeqs = cardText.match(/\b\d{1,4}[\.\-_:\s]/g) || [];
+            const foundNums = rawSeqs.map(s => parseInt(s.replace(/[^0-9]/g, ""), 10)).filter(n => !isNaN(n));
+            if (foundNums.length > 0 && !foundNums.includes(targetNum)) {
+              return -999999;
+            }
+          }
+
+          let score = 0;
+          if (isVideoTask && isVid) score += 10000;
+          if (mType === 'image' && isImgAsset) score += 5000;
+
           if (isVideoTask && (cardTextLower.includes("start_fra") || cardTextLower.includes("end_fra") || cardTextLower.includes("frame_"))) {
             score -= 8000;
+          }
+
+          // Ưu tiên cao nhất cho thẻ đã được đóng dấu DOM attribute chính xác
+          if (numOnly && (card.getAttribute("data-flow-task-seq-num") === numOnly || card.dataset?.flowTaskSeqNum === numOnly)) {
+            score += 25000;
           }
 
           if (promptFull && (cardTextLower.includes(promptFull) || (promptFullNoAccents && cardTextNoAccents.includes(promptFullNoAccents)))) {
@@ -4786,8 +4838,16 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             score += 3000;
           }
 
+          // Semantic keyword matching (hỗ trợ trường hợp tiêu đề bị AI paraphrase sau khi render xong)
+          let wordHits = 0;
           for (const w of pWords) {
-            if (cardTextNoAccents.includes(w)) score += 500;
+            if (cardTextNoAccents.includes(w)) {
+              score += 500;
+              wordHits++;
+            }
+          }
+          if (wordHits >= 2) {
+            score += 3500; // Thưởng điểm lớn khi khớp 2+ từ khóa của prompt
           }
 
           if (card.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d+\s*%/i.test(cardText)) {
@@ -4801,6 +4861,18 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         }
 
         let matchedCard = null;
+
+        // ƯU TIÊN 0: Tìm theo DOM Attribute đã được đóng dấu (data-flow-task-seq-num)
+        if (numOnly) {
+          const taggedEls = Array.from(document.querySelectorAll(`[data-flow-task-seq-num="${numOnly}"]`));
+          for (const el of taggedEls) {
+            const card = getCardContainer(el) || el;
+            if (card && scoreCard(card) > 0) {
+              matchedCard = card;
+              break;
+            }
+          }
+        }
 
         // ƯU TIÊN 1: Tìm chính xác theo Media ID hoặc Workflow ID (UUID)
         if (targetMediaId || targetWorkflowId) {
@@ -4855,7 +4927,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
           const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
             if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
             const r = el.getBoundingClientRect();
-            if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
+            if (r.width < 120 || r.width > 550 || r.height < 150 || r.height > 850) return false;
             return Boolean(el.querySelector("video, img"));
           });
 
@@ -5477,7 +5549,14 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         function isCardImageAsset(el) {
           if (!el) return false;
           const text = (el.innerText || el.textContent || "").toLowerCase();
-          if (isCardVideo(el)) return false;
+          // Nếu thẻ đang trong tiến trình render (có spinner, progress %, đang tạo...) thì là thẻ VIDEO đang tạo, KHÔNG PHẢI ảnh asset!
+          if (el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d{1,3}\s*%/i.test(text) || text.includes("đang tạo") || text.includes("generating") || text.includes("đang kết xuất")) {
+            return false;
+          }
+          if (el.querySelector("video")) return false;
+          if (el.querySelector("svg.lucide-play, [data-icon*='play'], button[aria-label*='phát' i], button[aria-label*='play' i]")) return false;
+          if (text.includes("▶") || text.includes("►") || text.includes("play_arrow") || /\b\d+s\b/i.test(text) || /\b\d+\s*giây\b/i.test(text)) return false;
+
           if (text.includes("start_fra") || text.includes("end_fra") || text.includes("start frame") || text.includes("end frame") ||
               /\.(png|jpg|jpeg|webp)\b/i.test(text) || text.includes("frame_")) {
             return true;
@@ -5562,11 +5641,25 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         // Helper leo lên container cha của thẻ card
         function getCardContainer(el) {
           if (!el) return null;
+          const tagged = el.closest("[data-flow-task-seq-num]");
+          if (tagged) return tagged;
+
+          const directItem = el.closest("[role='listitem'], div[class*='card'], div[data-id], div[data-media-id], div[data-workflow-id]");
+          if (directItem) {
+            const r = directItem.getBoundingClientRect();
+            if (r.width >= 120 && r.width <= 550 && r.height >= 150 && r.height <= 850) {
+              return directItem;
+            }
+          }
+
           let card = el;
           let cur = el.parentElement;
           while (cur && cur !== document.body && cur.tagName !== 'MAIN') {
             const r = cur.getBoundingClientRect();
             if (r.width > 550 || r.height > 850 || r.width > window.innerWidth * 0.8) break;
+
+            const mediaCount = cur.querySelectorAll("video, img:not([src*='avatar']):not([src*='profile'])").length;
+            if (mediaCount > 2) break;
 
             const curText = cur.textContent || "";
             const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
@@ -5605,16 +5698,31 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             if (isVid) return -999999;
           }
 
-          let score = 0;
-          if (isVideoTask && isVid) score += 10000;
-          if (mType === 'image' && isImgAsset) score += 5000;
-
           const cardText = (card.innerText || card.textContent || "").trim();
           const cardTextLower = cardText.toLowerCase();
           const cardTextNoAccents = removeDiacritics(cardTextLower);
 
+          // BẢO VỆ TUYỆT ĐỐI: Loại bỏ triệt để các card có STT khác (chống tải nhầm video của task khác)
+          if (numOnly) {
+            const targetNum = parseInt(numOnly, 10);
+            const rawSeqs = cardText.match(/\b\d{1,4}[\.\-_:\s]/g) || [];
+            const foundNums = rawSeqs.map(s => parseInt(s.replace(/[^0-9]/g, ""), 10)).filter(n => !isNaN(n));
+            if (foundNums.length > 0 && !foundNums.includes(targetNum)) {
+              return -999999;
+            }
+          }
+
+          let score = 0;
+          if (isVideoTask && isVid) score += 10000;
+          if (mType === 'image' && isImgAsset) score += 5000;
+
           if (isVideoTask && (cardTextLower.includes("start_fra") || cardTextLower.includes("end_fra") || cardTextLower.includes("frame_"))) {
             score -= 8000;
+          }
+
+          // Ưu tiên cao nhất cho thẻ đã được đóng dấu DOM attribute chính xác
+          if (numOnly && (card.getAttribute("data-flow-task-seq-num") === numOnly || card.dataset?.flowTaskSeqNum === numOnly)) {
+            score += 25000;
           }
 
           if (promptFull && (cardTextLower.includes(promptFull) || (promptFullNoAccents && cardTextNoAccents.includes(promptFullNoAccents)))) {
@@ -5626,8 +5734,16 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             score += 3000;
           }
 
+          // Semantic keyword matching (hỗ trợ trường hợp tiêu đề bị AI paraphrase sau khi render xong)
+          let wordHits = 0;
           for (const w of pWords) {
-            if (cardTextNoAccents.includes(w)) score += 500;
+            if (cardTextNoAccents.includes(w)) {
+              score += 500;
+              wordHits++;
+            }
+          }
+          if (wordHits >= 2) {
+            score += 3500; // Thưởng điểm lớn khi khớp 2+ từ khóa của prompt
           }
 
           if (card.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d+\s*%/i.test(cardText)) {
@@ -5642,8 +5758,20 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
 
         let matched = null;
 
+        // ƯU TIÊN 0: Tìm theo DOM Attribute đã được đóng dấu (data-flow-task-seq-num)
+        if (numOnly) {
+          const taggedEls = Array.from(document.querySelectorAll(`[data-flow-task-seq-num="${numOnly}"]`));
+          for (const el of taggedEls) {
+            const card = getCardContainer(el) || el;
+            if (card && scoreCard(card) > 0) {
+              matched = card;
+              break;
+            }
+          }
+        }
+
         // ƯU TIÊN 1: Tìm chính xác theo Media ID hoặc Workflow ID (UUID)
-        if (targetMediaId || targetWorkflowId) {
+        if (!matched && (targetMediaId || targetWorkflowId)) {
           const allMediaAndCards = Array.from(
             document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], img, video")
           );
@@ -5696,7 +5824,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
             if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
             const r = el.getBoundingClientRect();
-            if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
+            if (r.width < 120 || r.width > 550 || r.height < 150 || r.height > 850) return false;
             return Boolean(el.querySelector("video, img"));
           });
 
@@ -5718,7 +5846,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           ).filter(el => {
             if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
             const r = el.getBoundingClientRect();
-            if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
+            if (r.width < 120 || r.width > 550 || r.height < 150 || r.height > 850) return false;
             if (isVideoTask && isCardImageAsset(el)) return false;
             return isCardFailed(el);
           });
@@ -5772,9 +5900,18 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         const hasSingleCancelBtn = Boolean(matched.querySelector("button[aria-label*='hủy' i]"));
 
         if (pctMatch || isGenerating || hasGenText || hasSingleCancelBtn) {
+          if (numOnly) {
+            matched.setAttribute("data-flow-task-seq-num", numOnly);
+            matched.dataset.flowTaskSeqNum = numOnly;
+          }
+          const cardRealId = matched.getAttribute("data-media-id") ||
+                             matched.getAttribute("data-workflow-id") ||
+                             matched.getAttribute("data-id") ||
+                             (matched.id && matched.id !== '_gd' ? matched.id : null);
           return {
             status: 'RENDERING',
-            progress: pctMatch ? `${pctMatch[1]}%` : "Đang render..."
+            progress: pctMatch ? `${pctMatch[1]}%` : "Đang render...",
+            mediaId: cardRealId || targetMediaId
           };
         }
 
@@ -5784,9 +5921,15 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         }
 
         // 3. THẺ ĐÃ HOÀN TẤT -> READY để kích hoạt tải 720p!
-        // (Đã loại bỏ hoàn toàn DOM mutation lbl.textContent = ...)
-
-        const matchedMediaId = matched?.getAttribute("data-media-id") || matched?.getAttribute("data-workflow-id") || targetMediaId;
+        if (numOnly) {
+          matched.setAttribute("data-flow-task-seq-num", numOnly);
+          matched.dataset.flowTaskSeqNum = numOnly;
+        }
+        const cardRealId = matched?.getAttribute("data-media-id") ||
+                           matched?.getAttribute("data-workflow-id") ||
+                           matched?.getAttribute("data-id") ||
+                           (matched.id && matched.id !== '_gd' ? matched.id : null);
+        const matchedMediaId = cardRealId || targetMediaId;
         const videoEl = matched?.querySelector("video");
         const videoUrl = videoEl?.currentSrc || videoEl?.src || "";
         return { status: 'READY', mediaId: matchedMediaId, videoUrl };
@@ -5812,12 +5955,17 @@ async function waitAndDownloadCard(projectId, promptText, timeoutMs = 600000) {
   const startTime = Date.now();
   const pollInterval = 3500;
   let lastProgress = "";
+  let lastKnownMediaId = "";
 
   while (Date.now() - startTime < timeoutMs) {
     await new Promise(r => setTimeout(r, pollInterval));
 
-    const cardInfo = await checkCardStatus(projectId, query, promptText, "", "", 'video');
+    const cardInfo = await checkCardStatus(projectId, query, promptText, lastKnownMediaId, "", 'video');
     const cardStatus = cardInfo?.status;
+
+    if (cardInfo?.mediaId) {
+      lastKnownMediaId = cardInfo.mediaId;
+    }
 
     if (cardStatus === 'RENDERING') {
       const prog = cardInfo.progress || "Đang render...";
@@ -5842,7 +5990,7 @@ async function waitAndDownloadCard(projectId, promptText, timeoutMs = 600000) {
 
       // Đợi 1s cho thẻ video hiển thị ổn định
       await new Promise(r => setTimeout(r, 1000));
-      const dlResult = await triggerNativeDownloadForCard(flowTab.id, query, promptText, cardInfo?.mediaId || "", "", 'video', projectId);
+      const dlResult = await triggerNativeDownloadForCard(flowTab.id, query, promptText, cardInfo?.mediaId || lastKnownMediaId || "", "", 'video', projectId);
       return dlResult;
     } else if (cardStatus === 'FAILED') {
       logToBridge(`[Auto Download] ❌ Card "${query}" render thất bại!`);

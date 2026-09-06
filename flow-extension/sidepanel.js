@@ -775,6 +775,10 @@
             mediaType: 'video'
           });
           if (statusRes?.status === 'RENDERING') {
+            if (statusRes.mediaId && (!task.mediaId || task.mediaId !== statusRes.mediaId)) {
+              console.log(`[Batch Worker] Cập nhật real mediaId cho task #${task.id} (${task.seq}): ${statusRes.mediaId}`);
+              task.mediaId = statusRes.mediaId;
+            }
             const curProg = statusRes.progress || '';
             if (task.lastProgress !== curProg) {
               task.lastProgress = curProg;
@@ -796,6 +800,9 @@
               continue;
             }
           } else if (statusRes?.status === 'READY') {
+            if (statusRes.mediaId && (!task.mediaId || task.mediaId !== statusRes.mediaId)) {
+              task.mediaId = statusRes.mediaId;
+            }
             const elapsed = Date.now() - (task.submittedAt || 0);
             if (elapsed < 15000) {
               task.status = "RENDERING";
@@ -1672,6 +1679,10 @@
             });
 
             if (statusRes?.status === 'RENDERING') {
+              if (statusRes.mediaId && (!task.mediaId || task.mediaId !== statusRes.mediaId)) {
+                console.log(`[Ui Worker] Cập nhật real mediaId cho task #${task.id} (${task.seq}): ${statusRes.mediaId}`);
+                task.mediaId = statusRes.mediaId;
+              }
               const curProg = statusRes.progress || '';
               if (task.lastProgress !== curProg) {
                 task.lastProgress = curProg;
@@ -1701,6 +1712,9 @@
                 continue;
               }
             } else if (statusRes?.status === 'READY') {
+              if (statusRes.mediaId && (!task.mediaId || task.mediaId !== statusRes.mediaId)) {
+                task.mediaId = statusRes.mediaId;
+              }
               const elapsed = Date.now() - (task.submittedAt || 0);
               if (elapsed < 15000) {
                 task.status = "RENDERING";
