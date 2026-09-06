@@ -1959,17 +1959,9 @@ func: async (promptText, cfg) => {
                 await sleep(500);
             }
           }
-        } catch (confErr) {
-          console.warn("[Flow Extension] Config error:", confErr);
-        }
 
-        // 6. Close popup gracefully and focus editor (chạy luôn cả khi config bị lỗi)
-        await sleep(300);
-          // ESC lần 1
-          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
-          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
-          await sleep(200);
-          // ESC lần 2
+          // 6. Close popup gracefully and focus editor
+          await sleep(300);
           document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
           await sleep(300);
@@ -2242,7 +2234,7 @@ func: async (promptText, cfg) => {
 
               // 1. Attach Start Image (Bắt đầu)
               if (cfg?.startImage) {
-                const pasted = await injectImageFile(cfg.startImage, "start_frame.png");
+                const pasted = await injectImageFile(cfg.startImage, `start_frame_${Date.now()}.png`);
                 if (!pasted) {
                   const slots = getFrameSlots();
                   let startSlot = slots.find(s => {
@@ -2263,7 +2255,7 @@ func: async (promptText, cfg) => {
               // 2. Attach End Image (Kết thúc)
               if (cfg?.endImage) {
                 await sleep(400);
-                const pasted = await injectImageFile(cfg.endImage, "end_frame.png");
+                const pasted = await injectImageFile(cfg.endImage, `end_frame_${Date.now()}.png`);
                 if (!pasted) {
                   const slots = getFrameSlots();
                   let endSlot = slots.find(s => {
@@ -2301,6 +2293,9 @@ func: async (promptText, cfg) => {
               console.warn("[Flow Extension] Frame attach error:", frameErr);
             }
           }
+        } catch (confErr) {
+          console.warn("[Flow Extension] Config error:", confErr);
+        }
 
         // ──────────────────────────────────────────────
         // STEP 3: Focus Editor & Type Prompt (Test B1)
