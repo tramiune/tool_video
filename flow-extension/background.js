@@ -1399,17 +1399,52 @@ func: async (promptText, cfg) => {
 
         const composerButtons = queryDeep("button, [role='button']");
         
-        // Identify submit button (arrow_forward icon)
-        const submitBtn = composerButtons.find(b => {
+        // 1. Tìm nút Submit (hỗ trợ type=submit, aria-label, svg icon, text arrow/send)
+        let submitBtn = composerButtons.find(b => {
+          if (!isElemVisible(b)) return false;
           const inner = (b.innerHTML || "").toLowerCase();
           const t = (b.textContent || "").trim().toLowerCase();
-          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send";
+          const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+          if (b.getAttribute("type") === "submit") return true;
+          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                 Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
         });
 
-        // Identify settings chip button (e.g. "Video · 720p · 8s · x2" or "Nano Banana")
-        // To avoid clicking the "Back" button or random header buttons, we must be more specific.
-        // Chỉ tìm Settings Chip xung quanh khu vực của submitBtn (để tránh click nhầm vào các video trong danh sách)
+        // Dự phòng: Tìm submitBtn từ editor (nút ngoài cùng bên phải trong khung soạn thảo)
+        if (!submitBtn && editor) {
+          let parent = editor;
+          for (let i = 0; i < 8 && parent; i++) {
+            parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+            if (!parent) break;
+            const buttonsHere = queryScopeDeep(parent, "button, [role='button']").filter(b => isElemVisible(b));
+            if (buttonsHere.length > 0) {
+              const sorted = [...buttonsHere].sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+              const candidate = sorted.find(b => {
+                const t = (b.textContent || "").trim().toLowerCase();
+                const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add") || aria.includes("tác nhân") || aria.includes("agent")) return false;
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.match(/\b(720p|1080p|4k|giây|fps|16:9|9:16)\b/i) || t.match(/^\d+s/i)) return false;
+                return true;
+              });
+              if (candidate) {
+                submitBtn = candidate;
+                break;
+              }
+            }
+          }
+        }
+
+        // 2. Tìm Settings Chip
         let settingsChip = null;
+        const isSettingChipText = (t) => {
+          if (!t) return false;
+          return t.includes("video") || t.includes("ảnh") || t.includes("image") || 
+                 t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.includes("veo") ||
+                 t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i);
+        };
+
+        // Cách A: Tìm anh em bên cạnh submitBtn
         if (submitBtn) {
            const sRect = submitBtn.getBoundingClientRect();
            let parent = submitBtn;
@@ -1420,19 +1455,15 @@ func: async (promptText, cfg) => {
              const candidate = buttonsHere.find(b => {
                 if (b === submitBtn || !isElemVisible(b)) return false;
                 const t = (b.textContent || "").trim().toLowerCase();
-                if (t.includes("tác nhân") || t.includes("agent")) return false;
-                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || 
-                    t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") ||
-                    t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i)) {
-                   return true;
-                }
-                return false;
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
              });
              if (candidate) {
                settingsChip = candidate;
                break;
              }
            }
+           
            if (!settingsChip) {
               parent = submitBtn;
               for (let i = 0; i < 8 && parent; i++) {
@@ -1455,6 +1486,43 @@ func: async (promptText, cfg) => {
                  }
               }
            }
+        }
+
+        // Cách B: Tìm từ Editor đi lên các node cha của khung soạn thảo
+        if (!settingsChip && editor) {
+           let parent = editor;
+           for (let i = 0; i < 8 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn || !isElemVisible(b)) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
+             });
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+        }
+
+        // Cách C: Quét toàn bộ nút trong vùng composer nửa dưới màn hình
+        if (!settingsChip) {
+          const candidates = composerButtons.filter(b => {
+             if (b === submitBtn || !isElemVisible(b)) return false;
+             if (b.closest("[data-media-id], [data-workflow-id], [class*='card'], [role='listitem']")) return false;
+             const r = b.getBoundingClientRect();
+             if (r.top < 120) return false;
+             const t = (b.textContent || "").trim().toLowerCase();
+             if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+             return isSettingChipText(t);
+          });
+          if (candidates.length > 0) {
+            candidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+            settingsChip = candidates[0];
+          }
         }
 
 
@@ -2718,16 +2786,53 @@ async function createImageUI(prompt, projectId, config = {}) {
 
         if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt trên giao diện Flow!" };
 
-        // 2. Tìm nút Submit
+        // 2. Tìm nút Submit (hỗ trợ type=submit, aria-label, svg icon, text arrow/send)
         const composerButtons = queryDeep("button, [role='button']");
-        const submitBtn = composerButtons.find(b => {
+        let submitBtn = composerButtons.find(b => {
+          if (!isElemVisible(b)) return false;
           const inner = (b.innerHTML || "").toLowerCase();
           const t = (b.textContent || "").trim().toLowerCase();
-          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send";
+          const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+          if (b.getAttribute("type") === "submit") return true;
+          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                 Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
         });
 
-        // 3. Tìm Settings Chip (nằm cạnh submitBtn)
+        // Dự phòng: Tìm submitBtn từ editor (nút ngoài cùng bên phải trong khung soạn thảo)
+        if (!submitBtn && editor) {
+          let parent = editor;
+          for (let i = 0; i < 8 && parent; i++) {
+            parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+            if (!parent) break;
+            const buttonsHere = queryScopeDeep(parent, "button, [role='button']").filter(b => isElemVisible(b));
+            if (buttonsHere.length > 0) {
+              const sorted = [...buttonsHere].sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+              const candidate = sorted.find(b => {
+                const t = (b.textContent || "").trim().toLowerCase();
+                const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add") || aria.includes("tác nhân") || aria.includes("agent")) return false;
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.match(/\b(720p|1080p|4k|giây|fps|16:9|9:16)\b/i) || t.match(/^\d+s/i)) return false;
+                return true;
+              });
+              if (candidate) {
+                submitBtn = candidate;
+                break;
+              }
+            }
+          }
+        }
+
+        // 3. Tìm Settings Chip (nằm cạnh submitBtn hoặc dưới ô prompt)
         let settingsChip = null;
+        const isSettingChipText = (t) => {
+          if (!t) return false;
+          return t.includes("video") || t.includes("ảnh") || t.includes("image") || 
+                 t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.includes("veo") ||
+                 t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i);
+        };
+
+        // Cách A: Tìm anh em bên cạnh submitBtn
         if (submitBtn) {
            const sRect = submitBtn.getBoundingClientRect();
            let parent = submitBtn;
@@ -2738,13 +2843,8 @@ async function createImageUI(prompt, projectId, config = {}) {
              const candidate = buttonsHere.find(b => {
                 if (b === submitBtn || !isElemVisible(b)) return false;
                 const t = (b.textContent || "").trim().toLowerCase();
-                if (t.includes("tác nhân") || t.includes("agent")) return false;
-                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || 
-                    t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") ||
-                    t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i)) {
-                   return true;
-                }
-                return false;
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
              });
              if (candidate) {
                settingsChip = candidate;
@@ -2773,6 +2873,43 @@ async function createImageUI(prompt, projectId, config = {}) {
                  }
               }
            }
+        }
+
+        // Cách B: Tìm từ Editor đi lên các node cha của khung soạn thảo
+        if (!settingsChip && editor) {
+           let parent = editor;
+           for (let i = 0; i < 8 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn || !isElemVisible(b)) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
+             });
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+        }
+
+        // Cách C: Quét toàn bộ nút trong vùng composer nửa dưới màn hình
+        if (!settingsChip) {
+          const candidates = composerButtons.filter(b => {
+             if (b === submitBtn || !isElemVisible(b)) return false;
+             if (b.closest("[data-media-id], [data-workflow-id], [class*='card'], [role='listitem']")) return false;
+             const r = b.getBoundingClientRect();
+             if (r.top < 120) return false;
+             const t = (b.textContent || "").trim().toLowerCase();
+             if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+             return isSettingChipText(t);
+          });
+          if (candidates.length > 0) {
+            candidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+            settingsChip = candidates[0];
+          }
         }
 
         // Tìm tab "Hình ảnh"
@@ -5801,22 +5938,83 @@ async function testUiStep(step, req) {
                     || document.querySelector("textarea[placeholder*='prompt' i]")
                     || findDeepEditor();
                     
-        const composerButtons = queryDeep("button, [role='button']");
-        
-        const submitBtn = composerButtons.find(b => {
-          const inner = (b.innerHTML || "").toLowerCase();
-          const t = (b.textContent || "").trim().toLowerCase();
-          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send";
-        });
-
         const isElemVisible = (el) => {
           if (!el) return false;
           const r = el.getBoundingClientRect();
           return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
         };
 
-        // Chỉ tìm Settings Chip xung quanh khu vực của submitBtn (để tránh click nhầm vào các video trong danh sách)
+        const composerButtons = queryDeep("button, [role='button']");
+        
+        const triggerClick = (el) => {
+          if (!el) return false;
+          el.scrollIntoView({ block: "nearest" });
+          el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+          el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+          el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+          el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+          el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+          if (typeof el.click === "function") el.click();
+          return true;
+        };
+
+        const safeClick = (el) => {
+          if (!el) return false;
+          el.scrollIntoView({ block: "nearest" });
+          if (typeof el.click === "function") {
+            el.click();
+          } else {
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+          }
+          return true;
+        };
+
+        // 1. Tìm nút Submit (hỗ trợ type=submit, aria-label, svg icon, text arrow/send)
+        let submitBtn = composerButtons.find(b => {
+          if (!isElemVisible(b)) return false;
+          const inner = (b.innerHTML || "").toLowerCase();
+          const t = (b.textContent || "").trim().toLowerCase();
+          const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+          if (b.getAttribute("type") === "submit") return true;
+          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                 Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
+        });
+
+        // Dự phòng: Tìm submitBtn từ editor (nút ngoài cùng bên phải trong khung soạn thảo)
+        if (!submitBtn && editor) {
+          let parent = editor;
+          for (let i = 0; i < 8 && parent; i++) {
+            parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+            if (!parent) break;
+            const buttonsHere = queryScopeDeep(parent, "button, [role='button']").filter(b => isElemVisible(b));
+            if (buttonsHere.length > 0) {
+              const sorted = [...buttonsHere].sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+              const candidate = sorted.find(b => {
+                const t = (b.textContent || "").trim().toLowerCase();
+                const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add") || aria.includes("tác nhân") || aria.includes("agent")) return false;
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.match(/\b(720p|1080p|4k|giây|fps|16:9|9:16)\b/i) || t.match(/^\d+s/i)) return false;
+                return true;
+              });
+              if (candidate) {
+                submitBtn = candidate;
+                break;
+              }
+            }
+          }
+        }
+
+        // 2. Tìm Settings Chip (nằm cạnh submitBtn hoặc dưới ô prompt)
         let settingsChip = null;
+        const isSettingChipText = (t) => {
+          if (!t) return false;
+          return t.includes("video") || t.includes("ảnh") || t.includes("image") || 
+                 t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.includes("veo") ||
+                 t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i);
+        };
+
+        // Cách A: Tìm anh em bên cạnh submitBtn
         if (submitBtn) {
            const sRect = submitBtn.getBoundingClientRect();
            let parent = submitBtn;
@@ -5827,39 +6025,25 @@ async function testUiStep(step, req) {
              const candidate = buttonsHere.find(b => {
                 if (b === submitBtn || !isElemVisible(b)) return false;
                 const t = (b.textContent || "").trim().toLowerCase();
-                if (t.includes("tác nhân") || t.includes("agent")) return false;
-                // Ưu tiên nút có chứa các thông số cài đặt video hoặc ảnh
-                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || 
-                    t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") ||
-                    t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i)) {
-                   return true;
-                }
-                return false;
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
              });
-             
              if (candidate) {
                settingsChip = candidate;
                break;
              }
            }
-           
            if (!settingsChip) {
               parent = submitBtn;
               for (let i = 0; i < 8 && parent; i++) {
                  parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
                  if (!parent) break;
                  const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
-                 // Lấy các nút bên trái của submitBtn và sắp xếp theo thứ tự gần submitBtn nhất
                  const leftOfSubmit = buttonsHere.filter(b => {
                    if (b === submitBtn || !isElemVisible(b)) return false;
-                   const bRect = b.getBoundingClientRect();
-                   return bRect.left < sRect.left;
+                   return b.getBoundingClientRect().left < sRect.left;
                  });
-                 leftOfSubmit.sort((a, b) => {
-                   const ra = a.getBoundingClientRect();
-                   const rb = b.getBoundingClientRect();
-                   return Math.abs(sRect.left - ra.right) - Math.abs(sRect.left - rb.right);
-                 });
+                 leftOfSubmit.sort((a, b) => Math.abs(sRect.left - a.getBoundingClientRect().right) - Math.abs(sRect.left - b.getBoundingClientRect().right));
                  const candidate = leftOfSubmit.find(b => {
                    const t = (b.textContent || "").trim().toLowerCase();
                    if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
@@ -5873,6 +6057,152 @@ async function testUiStep(step, req) {
            }
         }
 
+        // Cách B: Tìm từ Editor đi lên các node cha của khung soạn thảo
+        if (!settingsChip && editor) {
+           let parent = editor;
+           for (let i = 0; i < 8 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn || !isElemVisible(b)) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
+             });
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+        }
+
+        // Cách C: Quét toàn bộ nút trong vùng composer nửa dưới màn hình
+        if (!settingsChip) {
+          const candidates = composerButtons.filter(b => {
+             if (b === submitBtn || !isElemVisible(b)) return false;
+             if (b.closest("[data-media-id], [data-workflow-id], [class*='card'], [role='listitem']")) return false;
+             const r = b.getBoundingClientRect();
+             if (r.top < 120) return false;
+             const t = (b.textContent || "").trim().toLowerCase();
+             if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+             return isSettingChipText(t);
+          });
+          if (candidates.length > 0) {
+            candidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+            settingsChip = candidates[0];
+          }
+        }
+
+        // Helper tìm tab Video
+        const findVideoTabElement = () => {
+          const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            if (r.width < 30 || r.height < 15) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+            const t = (el.textContent || "").trim();
+            const aria = (el.getAttribute("aria-label") || "").trim();
+            const id = (el.getAttribute("id") || "").toLowerCase();
+
+            if (t.includes("Khung hình") || aria.includes("Khung hình") || t.includes("Hình ảnh") || aria.includes("Hình ảnh")) return false;
+            if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1080p") || t.includes("fps")) return false;
+
+            return t === "Video" || aria === "Video" || 
+                   t.toLowerCase() === "video" || aria.toLowerCase() === "video" ||
+                   id.endsWith("-trigger-video") || id.endsWith("-trigger-VIDEO") || 
+                   (t.includes("Video") && t.length <= 10) ||
+                   (aria.includes("Video") && aria.length <= 10);
+          });
+
+          if (candidates.length === 0) return null;
+
+          let best = candidates.find(el => {
+            const p = el.parentElement;
+            if (p && (p.textContent.includes("Hình ảnh") || p.getAttribute("role") === "tablist")) return true;
+            const gp = p?.parentElement;
+            if (gp && (gp.textContent.includes("Hình ảnh") || gp.getAttribute("role") === "tablist")) return true;
+            return false;
+          });
+
+          if (!best) {
+            best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+          }
+
+          return best.closest("[role='tab'], button, [role='button']") || best;
+        };
+
+        // Helper tìm tab Hình ảnh
+        const findImageTabElement = () => {
+          const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            if (r.width < 30 || r.height < 15) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+            const t = (el.textContent || "").trim();
+            const aria = (el.getAttribute("aria-label") || "").trim();
+            const id = (el.getAttribute("id") || "").toLowerCase();
+
+            if (t.includes("Khung hình") || aria.includes("Khung hình")) return false;
+
+            return t === "Hình ảnh" || aria === "Hình ảnh" || 
+                   t.toLowerCase() === "image" || aria.toLowerCase() === "image" ||
+                   id.endsWith("-trigger-image") || id.endsWith("-trigger-IMAGE") ||
+                   (t.includes("Hình ảnh") && t.length <= 15) ||
+                   (aria.includes("Hình ảnh") && aria.length <= 15);
+          });
+
+          if (candidates.length === 0) return null;
+
+          let best = candidates.find(el => {
+            const p = el.parentElement;
+            if (p && (p.textContent.includes("Video") || p.getAttribute("role") === "tablist")) return true;
+            const gp = p?.parentElement;
+            if (gp && (gp.textContent.includes("Video") || gp.getAttribute("role") === "tablist")) return true;
+            return false;
+          });
+
+          if (!best) {
+            best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+          }
+
+          return best.closest("[role='tab'], button, [role='button']") || best;
+        };
+
+        // Kiểm tra xem Popover đã mở chưa
+        const isPopoverOpen = () => {
+          if (findVideoTabElement() || findImageTabElement()) return true;
+          const ratioBtn = queryDeep("button, [role='tab'], [role='radio']").find(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            const t = (el.textContent || "").trim();
+            return t === "16:9" || t === "9:16";
+          });
+          return !!ratioBtn;
+        };
+
+        // Mở popover an toàn nếu chưa mở
+        const ensurePopoverOpen = async () => {
+          if (isPopoverOpen()) return true;
+          if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip để mở bảng cài đặt");
+          triggerClick(settingsChip);
+          await sleep(600);
+          if (!isPopoverOpen()) {
+            triggerClick(settingsChip);
+            await sleep(600);
+          }
+          return isPopoverOpen();
+        };
+
         if (stepIdx === 1) {
           if (!editor) throw new Error("Không tìm thấy ô nhập prompt (Editor)");
           editor.focus();
@@ -5883,15 +6213,25 @@ async function testUiStep(step, req) {
         }
 
         if (stepIdx === 2) {
-          if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
-          settingsChip.click();
-          return "Đã bấm nút Settings Chip!";
+          if (!settingsChip) {
+            if (isPopoverOpen()) {
+              return "Bảng cài đặt (Popover) hiện đang mở sẵn trên giao diện Flow!";
+            }
+            throw new Error("Không tìm thấy nút Settings Chip");
+          }
+          triggerClick(settingsChip);
+          await sleep(500);
+          return isPopoverOpen()
+            ? `Đã bấm Settings Chip và mở Popover thành công! ("${settingsChip.textContent.trim().slice(0, 35)}")`
+            : `Đã bấm Settings Chip! ("${settingsChip.textContent.trim().slice(0, 35)}")`;
         }
 
         if (stepIdx === 3) {
           if (!submitBtn) throw new Error("Không tìm thấy nút Bắt Đầu (Submit)");
-          submitBtn.click();
-          return "Đã bấm Submit!";
+          submitBtn.removeAttribute("disabled");
+          submitBtn.setAttribute("aria-disabled", "false");
+          triggerClick(submitBtn);
+          return `Đã bấm Submit! ("${(submitBtn.getAttribute('aria-label') || submitBtn.textContent || 'Submit').trim().slice(0, 35)}")`;
         }
 
         
@@ -6021,7 +6361,7 @@ async function testUiStep(step, req) {
 
         
         if (Math.floor(Number(stepIdx)) === 4 || String(stepIdx).startsWith("4") || stepIdx === "4.0_frames" || stepIdx === "4.0b") {
-          if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
+          if (!isPopoverOpen() && !settingsChip) throw new Error("Không tìm thấy nút Settings Chip để mở bảng cài đặt");
 
         // STEP 2: Configure Video Settings (Mode, Ratio, Duration, Count, Model)
         // ──────────────────────────────────────────────
@@ -6522,7 +6862,7 @@ async function testUiStep(step, req) {
         // CÁC BƯỚC TEST CHO TẠO ẢNH (IMAGE UI: img_tab, img_ratio, img_model, img_count, img_all_config, img_full_create)
         // ══════════════════════════════════════════════════════════
         if (typeof stepIdx === 'string' && stepIdx.startsWith("img_")) {
-          if (!settingsChip) throw new Error("Không tìm thấy nút Settings Chip");
+          if (!isPopoverOpen() && !settingsChip) throw new Error("Không tìm thấy nút Settings Chip để mở bảng cài đặt ảnh");
 
           const isElemVisible = (el) => {
             if (!el) return false;
