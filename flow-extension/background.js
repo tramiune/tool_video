@@ -4635,7 +4635,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         // ƯU TIÊN 1: Tìm chính xác theo Media ID hoặc Workflow ID (UUID)
         if (targetMediaId || targetWorkflowId) {
           const allMediaAndCards = Array.from(
-            document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], div[class*='item'], img, video")
+            document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], img, video")
           );
           for (const el of allMediaAndCards) {
             const elMId = el.getAttribute("data-media-id") || "";
@@ -4668,6 +4668,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
         const cleanQueryNoAccents = removeDiacritics(cleanQuery);
         const promptFullNoAccents = removeDiacritics(promptFull);
+        const seqRegex = numOnly ? new RegExp(`(^|[^0-9])${numOnly}([\\.\\-_:\\s]|$)`) : null;
 
         // ƯU TIÊN 2: Tìm text element chứa query hoặc STT hoặc prompt
         if (!matchedCard) {
@@ -4683,7 +4684,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             if (!combined.trim()) return false;
             const combNoAccents = removeDiacritics(combined);
             if (combined.includes(cleanQuery) || (cleanQueryNoAccents && combNoAccents.includes(cleanQueryNoAccents))) return true;
-            if (numOnly && cleanQuery.includes(".") && (combined.includes(numOnly) || combNoAccents.includes(numOnly))) return true;
+            if (seqRegex && cleanQuery.includes(".") && (seqRegex.test(combined) || seqRegex.test(combNoAccents))) return true;
             if (promptFullNoAccents && (combined.includes(promptFull) || combNoAccents.includes(promptFullNoAccents))) return true;
             return false;
           });
@@ -5357,6 +5358,11 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
 
           const text = (el.innerText || el.textContent || "").toLowerCase();
           
+          // Thẻ có icon Play ▶ hoặc thời lượng video (ví dụ: 8s) thì 100% không phải thẻ lỗi
+          if (text.includes("▶") || text.includes("►") || text.includes("play_arrow") || /\b\d+s\b/i.test(text) || text.includes("giây")) {
+            return false;
+          }
+          
           // 1. Phải có text báo lỗi hoặc vi phạm chính sách rõ ràng
           const hasErrorKeywords = (
             text.includes("không thành công") ||
@@ -5408,7 +5414,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         // ƯU TIÊN 1: Tìm chính xác theo Media ID hoặc Workflow ID (UUID)
         if (targetMediaId || targetWorkflowId) {
           const allMediaAndCards = Array.from(
-            document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], div[class*='item'], img, video")
+            document.querySelectorAll("[data-media-id], [data-workflow-id], [data-id], div[class*='card'], img, video")
           );
           for (const el of allMediaAndCards) {
             const elMId = el.getAttribute("data-media-id") || "";
@@ -5441,6 +5447,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
 
         const cleanQueryNoAccents = removeDiacritics(cleanQuery);
         const promptFullNoAccents = removeDiacritics(promptFull);
+        const seqRegex = numOnly ? new RegExp(`(^|[^0-9])${numOnly}([\\.\\-_:\\s]|$)`) : null;
 
         // ƯU TIÊN 2: Tìm text element chứa query hoặc STT hoặc prompt (hỗ trợ cả tiếng Việt không dấu)
         if (!matched) {
@@ -5456,7 +5463,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             if (!combined.trim()) return false;
             const combNoAccents = removeDiacritics(combined);
             if (combined.includes(cleanQuery) || (cleanQueryNoAccents && combNoAccents.includes(cleanQueryNoAccents))) return true;
-            if (numOnly && cleanQuery.includes(".") && (combined.includes(numOnly) || combNoAccents.includes(numOnly))) return true;
+            if (seqRegex && cleanQuery.includes(".") && (seqRegex.test(combined) || seqRegex.test(combNoAccents))) return true;
             if (promptFullNoAccents && (combined.includes(promptFull) || combNoAccents.includes(promptFullNoAccents))) return true;
             return false;
           });
@@ -5551,32 +5558,31 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           });
 
           for (const fc of allFailedCards) {
-            const childMeta = Array.from(fc.querySelectorAll("*")).map(c => 
-              (c.getAttribute("aria-label") || "") + " " + 
-              (c.getAttribute("title") || "") + " " + 
-              (c.dataset ? Object.values(c.dataset).join(" ") : "")
-            ).join(" ");
-            const fullContent = ((fc.innerText || fc.textContent || "") + " " + childMeta).toLowerCase();
-            const fullContentNoAccents = removeDiacritics(fullContent);
+            const visibleText = (fc.innerText || "").toLowerCase();
+            const visibleNoAccents = removeDiacritics(visibleText);
             const htmlStr = fc.outerHTML || "";
 
-            if (targetMediaId && (htmlStr.includes(targetMediaId) || fullContent.includes(targetMediaId.toLowerCase()))) {
+            // 4a. Khớp theo Media ID chính xác
+            if (targetMediaId && (htmlStr.includes(targetMediaId) || visibleText.includes(targetMediaId.toLowerCase()))) {
               matched = fc;
               break;
             }
-            if (cleanQuery && (fullContent.includes(cleanQuery) || (cleanQueryNoAccents && fullContentNoAccents.includes(cleanQueryNoAccents)))) {
+            // 4b. Khớp theo chuỗi query đầy đủ trong visible text
+            if (cleanQuery && (visibleText.includes(cleanQuery) || (cleanQueryNoAccents && visibleNoAccents.includes(cleanQueryNoAccents)))) {
               matched = fc;
               break;
             }
-            if (numOnly && cleanQuery.includes(".") && fullContent.includes(numOnly)) {
+            // 4c. Khớp theo STT chính xác với ranh giới từ (chỉ trong visibleText, không tìm trong outerHTML/dataset)
+            if (seqRegex && cleanQuery.includes(".") && (seqRegex.test(visibleText) || seqRegex.test(visibleNoAccents))) {
               matched = fc;
               break;
             }
+            // 4d. Khớp theo từ khóa quan trọng nếu thẻ lỗi có ghi lại prompt
             if (promptFull) {
               const stopWords = new Set(["video", "tạo", "tao", "make", "create"]);
               const words = removeDiacritics(promptFull).replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
-              const hits = words.filter(w => fullContentNoAccents.includes(w)).length;
-              if (hits >= 2) {
+              const hits = words.filter(w => visibleNoAccents.includes(w)).length;
+              if (words.length >= 2 && hits >= 2) {
                 matched = fc;
                 break;
               }
@@ -5587,28 +5593,13 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
 
         if (!matched) return { status: 'WAITING_CARD' };
 
-        const cardRoot = matched.closest("[role='listitem'], div[class*='card'], div[class*='item']") || matched;
-        const targetContainer = cardRoot || matched;
-
-        // 3. KIỂM TRA LỖI / VI PHẠM CHÍNH SÁCH / 3 NÚT BẤM (ƯU TIÊN HÀNG ĐẦU!)
-        if (isCardFailed(matched) || isCardFailed(cardRoot)) {
-          return { status: 'FAILED', error: getCardErrorMessage(matched || cardRoot) };
-        }
-
-        const text = ((matched.textContent || "") + " " + (cardRoot?.textContent || "")).trim();
+        // 1. KIỂM TRA RENDERING TRƯỚC HẾT (để không bao giờ đánh trượt các thẻ đang render 12%, 24%...)
+        const text = (matched.textContent || "").trim();
         const lowerText = text.toLowerCase();
-
-        // 4. Kiểm tra xem riêng thẻ card này có đang render không
-        const isGenerating = Boolean(
-          matched.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") ||
-          cardRoot?.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin")
-        );
+        const isGenerating = Boolean(matched.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin"));
         const pctMatch = text.match(/(\d+)\s*%/);
         const hasGenText = lowerText.includes("đang tạo") || lowerText.includes("generating") || lowerText.includes("đang kết xuất");
-        const hasSingleCancelBtn = Boolean(
-          matched.querySelector("button[aria-label*='hủy' i]") ||
-          cardRoot?.querySelector("button[aria-label*='hủy' i]")
-        );
+        const hasSingleCancelBtn = Boolean(matched.querySelector("button[aria-label*='hủy' i]"));
 
         if (pctMatch || isGenerating || hasGenText || hasSingleCancelBtn) {
           return {
@@ -5617,9 +5608,12 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           };
         }
 
-        // 5. Thẻ đã hoàn tất render (không spinner, không %, không nút hủy, không lỗi) -> READY để kích hoạt tải 720p!
+        // 2. KIỂM TRA LỖI TRÊN CHÍNH THẺ MATCHED (TUYỆT ĐỐI KHÔNG KIỂM TRA TRÊN ANCESTOR/CONTAINER)
+        if (isCardFailed(matched)) {
+          return { status: 'FAILED', error: getCardErrorMessage(matched) };
+        }
 
-        // 6. KHÔI PHỤC STT TRÊN GIAO DIỆN FLOW: Nếu Flow đã tự động đổi tên tóm tắt, bổ sung lại STT lên nhãn
+        // 3. THẺ ĐÃ HOÀN TẤT (không spinner, không %, không hủy, không lỗi) -> READY để kích hoạt tải 720p!
         if (cleanQuery && matched) {
           try {
             const labelCandidates = Array.from(matched.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, b, strong")).filter(el => {
@@ -5639,8 +5633,8 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           } catch (_) {}
         }
 
-        const matchedMediaId = targetContainer?.getAttribute("data-media-id") || targetContainer?.getAttribute("data-workflow-id") || matched?.getAttribute("data-media-id") || targetMediaId;
-        const videoEl = targetContainer?.querySelector("video") || matched?.querySelector("video");
+        const matchedMediaId = matched?.getAttribute("data-media-id") || matched?.getAttribute("data-workflow-id") || targetMediaId;
+        const videoEl = matched?.querySelector("video");
         const videoUrl = videoEl?.currentSrc || videoEl?.src || "";
         return { status: 'READY', mediaId: matchedMediaId, videoUrl };
       }
