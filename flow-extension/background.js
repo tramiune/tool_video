@@ -302,7 +302,7 @@ const HANDLERS = {
   GET_FLOW_TABS_STATUS: async () => getFlowTabsStatus(),
   DOWNLOAD_CARD_NATIVE: req => (req.mediaType === 'image'
     ? downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId)
-    : triggerNativeDownloadForCard(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.mediaType || 'auto', req.projectId)),
+    : triggerNativeDownloadForCard(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.mediaType || 'video', req.projectId)),
   DOWNLOAD_IMAGE_CARD: req => downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId),
   DOWNLOAD_IMAGE_CARD_NATIVE: req => downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId),
   WAIT_AND_DOWNLOAD_CARD: req => waitAndDownloadCard(req.projectId, req.prompt, req.timeoutMs),
@@ -4569,7 +4569,7 @@ async function downloadImageCardDirect(tabId, query = "001.", promptText = "", m
 // ══════════════════════════════════════════════════════════════════
 // Native UI Download Automation (Right Click Card -> Hover Download -> Hover 720p -> Click 720p)
 // ══════════════════════════════════════════════════════════════════
-async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = "", mediaId = "", workflowId = "", mediaType = "auto", projectId = "") {
+async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = "", mediaId = "", workflowId = "", mediaType = "video", projectId = "") {
   let targetTabId = tabId;
 
   if (!targetTabId) {
@@ -4820,7 +4820,15 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
         const imgEl = matchedCard.querySelector("img");
         const imgSrc = imgEl ? (imgEl.currentSrc || imgEl.src) : null;
-        const isVideoCard = Boolean(matchedCard.querySelector("video"));
+        const hasPlayIcon = Boolean(
+          matchedCard.querySelector("svg.lucide-play, svg[data-icon*='play'], [class*='play'], button[aria-label*='phát' i], button[aria-label*='play' i]") ||
+          Array.from(matchedCard.querySelectorAll("svg, button, div, span")).some(el => {
+            const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+            const t = (el.textContent || "").trim().toLowerCase();
+            return aria.includes("play") || aria.includes("phát") || t.match(/^\d+s$/i) || t.match(/^\d+\s*giây$/i) || t.includes("720p") || t.includes("1080p");
+          })
+        );
+        const isVideoCard = Boolean(matchedCard.querySelector("video")) || hasPlayIcon;
 
         return { success: true, clientX, clientY, imgSrc, isVideoCard };
       }
@@ -4831,7 +4839,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
     }
 
     const { clientX, clientY, imgSrc, isVideoCard } = r0[0].result;
-    const isImage = (mediaType === 'image') || (mediaType !== 'video' && !isVideoCard && Boolean(imgSrc));
+    const isImage = (mediaType === 'image') || (mediaType === 'auto' && !isVideoCard && Boolean(imgSrc));
 
     if (isImage) {
       return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, imgSrc, projectId);
@@ -5665,7 +5673,7 @@ async function waitAndDownloadCard(projectId, promptText, timeoutMs = 600000) {
 
       // Đợi 1s cho thẻ video hiển thị ổn định
       await new Promise(r => setTimeout(r, 1000));
-      const dlResult = await triggerNativeDownloadForCard(flowTab.id, query);
+      const dlResult = await triggerNativeDownloadForCard(flowTab.id, query, promptText, cardInfo?.mediaId || "", "", 'video', projectId);
       return dlResult;
     } else if (cardStatus === 'FAILED') {
       logToBridge(`[Auto Download] ❌ Card "${query}" render thất bại!`);

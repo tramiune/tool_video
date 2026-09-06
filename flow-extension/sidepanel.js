@@ -771,7 +771,8 @@
             prompt: task.prompt,
             seq: task.seq,
             mediaId: task.mediaId,
-            workflowId: task.workflowId
+            workflowId: task.workflowId,
+            mediaType: 'video'
           });
           if (statusRes?.status === 'RENDERING') {
             const curProg = statusRes.progress || '';
@@ -816,7 +817,9 @@
                 prompt: task.prompt,
                 seq: task.seq,
                 mediaId: task.mediaId,
-                workflowId: task.workflowId
+                workflowId: task.workflowId,
+                mediaType: 'video',
+                projectId: targetPid
               });
               if (!dlRes?.success) {
                 console.warn(`[Batch Worker] Thử lại tải 720p lần 2 cho task #${task.id}...`);
@@ -826,7 +829,9 @@
                   prompt: task.prompt,
                   seq: task.seq,
                   mediaId: task.mediaId,
-                  workflowId: task.workflowId
+                  workflowId: task.workflowId,
+                  mediaType: 'video',
+                  projectId: targetPid
                 });
               }
             } finally {
@@ -1484,7 +1489,8 @@
             prompt: task.prompt,
             seq: task.seq,
             mediaId: task.mediaId,
-            workflowId: task.workflowId
+            workflowId: task.workflowId,
+            mediaType: 'video'
           });
           if (statusRes?.status === 'RENDERING') {
             const curProg = statusRes.progress || '';
@@ -1529,7 +1535,9 @@
                 prompt: task.prompt,
                 seq: task.seq,
                 mediaId: task.mediaId,
-                workflowId: task.workflowId
+                workflowId: task.workflowId,
+                mediaType: 'video',
+                projectId
               });
               if (!dlRes?.success) {
                 console.warn(`[Ui Worker] Thử lại tải 720p lần 2 cho task #${task.id}...`);
@@ -1539,7 +1547,9 @@
                   prompt: task.prompt,
                   seq: task.seq,
                   mediaId: task.mediaId,
-                  workflowId: task.workflowId
+                  workflowId: task.workflowId,
+                  mediaType: 'video',
+                  projectId
                 });
               }
             } finally {
