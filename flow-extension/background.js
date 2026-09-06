@@ -310,6 +310,8 @@ const HANDLERS = {
   GET_MAX_SEQ: req => getMaxSeq(req.projectId),
   UPDATE_MAX_SEQ: req => updateMaxSeq(req.projectId, req.newMax),
   SCROLL_FLOW_TO_TOP: req => scrollFlowToTop(req.tabId, req.projectId),
+  REPORT_TOOL_VIDEO_RESULT: req => reportToolVideoResult(req),
+  GET_PENDING_SERVER_TASKS: () => getPendingServerTasks(),
 };
 
 // ══════════════════════════════════════
@@ -3990,9 +3992,52 @@ if (chrome.alarms) {
 }
 connectToolVideoBridge();
 
+let _pendingServerVideoTasks = [];
+
+function getPendingServerTasks() {
+  const tasks = [..._pendingServerVideoTasks];
+  _pendingServerVideoTasks = [];
+  return { success: true, tasks };
+}
+
+function reportToolVideoResult(req) {
+  if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+    _toolWs.send(JSON.stringify({
+      type: 'VIDEO_RESULT',
+      id: req.id,
+      ok: Boolean(req.ok),
+      filePath: req.filePath || null,
+      error: req.error || null,
+      mediaId: req.mediaId || null
+    }));
+    logToBridge(`[Bridge] Đã gửi VIDEO_RESULT về tool_video: ID=${req.id}, OK=${req.ok}, filePath=${req.filePath || 'none'}`);
+    return { success: true };
+  }
+  return { success: false, error: "WebSocket to tool_video not connected" };
+}
+
 function enqueueServerVideoTask(task) {
-  _serverVideoQueue.push(task);
-  processServerVideoQueue();
+  logToBridge(`[Bridge] Chuyển task video ${task.id} vào hàng đợi Auto Click UI trên Sidepanel...`);
+
+  chrome.runtime.sendMessage({
+    action: 'ADD_SERVER_TASK_TO_UI_BATCH',
+    task: task
+  }).then(res => {
+    if (!res?.success) {
+      _pendingServerVideoTasks.push(task);
+    }
+  }).catch(() => {
+    _pendingServerVideoTasks.push(task);
+  });
+
+  // Tự động mở Sidepanel nếu có thể
+  if (chrome.sidePanel && chrome.sidePanel.open) {
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(tabs => {
+      if (tabs.length && tabs[0].windowId) {
+        chrome.sidePanel.open({ windowId: tabs[0].windowId }).catch(() => {});
+      }
+    }).catch(() => {});
+  }
 }
 
 const _recentBridgeLogs = [];
@@ -5204,10 +5249,12 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
     }
 
     const isSuccess = Boolean(downloadedItem && downloadedItem.filename && !downloadedItem.filename.endsWith('.crdownload') && downloadedItem.state !== 'interrupted');
+    const resolvedPath = downloadedItem?.filename || 'flow_video.mp4';
     return {
       success: isSuccess,
       downloadItem: downloadedItem,
-      filename: downloadedItem?.filename || 'flow_video.mp4'
+      filename: resolvedPath,
+      filePath: resolvedPath
     };
   } finally {
     // Tự động cuộn trang Google Flow lên đầu sau khi tải xong / hoàn tất thao tác

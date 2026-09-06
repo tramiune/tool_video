@@ -6,6 +6,7 @@ const { Server: SocketIOServer } = require('socket.io');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { spawn } = require('child_process');
 
@@ -90,17 +91,25 @@ _extWss.on('connection', (ws) => {
         let buffer = null;
         if (msg.filePath) {
           try {
-            if (fs.existsSync(msg.filePath)) {
-              buffer = fs.readFileSync(msg.filePath);
-              logger.success(`[Bridge] Đã đọc video từ file máy tính: ${msg.filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+            let targetPath = msg.filePath;
+            if (!fs.existsSync(targetPath)) {
+              const fallbackPath = path.join(os.homedir(), 'Downloads', path.basename(msg.filePath));
+              if (fs.existsSync(fallbackPath)) {
+                targetPath = fallbackPath;
+              }
+            }
+
+            if (fs.existsSync(targetPath)) {
+              buffer = fs.readFileSync(targetPath);
+              logger.success(`[Bridge] Đã đọc video từ file máy tính: ${targetPath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
               try {
-                fs.unlinkSync(msg.filePath);
-                logger.info(`[Bridge] Đã dọn dẹp xoá file tạm trên máy: ${msg.filePath}`);
+                fs.unlinkSync(targetPath);
+                logger.info(`[Bridge] Đã dọn dẹp xoá file tạm trên máy: ${targetPath}`);
               } catch (delErr) {
                 logger.warn(`[Bridge] Không thể xoá file tạm: ${delErr.message}`);
               }
             } else {
-              logger.error(`[Bridge] File không tồn tại trên đường dẫn: ${msg.filePath}`);
+              logger.error(`[Bridge] File không tồn tại trên đường dẫn: ${msg.filePath} (và ${path.join(os.homedir(), 'Downloads', path.basename(msg.filePath))})`);
             }
           } catch (readErr) {
             logger.error(`[Bridge] Lỗi đọc file video: ${readErr.message}`);
