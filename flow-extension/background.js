@@ -1689,15 +1689,11 @@ func: async (promptText, cfg) => {
             return !!ratioBtn;
           };
 
-          // Mở Popover nếu chưa mở (DÙNG CHÍNH TEST B2: 1 native click)
+          // Mở Popover 1 lần duy nhất (KHÔNG retry vì chip là toggle → click lần 2 sẽ đóng!)
           if (!isPopoverOpen() && settingsChip) {
             settingsChip.scrollIntoView({ block: "nearest" });
             settingsChip.click();
-            await sleep(600);
-            if (!isPopoverOpen()) {
-              settingsChip.click();
-              await sleep(600);
-            }
+            await sleep(1000); // Đợi đủ lâu cho DOM render popover
           }
 
           // Helper to select the Video Tab
@@ -1736,11 +1732,7 @@ func: async (promptText, cfg) => {
 
           // Helper to select the Khung hình (Frames) Tab
           const selectFramesTab = async () => {
-            if (!isPopoverOpen() && settingsChip) {
-              settingsChip.scrollIntoView({ block: "nearest" });
-              settingsChip.click();
-              await sleep(600);
-            }
+            // Popover đã được mở từ trước → KHÔNG click lại chip (toggle sẽ đóng!)
 
             // Đảm bảo tab Video đã được kích hoạt trước
             await selectVideoTab();
@@ -2257,8 +2249,7 @@ func: async (promptText, cfg) => {
                     await handleMediaDialog(cfg.startImage, startIndex);
                   }
                 }
-                // Đợi upload ảnh hoàn tất
-                await waitForUploadToFinish(25000);
+                await sleep(500); // Đợi ngắn trước khi paste end frame
               }
 
               // 2. Attach End Image (Kết thúc)
@@ -2290,8 +2281,13 @@ func: async (promptText, cfg) => {
                     await handleMediaDialog(cfg.endImage, endIndex);
                   }
                 }
-                // Đợi upload end frame hoàn tất
-                await waitForUploadToFinish(25000);
+              }
+
+              // 3. Đợi sau khi paste xong tất cả frame
+              if (cfg?.startImage && cfg?.endImage) {
+                await sleep(12000); // Có cả 2 frame → chờ 12s
+              } else if (cfg?.startImage || cfg?.endImage) {
+                await sleep(10000); // Chỉ 1 frame → chờ 10s
               }
             } catch (frameErr) {
               console.warn("[Flow Extension] Frame attach error:", frameErr);
