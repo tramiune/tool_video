@@ -2570,7 +2570,7 @@ func: async (promptText, cfg) => {
 
       // ── TẦNG 2: Kiểm tra biến toàn cục & DOM trực tiếp trên tab Flow ──
       try {
-        const seqMatch = prompt ? prompt.trim().match(/^(\d{1,4})[\.\-_:\s]/i) : null;
+        const seqMatch = prompt ? prompt.trim().match(/^(\d{1,14})[\.\-_:\s]/i) : null;
         const submitNumOnly = seqMatch ? seqMatch[1] : "";
         const tabCheck = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -4088,24 +4088,17 @@ async function processServerVideoQueue() {
   while (_serverVideoQueue.length > 0) {
     const task = _serverVideoQueue.shift();
     try {
-      // ĐẢM BẢO ĐÁNH SỐ THỨ TỰ 001., 002. ĐẦU PROMPT
+      // ĐẢM BẢO ĐÁNH UNIX TIMESTAMP 10 SỐ ĐẦU PROMPT
       let prompt = (task.prompt || '').trim();
       let seqStr = "";
-      const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
-      if (matchSeq) {
-        const num = parseInt(matchSeq[1], 10);
-        seqStr = String(num).padStart(3, '0') + ".";
-        prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
-      } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
-        const num = Number(task.sceneIndex) + 1;
-        seqStr = String(num).padStart(3, '0') + ".";
-        prompt = `${seqStr} ${prompt}`;
-        await updateMaxSeq(task.projectId, num);
+      const matchTimestamp = prompt.match(/^(\d{9,14})[\.\-_:\s]/);
+      if (matchTimestamp) {
+        seqStr = matchTimestamp[1] + ".";
+        prompt = prompt.replace(/^(\d{9,14})[\.\-_:\s]\s*/, `${seqStr} `);
       } else {
-        const seqRes = await getMaxSeq(task.projectId);
-        const nextSeq = (seqRes?.maxSeq || 0) + 1;
-        await updateMaxSeq(task.projectId, nextSeq);
-        seqStr = String(nextSeq).padStart(3, '0') + ".";
+        prompt = prompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, ''); // Xóa STT cũ nếu có
+        const nowSec = Math.floor(Date.now() / 1000);
+        seqStr = `${nowSec}.`;
         prompt = `${seqStr} ${prompt}`;
       }
       task.prompt = prompt;
@@ -4172,24 +4165,17 @@ async function processServerImageQueue() {
   while (_serverImageQueue.length > 0) {
     const task = _serverImageQueue.shift();
     try {
-      // ĐẢM BẢO ĐÁNH SỐ THỨ TỰ 001., 002. ĐẦU PROMPT
+      // ĐẢM BẢO ĐÁNH UNIX TIMESTAMP 10 SỐ ĐẦU PROMPT
       let prompt = (task.prompt || '').trim();
       let seqStr = "";
-      const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
-      if (matchSeq) {
-        const num = parseInt(matchSeq[1], 10);
-        seqStr = String(num).padStart(3, '0') + ".";
-        prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
-      } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
-        const num = Number(task.sceneIndex) + 1;
-        seqStr = String(num).padStart(3, '0') + ".";
-        prompt = `${seqStr} ${prompt}`;
-        await updateMaxSeq(task.projectId, num);
+      const matchTimestamp = prompt.match(/^(\d{9,14})[\.\-_:\s]/);
+      if (matchTimestamp) {
+        seqStr = matchTimestamp[1] + ".";
+        prompt = prompt.replace(/^(\d{9,14})[\.\-_:\s]\s*/, `${seqStr} `);
       } else {
-        const seqRes = await getMaxSeq(task.projectId);
-        const nextSeq = (seqRes?.maxSeq || 0) + 1;
-        await updateMaxSeq(task.projectId, nextSeq);
-        seqStr = String(nextSeq).padStart(3, '0') + ".";
+        prompt = prompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, ''); // Xóa STT cũ nếu có
+        const nowSec = Math.floor(Date.now() / 1000);
+        seqStr = `${nowSec}.`;
         prompt = `${seqStr} ${prompt}`;
       }
       task.prompt = prompt;
@@ -4685,7 +4671,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
       world: "MAIN",
       args: [query, promptText || "", mediaId || "", workflowId || "", mediaType || "video"],
       func: async (q, pText, mId, wId, mType = "video") => {
-        const cleanQuery = (q || "001.").trim().toLowerCase();
+        const cleanQuery = (q || "").trim().toLowerCase();
         const numOnly = cleanQuery.replace(/[^0-9]/g, "");
         const targetMediaId = (mId || "").trim();
         const targetWorkflowId = (wId || "").trim();
@@ -4766,7 +4752,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             if (mediaCount > 2) break;
 
             const curText = cur.textContent || "";
-            const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
+            const seqMatches = curText.match(/\b\d{3,14}[\.\-_:\s]/g) || [];
             const uniqueSeqs = new Set(seqMatches.map(s => s.trim()));
             if (uniqueSeqs.size > 1) break;
 
@@ -4808,10 +4794,8 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
           // BẢO VỆ TUYỆT ĐỐI: Loại bỏ triệt để các card có STT khác (chống tải nhầm video của task khác)
           if (numOnly) {
-            const targetNum = parseInt(numOnly, 10);
-            const rawSeqs = cardText.match(/\b\d{1,4}[\.\-_:\s]/g) || [];
-            const foundNums = rawSeqs.map(s => parseInt(s.replace(/[^0-9]/g, ""), 10)).filter(n => !isNaN(n));
-            if (foundNums.length > 0 && !foundNums.includes(targetNum)) {
+            const rawSeqs = (cardText.match(/\b\d{3,14}[\.\-_:\s]/g) || []).map(s => s.replace(/[^0-9]/g, ""));
+            if (rawSeqs.length > 0 && !rawSeqs.includes(numOnly)) {
               return -999999;
             }
           }
@@ -5510,7 +5494,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
       world: "MAIN",
       args: [cleanQ, promptText || "", mediaId || "", workflowId || "", mediaType || "auto"],
       func: (q, pText, mId, wId, mType = "auto") => {
-        const cleanQuery = (q || "001.").trim().toLowerCase();
+        const cleanQuery = (q || "").trim().toLowerCase();
         const numOnly = cleanQuery.replace(/[^0-9]/g, "");
         const targetMediaId = (mId || "").trim();
         const targetWorkflowId = (wId || "").trim();
@@ -5662,7 +5646,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
             if (mediaCount > 2) break;
 
             const curText = cur.textContent || "";
-            const seqMatches = curText.match(/\b\d{3}[\.\-_:\s]/g) || [];
+            const seqMatches = curText.match(/\b\d{3,14}[\.\-_:\s]/g) || [];
             const uniqueSeqs = new Set(seqMatches.map(s => s.trim()));
             if (uniqueSeqs.size > 1) break;
 
@@ -5704,10 +5688,8 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
 
           // BẢO VỆ TUYỆT ĐỐI: Loại bỏ triệt để các card có STT khác (chống tải nhầm video của task khác)
           if (numOnly) {
-            const targetNum = parseInt(numOnly, 10);
-            const rawSeqs = cardText.match(/\b\d{1,4}[\.\-_:\s]/g) || [];
-            const foundNums = rawSeqs.map(s => parseInt(s.replace(/[^0-9]/g, ""), 10)).filter(n => !isNaN(n));
-            if (foundNums.length > 0 && !foundNums.includes(targetNum)) {
+            const rawSeqs = (cardText.match(/\b\d{3,14}[\.\-_:\s]/g) || []).map(s => s.replace(/[^0-9]/g, ""));
+            if (rawSeqs.length > 0 && !rawSeqs.includes(numOnly)) {
               return -999999;
             }
           }

@@ -845,9 +845,9 @@ function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
     ? sceneIndex
     : (scene?.sceneIndex !== undefined ? scene.sceneIndex : (scene?.index !== undefined ? scene.index : null));
   if (actualIndex !== null && actualIndex !== undefined && !isNaN(Number(actualIndex))) {
-    const seqStr = String(Number(actualIndex) + 1).padStart(3, '0') + '.';
-    if (!finalPrompt.match(/^\d{1,4}[\.\-_:\s]/)) {
-      finalPrompt = `${seqStr} ${finalPrompt}`;
+    const seqStr = `${Math.floor(Date.now() / 1000) + (Number(actualIndex) || 0)}.`;
+    if (!finalPrompt.match(/^\d{9,14}[\.\-_:\s]/)) {
+      finalPrompt = `${seqStr} ${finalPrompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, '')}`;
     }
   }
   return finalPrompt;

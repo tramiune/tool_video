@@ -531,14 +531,10 @@
       const lines = rawInput.split("\n").map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith("//") && !l.startsWith("#"));
       if (!lines.length) { toast("Không có dòng prompt hợp lệ nào!", "error"); return; }
 
-      // LẤY STT LỚN NHẤT ĐÃ CÓ TRONG PROJECT ĐỂ TỰ ĐỘNG TĂNG TIẾP (KHÔNG BAO GIỜ TRÙNG)
-      let startSeq = 1;
-      try {
-        const seqRes = await callExt("GET_MAX_SEQ", { projectId });
-        if (seqRes?.success && typeof seqRes.maxSeq === 'number' && seqRes.maxSeq > 0) {
-          startSeq = seqRes.maxSeq + 1;
-        }
-      } catch (_) {}
+      // TỰ ĐỘNG ĐÁNH UNIX TIMESTAMP 10 SỐ ĐẦU PROMPT (KHÔNG TRÙNG LẶP)
+      const baseTimestamp = Math.floor(Date.now() / 1000);
+      let nextTimestamp = baseTimestamp;
+      const existingSeqs = new Set(batchTasks.map(t => (t.seq || '').replace(/[^0-9]/g, '')).filter(Boolean));
 
       batchTasks = lines.map((line, idx) => {
         const parts = line.split("|").map(p => p.trim());
@@ -560,15 +556,21 @@
           endImage = parts[2];
         }
 
-        // TỰ ĐỘNG ĐÁNH SỐ THỨ TỰ TIẾP THEO (KHÔNG TRÙNG LẶP)
-        const currentNum = startSeq + idx;
-        const seqIndex = String(currentNum).padStart(3, '0') + ".";
-        let seqStr = seqIndex;
-        const matchSeq = prompt.match(/^(\d+[\.\-_:\s])/);
-        if (matchSeq) {
-          seqStr = matchSeq[1].trim();
+        // TỰ ĐỘNG ĐÁNH UNIX TIMESTAMP 10 SỐ (KHÔNG TRÙNG LẶP)
+        let seqStr = "";
+        const matchTimestamp = prompt.match(/^(\d{9,14})[\.\-_:\s]/);
+        if (matchTimestamp) {
+          seqStr = matchTimestamp[1] + ".";
+          prompt = prompt.replace(/^(\d{9,14})[\.\-_:\s]\s*/, `${seqStr} `);
         } else {
-          prompt = `${seqIndex} ${prompt}`;
+          prompt = prompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, '');
+          while (existingSeqs.has(String(nextTimestamp))) {
+            nextTimestamp++;
+          }
+          seqStr = `${nextTimestamp}.`;
+          existingSeqs.add(String(nextTimestamp));
+          prompt = `${seqStr} ${prompt}`;
+          nextTimestamp++;
         }
 
         return {
@@ -1343,52 +1345,32 @@
   }
 
   // ──────────────────────────
-  // Helper tính STT tự động cho Auto Click UI (001., 002., 044...)
+  // Helper tính Timestamp tự động cho Auto Click UI (Unix timestamp 10 số)
   // ──────────────────────────
   async function getNextSeqForUiTask(task, projectId) {
     let prompt = (task?.prompt || '').trim();
     let seqStr = "";
 
-    // 1. Nếu prompt đã có STT ở đầu (ví dụ: "001. ...", "44. ...")
-    const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
-    if (matchSeq) {
-      const num = parseInt(matchSeq[1], 10);
-      seqStr = String(num).padStart(3, '0') + ".";
-      prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
-      callExt("UPDATE_MAX_SEQ", { projectId, newMax: num }).catch(() => {});
+    // 1. Nếu prompt đã có Unix Timestamp (9-14 chữ số, ví dụ: "1725631530. ...")
+    const matchTimestamp = prompt.match(/^(\d{9,14})[\.\-_:\s]/);
+    if (matchTimestamp) {
+      seqStr = matchTimestamp[1] + ".";
+      prompt = prompt.replace(/^(\d{9,14})[\.\-_:\s]\s*/, `${seqStr} `);
       return { seqStr, prompt };
     }
 
-    // 2. Nếu task có sceneIndex (từ kịch bản drama)
-    if (task?.sceneIndex !== undefined && task?.sceneIndex !== null && !isNaN(Number(task?.sceneIndex))) {
-      const num = Number(task.sceneIndex) + 1;
-      seqStr = String(num).padStart(3, '0') + ".";
-      prompt = `${seqStr} ${prompt}`;
-      callExt("UPDATE_MAX_SEQ", { projectId, newMax: num }).catch(() => {});
-      return { seqStr, prompt };
+    // 2. Xóa STT ngắn cũ nếu có (ví dụ: "001. ...", "024. ...") để thay bằng Unix Timestamp
+    prompt = prompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, '');
+
+    // 3. Tự động sinh Unix Timestamp 10 số (đảm bảo không trùng với các task đang có trong hàng đợi)
+    const nowSec = Math.floor(Date.now() / 1000);
+    let targetSec = nowSec;
+    const existingSeqs = new Set(uiBatchTasks.map(t => (t.seq || '').replace(/[^0-9]/g, '')).filter(Boolean));
+    while (existingSeqs.has(String(targetSec))) {
+      targetSec++;
     }
-
-    // 3. Tự động lấy STT tiếp theo lớn nhất (không trùng lặp)
-    let maxLocalSeq = 0;
-    for (const t of uiBatchTasks) {
-      if (t.seq) {
-        const n = parseInt(t.seq.replace(/[^0-9]/g, ""), 10);
-        if (!isNaN(n) && n > maxLocalSeq) maxLocalSeq = n;
-      }
-    }
-
-    let serverMaxSeq = 0;
-    try {
-      const seqRes = await callExt("GET_MAX_SEQ", { projectId });
-      if (seqRes?.success && typeof seqRes.maxSeq === 'number') {
-        serverMaxSeq = seqRes.maxSeq;
-      }
-    } catch (_) {}
-
-    const nextNum = Math.max(maxLocalSeq, serverMaxSeq) + 1;
-    seqStr = String(nextNum).padStart(3, '0') + ".";
+    seqStr = `${targetSec}.`;
     prompt = `${seqStr} ${prompt}`;
-    callExt("UPDATE_MAX_SEQ", { projectId, newMax: nextNum }).catch(() => {});
     return { seqStr, prompt };
   }
 
@@ -1444,25 +1426,11 @@
     const projectId = document.getElementById("projectId")?.value || document.getElementById("projectId2")?.value || "";
 
     if (lines.length > 0) {
-      let maxLocalSeq = 0;
-      for (const t of uiBatchTasks) {
-        if (t.seq) {
-          const n = parseInt(t.seq.replace(/[^0-9]/g, ""), 10);
-          if (!isNaN(n) && n > maxLocalSeq) maxLocalSeq = n;
-        }
-      }
-
-      let startSeq = 1;
-      try {
-        const seqRes = await callExt("GET_MAX_SEQ", { projectId });
-        if (seqRes?.success && typeof seqRes.maxSeq === 'number' && seqRes.maxSeq > 0) {
-          startSeq = seqRes.maxSeq + 1;
-        }
-      } catch (_) {}
-
-      startSeq = Math.max(startSeq, maxLocalSeq + 1);
-
       const baseId = uiBatchTasks.length;
+      const baseTimestamp = Math.floor(Date.now() / 1000);
+      let nextTimestamp = baseTimestamp;
+      const existingSeqs = new Set(uiBatchTasks.map(t => (t.seq || '').replace(/[^0-9]/g, '')).filter(Boolean));
+
       const newTasks = lines.map((line, i) => {
         let prompt = line;
         let startImage = "";
@@ -1483,15 +1451,21 @@
           }
         }
 
-        // TỰ ĐỘNG ĐÁNH SỐ THỨ TỰ TIẾP THEO (KHÔNG TRÙNG LẶP)
-        const currentNum = startSeq + i;
-        const seqIndex = String(currentNum).padStart(3, '0') + ".";
-        let seqStr = seqIndex;
-        const matchSeq = prompt.match(/^(\d+[\.\-_:\s])/);
-        if (matchSeq) {
-          seqStr = matchSeq[1].trim();
+        // TỰ ĐỘNG ĐÁNH UNIX TIMESTAMP 10 SỐ (KHÔNG TRÙNG LẶP)
+        let seqStr = "";
+        const matchTimestamp = prompt.match(/^(\d{9,14})[\.\-_:\s]/);
+        if (matchTimestamp) {
+          seqStr = matchTimestamp[1] + ".";
+          prompt = prompt.replace(/^(\d{9,14})[\.\-_:\s]\s*/, `${seqStr} `);
         } else {
-          prompt = `${seqIndex} ${prompt}`;
+          prompt = prompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, '');
+          while (existingSeqs.has(String(nextTimestamp))) {
+            nextTimestamp++;
+          }
+          seqStr = `${nextTimestamp}.`;
+          existingSeqs.add(String(nextTimestamp));
+          prompt = `${seqStr} ${prompt}`;
+          nextTimestamp++;
         }
 
         return {
@@ -1508,7 +1482,6 @@
       });
 
       uiBatchTasks = [...uiBatchTasks, ...newTasks];
-      callExt("UPDATE_MAX_SEQ", { projectId, newMax: startSeq + lines.length - 1 }).catch(() => {});
 
       const inputEl = document.getElementById("uiBatchPromptInput");
       if (inputEl) inputEl.value = "";
@@ -1993,30 +1966,29 @@
     const autoSeq = document.getElementById("uiImgAutoSeq")?.checked ?? true;
     const autoDownload = document.getElementById("uiImgAutoDownload")?.checked ?? true;
 
-    // LẤY STT LỚN NHẤT ĐÃ CÓ TRONG PROJECT ĐỂ TỰ ĐỘNG TĂNG TIẾP (KHÔNG BAO GIỜ TRÙNG)
-    let startSeq = 1;
-    if (autoSeq) {
-      try {
-        const seqRes = await callExt("GET_MAX_SEQ", { projectId });
-        if (seqRes?.success && typeof seqRes.maxSeq === 'number' && seqRes.maxSeq > 0) {
-          startSeq = seqRes.maxSeq + 1;
-        }
-      } catch (_) {}
-    }
+    // TỰ ĐỘNG ĐÁNH UNIX TIMESTAMP 10 SỐ ĐẦU PROMPT (KHÔNG TRÙNG LẶP)
+    const baseTimestamp = Math.floor(Date.now() / 1000);
+    let nextTimestamp = baseTimestamp;
+    const existingSeqs = new Set(uiImgBatchTasks.map(t => (t.seq || '').replace(/[^0-9]/g, '')).filter(Boolean));
 
     uiImgBatchTasks = lines.map((line, i) => {
       let prompt = line;
       let seqStr = "";
 
       if (autoSeq) {
-        const currentNum = startSeq + i;
-        const seqIndex = String(currentNum).padStart(3, '0') + ".";
-        seqStr = seqIndex;
-        const matchSeq = prompt.match(/^(\d+[\.\-_:\s])/);
-        if (matchSeq) {
-          seqStr = matchSeq[1].trim();
+        const matchTimestamp = prompt.match(/^(\d{9,14})[\.\-_:\s]/);
+        if (matchTimestamp) {
+          seqStr = matchTimestamp[1] + ".";
+          prompt = prompt.replace(/^(\d{9,14})[\.\-_:\s]\s*/, `${seqStr} `);
         } else {
-          prompt = `${seqIndex} ${prompt}`;
+          prompt = prompt.replace(/^\d{1,4}[\.\-_:\s]\s*/, '');
+          while (existingSeqs.has(String(nextTimestamp))) {
+            nextTimestamp++;
+          }
+          seqStr = `${nextTimestamp}.`;
+          existingSeqs.add(String(nextTimestamp));
+          prompt = `${seqStr} ${prompt}`;
+          nextTimestamp++;
         }
       } else {
         const matchSeq = prompt.match(/^(\d+[\.\-_:\s])/);
