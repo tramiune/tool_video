@@ -462,7 +462,7 @@ async function runDramaJob(jobId) {
               job: { ...job, characters: job.characters || [] },
               sceneIndex: index,
               taskType: 'startImage',
-              prompt: buildScenePrompt(job, scene, 'startImage'),
+              prompt: buildScenePrompt(job, scene, 'startImage', index),
               extraTaskData: {
                 userId: job.userId,
                 email: job.userEmail || null,
@@ -551,7 +551,7 @@ async function runDramaJob(jobId) {
             job: { ...job, characters: job.characters || [] },
             sceneIndex: index,
             taskType: 'endImage',
-            prompt: buildScenePrompt(job, scene, 'endImage'),
+            prompt: buildScenePrompt(job, scene, 'endImage', index),
             extraTaskData: {
               userId: job.userId,
               email: job.userEmail || null,
@@ -601,7 +601,7 @@ async function runDramaJob(jobId) {
             job: { ...job, characters: job.characters || [] },
             sceneIndex: index,
             taskType: 'video',
-            prompt: buildScenePrompt(job, scene, 'video'),
+            prompt: buildScenePrompt(job, scene, 'video', index),
             extraTaskData: {
               userId: job.userId,
               email: job.userEmail || null,
@@ -778,7 +778,7 @@ function getCharacterPositionLabel(job, scene, speakerName) {
   return `the ${descriptor} ${posture} ${position || 'in the scene'}`.replace(/\s+/g, ' ').trim();
 }
 
-function buildScenePrompt(job, scene, mediaType) {
+function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
   const baseImagePrompt = String(job.baseImagePrompt || '').trim();
   const characters = Array.isArray(job.characters) ? job.characters.filter(c => String(c.name || '').trim()) : [];
   const characterNames = characters.map(c => c.name).join(', ');
@@ -839,7 +839,18 @@ function buildScenePrompt(job, scene, mediaType) {
     parts.push('Characters talk with expressive, natural facial emotions and subtle gestures.');
     parts.push('One coherent 8-second continuous vertical 9:16 video clip smoothly transitioning from start frame to end frame. Locked static camera, smooth cinematic depth, no camera cuts, no split screen.');
   }
-  return parts.join('\n');
+
+  let finalPrompt = parts.join('\n');
+  const actualIndex = (sceneIndex !== null && sceneIndex !== undefined)
+    ? sceneIndex
+    : (scene?.sceneIndex !== undefined ? scene.sceneIndex : (scene?.index !== undefined ? scene.index : null));
+  if (actualIndex !== null && actualIndex !== undefined && !isNaN(Number(actualIndex))) {
+    const seqStr = String(Number(actualIndex) + 1).padStart(3, '0') + '.';
+    if (!finalPrompt.match(/^\d{1,4}[\.\-_:\s]/)) {
+      finalPrompt = `${seqStr} ${finalPrompt}`;
+    }
+  }
+  return finalPrompt;
 }
 
 // ─── SINGLE-SCENE MEDIA GENERATION ─────────────────────────────────────────
@@ -933,7 +944,7 @@ async function generateSceneMedia({
         job,
         sceneIndex,
         taskType: 'startImage',
-        prompt: buildScenePrompt(job, scene, 'startImage'),
+        prompt: buildScenePrompt(job, scene, 'startImage', sceneIndex),
         extraTaskData: {
           userId,
           email: userEmail || null,
@@ -971,7 +982,7 @@ async function generateSceneMedia({
         job,
         sceneIndex,
         taskType: 'endImage',
-        prompt: buildScenePrompt(job, scene, 'endImage'),
+        prompt: buildScenePrompt(job, scene, 'endImage', sceneIndex),
         extraTaskData: {
           userId,
           email: userEmail || null,
@@ -1001,7 +1012,7 @@ async function generateSceneMedia({
       job,
       sceneIndex,
       taskType: 'video',
-      prompt: buildScenePrompt(job, scene, 'video'),
+      prompt: buildScenePrompt(job, scene, 'video', sceneIndex),
       extraTaskData: {
         userId,
         email: userEmail || null,

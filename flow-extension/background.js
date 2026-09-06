@@ -4012,6 +4012,29 @@ async function processServerVideoQueue() {
   while (_serverVideoQueue.length > 0) {
     const task = _serverVideoQueue.shift();
     try {
+      // ĐẢM BẢO ĐÁNH SỐ THỨ TỰ 001., 002. ĐẦU PROMPT
+      let prompt = (task.prompt || '').trim();
+      let seqStr = "";
+      const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
+      if (matchSeq) {
+        const num = parseInt(matchSeq[1], 10);
+        seqStr = String(num).padStart(3, '0') + ".";
+        prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
+      } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
+        const num = Number(task.sceneIndex) + 1;
+        seqStr = String(num).padStart(3, '0') + ".";
+        prompt = `${seqStr} ${prompt}`;
+        await updateMaxSeq(task.projectId, num);
+      } else {
+        const seqRes = await getMaxSeq(task.projectId);
+        const nextSeq = (seqRes?.maxSeq || 0) + 1;
+        await updateMaxSeq(task.projectId, nextSeq);
+        seqStr = String(nextSeq).padStart(3, '0') + ".";
+        prompt = `${seqStr} ${prompt}`;
+      }
+      task.prompt = prompt;
+      task.seq = seqStr;
+
       logToBridge(`Bắt đầu xử lý task video cho tool_video: ${task.id} (prompt: "${(task.prompt || '').slice(0, 30)}...")`);
       
       const hasFrames = Boolean(task.startImage || task.endImage || task.isFrames);
@@ -4073,6 +4096,29 @@ async function processServerImageQueue() {
   while (_serverImageQueue.length > 0) {
     const task = _serverImageQueue.shift();
     try {
+      // ĐẢM BẢO ĐÁNH SỐ THỨ TỰ 001., 002. ĐẦU PROMPT
+      let prompt = (task.prompt || '').trim();
+      let seqStr = "";
+      const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
+      if (matchSeq) {
+        const num = parseInt(matchSeq[1], 10);
+        seqStr = String(num).padStart(3, '0') + ".";
+        prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
+      } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
+        const num = Number(task.sceneIndex) + 1;
+        seqStr = String(num).padStart(3, '0') + ".";
+        prompt = `${seqStr} ${prompt}`;
+        await updateMaxSeq(task.projectId, num);
+      } else {
+        const seqRes = await getMaxSeq(task.projectId);
+        const nextSeq = (seqRes?.maxSeq || 0) + 1;
+        await updateMaxSeq(task.projectId, nextSeq);
+        seqStr = String(nextSeq).padStart(3, '0') + ".";
+        prompt = `${seqStr} ${prompt}`;
+      }
+      task.prompt = prompt;
+      task.seq = seqStr;
+
       logToBridge(`Bắt đầu tạo ảnh cho task: ${task.id} (prompt: "${(task.prompt || '').slice(0, 30)}...")`);
 
       const model = "NARWHAL";
@@ -4084,8 +4130,6 @@ async function processServerImageQueue() {
       } else if (task.aspectRatio === '1:1' || task.aspectRatio?.includes('SQUARE')) {
         aspect = 'IMAGE_ASPECT_RATIO_SQUARE';
       }
-
-      const prompt = task.prompt || '';
 
       // Gọi API tạo ảnh trực tiếp giống tab Tạo Ảnh (KHÔNG fallback sang Auto Click)
       logToBridge(`[Image Engine] Gọi API tạo ảnh cho task ${task.id}...`);
@@ -5001,19 +5045,15 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
     await new Promise(r => setTimeout(r, 650));
 
     // Lắng nghe chrome.downloads.onCreated
+    let onCreatedListener = null;
     const dlPromise = new Promise((resolve) => {
-      const listener = (item) => {
-        chrome.downloads.onCreated.removeListener(listener);
+      onCreatedListener = (item) => {
         resolve(item);
       };
-      chrome.downloads.onCreated.addListener(listener);
-      setTimeout(() => {
-        chrome.downloads.onCreated.removeListener(listener);
-        resolve(null);
-      }, 12000);
+      chrome.downloads.onCreated.addListener(onCreatedListener);
     });
 
-    // B8.3: Click 720p
+    // B8.3: Click 720p bằng CDP Hardware Mouse
     await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
       type: "mousePressed",
       x: opt720.x,
@@ -5030,37 +5070,77 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
       clickCount: 1
     });
 
-    // Fallback click
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: targetTabId },
-        world: "MAIN",
-        func: () => {
-          const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
-            const r = el.getBoundingClientRect();
-            if (r.width < 50 || r.width > 350 || r.height < 18 || r.height > 180) return false;
-            if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
-            const t = (el.innerText || el.textContent || "").trim();
-            if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
-            if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-            return t.includes("720p") || t.includes("Kích thước gốc");
-          });
-          if (allEls.length > 0 && typeof allEls[0].click === 'function') allEls[0].click();
-        }
-      });
-    } catch (_) {}
+    // Chờ xem CDP click có kích hoạt download không (tối đa 3s)
+    let downloadedItem = await Promise.race([
+      dlPromise,
+      new Promise(r => setTimeout(() => r(null), 3000))
+    ]);
 
-    let downloadedItem = await dlPromise;
+    // Chỉ nếu sau 3s CDP mouse click chưa tạo download, mới chạy fallback JS click (tránh click đúp gây tải nhiều lần)
+    if (!downloadedItem) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: targetTabId },
+          world: "MAIN",
+          func: () => {
+            const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
+              const r = el.getBoundingClientRect();
+              if (r.width < 50 || r.width > 350 || r.height < 18 || r.height > 180) return false;
+              if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
+              const t = (el.innerText || el.textContent || "").trim();
+              if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
+              if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
+              return t.includes("720p") || t.includes("Kích thước gốc");
+            });
+            if (allEls.length > 0 && typeof allEls[0].click === 'function') allEls[0].click();
+          }
+        });
+      } catch (_) {}
+
+      downloadedItem = await Promise.race([
+        dlPromise,
+        new Promise(r => setTimeout(() => r(null), 5000))
+      ]);
+    }
+
+    if (onCreatedListener) {
+      chrome.downloads.onCreated.removeListener(onCreatedListener);
+    }
+
     if (!downloadedItem) {
       try {
         const recents = await chrome.downloads.search({ limit: 3, orderBy: ['-startTime'] });
-        if (recents?.length && (Date.now() - new Date(recents[0].startTime).getTime() < 15000)) {
+        if (recents?.length && (Date.now() - new Date(recents[0].startTime).getTime() < 12000)) {
           downloadedItem = recents[0];
         }
       } catch (_) {}
     }
+
+    // Chờ cho file tải xong hoàn tất (state === 'complete') để lấy đường dẫn file .mp4 thực tế trên ổ cứng
+    if (downloadedItem?.id) {
+      const finalItem = await new Promise((res) => {
+        let checkTimer = setInterval(async () => {
+          try {
+            const items = await chrome.downloads.search({ id: downloadedItem.id });
+            if (items && items[0]) {
+              if (items[0].state === 'complete' || items[0].state === 'interrupted') {
+                clearInterval(checkTimer);
+                res(items[0]);
+              }
+            }
+          } catch (_) {}
+        }, 600);
+        setTimeout(() => {
+          clearInterval(checkTimer);
+          res(downloadedItem);
+        }, 50000); // Chờ tối đa 50s để tải xong
+      });
+      if (finalItem) downloadedItem = finalItem;
+    }
+
+    const isSuccess = Boolean(downloadedItem && downloadedItem.filename && !downloadedItem.filename.endsWith('.crdownload') && downloadedItem.state !== 'interrupted');
     return {
-      success: true,
+      success: isSuccess,
       downloadItem: downloadedItem,
       filename: downloadedItem?.filename || 'flow_video.mp4'
     };
@@ -5581,7 +5661,21 @@ async function waitAndDownloadCard(projectId, promptText, timeoutMs = 600000) {
   return { success: false, error: "Quá thời gian chờ render (timeout)" };
 }
 
+const _activeDeliveries = new Set();
+const _completedDeliveries = new Set();
+
 async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') {
+  if (!taskId) return;
+  if (_completedDeliveries.has(taskId)) {
+    logToBridge(`Task ${taskId} đã hoàn thành và gửi file trước đó, bỏ qua.`);
+    return;
+  }
+  if (_activeDeliveries.has(taskId)) {
+    logToBridge(`Task ${taskId} đang trong tiến trình theo dõi/tải, không chạy trùng lặp.`);
+    return;
+  }
+  _activeDeliveries.add(taskId);
+
   logToBridge(`Bắt đầu theo dõi video: task ${taskId}${mediaId ? ', mediaId: ' + mediaId : ''}${promptText ? ', prompt: "' + promptText.slice(0, 30) + '..."' : ''}`);
   const maxAttempts = 120; // Poll up to 10-12 minutes (every 5s)
   const pollInterval = 5000;
@@ -5661,21 +5755,22 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') 
           try {
             logToBridge(`[Download] Thử tải video 720p gốc qua Native UI cho "${promptText?.slice(0, 20)}"...`);
             const nativeRes = await triggerNativeDownloadForCard(flowTab.id, promptText, promptText, finalMediaId, null, 'video', projectId);
-            if (nativeRes?.success && nativeRes?.downloadItem?.filename) {
-              downloadedFilePath = nativeRes.downloadItem.filename;
-              logToBridge(`[Download] ✅ Native UI tải thành công: ${downloadedFilePath}`);
+            if (nativeRes?.success && nativeRes?.filename && !nativeRes.filename.endsWith('.crdownload')) {
+              downloadedFilePath = nativeRes.filename;
+              videoSize = nativeRes.downloadItem?.fileSize || 0;
+              logToBridge(`[Download] ✅ Native UI tải thành công duy nhất: ${downloadedFilePath}`);
             }
           } catch (nativeErr) {
             console.warn("[Flow Extension] Native download error in pollAndDeliverVideo:", nativeErr.message);
           }
         }
 
-        // ── Cách 1: Tải trực tiếp qua chrome.downloads bằng mediaId (Chuẩn từ commit tối qua) ──
-        if (finalMediaId) {
+        // ── Cách 1: Tải trực tiếp qua chrome.downloads bằng mediaId CHỈ KHI Cách 0 CHƯA TẢI ĐƯỢC ──
+        if (!downloadedFilePath && finalMediaId) {
           try {
             logToBridge(`[Download] Thử tải file trực tiếp qua chrome.downloads cho media: ${finalMediaId}...`);
             const dlRes = await downloadVideoFileToDisk(finalMediaId);
-            if (dlRes?.filePath) {
+            if (dlRes?.filePath && !dlRes.filePath.endsWith('.crdownload')) {
               downloadedFilePath = dlRes.filePath;
               videoSize = dlRes.fileSize || 0;
               logToBridge(`[Download] ✅ Tải file thành công: ${downloadedFilePath} (${(videoSize / 1024 / 1024).toFixed(2)} MB)`);
@@ -5781,11 +5876,11 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') 
           }
         }
 
-        // ── Cách 3: Thử tải qua directDownloadTarget nếu có link HTTP hợp lệ ──
+        // ── Cách 3: Thử tải qua directDownloadTarget nếu có link HTTP hợp lệ CHỈ KHI CHƯA CÓ FILE ──
         if (!downloadedFilePath && !videoBase64 && directDownloadTarget && directDownloadTarget.startsWith("http")) {
           try {
             const dlRes = await downloadVideoFileToDisk(directDownloadTarget);
-            if (dlRes?.filePath) {
+            if (dlRes?.filePath && !dlRes.filePath.endsWith('.crdownload')) {
               downloadedFilePath = dlRes.filePath;
               videoSize = dlRes.fileSize || videoSize;
               try { chrome.downloads.erase({ id: dlRes.downloadId }); } catch (_) {}
@@ -5796,11 +5891,16 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') 
         }
 
         if (!videoBase64 && !downloadedFilePath) {
-          throw new Error("Đã xác nhận video hoàn thành nhưng không thể trích xuất dữ liệu video");
+          logToBridge(`⚠️ Task ${taskId} đã READY nhưng chưa lấy được file trong lần thử ${attempt}. Chờ 3s thử lại...`);
+          await new Promise(r => setTimeout(r, 3000));
+          continue;
         }
 
         const sizeMb = (videoSize / 1024 / 1024).toFixed(2);
         logToBridge(`✅ Đã lấy xong video (${sizeMb} MB)! Gửi kết quả về cho tool_video...`);
+
+        _completedDeliveries.add(taskId);
+        _activeDeliveries.delete(taskId);
 
         if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
           _toolWs.send(JSON.stringify({
@@ -5819,6 +5919,8 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') 
 
       if (isFailed) {
         logToBridge(`❌ Task ${taskId} THẤT BẠI: ${failMsg}`);
+        _completedDeliveries.add(taskId);
+        _activeDeliveries.delete(taskId);
         if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
           _toolWs.send(JSON.stringify({
             type: 'VIDEO_RESULT',
@@ -5835,6 +5937,8 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') 
       logToBridge(`Task ${taskId} chú ý: ${e.message}`);
       if (attempt >= maxAttempts) {
         logToBridge(`❌ Task ${taskId} timeout quá thời gian chờ!`);
+        _completedDeliveries.add(taskId);
+        _activeDeliveries.delete(taskId);
         if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
           _toolWs.send(JSON.stringify({
             type: 'VIDEO_RESULT',
@@ -5851,6 +5955,8 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') 
 
   // Timeout sau 10-12 phút
   logToBridge(`❌ Task ${taskId} timeout quá 10 phút không thấy hoàn thành.`);
+  _completedDeliveries.add(taskId);
+  _activeDeliveries.delete(taskId);
   if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
     _toolWs.send(JSON.stringify({
       type: 'VIDEO_RESULT',

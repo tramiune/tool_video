@@ -187,7 +187,8 @@ const extensionBridge = {
         model: task.model || 'veo_3_1_t2v_lite_low_priority',
         aspectRatio: task.aspectRatio || '9:16',
         startImage: startImgB64,
-        endImage: endImgB64
+        endImage: endImgB64,
+        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null
       }));
     });
   },
@@ -210,7 +211,8 @@ const extensionBridge = {
         prompt: task.prompt,
         model: task.model || 'HARBOR_SEAL',
         aspectRatio: task.aspectRatio || '1:1',
-        referenceImage: refBase64
+        referenceImage: refBase64,
+        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null
       }));
     });
   },
@@ -2980,7 +2982,9 @@ async function runImageTask(taskId) {
           prompt: task.prompt,
           model: task.model || 'nano_banana_pro',
           aspectRatio: task.aspectRatio || '1:1',
-          referenceImages: task.referenceImages || (task.referenceImage ? [task.referenceImage] : [])
+          referenceImages: task.referenceImages || (task.referenceImage ? [task.referenceImage] : []),
+          sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
+          projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
         });
 
         const fileName = `meo3/images/${taskId}_${Date.now()}.jpg`;
@@ -3256,7 +3260,9 @@ async function runVideoTask(taskId) {
           model: 'veo_3_1_t2v_lite_low_priority',
           aspectRatio: task.aspectRatio || '9:16',
           startImage: task.startImage,
-          endImage: task.endImage
+          endImage: task.endImage,
+          sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
+          projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
         });
 
         const fileName = `meo3/videos/${taskId}_${Date.now()}.mp4`;
