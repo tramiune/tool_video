@@ -1730,14 +1730,9 @@ func: async (promptText, cfg) => {
             return { success: false };
           };
 
+          // Helper to select the Khung hình (Frames) Tab
           const selectFramesTab = async () => {
-            // Nếu popover đã bị đóng (ví dụ do việc chọn Model ở bước trước làm UI tự đóng popover),
-            // thì cần mở lại.
-            if (!isPopoverOpen() && settingsChip) {
-              settingsChip.scrollIntoView({ block: "nearest" });
-              settingsChip.click();
-              await sleep(800);
-            }
+            // Popover đã được mở từ trước → KHÔNG click lại chip (toggle sẽ đóng!)
 
             // Đảm bảo tab Video đã được kích hoạt trước
             await selectVideoTab();
@@ -1821,6 +1816,12 @@ func: async (promptText, cfg) => {
           } else {
             await selectVideoTab();
             await sleep(400);
+          }
+
+          // 1.5 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab NOW
+          if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
+            await selectFramesTab();
+            await sleep(500);
           }
 
           // 2. Select Aspect Ratio (9:16 vs 16:9)
@@ -1958,15 +1959,17 @@ func: async (promptText, cfg) => {
                 await sleep(500);
             }
           }
+        } catch (confErr) {
+          console.warn("[Flow Extension] Config error:", confErr);
+        }
 
-          // 5.5 If Khung hình (Frames / I2V) is requested, click "Khung hình" tab NOW
-          if (cfg?.isFrames || cfg?.startImage || cfg?.endImage) {
-            await selectFramesTab();
-            await sleep(500);
-          }
-
-          // 6. Close popup gracefully and focus editor
-          await sleep(300);
+        // 6. Close popup gracefully and focus editor (chạy luôn cả khi config bị lỗi)
+        await sleep(300);
+          // ESC lần 1
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+          await sleep(200);
+          // ESC lần 2
           document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
           await sleep(300);
@@ -2298,9 +2301,6 @@ func: async (promptText, cfg) => {
               console.warn("[Flow Extension] Frame attach error:", frameErr);
             }
           }
-        } catch (confErr) {
-          console.warn("[Flow Extension] Config error:", confErr);
-        }
 
         // ──────────────────────────────────────────────
         // STEP 3: Focus Editor & Type Prompt (Test B1)
