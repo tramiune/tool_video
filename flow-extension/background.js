@@ -1609,7 +1609,7 @@ func: async (promptText, cfg) => {
               const id = (el.getAttribute("id") || "").toLowerCase();
 
               if (t.includes("Khung hình") || aria.includes("Khung hình") || t.includes("Hình ảnh") || aria.includes("Hình ảnh")) return false;
-              if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1080p") || t.includes("fps")) return false;
+              if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1K") || t.includes("1080p") || t.includes("fps")) return false;
 
               return t === "Video" || aria === "Video" || 
                      t.toLowerCase() === "video" || aria.toLowerCase() === "video" ||
@@ -4996,7 +4996,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
           Array.from(matchedCard.querySelectorAll("svg, button, div, span")).some(el => {
             const aria = (el.getAttribute("aria-label") || "").toLowerCase();
             const t = (el.textContent || "").trim().toLowerCase();
-            return aria.includes("play") || aria.includes("phát") || t.match(/^\d+s$/i) || t.match(/^\d+\s*giây$/i) || t.includes("720p") || t.includes("1080p");
+            return aria.includes("play") || aria.includes("phát") || t.match(/^\d+s$/i) || t.match(/^\d+\s*giây$/i) || t.includes("720p") || t.includes("1K") || t.includes("1080p");
           })
         );
         const isVideoCard = Boolean(matchedCard.querySelector("video")) || hasPlayIcon;
@@ -5223,7 +5223,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             const t = (el.innerText || el.textContent || "").trim();
             if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
             if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-            return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+            return t.includes("720p") || t.includes("1K") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
           });
 
           let opt = null;
@@ -5286,7 +5286,6 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
       opt720 = r2?.[0]?.result;
       if (opt720) break;
     }
-    } // end else image
 
     if (!opt720) {
       return { success: false, error: "Không tìm thấy dòng '720p (Kích thước gốc)' trong submenu" };
@@ -5348,7 +5347,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
               const t = (el.innerText || el.textContent || "").trim();
               if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
               if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-              return t.includes("720p") || t.includes("Kích thước gốc");
+              return t.includes("720p") || t.includes("1K") || t.includes("Kích thước gốc");
             });
             if (allEls.length > 0 && typeof allEls[0].click === 'function') allEls[0].click();
           }
@@ -6796,7 +6795,7 @@ async function testUiStep(step, req) {
             const id = (el.getAttribute("id") || "").toLowerCase();
 
             if (t.includes("Khung hình") || aria.includes("Khung hình") || t.includes("Hình ảnh") || aria.includes("Hình ảnh")) return false;
-            if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1080p") || t.includes("fps")) return false;
+            if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1K") || t.includes("1080p") || t.includes("fps")) return false;
 
             return t === "Video" || aria === "Video" || 
                    t.toLowerCase() === "video" || aria.toLowerCase() === "video" ||
@@ -7126,7 +7125,7 @@ async function testUiStep(step, req) {
               const id = (el.getAttribute("id") || "").toLowerCase();
 
               if (t.includes("Khung hình") || aria.includes("Khung hình") || t.includes("Hình ảnh") || aria.includes("Hình ảnh")) return false;
-              if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1080p") || t.includes("fps")) return false;
+              if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1K") || t.includes("1080p") || t.includes("fps")) return false;
 
               return t === "Video" || aria === "Video" || 
                      t.toLowerCase() === "video" || aria.toLowerCase() === "video" ||
@@ -8386,7 +8385,7 @@ async function testUiStep(step, req) {
             if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
             // CRITICAL: A single 720p menu row MUST NOT contain other resolution names!
             if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-            return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+            return t.includes("720p") || t.includes("1K") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
           });
 
           if (allEls.length > 0) {
@@ -8496,7 +8495,7 @@ async function testUiStep(step, req) {
             if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
             const t = (el.innerText || el.textContent || "").trim();
             if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
-            return t.includes("270p") || t.includes("720p") || t.includes("1080p") || t.includes("4K");
+            return t.includes("270p") || t.includes("720p") || t.includes("1K") || t.includes("1080p") || t.includes("4K");
           });
 
           const distinctRows = [];
@@ -8767,7 +8766,7 @@ async function testUiStep(step, req) {
                 const r = el.getBoundingClientRect();
                 if (r.width === 0 || r.height === 0 || r.width > 300 || r.height > 80) return false;
                 const t = (el.innerText || el.textContent || "").trim();
-                return t.includes("270p") || t.includes("720p") || t.includes("1080p") || t.includes("4K");
+                return t.includes("270p") || t.includes("720p") || t.includes("1K") || t.includes("1080p") || t.includes("4K");
               });
               const distinct = [];
               for (const el of els) {
@@ -8819,7 +8818,7 @@ async function testUiStep(step, req) {
                 const t = (el.innerText || el.textContent || "").trim();
                 if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
                 if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-                return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+                return t.includes("720p") || t.includes("1K") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
               });
 
               if (allEls.length > 0) {
@@ -8920,7 +8919,7 @@ async function testUiStep(step, req) {
                 const t = (el.innerText || el.textContent || "").trim();
                 if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
                 if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-                return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+                return t.includes("720p") || t.includes("1K") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
               });
 
               if (allEls.length > 0) {
@@ -9032,7 +9031,7 @@ async function testUiStep(step, req) {
                     const t = (el.innerText || el.textContent || "").trim();
                     if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
                     if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-                    return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+                    return t.includes("720p") || t.includes("1K") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
                   });
                   if (allEls.length > 0) {
                     allEls.sort((a, b) => {
