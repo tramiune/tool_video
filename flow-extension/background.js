@@ -303,7 +303,7 @@ const HANDLERS = {
   DOWNLOAD_CARD_NATIVE: req => (req.mediaType === 'image'
     ? downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId)
     : triggerNativeDownloadForCard(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.mediaType || 'video', req.projectId)),
-  DOWNLOAD_IMAGE_CARD: req => triggerNativeDownloadForCard(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, 'image', req.projectId),
+  DOWNLOAD_IMAGE_CARD: req => downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId),
   DOWNLOAD_IMAGE_CARD_NATIVE: req => downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId),
   WAIT_AND_DOWNLOAD_CARD: req => waitAndDownloadCard(req.projectId, req.prompt, req.timeoutMs),
   CHECK_CARD_STATUS: req => checkCardStatus(req.projectId, req.query, req.prompt, req.mediaId, req.workflowId, req.mediaType || 'auto'),
@@ -4642,9 +4642,9 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
   if (!targetTabId) return { success: false, error: "Không tìm thấy tab Google Flow đang mở" };
 
   // NẾU LÀ ẢNH: Tải trực tiếp bằng downloadImageCardDirect siêu tốc, không cần qua menu chuột phải
-  // if (mediaType === 'image') {
-  //   return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, null, projectId);
-  // }
+  if (mediaType === 'image') {
+    return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, null, projectId);
+  }
 
   let cdpAttached = false;
   const ensureCdp = async () => {
@@ -5114,37 +5114,6 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
     // 5. B8.2: Tìm chính xác dòng "720p (Kích thước gốc)" kèm vòng lặp thử lại tối đa 3 giây
     let opt720 = null;
-
-    if (mediaType === 'image') {
-      try {
-        await ensureCdp();
-        await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
-          type: "mousePressed", button: "left", buttons: 1, x: dlPos.x, y: dlPos.y, clickCount: 1
-        });
-        await chrome.debugger.sendCommand({ tabId: targetTabId }, "Input.dispatchMouseEvent", {
-          type: "mouseReleased", button: "left", buttons: 0, x: dlPos.x, y: dlPos.y
-        });
-      } catch (_) {}
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: targetTabId },
-          world: "MAIN",
-          func: () => {
-            const all = Array.from(document.querySelectorAll("*")).filter(el => {
-              const t = (el.innerText || el.textContent || "").trim();
-              return t === "Tải xuống" || t.startsWith("Tải xuống");
-            });
-            if (all.length > 0) {
-              const exact = all[0];
-              const row = exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact;
-              if (typeof row.click === 'function') row.click();
-            }
-          }
-        });
-      } catch (_) {}
-      
-      opt720 = { x: dlPos.x, y: dlPos.y, text: "Tải xuống" }; // Fake opt720 to bypass the error checks!
-    } else {
     for (let subAttempt = 1; subAttempt <= 12; subAttempt++) {
       await new Promise(r => setTimeout(r, subAttempt === 1 ? 350 : 250));
 
@@ -5286,7 +5255,6 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
       opt720 = r2?.[0]?.result;
       if (opt720) break;
     }
-    } // end else image
 
     if (!opt720) {
       return { success: false, error: "Không tìm thấy dòng '720p (Kích thước gốc)' trong submenu" };
