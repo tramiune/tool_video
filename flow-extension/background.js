@@ -300,19 +300,28 @@ const HANDLERS = {
   GET_TTS_VOICES:     req => getTTSVoices(req.lang),
   GENERATE_AI_SCRIPT: req => generateAIScriptDynamic(req.topic, req.totalScenes, req.totalMinutes, req.lang, req.geminiApiKey),
   GET_FLOW_TABS_STATUS: async () => getFlowTabsStatus(),
-  DOWNLOAD_CARD_NATIVE: req => (req.mediaType === 'image'
+  DOWNLOAD_CARD_NATIVE: req => (false
     ? downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId)
     : triggerNativeDownloadForCard(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.mediaType || 'video', req.projectId)),
-  DOWNLOAD_IMAGE_CARD: req => downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId),
+  DOWNLOAD_IMAGE_CARD: req => triggerNativeDownloadForCard(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, "image", req.projectId),
   DOWNLOAD_IMAGE_CARD_NATIVE: req => downloadImageCardDirect(req.tabId, req.query, req.prompt, req.mediaId, req.workflowId, req.imgSrc, req.projectId),
   WAIT_AND_DOWNLOAD_CARD: req => waitAndDownloadCard(req.projectId, req.prompt, req.timeoutMs),
   CHECK_CARD_STATUS: req => checkCardStatus(req.projectId, req.query, req.prompt, req.mediaId, req.workflowId, req.mediaType || 'auto'),
-  GET_MAX_SEQ: req => getMaxSeq(req.projectId),
-  UPDATE_MAX_SEQ: req => updateMaxSeq(req.projectId, req.newMax),
+  GET_MAX_SEQ: req => getMaxSeq(req.projectId, req.mediaType || 'video'),
+  UPDATE_MAX_SEQ: req => updateMaxSeq(req.projectId, req.newMax, req.mediaType || 'video'),
   SCROLL_FLOW_TO_TOP: req => scrollFlowToTop(req.tabId, req.projectId),
+  REFRESH_FLOW_TAB: async (req) => {
+    const tab = await getFlowTab("video", req.projectId) || await getFlowTab("image", req.projectId);
+    if (tab) {
+       await chrome.tabs.reload(tab.id);
+       return { success: true };
+    }
+    return { success: false, error: "Không tìm thấy tab" };
+  },
   REPORT_TOOL_VIDEO_RESULT: req => reportToolVideoResult(req),
+  REPORT_TOOL_IMAGE_RESULT: req => reportToolImageResult(req),
   GET_PENDING_SERVER_TASKS: () => getPendingServerTasks(),
-  SCAN_FLOW_CARDS: req => scanFlowCards(req.tabId, req.projectId),
+  SCAN_FLOW_CARDS: req => scanFlowCards(req.tabId, req.projectId, req.maxSeq, req.purpose || 'video'),
 };
 
 // ══════════════════════════════════════
@@ -323,23 +332,35 @@ async function getFlowTab(purpose = 'video', targetProjectId = null) {
   if (!flowTabs.length) return null;
   if (flowTabs.length === 1) return flowTabs[0];
 
-  // 1. If targetProjectId is explicitly provided, find tab whose URL matches it
-  if (targetProjectId) {
-    const match = flowTabs.find(t => t.url?.toLowerCase().includes(targetProjectId.toLowerCase()));
-    if (match) return match;
+  // HỆ THỐNG ĐỊNH VỊ KHÔNG GIAN (SPATIAL ROUTING)
+  // Ưu tiên cao nhất: Lấy toạ độ vật lý (left) của các cửa sổ để sắp xếp Trái -> Phải
+  for (const tab of flowTabs) {
+    try {
+      const win = await chrome.windows.get(tab.windowId);
+      tab._winLeft = win.left || 0;
+    } catch(e) {
+      tab._winLeft = 0;
+    }
   }
 
-  // 2. Sắp xếp các tab theo thứ tự từ trái sang phải trong cửa sổ
-  flowTabs.sort((a, b) => (a.windowId - b.windowId) || (a.index - b.index));
+  flowTabs.sort((a, b) => {
+    if (a.windowId !== b.windowId) return a._winLeft - b._winLeft;
+    return a.index - b.index;
+  });
 
-  // Tab đầu tiên (bên trái) = Dành riêng cho VIDEO
-  // Tab thứ hai (bên phải) = Dành riêng cho TẠO ẢNH
+  // Tab ngoài cùng bên trái = VIDEO, Tab kế tiếp = IMAGE
   if (purpose === 'image') {
     return flowTabs[1] || flowTabs[0];
   } else {
     return flowTabs[0];
   }
 }
+
+
+
+// ══════════════════════════════════════
+// 0. Create New Project
+// ══════════════════════════════════════
 
 async function getFlowTabsStatus() {
   const flowTabs = await chrome.tabs.query({ url: ["https://labs.google/*", "https://flow.google.com/*"] });
@@ -2990,6 +3011,67 @@ async function createImageUI(prompt, projectId, config = {}) {
         editor.dispatchEvent(new Event('input', { bubbles: true }));
         await sleep(350);
 
+        const getDeepActiveElement2 = () => {
+          let a = document.activeElement;
+          while (a && a.shadowRoot && a.shadowRoot.activeElement) {
+            a = a.shadowRoot.activeElement;
+          }
+          return a;
+        };
+
+        const injectImageFile2 = async (imgData, filename = "frame.png") => {
+          if (!imgData) return false;
+          try {
+            let fileObj = null;
+            if (imgData.startsWith("data:") || imgData.startsWith("http://") || imgData.startsWith("https://") || imgData.startsWith("blob:")) {
+              const res = await fetch(imgData);
+              const blob = await res.blob();
+              fileObj = new File([blob], filename, { type: blob.type || "image/png" });
+            } else {
+              return false;
+            }
+
+            const dt = new DataTransfer();
+            dt.items.add(fileObj);
+
+            const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
+            if (fileInputs.length > 0) {
+              try {
+                fileInputs[0].files = dt.files;
+                fileInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+              } catch (_) {}
+            }
+
+            const currentActive = getDeepActiveElement2() || editor;
+            const pasteEvent = new ClipboardEvent("paste", {
+              clipboardData: dt,
+              bubbles: true,
+              cancelable: true
+            });
+            currentActive.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: false, metaKey: true, bubbles: true }));
+            currentActive.dispatchEvent(pasteEvent);
+
+            const dropEvent = new DragEvent("drop", {
+              dataTransfer: dt,
+              bubbles: true,
+              cancelable: true
+            });
+            currentActive.dispatchEvent(dropEvent);
+            return true;
+          } catch (_) {
+            return false;
+          }
+        };
+
+        if (cfg && (cfg.isFrames || cfg.startImage)) {
+          if (cfg.startImage) {
+            editor.focus();
+            await injectImageFile2(cfg.startImage, "start_frame_" + Date.now() + ".png");
+            await sleep(15000); // Chờ Flow tải ảnh ngay sau khi gõ chữ xong (15s)
+          }
+        }
+
+
         // ──────────────────────────────────────────────
         // BƯỚC 2: Mở Cài Đặt (DÙNG CHÍNH TEST B2: click nút settingsChip)
         // ──────────────────────────────────────────────
@@ -3210,7 +3292,6 @@ async function createImageUI(prompt, projectId, config = {}) {
           await sleep(300);
         }
 
-        // ──────────────────────────────────────────────
         // BƯỚC 8: Bấm Nút Submit Tạo Ảnh (CHỈ CLICK 1 LẦN DUY NHẤT)
         // ──────────────────────────────────────────────
         if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit tạo ảnh" };
@@ -3997,6 +4078,23 @@ function getPendingServerTasks() {
   return { success: true, tasks };
 }
 
+
+function reportToolImageResult(req) {
+  if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+    _toolWs.send(JSON.stringify({
+      type: 'IMAGE_RESULT',
+      id: req.id,
+      ok: Boolean(req.ok),
+      filePath: req.filePath || null,
+      error: req.error || null,
+      mediaId: req.mediaId || null
+    }));
+    logToBridge(`[Bridge] Đã gửi IMAGE_RESULT về tool_video: ID=${req.id}, OK=${req.ok}, filePath=${req.filePath || 'none'}`);
+    return { success: true };
+  }
+  return { success: false, error: "WebSocket to tool_video not connected" };
+}
+
 function reportToolVideoResult(req) {
   if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
     _toolWs.send(JSON.stringify({
@@ -4142,8 +4240,29 @@ const _serverImageQueue = [];
 let _isProcessingServerImageQueue = false;
 
 function enqueueServerImageTask(task) {
-  _serverImageQueue.push(task);
-  processServerImageQueue();
+  logToBridge(`[Bridge] Chuyển task ảnh ${task.id} vào hàng đợi Auto Click Ảnh trên Sidepanel...`);
+
+  chrome.runtime.sendMessage({
+    action: 'ADD_SERVER_IMAGE_TASK_TO_UI_BATCH',
+    task: task
+  }).then(res => {
+    if (!res?.success) {
+      _serverImageQueue.push(task);
+      processServerImageQueue();
+    }
+  }).catch(() => {
+    _serverImageQueue.push(task);
+    processServerImageQueue();
+  });
+
+  // Tự động mở Sidepanel nếu có thể
+  if (chrome.sidePanel && chrome.sidePanel.open) {
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(tabs => {
+      if (tabs.length && tabs[0].windowId) {
+        chrome.sidePanel.open({ windowId: tabs[0].windowId }).catch(() => {});
+      }
+    }).catch(() => {});
+  }
 }
 
 async function processServerImageQueue() {
@@ -4165,11 +4284,11 @@ async function processServerImageQueue() {
         const num = Number(task.sceneIndex) + 1;
         seqStr = String(num).padStart(3, '0') + ".";
         prompt = `${seqStr} ${prompt}`;
-        await updateMaxSeq(task.projectId, num);
+        await updateMaxSeq(task.projectId, num, "image");
       } else {
-        const seqRes = await getMaxSeq(task.projectId);
+        const seqRes = await getMaxSeq(task.projectId, "image");
         const nextSeq = (seqRes?.maxSeq || 0) + 1;
-        await updateMaxSeq(task.projectId, nextSeq);
+        await updateMaxSeq(task.projectId, nextSeq, "image");
         seqStr = String(nextSeq).padStart(3, '0') + ".";
         prompt = `${seqStr} ${prompt}`;
       }
@@ -4642,9 +4761,9 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
   if (!targetTabId) return { success: false, error: "Không tìm thấy tab Google Flow đang mở" };
 
   // NẾU LÀ ẢNH: Tải trực tiếp bằng downloadImageCardDirect siêu tốc, không cần qua menu chuột phải
-  if (mediaType === 'image') {
-    return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, null, projectId);
-  }
+//  if (mediaType === 'image') {
+//    return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, null, projectId);
+//  }
 
   let cdpAttached = false;
   const ensureCdp = async () => {
@@ -4786,6 +4905,13 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
           let score = 0;
           if (isVideoTask && isVid) score += 10000;
           if (mType === 'image' && isImgAsset) score += 5000;
+
+          // BẢO VỆ CHÉO: Không bao giờ nhận nhầm card của STT khác!
+          const elSeq = card.getAttribute("data-flow-scan-seq") || card.getAttribute("data-flow-seq");
+          const seqDisplay = cleanQuery.replace(/[\.\-_:\s]+$/g, '').trim();
+          if (elSeq && seqDisplay && elSeq !== seqDisplay) {
+             return -999999;
+          }
 
           const cardText = (card.innerText || card.textContent || "").trim();
           const cardTextLower = cardText.toLowerCase();
@@ -5012,9 +5138,10 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
     const { clientX, clientY, imgSrc, isVideoCard } = r0[0].result;
     const isImage = (mediaType === 'image') || (mediaType === 'auto' && !isVideoCard && Boolean(imgSrc));
 
-    if (isImage) {
-      return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, imgSrc, projectId);
-    }
+    // ĐÃ TẮT DELEGATION - BẮT BUỘC DÙNG AUTO CLICK MENU CHUỘT PHẢI ĐỂ TẢI ẢNH!
+    // if (isImage) {
+    //   return downloadImageCardDirect(targetTabId, query, promptText, mediaId, workflowId, imgSrc, projectId);
+    // }
 
     // 4. B8.1: Tìm mục "Tải xuống" (Thử lại tối đa 3 giây kèm backup click CDP)
     let dlPos = null;
@@ -5112,6 +5239,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
       y: dlPos.y
     });
 
+
     // 5. B8.2: Tìm chính xác dòng "720p (Kích thước gốc)" kèm vòng lặp thử lại tối đa 3 giây
     let opt720 = null;
     for (let subAttempt = 1; subAttempt <= 12; subAttempt++) {
@@ -5191,8 +5319,8 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
             if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
             const t = (el.innerText || el.textContent || "").trim();
             if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
-            if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-            return t.includes("720p") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
+            if (t.includes("270p") || t.includes("1080p") || t.includes("4K") || t.includes("2K")) return false;
+            return t.includes("720p") || t.includes("1K") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
           });
 
           let opt = null;
@@ -5220,8 +5348,8 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
               if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
               const t = (el.innerText || el.textContent || "").trim();
               if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
-              if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-              return t.includes("Kích thước gốc") || t.toLowerCase().includes("original") || t.includes("720p");
+              if (t.includes("270p") || t.includes("1080p") || t.includes("4K") || t.includes("2K")) return false;
+              return t.includes("Kích thước gốc") || t.toLowerCase().includes("original") || t.includes("720p") || t.includes("1K");
             });
             if (directText.length > 0) {
               let cur = directText[0];
@@ -5229,7 +5357,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
                 const p = cur.parentElement;
                 const pr = p.getBoundingClientRect();
                 const pt = (p.innerText || p.textContent || "").trim();
-                if (pr.height > 120 || pt.includes("270p") || pt.includes("1080p") || pt.includes("4K")) {
+                if (pr.height > 120 || pt.includes("270p") || pt.includes("1080p") || pt.includes("4K") || pt.includes("2K")) {
                   break;
                 }
                 cur = p;
@@ -5257,7 +5385,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
     }
 
     if (!opt720) {
-      return { success: false, error: "Không tìm thấy dòng '720p (Kích thước gốc)' trong submenu" };
+      return { success: false, error: "Không tìm thấy dòng 720p hoặc 1K trong submenu" };
     }
 
     // B8.2: Rê chuột vào 720p
@@ -5315,10 +5443,10 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
               if (el.closest("form, [class*='composer'], [class*='prompt-box'], [class*='input-container']")) return false;
               const t = (el.innerText || el.textContent || "").trim();
               if (t.includes("giây") || t.includes("crop") || t.includes("Video ·")) return false;
-              if (t.includes("270p") || t.includes("1080p") || t.includes("4K")) return false;
-              return t.includes("720p") || t.includes("Kích thước gốc");
+              if (t.includes("270p") || t.includes("1080p") || t.includes("4K") || t.includes("2K")) return false;
+              return t.includes("720p") || t.includes("1K") || t.includes("Kích thước gốc") || t.toLowerCase().includes("original");
             });
-            if (allEls.length > 0 && typeof allEls[0].click === 'function') allEls[0].click();
+            if (allEls.length > 0) { const exact = allEls[0]; const row = exact.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || exact; if (typeof row.click === 'function') row.click(); }
           }
         });
       } catch (_) {}
@@ -5416,12 +5544,12 @@ async function scrollFlowToTop(tabId = null, projectId = null) {
   }
 }
 
-async function getMaxSeq(projectId) {
+async function getMaxSeq(projectId, mediaType = 'video') {
   let maxSeq = 0;
 
   // 1. Kiểm tra từ storage đã lưu cho projectId này
   const pKey = projectId || 'default';
-  const storageKey = `flow_last_seq_${pKey}`;
+  const storageKey = `flow_last_seq_${mediaType}_${pKey}`;
   try {
     const stored = await chrome.storage.local.get([storageKey]);
     if (stored[storageKey] && typeof stored[storageKey] === 'number') {
@@ -5467,9 +5595,9 @@ async function getMaxSeq(projectId) {
   return { success: true, maxSeq };
 }
 
-async function updateMaxSeq(projectId, newMax) {
+async function updateMaxSeq(projectId, newMax, mediaType = 'video') {
   const pKey = projectId || 'default';
-  const storageKey = `flow_last_seq_${pKey}`;
+  const storageKey = `flow_last_seq_${mediaType}_${pKey}`;
   try {
     const stored = await chrome.storage.local.get([storageKey]);
     const current = stored[storageKey] || 0;
@@ -5482,11 +5610,11 @@ async function updateMaxSeq(projectId, newMax) {
 // ══════════════════════════════════════
 // SCAN FLOW CARDS: Quét toàn bộ card trên màn hình, nhận diện STT, gắn badge
 // ══════════════════════════════════════
-async function scanFlowCards(tabId, projectId, maxSeq = null) {
+async function scanFlowCards(tabId, projectId, maxSeq = null, purpose = 'video') {
   try {
     let targetTabId = tabId;
     if (!targetTabId) {
-      const flowTab = await getFlowTab('video', projectId);
+      const flowTab = await getFlowTab(purpose, projectId);
       if (!flowTab?.id) return { success: false, error: 'Không tìm thấy tab Flow' };
       targetTabId = flowTab.id;
     }
@@ -5832,6 +5960,13 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           let score = 0;
           if (isVideoTask && isVid) score += 10000;
           if (mType === 'image' && isImgAsset) score += 5000;
+
+          // BẢO VỆ CHÉO: Không bao giờ nhận nhầm card của STT khác!
+          const elSeq = card.getAttribute("data-flow-scan-seq") || card.getAttribute("data-flow-seq");
+          const seqDisplay = cleanQuery.replace(/[\.\-_:\s]+$/g, '').trim();
+          if (elSeq && seqDisplay && elSeq !== seqDisplay) {
+             return -999999;
+          }
 
           const cardText = (card.innerText || card.textContent || "").trim();
           const cardTextLower = cardText.toLowerCase();
