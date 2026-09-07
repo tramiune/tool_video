@@ -3063,7 +3063,15 @@ async function createImageUI(prompt, projectId, config = {}) {
           }
         };
 
-        if (cfg && (cfg.isFrames || cfg.startImage)) {
+        if (cfg && cfg.referenceImages && cfg.referenceImages.length > 0) {
+          editor.focus();
+          for (let i = 0; i < cfg.referenceImages.length; i++) {
+            const imgData = cfg.referenceImages[i];
+            await injectImageFile2(imgData, "ref_img_" + i + "_" + Date.now() + ".png");
+            await sleep(8000); // Chờ 8 giây cho mỗi ảnh upload lên
+          }
+          await sleep(7000); // Chờ thêm 7s sau khi paste xong tất cả
+        } else if (cfg && (cfg.isFrames || cfg.startImage)) {
           if (cfg.startImage) {
             editor.focus();
             await injectImageFile2(cfg.startImage, "start_frame_" + Date.now() + ".png");

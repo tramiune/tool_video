@@ -1424,6 +1424,7 @@
       seq: seqStr,
       prompt: prompt,
       referenceImage: task.referenceImage || task.startImage || "",
+      referenceImages: task.referenceImages || [],
       model: task.model || "imagen_3",
       aspectRatio: task.aspectRatio || "9:16",
       status: "PENDING",
@@ -2157,7 +2158,11 @@
 
       try {
         let currentConfig = { ...config };
-      if (task.referenceImage) {
+      if (task.referenceImages && task.referenceImages.length > 0) {
+        currentConfig.mode = "frames";
+        currentConfig.isFrames = true;
+        currentConfig.referenceImages = task.referenceImages;
+      } else if (task.referenceImage) {
         currentConfig.mode = "frames";
         currentConfig.isFrames = true;
         currentConfig.startImage = task.referenceImage;

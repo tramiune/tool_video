@@ -205,8 +205,22 @@ const extensionBridge = {
   async generateImage(task, timeoutMs = 120000) {
     if (!this.connected) return Promise.reject(new Error('Flow Extension chưa kết nối'));
     const id = task.id || `img_${Date.now()}`;
-    const rawRef = task.referenceImage || task.referenceImages?.[0] || null;
-    const refBase64 = await imageInputToBase64(rawRef);
+    
+    let rawRefs = [];
+    if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
+      rawRefs = task.referenceImages;
+    } else if (task.referenceImage) {
+      rawRefs = [task.referenceImage];
+    }
+    
+    const refBase64Array = [];
+    for (const raw of rawRefs) {
+      if (raw) {
+        const b64 = await imageInputToBase64(raw);
+        if (b64) refBase64Array.push(b64);
+      }
+    }
+
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         _extPending.delete(id);
@@ -220,7 +234,7 @@ const extensionBridge = {
         prompt: task.prompt,
         model: task.model || 'HARBOR_SEAL',
         aspectRatio: task.aspectRatio || '1:1',
-        referenceImage: refBase64,
+        referenceImages: refBase64Array,
         sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null
       }));
     });
