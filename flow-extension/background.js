@@ -22,7 +22,7 @@ async function invalidateAuthToken(flowTab = null) {
     try {
       await chrome.scripting.executeScript({
         target: { tabId: flowTab.id },
-        world: "MAIN",
+        world: "ISOLATED",
         func: () => {
           if (typeof window.__clearFlowAuth === "function") {
             window.__clearFlowAuth();
@@ -56,7 +56,7 @@ async function getFreshAuthToken(flowTab, allowExpired = false) {
   try {
     const authResults = await chrome.scripting.executeScript({
       target: { tabId },
-      world: "MAIN",
+      world: "ISOLATED",
       func: () => {
         const auth = window.__flowAuth || sessionStorage.getItem("__flow_saved_auth") || "";
         const savedTime = window.__flowAuthTime || parseInt(sessionStorage.getItem("__flow_saved_auth_time") || "0", 10);
@@ -83,7 +83,7 @@ async function triggerTokenGenerationInTab(tabId) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      world: "MAIN",
+      world: "ISOLATED",
       func: async () => {
         try {
           // Gửi request nội bộ bằng credentials của chính tab để Flow mint/send token ya29
@@ -367,7 +367,7 @@ async function createProject(title) {
 
     const results = await chrome.scripting.executeScript({
       target: { tabId: flowTab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [projectTitle],
       func: async (pTitle) => {
         try {
@@ -420,7 +420,7 @@ async function getProjectVideos(projectId, targetTab = null) {
     try {
       const execDom = await chrome.scripting.executeScript({
         target: { tabId: flowTab.id },
-        world: "MAIN",
+        world: "ISOLATED",
         func: () => {
           const videos = [];
           const images = [];
@@ -685,7 +685,7 @@ async function getProjectVideos(projectId, targetTab = null) {
     try {
       const exec = await chrome.scripting.executeScript({
         target: { tabId: flowTab.id },
-        world: "MAIN",
+        world: "ISOLATED",
         args: [projectId, TRPC_BASE],
         func: async (pId, trpcBase) => {
           try {
@@ -879,7 +879,7 @@ async function getDownloadUrl(mediaId) {
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: flowTab.id },
-        world: "MAIN",
+        world: "ISOLATED",
         args: [mediaId],
         func: async (mId) => {
           try {
@@ -930,7 +930,7 @@ async function downloadVideo(mediaId, filename, directUrl = null, cardIndex = -1
     try {
       const inTabRes = await chrome.scripting.executeScript({
         target: { tabId: flowTab.id },
-        world: "MAIN",
+        world: "ISOLATED",
         args: [mId, fname, resolvedUrl, cIdx],
         func: async (targetId, downloadName, customUrl, targetIndex) => {
           const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -1103,7 +1103,7 @@ async function createVideoAPI(prompt, projectId, model, aspectRatio, startImage,
   try {
     const authResults = await chrome.scripting.executeScript({
       target: { tabId: flowTab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       func: () => {
         return JSON.stringify({
           token: window.__flowAuth || null,
@@ -1154,7 +1154,7 @@ async function createVideoAPI(prompt, projectId, model, aspectRatio, startImage,
 
     const results = await chrome.scripting.executeScript({
       target: { tabId: flowTab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [safePrompt, safePid, safeModel, safeAuth, safeAspect, safeStart, safeEnd],
       func: async (pt, pid, mk, auth, aspect, startImg, endImg) => {
         try {
@@ -1300,7 +1300,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
   try {
     const preSnapshot = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       func: () => {
         const ids = [];
         const recent = window.__flowRecentMedia || [];
@@ -1325,7 +1325,7 @@ async function createVideoUI(prompt, projectId, config = {}) {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [prompt, config],
 func: async (promptText, cfg) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -2421,7 +2421,7 @@ func: async (promptText, cfg) => {
         if (!isPromptPresent && prompt) {
           const checkText = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            world: "MAIN",
+            world: "ISOLATED",
             args: [prompt],
             func: (pText) => {
               const ed = document.querySelector("div[role='textbox'][data-slate-editor='true']")
@@ -2485,7 +2485,7 @@ func: async (promptText, cfg) => {
         // 4. Click Submit Button nếu vẫn còn hiển thị
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          world: "MAIN",
+          world: "ISOLATED",
           func: () => {
             const btns = Array.from(document.querySelectorAll("button, [role='button']"));
             const sBtn = btns.find(b => {
@@ -2562,7 +2562,7 @@ func: async (promptText, cfg) => {
       try {
         const tabCheck = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          world: "MAIN",
+          world: "ISOLATED",
           args: [effectiveSubmitTime, prompt, Array.from(preSubmitCapturedIds)],
           func: (startTime, promptText, excludedList) => {
             const excluded = new Set(excludedList || []);
@@ -2709,7 +2709,7 @@ async function createImageUI(prompt, projectId, config = {}) {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [prompt, config],
       func: async (promptText, cfg) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -3265,7 +3265,7 @@ async function deleteVideo(workflowId, projectId, mediaId) {
   try {
     const authResults = await chrome.scripting.executeScript({
       target: { tabId: flowTab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       func: () => JSON.stringify({ token: window.__flowAuth || null })
     });
     const authData = JSON.parse(authResults?.[0]?.result || "{}");
@@ -3281,7 +3281,7 @@ async function deleteVideo(workflowId, projectId, mediaId) {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: flowTab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [targetId, projectId, authToken],
       func: async (wfId, pId, auth) => {
         try {
@@ -3384,7 +3384,7 @@ async function uploadImage(projectId, imageUrl, imageBase64, shouldReload = true
     const safeAuth = authToken.startsWith("Bearer ") ? authToken : `Bearer ${authToken}`;
     const results = await chrome.scripting.executeScript({
       target: { tabId: flowTab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [effectiveProjectId, b64, safeAuth],
       func: async (pId, b64Data, auth) => {
         try {
@@ -3465,7 +3465,7 @@ async function renameWorkflowToUuid(projectId, mediaId) {
 
   const res = await chrome.scripting.executeScript({
     target: { tabId: flowTab.id },
-    world: "MAIN",
+    world: "ISOLATED",
     args: [wfId, projectId, mediaId, authToken],
     func: async (wId, pId, mId, auth) => {
       try {
@@ -3569,7 +3569,7 @@ async function createImageAPI(prompt, projectId, model, aspectRatio, referenceIm
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: flowTab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [safePrompt, safePid, safeModel, safeAuth, safeAspect, safeRefImg],
       func: async (pt, pid, mk, auth, aspect, refImg) => {
         try {
@@ -4315,7 +4315,7 @@ async function checkVideoStatusOnFlow(mediaIds, projectId) {
 
   const results = await chrome.scripting.executeScript({
     target: { tabId: flowTab.id },
-    world: "MAIN",
+    world: "ISOLATED",
     args: [mediaIds, projectId, authToken],
     func: async (mIds, pId, auth) => {
       try {
@@ -4431,7 +4431,7 @@ async function downloadImageCardDirect(tabId, query = "001.", promptText = "", m
     // 2. Tìm thẻ card và trích xuất URL ảnh chất lượng cao gốc từ DOM của Tab
     const extractRes = await chrome.scripting.executeScript({
       target: { tabId: targetTabId },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [query, promptText || "", mediaId || "", workflowId || "", fallbackImgSrc || ""],
       func: async (q, pText, mId, wId, fbSrc) => {
         const cleanQuery = (q || "001.").trim().toLowerCase();
@@ -4668,7 +4668,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
     // 2. Đóng panel / popover nếu đang mở
     await chrome.scripting.executeScript({
       target: { tabId: targetTabId },
-      world: "MAIN",
+      world: "ISOLATED",
       func: () => {
         const bottomPanels = Array.from(document.querySelectorAll("[class*='config'], [class*='popover'], [class*='panel'], [class*='dialog']")).filter(el => {
           const r = el.getBoundingClientRect();
@@ -4684,7 +4684,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
     // 3. B8.0: Click chuột phải vào card khớp với query / Media ID / Prompt
     const r0 = await chrome.scripting.executeScript({
       target: { tabId: targetTabId },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [query, promptText || "", mediaId || "", workflowId || "", mediaType || "video"],
       func: async (q, pText, mId, wId, mType = "video") => {
         const cleanQuery = (q || "001.").trim().toLowerCase();
@@ -5025,7 +5025,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
       const r1 = await chrome.scripting.executeScript({
         target: { tabId: targetTabId },
-        world: "MAIN",
+        world: "ISOLATED",
         func: () => {
           const all = Array.from(document.querySelectorAll("*")).filter(el => {
             const r = el.getBoundingClientRect();
@@ -5132,7 +5132,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         try {
           await chrome.scripting.executeScript({
             target: { tabId: targetTabId },
-            world: "MAIN",
+            world: "ISOLATED",
             func: () => {
               const all = Array.from(document.querySelectorAll("*")).filter(el => {
                 const t = (el.innerText || el.textContent || "").trim();
@@ -5165,7 +5165,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         try {
           await chrome.scripting.executeScript({
             target: { tabId: targetTabId },
-            world: "MAIN",
+            world: "ISOLATED",
             func: () => {
               const all = Array.from(document.querySelectorAll("*")).filter(el => {
                 const t = (el.innerText || el.textContent || "").trim();
@@ -5183,7 +5183,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
 
       const r2 = await chrome.scripting.executeScript({
         target: { tabId: targetTabId },
-        world: "MAIN",
+        world: "ISOLATED",
         func: () => {
           const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
             const r = el.getBoundingClientRect();
@@ -5307,7 +5307,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
       try {
         await chrome.scripting.executeScript({
           target: { tabId: targetTabId },
-          world: "MAIN",
+          world: "ISOLATED",
           func: () => {
             const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
               const r = el.getBoundingClientRect();
@@ -5395,7 +5395,7 @@ async function scrollFlowToTop(tabId = null, projectId = null) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: targetTabId },
-      world: "MAIN",
+      world: "ISOLATED",
       func: () => {
         try {
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -5435,7 +5435,7 @@ async function getMaxSeq(projectId) {
     if (flowTab?.id) {
       const res = await chrome.scripting.executeScript({
         target: { tabId: flowTab.id },
-        world: "MAIN",
+        world: "ISOLATED",
         func: () => {
           const numbers = [];
           const allTextEls = Array.from(document.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, button, [title], [aria-label]"));
@@ -5493,7 +5493,7 @@ async function scanFlowCards(tabId, projectId) {
 
     const result = await chrome.scripting.executeScript({
       target: { tabId: targetTabId },
-      world: "MAIN",
+      world: "ISOLATED",
       func: () => {
         const BADGE_CSS = 'position:absolute;top:6px;left:6px;z-index:9999;padding:3px 10px;border-radius:6px;font-family:"SF Mono",Consolas,monospace;font-size:13px;font-weight:800;color:#fff;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1.4;letter-spacing:0.5px;';
         const SEQ_REGEX = /(?:^|\s)(\d{1,4})[\.\-_:\s]/;
@@ -5638,7 +5638,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
   try {
     const checkRes = await chrome.scripting.executeScript({
       target: { tabId: flowTab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [cleanQ, promptText || "", mediaId || "", workflowId || "", mediaType || "auto"],
       func: (q, pText, mId, wId, mType = "auto") => {
         const cleanQuery = (q || "001.").trim().toLowerCase();
@@ -6332,7 +6332,7 @@ async function pollAndDeliverVideo(taskId, mediaId, projectId, promptText = '') 
             logToBridge(`[Download] Thử trích xuất video trực tiếp từ ngữ cảnh tab Flow...`);
             const tabFetchRes = await chrome.scripting.executeScript({
               target: { tabId: flowTab.id },
-              world: "MAIN",
+              world: "ISOLATED",
               args: [finalMediaId, directDownloadTarget],
               func: async (mId, fallbackUrl) => {
                 try {
@@ -6533,7 +6533,7 @@ async function testUiStep(step, req) {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      world: "MAIN",
+      world: "ISOLATED",
       args: [step, req.prompt || req.query || "", req.config || {}],
       func: async (stepIdx, promptText, cfg) => {
         try {
@@ -8729,7 +8729,7 @@ async function testUiStep(step, req) {
         if (resObj.checkSubmenuAfterHover) {
           const checkRes = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            world: "MAIN",
+            world: "ISOLATED",
             func: () => {
               const els = Array.from(document.querySelectorAll("*")).filter(el => {
                 const r = el.getBoundingClientRect();
@@ -8777,7 +8777,7 @@ async function testUiStep(step, req) {
           await new Promise(r => setTimeout(r, 450));
           const get720Res = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            world: "MAIN",
+            world: "ISOLATED",
             func: () => {
               let opt = null;
               const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
@@ -8878,7 +8878,7 @@ async function testUiStep(step, req) {
           await new Promise(r => setTimeout(r, 450));
           const get720Res = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            world: "MAIN",
+            world: "ISOLATED",
             func: () => {
               let opt = null;
               const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
@@ -8991,7 +8991,7 @@ async function testUiStep(step, req) {
             try {
               await chrome.scripting.executeScript({
                 target: { tabId: tab.id },
-                world: "MAIN",
+                world: "ISOLATED",
                 func: () => {
                   const allEls = Array.from(document.querySelectorAll("*")).filter(el => {
                     const r = el.getBoundingClientRect();
