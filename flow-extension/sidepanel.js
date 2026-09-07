@@ -8,6 +8,56 @@
   let EXT_ID = new URLSearchParams(window.location.search).get("extId") || localStorage.getItem("flowExtId") || "kklcohedgnbeeabadindiggflndepkch";
 
   // Helper: get delay ms from select value, supports random ranges
+  const getDelayMs = (val) => {
+    if (val === 'random') return Math.floor(Math.random() * (4000 - 2000 + 1)) + 2000;
+    return parseInt(val, 10);
+  };
+
+async function executeScanAndUpdateUI(projectId, retries = 3) {
+  let lastError = "Lỗi không xác định";
+  for (let i = 0; i < retries; i++) {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const activeTabId = (tabs[0] && (tabs[0].url.includes("flow.google") || tabs[0].url.includes("labs.google"))) ? tabs[0].id : undefined;
+
+      const r = await callExt('SCAN_FLOW_CARDS', { projectId, tabId: activeTabId });
+      if (r && r.success) {
+        const scannerGrid = document.getElementById('scannerGrid');
+        if (scannerGrid) {
+          if (r.cards && r.cards.length > 0) {
+            let html = '';
+            for (const c of r.cards) {
+              const icon = c.status === 'rendering' ? '⏳' : c.status === 'failed' ? '❌' : '✅';
+              const color = c.status === 'rendering' ? '#00e5ff' : c.status === 'failed' ? '#ef4444' : '#10b981';
+              html += `
+                <div class="video-card" style="border: 1px solid ${color};">
+                  <div style="font-size: 11px; font-weight: bold; margin-bottom: 4px; color: ${color};">
+                     ${icon} STT: ${c.seq} | ID: ${c.shortMedia}
+                  </div>
+                  <div style="font-size: 11px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+                     ${c.text}
+                  </div>
+                </div>
+              `;
+            }
+            scannerGrid.innerHTML = html;
+          } else {
+            scannerGrid.innerHTML = '<div style="color:var(--text2); font-size: 12px; text-align: center; width: 100%;">Không tìm thấy card nào trên màn hình.</div>';
+          }
+        }
+        if (r.count > 0) return r;
+        lastError = "Không tìm thấy card (0 card)";
+      } else {
+        lastError = r?.error || "Lỗi API background";
+      }
+    } catch (e) {
+      lastError = e.message;
+      console.error("Scan error:", e);
+    }
+    await new Promise(res => setTimeout(res, 2000));
+  }
+  return { success: false, error: lastError };
+}
   function getDelay(selectId, fallback) {
     const val = document.getElementById(selectId)?.value || "";
     if (val === "random_6_10") return 6000 + Math.floor(Math.random() * 4001); // 6000-10000ms
@@ -760,8 +810,6 @@
         continue;
       }
 
-      // Quét card trước khi check status → đánh dấu STT
-      try { await callExt('SCAN_FLOW_CARDS', { projectId }); } catch (_) {}
 
       for (const task of activeTasks) {
         if (!isBatchRunning) break;
@@ -799,6 +847,9 @@
               continue;
             }
           } else if (statusRes?.status === 'READY') {
+            const currentTasks = typeof uiBatchTasks !== 'undefined' ? uiBatchTasks : (typeof batchTasks !== 'undefined' ? batchTasks : (typeof uiImgBatchTasks !== 'undefined' ? uiImgBatchTasks : []));
+            const maxSeq = Math.max(0, ...currentTasks.map(t => parseInt(t.seq, 10)).filter(n => !isNaN(n)));
+            try { await callExt('SCAN_FLOW_CARDS', { projectId: task.projectId || projectId, maxSeq: maxSeq > 0 ? maxSeq : null }); } catch (_) {}
             const elapsed = Date.now() - (task.submittedAt || 0);
             if (elapsed < 15000) {
               task.status = "RENDERING";
@@ -1660,8 +1711,6 @@
           continue;
         }
 
-        // Quét card trước khi check status → đánh dấu STT
-        try { await callExt('SCAN_FLOW_CARDS', { projectId }); } catch (_) {}
 
         for (const task of activeTasks) {
           if (!isUiBatchRunning) break;
@@ -1707,6 +1756,9 @@
                 continue;
               }
             } else if (statusRes?.status === 'READY') {
+            const currentTasks = typeof uiBatchTasks !== 'undefined' ? uiBatchTasks : (typeof batchTasks !== 'undefined' ? batchTasks : (typeof uiImgBatchTasks !== 'undefined' ? uiImgBatchTasks : []));
+            const maxSeq = Math.max(0, ...currentTasks.map(t => parseInt(t.seq, 10)).filter(n => !isNaN(n)));
+            try { await callExt('SCAN_FLOW_CARDS', { projectId: task.projectId || projectId, maxSeq: maxSeq > 0 ? maxSeq : null }); } catch (_) {}
               const elapsed = Date.now() - (task.submittedAt || 0);
               if (elapsed < 15000) {
                 task.status = "RENDERING";
@@ -2130,8 +2182,6 @@
         continue;
       }
 
-      // Quét card trước khi check status → đánh dấu STT
-      try { await callExt('SCAN_FLOW_CARDS', { projectId }); } catch (_) {}
 
       for (const task of activeTasks) {
         if (!isUiImgBatchRunning) break;
@@ -2151,6 +2201,9 @@
             task.downloadStatus = `Đang render (${curProg || '...'})`;
             renderUiImageBatchUI();
           } else if (statusRes?.status === 'READY') {
+            const currentTasks = typeof uiBatchTasks !== 'undefined' ? uiBatchTasks : (typeof batchTasks !== 'undefined' ? batchTasks : (typeof uiImgBatchTasks !== 'undefined' ? uiImgBatchTasks : []));
+            const maxSeq = Math.max(0, ...currentTasks.map(t => parseInt(t.seq, 10)).filter(n => !isNaN(n)));
+            try { await callExt('SCAN_FLOW_CARDS', { projectId: task.projectId || projectId, maxSeq: maxSeq > 0 ? maxSeq : null }); } catch (_) {}
             task.status = "DOWNLOADING";
             task.downloadStatus = "Tạo xong! Đang tải ảnh về máy...";
             renderUiImageBatchUI();
@@ -2316,21 +2369,17 @@
       logEl.textContent = '🔍 Bắt đầu quét card...';
 
       const doScan = async () => {
-        try {
-          const pid = document.getElementById('projectId')?.value || '';
-          const r = await callExt('SCAN_FLOW_CARDS', { projectId: pid });
-          if (r.success) {
-            const lines = [`🔍 Quét ${new Date().toLocaleTimeString()} — Tìm thấy ${r.count} card:`];
-            for (const c of (r.cards || [])) {
-              const icon = c.status === 'rendering' ? '⏳' : c.status === 'failed' ? '❌' : '✅';
-              lines.push(`  ${icon} ${c.seq}: ${c.text}`);
-            }
-            logEl.textContent = lines.join('\n');
-          } else {
-            logEl.textContent = `❌ Lỗi: ${r.error}`;
+        const pid = document.getElementById('projectId')?.value || '';
+        const r = await executeScanAndUpdateUI(pid, 1); // Test từng bước thì chỉ 1 retry là đủ
+        if (r && r.success) {
+          const lines = [`🔍 Quét ${new Date().toLocaleTimeString()} — Tìm thấy ${r.count} card:`];
+          for (const c of (r.cards || [])) {
+            const icon = c.status === 'rendering' ? '⏳' : c.status === 'failed' ? '❌' : '✅';
+            lines.push(`  ${icon} ${c.seq} | ID: ${c.shortMedia} | ${c.text}`);
           }
-        } catch (e) {
-          logEl.textContent = `❌ Exception: ${e.message}`;
+          logEl.textContent = lines.join('\n');
+        } else {
+          logEl.textContent = `❌ Lỗi quét STT: ${r?.error || 'Unknown'}`;
         }
       };
 
@@ -2766,3 +2815,20 @@
   });
 
 })();
+
+    bindClick('btnTestNetwork', async () => {
+      try {
+        const tabs = await chrome.tabs.query({ url: ["https://labs.google/*", "https://flow.google.com/*"] });
+        if (tabs.length === 0) return alert("Không tìm thấy tab Flow");
+        
+        await chrome.scripting.executeScript({
+          target: { tabId: tabs[0].id },
+          world: "MAIN",
+          files: ["interceptor.js"]
+        });
+        alert("Đã tiêm mã bắt API! Hãy mở F12 (Console) trên tab Flow và thử tạo 1 video/ảnh nhé.");
+      } catch (err) {
+        console.error(err);
+        alert("Lỗi tiêm mã: " + err.message);
+      }
+    });

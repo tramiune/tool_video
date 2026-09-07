@@ -2285,9 +2285,9 @@ func: async (promptText, cfg) => {
 
               // 3. Đợi sau khi paste xong tất cả frame
               if (cfg?.startImage && cfg?.endImage) {
-                await sleep(12000); // Có cả 2 frame → chờ 12s
+                await sleep(17000); // Có cả 2 frame → chờ 17s
               } else if (cfg?.startImage || cfg?.endImage) {
-                await sleep(10000); // Chỉ 1 frame → chờ 10s
+                await sleep(17000); // Chỉ 1 frame → chờ 17s
               }
             } catch (frameErr) {
               console.warn("[Flow Extension] Frame attach error:", frameErr);
@@ -5482,7 +5482,7 @@ async function updateMaxSeq(projectId, newMax) {
 // ══════════════════════════════════════
 // SCAN FLOW CARDS: Quét toàn bộ card trên màn hình, nhận diện STT, gắn badge
 // ══════════════════════════════════════
-async function scanFlowCards(tabId, projectId) {
+async function scanFlowCards(tabId, projectId, maxSeq = null) {
   try {
     let targetTabId = tabId;
     if (!targetTabId) {
@@ -5494,7 +5494,8 @@ async function scanFlowCards(tabId, projectId) {
     const result = await chrome.scripting.executeScript({
       target: { tabId: targetTabId },
       world: "ISOLATED",
-      func: () => {
+      args: [maxSeq],
+      func: (args_maxSeq) => {
         const BADGE_CSS = 'position:absolute;top:6px;left:6px;z-index:9999;padding:3px 10px;border-radius:6px;font-family:"SF Mono",Consolas,monospace;font-size:13px;font-weight:800;color:#fff;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1.4;letter-spacing:0.5px;';
         const SEQ_REGEX = /(?:^|\s)(\d{1,4})[\.\-_:\s]/;
         const statusColors = {
@@ -5503,23 +5504,8 @@ async function scanFlowCards(tabId, projectId) {
           'failed':    { bg: 'rgba(239,68,68,0.92)',  outline: '#ef4444', emoji: '❌' }
         };
 
-        // Lịch sử: lưu thumbnail URL → seq (persist trên window)
         if (!window.__flowScanHistory) window.__flowScanHistory = new Map();
 
-        // Helper: lấy fingerprint của card (thumbnail URL cắt ngắn)
-        const getCardFingerprint = (el) => {
-          const vid = el.querySelector('video');
-          const vidSrc = vid?.currentSrc || vid?.src || vid?.querySelector('source')?.src || '';
-          if (vidSrc) return vidSrc.split('?')[0].slice(-60);
-          const imgs = Array.from(el.querySelectorAll('img')).filter(img => {
-            const s = img.src || img.currentSrc || '';
-            return s && !s.startsWith('data:image/svg') && !s.includes('avatar') && !s.includes('icon');
-          }).sort((a, b) => ((b.naturalWidth||b.width||0)*(b.naturalHeight||b.height||0)) - ((a.naturalWidth||a.width||0)*(a.naturalHeight||a.height||0)));
-          if (imgs.length > 0) return (imgs[0].currentSrc || imgs[0].src).split('?')[0].slice(-60);
-          return '';
-        };
-
-        // Helper: xác định trạng thái card
         const getCardStatus = (el) => {
           const t = (el.innerText || el.textContent || '').toLowerCase();
           if (el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d+\s*%/i.test(t) || t.includes('đang tạo') || t.includes('generating')) return 'rendering';
@@ -5527,51 +5513,7 @@ async function scanFlowCards(tabId, projectId) {
           return 'ready';
         };
 
-        // Helper: gắn badge lên card
-        const applyBadge = (card, seq, status) => {
-          const colors = statusColors[status];
-          const pos = getComputedStyle(card).position;
-          if (pos === 'static') card.style.position = 'relative';
-          card.style.outline = `3px solid ${colors.outline}`;
-          card.style.outlineOffset = '-1px';
-          card.setAttribute('data-flow-scan-seq', seq);
-          const badge = document.createElement('div');
-          badge.setAttribute('data-flow-scan-badge', 'true');
-          badge.style.cssText = BADGE_CSS;
-          badge.style.background = colors.bg;
-          badge.textContent = `${colors.emoji} ${seq}`;
-          card.appendChild(badge);
-        };
-
-        // ═══ BƯỚC 1: Thu thập tất cả card-like elements ═══
-        const allElements = document.querySelectorAll('div, [role="listitem"]');
-        const validCards = [];
-
-        for (const el of allElements) {
-          if (el.closest('[data-slate-editor], form, [class*="composer"], [class*="input-container"], [class*="prompt-box"]')) continue;
-          if (el.hasAttribute('data-flow-scan-badge')) continue;
-
-          const r = el.getBoundingClientRect();
-          if (r.width < 100 || r.width > 400 || r.height < 100 || r.height > 450) continue;
-          if (r.top > window.innerHeight || r.bottom < 0) continue;
-
-          const hasMedia = el.querySelector('video') || Array.from(el.querySelectorAll('img')).some(img => {
-            const src = img.src || img.currentSrc || '';
-            if (!src || src.startsWith('data:image/svg') || src.includes('avatar') || src.includes('icon')) return false;
-            return (img.naturalWidth > 60 && img.naturalHeight > 60) || (img.width > 60 && img.height > 60);
-          });
-          const hasProgress = el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin") || /\b\d+\s*%/i.test(el.textContent || '');
-          if (!hasMedia && !hasProgress) continue;
-
-          const text = (el.innerText || el.textContent || '').trim();
-          const seqMatch = text.match(SEQ_REGEX);
-          const seq = seqMatch ? seqMatch[1].padStart(3, '0') : null;
-          const fingerprint = getCardFingerprint(el);
-
-          validCards.push({ el, seq, text: text.slice(0, 60), fingerprint, rect: { w: r.width, h: r.height } });
-        }
-
-        // ═══ BƯỚC 2: Xóa badge cũ ═══
+        // BƯỚC 1: Xóa badge cũ
         document.querySelectorAll('[data-flow-scan-badge]').forEach(b => b.remove());
         document.querySelectorAll('[data-flow-scan-seq]').forEach(c => {
           c.removeAttribute('data-flow-scan-seq');
@@ -5579,40 +5521,119 @@ async function scanFlowCards(tabId, projectId) {
           c.style.outlineOffset = '';
         });
 
-        // ═══ BƯỚC 3: Gán STT — từ text HOẶC từ lịch sử (cho card bị paraphrase) ═══
-        const seqMap = new Map(); // seq → { el, text, ... }
+        // BƯỚC 2: TÌM CARD BẰNG HÌNH HỌC (Geometric Scan)
+        // Tìm tất cả các thẻ có kích thước giống 1 thẻ Video/Ảnh trên lưới
+        const allEls = Array.from(document.querySelectorAll('div, a, button, li')).filter(el => {
+          // Bỏ qua các phần tử thuộc thanh điều hướng, form nhập liệu
+          if (el.closest('form, [role="navigation"], header, [class*="composer"], [class*="prompt-box"]')) return false;
+          
+          const r = el.getBoundingClientRect();
+          // Kích thước chuẩn của một thẻ Flow thường nằm trong khoảng này
+          if (r.width < 80 || r.width > 400) return false;
+          if (r.height < 100 || r.height > 800) return false;
+          // Phải đang hiển thị trên màn hình
+          if (r.top > window.innerHeight || r.bottom < 0) return false;
+          
+          return true;
+        });
 
-        for (const c of validCards) {
-          let seq = c.seq;
+        // Loại bỏ các thẻ lồng nhau (Chỉ giữ lại thẻ ngoài cùng - Outermost)
+        let cards = allEls.filter(c => !allEls.some(parent => parent !== c && parent.contains(c)));
 
-          // Nếu text không có STT → tìm trong lịch sử qua fingerprint
-          if (!seq && c.fingerprint) {
-            seq = window.__flowScanHistory.get(c.fingerprint) || null;
+        // Sắp xếp các thẻ theo đúng vị trí hiển thị (Từ trên xuống dưới, từ trái qua phải)
+        cards.sort((a, b) => {
+           const rA = a.getBoundingClientRect();
+           const rB = b.getBoundingClientRect();
+           // Cùng một hàng (lệch nhau < 30px) thì xếp theo chiều ngang
+           if (Math.abs(rA.top - rB.top) < 30) {
+              return rA.left - rB.left;
+           }
+           return rA.top - rB.top;
+        });
+
+        // BƯỚC 3: Tính toán STT theo VỊ TRÍ
+        const rawStts = cards.map((el) => {
+          let fullText = (el.innerText || el.textContent || '').trim() + " ";
+          fullText += (el.getAttribute('title') || '') + " ";
+          fullText += (el.getAttribute('aria-label') || '') + " ";
+          
+          const hiddenElements = el.querySelectorAll('[alt], [title], [aria-label]');
+          for (const child of hiddenElements) {
+            fullText += (child.getAttribute('alt') || '') + " ";
+            fullText += (child.getAttribute('title') || '') + " ";
+            fullText += (child.getAttribute('aria-label') || '') + " ";
           }
-          if (!seq) continue;
 
-          // Lưu vào lịch sử (fingerprint → seq)
-          if (c.fingerprint) {
-            window.__flowScanHistory.set(c.fingerprint, seq);
-          }
+          const seqMatch = fullText.match(SEQ_REGEX);
+          let seq = seqMatch ? seqMatch[1].padStart(3, '0') : null;
+          
+          // Cố gắng tìm mediaId ngầm để vớt vát lịch sử
+          const mediaId = el.getAttribute('data-media-id') || el.getAttribute('data-workflow-id') || el.querySelector('[data-media-id]')?.getAttribute('data-media-id');
+          if (!seq && mediaId) seq = window.__flowScanHistory.get(mediaId) || null;
+          
+          return { seq: seq ? parseInt(seq, 10) : null, mediaId };
+        });
 
-          // Tránh trùng parent
-          const parentWithSeq = c.el.parentElement?.closest('[data-flow-scan-seq]');
-          if (parentWithSeq && parentWithSeq.getAttribute('data-flow-scan-seq') === seq) continue;
-
-          // Deduplicate: chọn element nhỏ nhất
-          const existing = seqMap.get(seq);
-          if (!existing || (c.rect.w * c.rect.h < existing.rect.w * existing.rect.h)) {
-            seqMap.set(seq, c);
+        // Tìm điểm neo (Anchor)
+        let baseStt = null;
+        for (let i = 0; i < rawStts.length; i++) {
+          if (rawStts[i].seq !== null) {
+            baseStt = rawStts[i].seq + i; // Vì top -> bottom là STT giảm dần
+            break;
           }
         }
 
-        // ═══ BƯỚC 4: Gắn badge ═══
+        // Nếu màn hình không có bất kỳ số nào (ví dụ Google giấu sạch prompt), ta dùng maxSeq được truyền vào từ sidepanel!
+        if (baseStt === null && args_maxSeq) {
+           baseStt = parseInt(args_maxSeq, 10);
+        }
+
+        // BƯỚC 4: Gắn Badge và lưu vào lịch sử
         const labeled = [];
-        for (const [seq, c] of seqMap) {
-          const status = getCardStatus(c.el);
-          applyBadge(c.el, seq, status);
-          labeled.push({ seq, status, text: c.text.slice(0, 40) });
+        for (let i = 0; i < cards.length; i++) {
+          const el = cards[i];
+          const mediaId = rawStts[i].mediaId || `geom_${i}_${Date.now()}`;
+          
+          let finalSeq = baseStt !== null ? String(baseStt - i).padStart(3, '0') : null;
+          
+          if (finalSeq && rawStts[i].mediaId) {
+             window.__flowScanHistory.set(rawStts[i].mediaId, finalSeq);
+          }
+
+          const status = getCardStatus(el);
+          const colors = statusColors[status];
+          
+          try {
+             el.style.outline = `3px solid ${colors.outline}`;
+             el.style.outlineOffset = '-2px';
+             el.setAttribute('data-flow-scan-seq', finalSeq || '???');
+          } catch(e) {}
+
+          const badge = document.createElement('div');
+          badge.setAttribute('data-flow-scan-badge', 'true');
+          badge.style.cssText = BADGE_CSS;
+          badge.style.background = colors.bg;
+          
+          const shortMedia = rawStts[i].mediaId ? rawStts[i].mediaId.split('-')[0] : 'UI_Card';
+          badge.textContent = `${colors.emoji} ${finalSeq || '???'} | ${shortMedia}`;
+          
+          try {
+             if (['img', 'video', 'input', 'hr', 'br'].includes(el.tagName.toLowerCase())) {
+                 if (el.parentElement) {
+                     el.parentElement.style.position = 'relative';
+                     el.parentElement.appendChild(badge);
+                 }
+             } else {
+                 const pos = getComputedStyle(el).position;
+                 if (pos === 'static') el.style.position = 'relative';
+                 el.appendChild(badge);
+             }
+          } catch (e) {
+             console.warn("Could not append badge to", el);
+          }
+
+          const text = (el.innerText || el.textContent || '').replace(/\n/g, ' ').trim();
+          labeled.push({ seq: finalSeq || '???', mediaId, status, text: text.slice(0, 60), shortMedia });
         }
 
         return { success: true, count: labeled.length, cards: labeled, historySize: window.__flowScanHistory.size };

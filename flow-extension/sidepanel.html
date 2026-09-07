@@ -237,6 +237,7 @@
           <button class="btn btn-primary" id="btnTestImgAllConfig" style="font-size:11px; grid-column: span 2; background: linear-gradient(135deg, #e91e63, #ff9800); font-weight: bold;">⚙️ Test I5: Chạy Toàn Bộ Config Ảnh (Chip ➔ Tab ➔ Tỉ lệ ➔ Model ➔ Số lượng)</button>
           <button class="btn btn-green" id="btnTestImgFullCreate" style="font-size:11px; grid-column: span 2; font-weight: bold; background: linear-gradient(135deg, #00b09b, #96c93d);">🚀 Test I6: Tạo Hoàn Chỉnh 1 Ảnh (Config + Điền Prompt + Submit)</button>
         </div>
+        <button class="btn btn-primary" id="btnTestNetwork" style="width:100%; margin-top:10px; background: #ff4757; font-weight: bold;">🕵️ Thử Cách 4: Nghe lén Network (F12)</button>
       </div>
 
       <!-- NÚT QUÉT STT CARD -->
@@ -525,6 +526,13 @@ Chiếc xe thể thao màu đỏ chạy ven biển hoàng hôn"></textarea>
       <input class="form-input" id="promptFilter" placeholder="🔍 Lọc theo prompt / timestamp..."  style="margin-bottom:0;">
     </div>
 
+    <!-- UI view quét từ Flow DOM -->
+    <div class="card-title" style="margin-top: 15px; color: #00cec9;">🔍 Dữ liệu quét trực tiếp từ trang Flow (DOM)</div>
+    <div id="scannerGrid" class="video-grid" style="margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 15px;">
+      <div style="color:var(--text2); font-size: 12px; text-align: center; width: 100%;">Chưa bật scanner. (Bật ở tab Test Từng Bước)</div>
+    </div>
+
+    <div class="card-title">☁️ Dữ liệu từ Server API (Flow API)</div>
     <div id="videoGrid" class="video-grid"></div>
   </div>
 
