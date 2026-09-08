@@ -5687,14 +5687,8 @@ async function scanFlowCards(tabId, projectId, maxSeq = null, purpose = 'video')
           const hasSpinner = el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin");
           const t = (el.innerText || el.textContent || '').toLowerCase();
           const isGenerating = /\b\d+\s*%/i.test(t) || t.includes('đang tạo') || t.includes('generating') || t.includes('không thành công') || t.includes('failed');
-          const seqMatchStr = t + " " + (el.getAttribute('title') || '') + " " + (el.getAttribute('aria-label') || '');
-          const hasSeq = /(?:^|\s)(\d{1,4})[\.\-_:\s]/.test(seqMatchStr);
           
-          if (!hasId && !hasMedia && !hasSpinner && !isGenerating && !hasSeq) {
-             // Cứu vớt nếu nó có icon loading của luồng ảnh
-             if (el.querySelector("svg.lucide-loader, svg[class*='spin'], svg[class*='loading']")) return true;
-             return false;
-          }
+          if (!hasId && !hasMedia && !hasSpinner && !isGenerating) return false;
           
           return true;
         });
@@ -6176,10 +6170,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         const hasGenText = lowerText.includes("đang tạo") || lowerText.includes("generating") || lowerText.includes("đang kết xuất");
         const hasSingleCancelBtn = Boolean(matched.querySelector("button[aria-label*='hủy' i]"));
 
-        const hasAnyMediaId = matched.hasAttribute('data-media-id') || matched.hasAttribute('data-workflow-id');
-        const hasAnyMediaEl = matched.querySelector('video, img');
-        
-        if (pctMatch || isGenerating || hasGenText || hasSingleCancelBtn || (!hasAnyMediaId && !hasAnyMediaEl)) {
+        if (pctMatch || isGenerating || hasGenText || hasSingleCancelBtn) {
           cardStatus = 'RENDERING';
           statusExtra = { progress: pctMatch ? `${pctMatch[1]}%` : "Đang render..." };
         } else if (isCardFailed(matched)) {
