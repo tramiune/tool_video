@@ -514,7 +514,7 @@ async function getProjectVideos(projectId, targetTab = null) {
 
           // 1. Quét tất cả thẻ media của các card trên giao diện
           const allMedia = Array.from(document.querySelectorAll("img, video")).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
             const src = el.src || el.currentSrc || "";
             if (src.includes("googleusercontent.com/a/") || src.includes("avatar") || src.includes("profile")) return false;
             if (src.startsWith("data:image/svg")) return false;
@@ -971,7 +971,7 @@ async function downloadVideo(mediaId, filename, directUrl = null, cardIndex = -1
           // B. Nếu chưa tìm được qua attribute, tìm lại theo danh sách media cards
           if (!card) {
             const allMedia = Array.from(document.querySelectorAll("img, video")).filter(el => {
-              if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+              if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
               const src = el.src || el.currentSrc || "";
               if (src.includes("googleusercontent.com/a/") || src.includes("avatar")) return false;
               const r = el.getBoundingClientRect();
@@ -3302,6 +3302,22 @@ async function createImageUI(prompt, projectId, config = {}) {
 
         // BƯỚC 8: Bấm Nút Submit Tạo Ảnh (CHỈ CLICK 1 LẦN DUY NHẤT)
         // ──────────────────────────────────────────────
+        // Re-query submitBtn in case DOM was re-rendered after image paste
+        const newComposerButtons = queryDeep("button, [role='button']");
+        let newSubmitBtn = newComposerButtons.find(b => {
+          if (!isElemVisible(b)) return false;
+          const inner = (b.innerHTML || "").toLowerCase();
+          const t = (b.textContent || "").trim().toLowerCase();
+          const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+          if (b.getAttribute("type") === "submit") return true;
+          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                 Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
+        });
+        if (newSubmitBtn) {
+            submitBtn = newSubmitBtn;
+        }
+
         if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit tạo ảnh" };
 
         for (let waitSub = 0; waitSub < 15; waitSub++) {
@@ -3312,7 +3328,7 @@ async function createImageUI(prompt, projectId, config = {}) {
 
         submitBtn.removeAttribute("disabled");
         submitBtn.setAttribute("aria-disabled", "false");
-        submitBtn.click(); // Đúng chuẩn Test B3: Click đúng 1 lần duy nhất!
+        triggerPointerClick(submitBtn); // Nâng cấp click bạo lực!
         await sleep(500);
 
         return {
@@ -4595,7 +4611,7 @@ async function downloadImageCardDirect(tabId, query = "001.", promptText = "", m
           const candidateTextEls = Array.from(
             document.querySelectorAll("p, span, div, h1, h2, h3, h4, button, b, strong, [aria-label]")
           ).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
             const t = (el.innerText || el.textContent || "").trim().toLowerCase();
             const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
             const combined = t + " " + aria;
@@ -4625,8 +4641,7 @@ async function downloadImageCardDirect(tabId, query = "001.", promptText = "", m
           const words = promptFull.replace(/^\d+[\.\-_:\s]+/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(w => w.length >= 4);
           if (words.length > 0) {
             const cards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
-              if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
-              const r = el.getBoundingClientRect();
+              if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
               return r.width >= 100 && r.width <= 480 && r.height >= 120 && r.height <= 650 && Boolean(el.querySelector("img"));
             });
             let bestCard = null;
@@ -4996,9 +5011,9 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
           const candidateTextEls = Array.from(
             document.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, button, b, strong, [aria-label], [title]")
           ).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) {
-              return false;
-            }
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
+            const r = el.getBoundingClientRect();
+            if (r.left < 240) return false;
             const t = (el.innerText || el.textContent || "").trim().toLowerCase();
             const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim().toLowerCase();
             const combined = t + " " + aria;
@@ -5022,7 +5037,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         // ƯU TIÊN 3: Tìm theo từ khoá Prompt (Semantic Keywords Matching hỗ trợ tiếng Việt không dấu)
         if (!matchedCard && promptFull && pWords.length > 0) {
           const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
             const r = el.getBoundingClientRect();
             if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
             return Boolean(el.querySelector("video, img"));
@@ -5041,7 +5056,7 @@ async function triggerNativeDownloadForCard(tabId, query = "001.", promptText = 
         // Fallback tìm theo media nếu chưa tìm ra
         if (!matchedCard) {
           const allMedia = Array.from(document.querySelectorAll("img, video")).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
             const src = el.src || el.currentSrc || "";
             if (src.includes("googleusercontent.com/a/") || src.includes("avatar")) return false;
             const r = el.getBoundingClientRect();
@@ -5658,17 +5673,22 @@ async function scanFlowCards(tabId, projectId, maxSeq = null, purpose = 'video')
         });
 
         // BƯỚC 2: TÌM CARD BẰNG HÌNH HỌC (Geometric Scan)
-        // Tìm tất cả các thẻ có kích thước giống 1 thẻ Video/Ảnh trên lưới
         const allEls = Array.from(document.querySelectorAll('div, a, button, li')).filter(el => {
-          // Bỏ qua các phần tử thuộc thanh điều hướng, form nhập liệu
-          if (el.closest('form, [role="navigation"], header, [class*="composer"], [class*="prompt-box"]')) return false;
-          
+          if (el.closest('nav, aside, form, [role="navigation"], header, [class*="composer"], [class*="prompt-box"], [class*="sidebar"], [class*="drawer"]')) return false;
           const r = el.getBoundingClientRect();
-          // Kích thước chuẩn của một thẻ Flow thường nằm trong khoảng này
-          if (r.width < 80 || r.width > 400) return false;
+          if (r.left < 260) return false; // Bỏ qua thanh lịch sử / sidebar bên trái
+          if (r.width < 100 || r.width > 450) return false;
           if (r.height < 100 || r.height > 800) return false;
-          // Phải đang hiển thị trên màn hình
           if (r.top > window.innerHeight || r.bottom < 0) return false;
+          
+          // ĐIỀU KIỆN SỐNG CÒN: Phải có dấu hiệu của 1 thẻ media thực sự (Loại bỏ khung chữ Empty State)
+          const hasId = el.hasAttribute('data-media-id') || el.hasAttribute('data-workflow-id') || el.hasAttribute('data-id') || el.querySelector('[data-media-id], [data-workflow-id]');
+          const hasMedia = el.querySelector('video, img');
+          const hasSpinner = el.querySelector("[role='progressbar'], svg.animate-spin, .animate-spin");
+          const t = (el.innerText || el.textContent || '').toLowerCase();
+          const isGenerating = /\b\d+\s*%/i.test(t) || t.includes('đang tạo') || t.includes('generating') || t.includes('không thành công') || t.includes('failed');
+          
+          if (!hasId && !hasMedia && !hasSpinner && !isGenerating) return false;
           
           return true;
         });
@@ -6045,9 +6065,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           const candidateTextEls = Array.from(
             document.querySelectorAll("p, span, div, h1, h2, h3, h4, h5, h6, button, b, strong, [aria-label], [title]")
           ).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) {
-              return false;
-            }
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
             const t = (el.innerText || el.textContent || "").trim().toLowerCase();
             const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim().toLowerCase();
             const combined = t + " " + aria;
@@ -6072,7 +6090,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
         // Khi video render xong, Google Flow tự động tóm tắt prompt thành tên ngắn (VD: "Tao video con meo con")
         if (!matched && promptFull && pWords.length > 0) {
           const potentialCards = Array.from(document.querySelectorAll("div, [role='listitem']")).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
             const r = el.getBoundingClientRect();
             if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
             return Boolean(el.querySelector("video, img"));
@@ -6094,7 +6112,7 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           const allFailedCards = Array.from(
             document.querySelectorAll("div, [role='listitem'], [data-id], [data-media-id], [data-workflow-id]")
           ).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
             const r = el.getBoundingClientRect();
             if (r.width < 120 || r.width > 480 || r.height < 150 || r.height > 650) return false;
             if (isVideoTask && isCardImageAsset(el)) return false;
@@ -8383,7 +8401,7 @@ async function testUiStep(step, req) {
         // Shared Helpers for Step 8.x
         const findCardByQuery = (q) => {
           const allMedia = Array.from(document.querySelectorAll("img, video")).filter(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+            if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
             const src = el.src || el.currentSrc || "";
             if (src.includes("googleusercontent.com/a/") || src.includes("avatar")) return false;
             const r = el.getBoundingClientRect();
@@ -8417,7 +8435,7 @@ async function testUiStep(step, req) {
 
           if (!matched) {
             const allElementsWithText = Array.from(document.querySelectorAll("button, span, p, div")).filter(el => {
-              if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box']")) return false;
+              if (el.closest("nav, aside, [data-slate-editor], form, [class*='composer'], [class*='input-container'], [class*='prompt-box'], [class*='sidebar'], [class*='history'], [class*='drawer']")) return false; { const __r = el.getBoundingClientRect(); if (__r.left < 240) return false; }
               const directText = (el.innerText || el.textContent || "").trim();
               return directText.includes(q);
             });
