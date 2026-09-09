@@ -2395,6 +2395,76 @@
     bindClick('btnSelectRefFile', () => document.getElementById('refFile').click());
     
 
+    // ═══ ĐO TỈ LỆ KHUNG HÌNH (ASPECT RATIO MEASUREMENT) ═══
+    bindClick('btnMeasureFlowCards', async () => {
+      const pid = document.getElementById('projectId')?.value || '';
+      const flowTabs = await chrome.tabs.query({ url: ["https://labs.google/*", "https://flow.google.com/*"] });
+      let targetTabId = null;
+      if (flowTabs.length > 0) {
+         const pidTabs = flowTabs.filter(t => t.url.includes(pid));
+         targetTabId = (pidTabs.length > 0 ? pidTabs[0].id : flowTabs[0].id);
+      }
+      if (!targetTabId) {
+        logTestResult("Lỗi: Không tìm thấy tab Flow đang mở!", false);
+        return;
+      }
+      
+      const res = await chrome.scripting.executeScript({
+         target: { tabId: targetTabId },
+         world: "ISOLATED",
+         func: () => {
+            const cards = document.querySelectorAll("[data-media-id], [data-workflow-id], video, img");
+            const results = [];
+            
+            cards.forEach((el, index) => {
+              // Ưu tiên tìm container ngoài cùng trước khi nó chạm mốc "không phải card"
+              let cardBox = el.closest('li, [role="listitem"]') || el.closest('div[style*="width"]') || el;
+              let r = cardBox.getBoundingClientRect();
+              if (r.width > 50 && r.height > 50 && r.left > 260) { // Bỏ qua đồ lặt vặt và thanh bên
+                let ratio = r.width / r.height;
+                let ratioName = "Khác";
+                if (ratio > 1.5) ratioName = "16:9 (Landscape)";
+                else if (ratio < 0.7) ratioName = "9:16 (Portrait)";
+                else if (ratio >= 0.85 && ratio <= 1.15) ratioName = "1:1 (Square)";
+                else if (ratio >= 1.25 && ratio <= 1.45) ratioName = "4:3 (Landscape)";
+                else if (ratio >= 0.71 && ratio <= 0.84) ratioName = "3:4 (Portrait)";
+                
+                // Tránh push duplicate nếu các element con cùng trỏ về 1 cardBox
+                if (!results.some(x => Math.abs(x.width - r.width) < 2 && Math.abs(x.height - r.height) < 2 && Math.abs(x.left - r.left) < 2)) {
+                   results.push({
+                     index: results.length + 1,
+                     ratioName: ratioName,
+                     width: r.width,
+                     height: r.height,
+                     left: r.left,
+                     ratio: ratio
+                   });
+                }
+              }
+            });
+            return results;
+         }
+      });
+      
+      const measurements = res[0]?.result || [];
+      const logEl = document.getElementById('testStepLog');
+      
+      if (measurements.length === 0) {
+         logEl.value = "⚠️ Không tìm thấy thẻ Media nào trên tab Flow để đo.";
+         return;
+      }
+      
+      let tableText = "📐 KẾT QUẢ ĐO TỈ LỆ THẺ TRÊN FLOW:\n";
+      tableText += "STT | LOẠI       | W (px) | H (px) | TỈ LỆ (W/H)\n";
+      tableText += "--------------------------------------------------\n";
+      measurements.forEach(m => {
+         tableText += `${m.index.toString().padEnd(3)} | ${m.ratioName.padEnd(10)} | ${m.width.toFixed(1).padStart(6)} | ${m.height.toFixed(1).padStart(6)} | ${m.ratio.toFixed(3)}\n`;
+      });
+      
+      logEl.value = tableText;
+      logTestResult(`Đã đo ${measurements.length} thẻ thành công. Xem kết quả trên ô Log!`, true);
+    });
+
     // ═══ CARD SCANNER TOGGLE ═══
     let _cardScannerInterval = null;
     bindClick('btnToggleCardScanner', async () => {
