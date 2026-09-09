@@ -761,7 +761,8 @@
       }
 
       // Quét card trước khi check status → đánh dấu STT
-      try { await callExt('SCAN_FLOW_CARDS', { projectId }); } catch (_) {}
+      const maxSeqVal = Math.max(...uiBatchTasks.map(t => (t.status !== "PENDING" && t.status !== "SUBMITTING" && t.seq) ? parseInt(t.seq, 10) : 0).filter(n => !isNaN(n) && n > 0), 0);
+        try { await callExt('SCAN_FLOW_CARDS', { projectId, maxSeq: maxSeqVal > 0 ? maxSeqVal : null }); } catch (_) {}
 
       for (const task of activeTasks) {
         if (!isBatchRunning) break;
@@ -1758,7 +1759,8 @@
         }
 
         // Quét card trước khi check status → đánh dấu STT
-        try { await callExt('SCAN_FLOW_CARDS', { projectId }); } catch (_) {}
+        const maxSeqVal = Math.max(...uiBatchTasks.map(t => (t.status !== "PENDING" && t.status !== "SUBMITTING" && t.seq) ? parseInt(t.seq, 10) : 0).filter(n => !isNaN(n) && n > 0), 0);
+        try { await callExt('SCAN_FLOW_CARDS', { projectId, maxSeq: maxSeqVal > 0 ? maxSeqVal : null }); } catch (_) {}
 
         for (const task of activeTasks) {
           if (!isUiBatchRunning) break;
@@ -2229,7 +2231,8 @@
       }
 
       // Quét card trước khi check status → đánh dấu STT
-      try { await callExt('SCAN_FLOW_CARDS', { projectId, purpose: "image" }); } catch (_) {}
+      const maxSeqVal = Math.max(...uiImgBatchTasks.map(t => (t.status !== "PENDING" && t.status !== "SUBMITTING" && t.seq) ? parseInt(t.seq, 10) : 0).filter(n => !isNaN(n) && n > 0), 0);
+      try { await callExt('SCAN_FLOW_CARDS', { projectId, purpose: "image", maxSeq: maxSeqVal > 0 ? maxSeqVal : null }); } catch (_) {}
 
       for (const task of activeTasks) {
         if (!isUiImgBatchRunning) break;
