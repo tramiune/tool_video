@@ -1300,9 +1300,9 @@ async function drawAboveSTT(tabId) {
         sttEls.forEach((sttEl, idx) => {
           const sttRect = sttEl.getBoundingClientRect();
           const cx = 50; // Cách lề Chrome 50px
-          const cy = Math.max(50, Math.round(sttRect.top - 300));
+          const cy = Math.max(50, Math.round(sttRect.top - 170));
 
-          // Vẽ vùng đỏ (hình chữ nhật) 50px từ lề trái, 300px phía trên STT
+          // Vẽ vùng đỏ (hình chữ nhật) 50px từ lề trái, 170px phía trên STT
           const box = document.createElement('div');
           box.setAttribute('data-debug-stt-box', 'true');
           box.style.cssText = `
@@ -1424,7 +1424,7 @@ async function downloadMultiTab(tabId, query, promptText = '') {
 
         const sttRect = sttEl.getBoundingClientRect();
         const cx = 50; // Cách lề Chrome 50px
-        let cy = Math.max(50, Math.round(sttRect.top - 300));
+        let cy = Math.max(50, Math.round(sttRect.top - 170));
 
         // ── Vẽ vòng tròn đỏ 20px tại điểm click ──
         const circle = document.createElement('div');
