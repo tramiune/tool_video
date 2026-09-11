@@ -1391,7 +1391,7 @@ async function checkPercentOnScreen(tabId) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// testClickDownload — Test trực tiếp: Tìm nút Tải xuống và bấm
+// testClickDownload — Test trực tiếp: Tìm nút Tải xuống và bấm (tải .mp4)
 // ══════════════════════════════════════════════════════════════════
 async function testClickDownload(tabId) {
   let tab = null;
@@ -1403,100 +1403,26 @@ async function testClickDownload(tabId) {
     await new Promise(r => setTimeout(r, 300));
   } catch (_) {}
 
-  const rFind = await chrome.scripting.executeScript({
+  // Lấy STT đầu tiên trên màn hình
+  const rStt = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     world: "ISOLATED",
     func: () => {
-      // Tìm STT text trên màn hình (ví dụ: "9043.", "7575.")
       const sttEls = Array.from(document.querySelectorAll('p, span, div, b, strong')).filter(el => {
         if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
         const t = (el.innerText || el.textContent || '').trim();
         return /^\d{4}\./.test(t) && t.length < 200;
       });
-
-      let targetStt = sttEls.length > 0 ? sttEls[0] : null;
-
-      // ── Cách 1: Tìm nút tải 📥 trực tiếp trên card ──
-      const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
-      let dlBtn = null;
-
-      if (targetStt) {
-        let p = targetStt.parentElement;
-        for (let d = 0; d < 6 && p; d++) {
-          const found = Array.from(p.querySelectorAll('button, [role="button"]')).find(b => {
-            const aria = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
-            if (aria.includes('tải') || aria.includes('download')) return true;
-            const svg = b.querySelector('svg');
-            if (svg) {
-              const svgHtml = svg.outerHTML.toLowerCase();
-              if (svgHtml.includes('download') || svgHtml.includes('m21 15v4') || svgHtml.includes('lucide-download')) return true;
-            }
-            return false;
-          });
-          if (found) { dlBtn = found; break; }
-          p = p.parentElement;
-        }
-      }
-
-      // Nếu chưa thấy quanh STT, tìm trên toàn trang
-      if (!dlBtn) {
-        dlBtn = allBtns.find(b => {
-          if (b.closest("[data-slate-editor], form, [class*='composer'], nav, header")) return false;
-          const aria = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
-          if (aria.includes('tải xuống') || aria.includes('download')) return true;
-          const svg = b.querySelector('svg');
-          if (svg) {
-            const svgHtml = svg.outerHTML.toLowerCase();
-            return svgHtml.includes('download') || svgHtml.includes('m21 15v4') || svgHtml.includes('lucide-download');
-          }
-          return false;
-        });
-      }
-
-      if (dlBtn) {
-        // Highlight nút được bấm viền xanh lá
-        dlBtn.style.outline = '3px solid #10b981';
-        dlBtn.style.boxShadow = '0 0 15px #10b981';
-        setTimeout(() => { dlBtn.style.outline = ''; dlBtn.style.boxShadow = ''; }, 3000);
-
-        // Click
-        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
-          dlBtn.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
-        });
-
-        const label = (dlBtn.getAttribute('aria-label') || dlBtn.getAttribute('title') || 'nút 📥');
-        return { success: true, method: 'direct_button', message: `Đã bấm nút tải trực tiếp: "${label}"` };
-      }
-
-      // ── Cách 2: Nếu không thấy nút 📥, fallback right-click ──
-      if (targetStt) {
-        const sttRect = targetStt.getBoundingClientRect();
-        const cx = 50;
-        const cy = Math.max(50, Math.round(sttRect.top - 170));
-        return { success: true, method: 'right_click', cx, cy, stt: (targetStt.innerText || '').slice(0, 5) };
-      }
-
-      return { success: false, error: 'Không tìm thấy nút 📥 hoặc card trên màn hình' };
+      return sttEls.length > 0 ? (sttEls[0].innerText || '').slice(0, 5) : '';
     }
   });
 
-  const res = rFind?.[0]?.result;
-  if (!res) return { success: false, error: 'Script trả về rỗng' };
-
-  if (res.method === 'direct_button') {
-    return { success: true, message: res.message };
-  }
-
-  if (res.method === 'right_click') {
-    const q = res.stt || '';
-    return downloadMultiTab(tabId, q, '');
-  }
-
-  return res;
+  const q = rStt?.[0]?.result || '';
+  return downloadMultiTab(tabId, q, '');
 }
 
 // ══════════════════════════════════════════════════════════════════
-// downloadMultiTab — Tải video GỌN: Tìm card → Right-click → Click "Tải xuống"
+// downloadMultiTab — Tải video GỌN: Right-click → Tải xuống → 720p (mp4)
 // ══════════════════════════════════════════════════════════════════
 async function downloadMultiTab(tabId, query, promptText = '') {
   let tab = null;
@@ -1512,18 +1438,17 @@ async function downloadMultiTab(tabId, query, promptText = '') {
   logToBridge(`[MultiTab DL] Bắt đầu tải video trên Tab ${tab.id}, query="${query}"`);
 
   try {
-    // STEP 1: Tìm nút Play (hoặc fallback: 200px trên STT) → Right-click
+    // STEP 1: Tìm STT → Right-click tại (50, sttRect.top - 170)
     const r0 = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "ISOLATED",
       args: [query],
       func: (q) => {
-        // Tìm STT text → bấm 200px phía trên
         const cleanQ = (q || '').trim().toLowerCase();
-        const sttEl = Array.from(document.querySelectorAll('p, span, div, b, strong')).find(el => {
+        let sttEl = Array.from(document.querySelectorAll('p, span, div, b, strong')).find(el => {
           if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
           const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-          return t.includes(cleanQ);
+          return cleanQ ? t.includes(cleanQ) : (/^\d{4}\./.test(t) && t.length < 200);
         });
 
         if (!sttEl) return { success: false, error: 'Không tìm thấy STT trên màn hình' };
@@ -1543,32 +1468,9 @@ async function downloadMultiTab(tabId, query, promptText = '') {
           animation: pulse-circle 1s ease-out forwards;
         `;
         document.body.appendChild(circle);
-        // Xóa vòng tròn sau 3s
         setTimeout(() => circle.remove(), 3000);
 
-        // ── Ưu tiên 1: Tìm nút tải 📥 trực tiếp trên card ──
-        let cardContainer = sttEl.parentElement;
-        for (let d = 0; d < 6 && cardContainer; d++) {
-          const dlBtn = Array.from(cardContainer.querySelectorAll('button, [role="button"]')).find(b => {
-            const aria = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
-            if (aria.includes('tải') || aria.includes('download')) return true;
-            const svg = b.querySelector('svg');
-            if (svg) {
-              const svgHtml = svg.outerHTML.toLowerCase();
-              if (svgHtml.includes('download') || svgHtml.includes('m21 15v4') || svgHtml.includes('lucide-download')) return true;
-            }
-            return false;
-          });
-          if (dlBtn) {
-            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
-              dlBtn.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
-            });
-            return { success: true, directDownload: true, clientX: cx, clientY: cy };
-          }
-          cardContainer = cardContainer.parentElement;
-        }
-
-        // ── Ưu tiên 2: Right-click tại điểm (cx, cy) ──
+        // Right-click tại điểm đó
         const target = document.elementFromPoint(cx, cy) || document.body;
         const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX: cx, clientY: cy };
         target.dispatchEvent(new MouseEvent('mousedown', opts));
@@ -1583,43 +1485,83 @@ async function downloadMultiTab(tabId, query, promptText = '') {
       return { success: false, error: r0?.[0]?.result?.error || 'Không right-click được card' };
     }
 
-    const { clientX, clientY, directDownload } = r0[0].result;
-    if (directDownload) {
-      logToBridge(`[MultiTab DL] ✅ Đã click nút Tải xuống 📥 trực tiếp trên card!`);
-      return { success: true, message: 'Đã click nút Tải xuống 📥 trực tiếp!' };
-    }
+    const { clientX, clientY } = r0[0].result;
 
-    // STEP 2: Chờ menu hiện → Tìm "Tải xuống" → Click luôn
+    // Kích hoạt CDP right-click ngay để menu mở chắc chắn
+    try {
+      try { await chrome.debugger.attach({ tabId: tab.id }, '1.3'); } catch (_) {}
+      await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+        type: 'mousePressed', button: 'right', buttons: 2, x: clientX, y: clientY, clickCount: 1
+      });
+      await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+        type: 'mouseReleased', button: 'right', buttons: 0, x: clientX, y: clientY
+      });
+    } catch (_) {}
+
+    // STEP 2: Chờ menu hiện → Tìm "Tải xuống" → Rê chuột mở submenu "720p" → Click
     let downloaded = false;
-    for (let attempt = 1; attempt <= 15; attempt++) {
-      await new Promise(r => setTimeout(r, attempt === 1 ? 500 : 300));
+    let dlPos = null;
+
+    for (let attempt = 1; attempt <= 12; attempt++) {
+      await new Promise(r => setTimeout(r, attempt === 1 ? 400 : 250));
 
       const r1 = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         world: "ISOLATED",
         func: () => {
-          const all = Array.from(document.querySelectorAll('*')).filter(el => {
+          // 1. Kiểm tra nếu submenu 720p đã mở sẵn → click luôn!
+          const allSubEls = Array.from(document.querySelectorAll('*')).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.height > 180) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box']")) return false;
+            const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+            if (t.includes('giây') || t.includes('crop') || t.includes('video ·')) return false;
+            if (t.includes('270p') || t.includes('1080p') || t.includes('4k') || t.includes('2k')) return false;
+            return t.includes('720p') || t.includes('kích thước gốc') || t.includes('original') || t.includes('1k');
+          });
+
+          if (allSubEls.length > 0) {
+            const opt = allSubEls[0].closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || allSubEls[0];
+            const rect = opt.getBoundingClientRect();
+            opt.style.outline = '3px solid #10b981';
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
+              opt.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
+            });
+            return {
+              type: 'CLICKED_720P',
+              x: Math.round(rect.left + rect.width / 2),
+              y: Math.round(rect.top + rect.height / 2),
+              text: (opt.innerText || '').trim()
+            };
+          }
+
+          // 2. Tìm mục "Tải xuống" trong menu chuột phải
+          const allDl = Array.from(document.querySelectorAll('*')).filter(el => {
             const r = el.getBoundingClientRect();
             if (r.width === 0 || r.height === 0 || r.width > 380 || r.height > 90) return false;
             if (el.closest("form, [class*='composer'], [class*='prompt-box']")) return false;
             const t = (el.innerText || el.textContent || '').trim().toLowerCase();
             if (t.includes('giây') || t.includes('crop') || t.includes('video ·')) return false;
-            return t === 'tải xuống' || t.startsWith('tải xuống') || t === 'download' || t.startsWith('download') || t.includes('tải xuống');
+            return t === 'tải xuống' || t.startsWith('tải xuống') || t === 'download' || t.startsWith('download');
           });
 
-          if (all.length > 0) {
-            const target = all.find(el => (el.innerText || el.textContent || '').trim() === 'Tải xuống') || all[0];
-            const clickable = target.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || target;
-            
-            // Click luôn!
-            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
-              clickable.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
+          if (allDl.length > 0) {
+            const row = allDl[0].closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || allDl[0];
+            const rect = row.getBoundingClientRect();
+            row.style.outline = '3px solid #00e5ff';
+            // Hover để mở submenu
+            ['mouseenter', 'mouseover', 'mousemove', 'pointerenter', 'pointerover'].forEach(evt => {
+              row.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
             });
-            
-            return { found: true, text: (target.innerText || '').trim() };
+            return {
+              type: 'FOUND_DOWNLOAD_ROW',
+              x: Math.round(rect.left + rect.width / 2),
+              y: Math.round(rect.top + rect.height / 2),
+              right: Math.round(rect.right)
+            };
           }
 
-          // Kiểm tra menu chỉ có "Xoá" → video chưa xong
+          // 3. Kiểm tra nếu menu chỉ có "Xoá" → video chưa xong
           const hasDelete = Array.from(document.querySelectorAll('*')).some(el => {
             const r = el.getBoundingClientRect();
             if (r.width === 0 || r.height === 0) return false;
@@ -1628,46 +1570,68 @@ async function downloadMultiTab(tabId, query, promptText = '') {
           });
           if (hasDelete) {
             document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
-            return { found: false, stillRendering: true };
+            return { type: 'STILL_RENDERING' };
           }
 
-          return { found: false };
+          return null;
         }
       });
 
       const res = r1?.[0]?.result;
-      if (res?.found) {
+      if (res?.type === 'CLICKED_720P') {
         downloaded = true;
-        logToBridge(`[MultiTab DL] ✅ Đã click "${res.text}" thành công!`);
-        break;
-      }
-      if (res?.stillRendering) {
-        logToBridge(`[MultiTab DL] ⚠️ Video chưa xong render (menu chỉ có Xoá)`);
-        return { success: false, isStillRendering: true, error: 'Video chưa render xong' };
-      }
-
-      // Backup: CDP right-click nếu menu chưa hiện (kích hoạt từ lần 1 luôn)
-      if (attempt === 1 || attempt === 3 || attempt === 6) {
+        logToBridge(`[MultiTab DL] ✅ Đã click 720p ("${res.text}") tải file .mp4!`);
+        // Gửi thêm CDP click để chắc chắn
         try {
-          try { await chrome.debugger.attach({ tabId: tab.id }, '1.3'); } catch (_) {}
           await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
-            type: 'mousePressed', button: 'right', buttons: 2, x: clientX, y: clientY, clickCount: 1
+            type: 'mousePressed', button: 'left', buttons: 1, x: res.x, y: res.y, clickCount: 1
           });
           await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
-            type: 'mouseReleased', button: 'right', buttons: 0, x: clientX, y: clientY
+            type: 'mouseReleased', button: 'left', buttons: 0, x: res.x, y: res.y
+          });
+        } catch (_) {}
+        break;
+      }
+
+      if (res?.type === 'FOUND_DOWNLOAD_ROW') {
+        dlPos = res;
+        // Rê chuột CDP vào "Tải xuống" để kích hoạt submenu 720p
+        try {
+          await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+            type: 'mouseMoved', x: dlPos.right - 10, y: dlPos.y
           });
         } catch (_) {}
       }
+
+      if (res?.type === 'STILL_RENDERING') {
+        logToBridge(`[MultiTab DL] ⚠️ Video chưa xong render (menu chỉ có Xoá)`);
+        try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
+        return { success: false, isStillRendering: true, error: 'Video chưa render xong' };
+      }
+    }
+
+    // Nếu sau 12 lần hover mà submenu 720p chưa mở, click trực tiếp vào "Tải xuống" (fallback)
+    if (!downloaded && dlPos) {
+      logToBridge(`[MultiTab DL] ⚠️ Không thấy 720p submenu, click trực tiếp vào Tải xuống...`);
+      try {
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+          type: 'mousePressed', button: 'left', buttons: 1, x: dlPos.x, y: dlPos.y, clickCount: 1
+        });
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+          type: 'mouseReleased', button: 'left', buttons: 0, x: dlPos.x, y: dlPos.y
+        });
+        downloaded = true;
+      } catch (_) {}
     }
 
     // Detach debugger
     try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
 
     if (!downloaded) {
-      return { success: false, error: 'Không tìm thấy "Tải xuống" trong menu sau 15 lần thử' };
+      return { success: false, error: 'Không tìm thấy mục "Tải xuống" trong menu' };
     }
 
-    return { success: true, message: 'Đã click Tải xuống!' };
+    return { success: true, message: 'Đã click tải video (.mp4) thành công!' };
 
   } catch (err) {
     logToBridge(`[MultiTab DL] ❌ ${err.message}`);
