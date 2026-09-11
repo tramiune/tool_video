@@ -3046,11 +3046,11 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
   };
 
   const query = timestamp + '.';
-  const maxAttempts = 36; // 36 x 10s = 6 phút
-  const pollInterval = 10000;
+  const maxAttempts = 24; // 24 x 15s = 6 phút
+  const pollInterval = 15000;
 
-  log(`⏳ Chờ 10s cho Flow bắt đầu render...`);
-  await new Promise(r => setTimeout(r, 10000));
+  log(`⏳ Chờ 15s cho Flow bắt đầu render...`);
+  await new Promise(r => setTimeout(r, 15000));
 
   for (let i = 1; i <= maxAttempts; i++) {
     log(`🔍 Quét lần ${i}/${maxAttempts}...`);
