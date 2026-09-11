@@ -3317,6 +3317,26 @@ document.addEventListener('DOMContentLoaded', () => {
       await callExt('DRAW_ABOVE_STT', { tabId: videoTab.tabId });
     });
   }
+
+  // Test: Bấm nút Tải xuống
+  const testDlBtn = document.getElementById('btnTestClickDownload');
+  if (testDlBtn) {
+    testDlBtn.addEventListener('click', async () => {
+      if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video');
+      if (!videoTab) { alert('Không có tab Video!'); return; }
+
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) { logEl.style.display = 'block'; logEl.textContent += `[${new Date().toLocaleTimeString()}] 📥 Đang thử bấm nút Tải xuống trên Tab ${videoTab.tabId}...\n`; }
+
+      const res = await callExt('TEST_CLICK_DOWNLOAD', { tabId: videoTab.tabId });
+      if (res?.success) {
+        if (logEl) logEl.textContent += `[${new Date().toLocaleTimeString()}] ✅ ${res.message}\n`;
+      } else {
+        if (logEl) logEl.textContent += `[${new Date().toLocaleTimeString()}] ❌ ${res?.error || 'Không tìm thấy nút tải'}\n`;
+      }
+    });
+  }
 });
 
 })();

@@ -292,6 +292,7 @@ const HANDLERS = {
   DOWNLOAD_MULTI_TAB: req => downloadMultiTab(req.tabId, req.query, req.prompt),
   CHECK_PERCENT_ON_SCREEN: req => checkPercentOnScreen(req.tabId),
   DRAW_ABOVE_STT: req => drawAboveSTT(req.tabId),
+  TEST_CLICK_DOWNLOAD: req => testClickDownload(req.tabId),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
@@ -1387,6 +1388,111 @@ async function checkPercentOnScreen(tabId) {
   } catch (err) {
     return { hasPercent: false, error: err.message };
   }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// testClickDownload — Test trực tiếp: Tìm nút Tải xuống và bấm
+// ══════════════════════════════════════════════════════════════════
+async function testClickDownload(tabId) {
+  let tab = null;
+  try { tab = await chrome.tabs.get(tabId); } catch(e) {}
+  if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
+
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    await new Promise(r => setTimeout(r, 300));
+  } catch (_) {}
+
+  const rFind = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    world: "ISOLATED",
+    func: () => {
+      // Tìm STT text trên màn hình (ví dụ: "9043.", "7575.")
+      const sttEls = Array.from(document.querySelectorAll('p, span, div, b, strong')).filter(el => {
+        if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
+        const t = (el.innerText || el.textContent || '').trim();
+        return /^\d{4}\./.test(t) && t.length < 200;
+      });
+
+      let targetStt = sttEls.length > 0 ? sttEls[0] : null;
+
+      // ── Cách 1: Tìm nút tải 📥 trực tiếp trên card ──
+      const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+      let dlBtn = null;
+
+      if (targetStt) {
+        let p = targetStt.parentElement;
+        for (let d = 0; d < 6 && p; d++) {
+          const found = Array.from(p.querySelectorAll('button, [role="button"]')).find(b => {
+            const aria = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
+            if (aria.includes('tải') || aria.includes('download')) return true;
+            const svg = b.querySelector('svg');
+            if (svg) {
+              const svgHtml = svg.outerHTML.toLowerCase();
+              if (svgHtml.includes('download') || svgHtml.includes('m21 15v4') || svgHtml.includes('lucide-download')) return true;
+            }
+            return false;
+          });
+          if (found) { dlBtn = found; break; }
+          p = p.parentElement;
+        }
+      }
+
+      // Nếu chưa thấy quanh STT, tìm trên toàn trang
+      if (!dlBtn) {
+        dlBtn = allBtns.find(b => {
+          if (b.closest("[data-slate-editor], form, [class*='composer'], nav, header")) return false;
+          const aria = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
+          if (aria.includes('tải xuống') || aria.includes('download')) return true;
+          const svg = b.querySelector('svg');
+          if (svg) {
+            const svgHtml = svg.outerHTML.toLowerCase();
+            return svgHtml.includes('download') || svgHtml.includes('m21 15v4') || svgHtml.includes('lucide-download');
+          }
+          return false;
+        });
+      }
+
+      if (dlBtn) {
+        // Highlight nút được bấm viền xanh lá
+        dlBtn.style.outline = '3px solid #10b981';
+        dlBtn.style.boxShadow = '0 0 15px #10b981';
+        setTimeout(() => { dlBtn.style.outline = ''; dlBtn.style.boxShadow = ''; }, 3000);
+
+        // Click
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
+          dlBtn.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
+        });
+
+        const label = (dlBtn.getAttribute('aria-label') || dlBtn.getAttribute('title') || 'nút 📥');
+        return { success: true, method: 'direct_button', message: `Đã bấm nút tải trực tiếp: "${label}"` };
+      }
+
+      // ── Cách 2: Nếu không thấy nút 📥, fallback right-click ──
+      if (targetStt) {
+        const sttRect = targetStt.getBoundingClientRect();
+        const cx = 50;
+        const cy = Math.max(50, Math.round(sttRect.top - 170));
+        return { success: true, method: 'right_click', cx, cy, stt: (targetStt.innerText || '').slice(0, 5) };
+      }
+
+      return { success: false, error: 'Không tìm thấy nút 📥 hoặc card trên màn hình' };
+    }
+  });
+
+  const res = rFind?.[0]?.result;
+  if (!res) return { success: false, error: 'Script trả về rỗng' };
+
+  if (res.method === 'direct_button') {
+    return { success: true, message: res.message };
+  }
+
+  if (res.method === 'right_click') {
+    const q = res.stt || '';
+    return downloadMultiTab(tabId, q, '');
+  }
+
+  return res;
 }
 
 // ══════════════════════════════════════════════════════════════════
