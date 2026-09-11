@@ -1299,16 +1299,16 @@ async function drawAboveSTT(tabId) {
 
         sttEls.forEach((sttEl, idx) => {
           const sttRect = sttEl.getBoundingClientRect();
-          const cx = sttRect.left + sttRect.width / 2;
-          const cy = sttRect.top - 100;
+          const cx = 50; // Cách lề Chrome 50px
+          const cy = Math.max(50, Math.round(sttRect.top - 300));
 
-          // Vẽ vùng đỏ (hình chữ nhật) 100px phía trên STT
+          // Vẽ vùng đỏ (hình chữ nhật) 50px từ lề trái, 300px phía trên STT
           const box = document.createElement('div');
           box.setAttribute('data-debug-stt-box', 'true');
           box.style.cssText = `
             position:fixed;
-            left:${cx - 30}px; top:${cy - 15}px;
-            width:60px; height:30px;
+            left:${cx - 25}px; top:${cy - 15}px;
+            width:50px; height:30px;
             border:3px solid red; border-radius:8px;
             background:rgba(255,0,0,0.15);
             z-index:999999; pointer-events:none;
@@ -1316,19 +1316,7 @@ async function drawAboveSTT(tabId) {
           `;
           document.body.appendChild(box);
 
-          // Vẽ đường nối từ STT lên box
-          const line = document.createElement('div');
-          line.setAttribute('data-debug-stt-box', 'true');
-          line.style.cssText = `
-            position:fixed;
-            left:${cx - 1}px; top:${cy + 15}px;
-            width:2px; height:${100 - 30}px;
-            background:rgba(255,0,0,0.5);
-            z-index:999998; pointer-events:none;
-          `;
-          document.body.appendChild(line);
-
-          // Vẽ vòng tròn nhỏ tại vị trí click chính xác
+          // Vẽ vòng tròn nhỏ tại vị trí click chính xác (50, cy)
           const dot = document.createElement('div');
           dot.setAttribute('data-debug-stt-box', 'true');
           dot.style.cssText = `
@@ -1435,9 +1423,8 @@ async function downloadMultiTab(tabId, query, promptText = '') {
         if (!sttEl) return { success: false, error: 'Không tìm thấy STT trên màn hình' };
 
         const sttRect = sttEl.getBoundingClientRect();
-        const cx = Math.round(sttRect.left + sttRect.width / 2);
-        let cy = Math.round(sttRect.top - 200);
-        if (cy < 10) cy = 10;
+        const cx = 50; // Cách lề Chrome 50px
+        let cy = Math.max(50, Math.round(sttRect.top - 300));
 
         // ── Vẽ vòng tròn đỏ 20px tại điểm click ──
         const circle = document.createElement('div');
