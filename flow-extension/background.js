@@ -293,6 +293,7 @@ const HANDLERS = {
   CHECK_PERCENT_ON_SCREEN: req => checkPercentOnScreen(req.tabId),
   DRAW_ABOVE_STT: req => drawAboveSTT(req.tabId),
   TEST_CLICK_DOWNLOAD: req => testClickDownload(req.tabId),
+  RIGHT_CLICK_AND_DOWNLOAD: req => rightClickAndDownload(req.tabId),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
@@ -1419,6 +1420,143 @@ async function testClickDownload(tabId) {
 
   const q = rStt?.[0]?.result || '';
   return downloadMultiTab(tabId, q, '');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// rightClickAndDownload — Chuột phải vào card tại (50, STT - 170) & bấm Tải xuống
+// ══════════════════════════════════════════════════════════════════
+async function rightClickAndDownload(tabId) {
+  let tab = null;
+  try { tab = await chrome.tabs.get(tabId); } catch(e) {}
+  if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
+
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    await new Promise(r => setTimeout(r, 300));
+  } catch (_) {}
+
+  // 1. Tìm STT, vẽ vòng tròn đỏ 20px, click chuột phải tại (50, sttRect.top - 170)
+  const r0 = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    world: "ISOLATED",
+    func: () => {
+      const sttEls = Array.from(document.querySelectorAll('p, span, div, b, strong')).filter(el => {
+        if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
+        const t = (el.innerText || el.textContent || '').trim();
+        return /^\d{4}\./.test(t) && t.length < 200;
+      });
+
+      if (sttEls.length === 0) return { success: false, error: 'Không tìm thấy STT trên màn hình' };
+
+      const sttEl = sttEls[0];
+      const sttRect = sttEl.getBoundingClientRect();
+      const cx = 50; // Cách lề Chrome 50px
+      const cy = Math.max(50, Math.round(sttRect.top - 170));
+
+      // Vẽ vòng tròn đỏ 20px tại điểm bấm
+      const circle = document.createElement('div');
+      circle.style.cssText = `
+        position:fixed; left:${cx - 10}px; top:${cy - 10}px;
+        width:20px; height:20px; border-radius:50%;
+        background:rgba(255,0,0,0.7); border:2px solid #fff;
+        z-index:999999; pointer-events:none;
+        box-shadow: 0 0 15px rgba(255,0,0,0.8);
+        animation: pulse-circle 1s ease-out forwards;
+      `;
+      document.body.appendChild(circle);
+      setTimeout(() => circle.remove(), 4000);
+
+      // DOM right-click
+      const target = document.elementFromPoint(cx, cy) || document.body;
+      const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX: cx, clientY: cy };
+      target.dispatchEvent(new MouseEvent('mousedown', opts));
+      target.dispatchEvent(new MouseEvent('mouseup', opts));
+      target.dispatchEvent(new MouseEvent('contextmenu', opts));
+
+      return { success: true, cx, cy, stt: (sttEl.innerText || '').slice(0, 10) };
+    }
+  });
+
+  const res0 = r0?.[0]?.result;
+  if (!res0?.success) return { success: false, error: res0?.error || 'Lỗi chuột phải' };
+
+  // CDP Hardware right-click để menu hiển thị 100%
+  try {
+    try { await chrome.debugger.attach({ tabId: tab.id }, '1.3'); } catch (_) {}
+    await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+      type: 'mousePressed', button: 'right', buttons: 2, x: res0.cx, y: res0.cy, clickCount: 1
+    });
+    await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+      type: 'mouseReleased', button: 'right', buttons: 0, x: res0.cx, y: res0.cy
+    });
+  } catch (_) {}
+
+  // 2. Chờ menu chuột phải xuất hiện → Tìm mục "Tải xuống" → Click
+  let clicked = false;
+  let clickedText = '';
+
+  for (let attempt = 1; attempt <= 12; attempt++) {
+    await new Promise(r => setTimeout(r, attempt === 1 ? 400 : 250));
+
+    const r1 = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "ISOLATED",
+      func: () => {
+        // Tìm dòng "Tải xuống" hoặc "Download"
+        const all = Array.from(document.querySelectorAll('*')).filter(el => {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0 || r.width > 380 || r.height > 90) return false;
+          if (el.closest("form, [class*='composer'], [class*='prompt-box']")) return false;
+          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          if (t.includes('giây') || t.includes('crop') || t.includes('video ·')) return false;
+          return t === 'tải xuống' || t.startsWith('tải xuống') || t === 'download' || t.startsWith('download') || t.includes('tải xuống');
+        });
+
+        if (all.length > 0) {
+          const row = all[0].closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || all[0];
+          const rect = row.getBoundingClientRect();
+          row.style.outline = '3px solid #00e5ff';
+          row.style.boxShadow = '0 0 15px #00e5ff';
+
+          // Click luôn vào "Tải xuống"
+          ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
+            row.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
+          });
+
+          return {
+            found: true,
+            text: (row.innerText || '').trim(),
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2)
+          };
+        }
+        return { found: false };
+      }
+    });
+
+    const res1 = r1?.[0]?.result;
+    if (res1?.found) {
+      clicked = true;
+      clickedText = res1.text;
+      try {
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+          type: 'mousePressed', button: 'left', buttons: 1, x: res1.x, y: res1.y, clickCount: 1
+        });
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+          type: 'mouseReleased', button: 'left', buttons: 0, x: res1.x, y: res1.y
+        });
+      } catch (_) {}
+      break;
+    }
+  }
+
+  try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
+
+  if (!clicked) {
+    return { success: false, error: `Không tìm thấy mục "Tải xuống" trong menu chuột phải sau khi click tại (${res0.cx}, ${res0.cy})` };
+  }
+
+  return { success: true, message: `Đã chuột phải tại (${res0.cx}, ${res0.cy}) và bấm "${clickedText}"!` };
 }
 
 // ══════════════════════════════════════════════════════════════════

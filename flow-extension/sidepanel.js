@@ -3337,6 +3337,26 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Test: Chuột phải card & Tải xuống
+  const rightClickDlBtn = document.getElementById('btnRightClickAndDownload');
+  if (rightClickDlBtn) {
+    rightClickDlBtn.addEventListener('click', async () => {
+      if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video');
+      if (!videoTab) { alert('Không có tab Video!'); return; }
+
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) { logEl.style.display = 'block'; logEl.textContent += `[${new Date().toLocaleTimeString()}] 🖱️ Chuột phải card & bấm Tải xuống trên Tab ${videoTab.tabId}...\n`; }
+
+      const res = await callExt('RIGHT_CLICK_AND_DOWNLOAD', { tabId: videoTab.tabId });
+      if (res?.success) {
+        if (logEl) logEl.textContent += `[${new Date().toLocaleTimeString()}] ✅ ${res.message}\n`;
+      } else {
+        if (logEl) logEl.textContent += `[${new Date().toLocaleTimeString()}] ❌ ${res?.error || 'Không tải được'}\n`;
+      }
+    });
+  }
 });
 
 })();
