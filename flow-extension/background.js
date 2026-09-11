@@ -288,7 +288,7 @@ const HANDLERS = {
   DOWNLOAD_VIDEO:     req => downloadVideo(req.mediaId, req.filename, req.videoUrl, req.cardIndex),
   CREATE_VIDEO:       req => createVideoAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.startImage, req.endImage),
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
-  CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio),
+  CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
@@ -1276,7 +1276,7 @@ async function createVideoAPI(prompt, projectId, model, aspectRatio, startImage,
 // createVideoMultiTab — Phiên bản GỌN cho Đa Tab
 // Chỉ: mở config → bấm ratio → đóng config → gõ prompt → submit
 // ══════════════════════════════════════════════════════════════════
-async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
+async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startImageDataUrl = null) {
   let tab = null;
   try { tab = await chrome.tabs.get(tabId); } catch(e) {}
   if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
@@ -1293,8 +1293,8 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "MAIN",
-      args: [prompt, aspectRatio],
-      func: async (promptText, targetRatio) => {
+      args: [prompt, aspectRatio, startImageDataUrl],
+      func: async (promptText, targetRatio, startImgDataUrl) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         // ── Helper: Query deep (bao gồm Shadow DOM) ──
@@ -1326,14 +1326,13 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
           if (!isElemVisible(el)) return false;
           const r = el.getBoundingClientRect();
           if (r.width < 60 || r.width > 500 || r.height < 20 || r.height > 60) return false;
-          if (r.top < 100) return false; // Tránh header
+          if (r.top < 100) return false;
           const t = (el.textContent || '').toLowerCase();
           return t.includes('video') || t.includes('9:16') || t.includes('16:9') || 
                  t.includes('1:1') || t.includes('720p') || t.includes('8s') || t.includes('4s') ||
                  t.includes('veo') || t.includes('nano') || t.includes('giây');
         });
         if (chipCandidates.length > 0) {
-          // Lấy chip gần ô nhập nhất (dưới cùng)
           chipCandidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
           settingsChip = chipCandidates[0];
         }
@@ -1342,20 +1341,30 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
           return { success: false, error: "Không tìm thấy nút Settings Chip (config bar)" };
         }
 
-        // Click mở config
-        // Không scroll — sếp cấm!
         settingsChip.click();
         await sleep(600);
 
         // ═══════════════════════════════════════════════
-        // STEP 2: Bấm đúng tỉ lệ khung hình
+        // STEP 2: Nếu có startImage → bấm tab "Khung hình" / "Video"
+        // ═══════════════════════════════════════════════
+        if (startImgDataUrl) {
+          // Tìm và click tab "Khung hình" (Frames)
+          const frameTabs = queryDeep("[role='tab'], button").filter(el => {
+            if (!isElemVisible(el)) return false;
+            const t = (el.textContent || '').toLowerCase();
+            return t.includes('khung hình') || t.includes('frame');
+          });
+          if (frameTabs.length > 0) {
+            frameTabs[0].click();
+            await sleep(500);
+          }
+        }
+
+        // ═══════════════════════════════════════════════
+        // STEP 2.1: Bấm đúng tỉ lệ khung hình
         // ═══════════════════════════════════════════════
         const ratioMap = {
-          '9:16': ['9:16'],
-          '16:9': ['16:9'],
-          '1:1': ['1:1'],
-          '4:3': ['4:3'],
-          '3:4': ['3:4'],
+          '9:16': ['9:16'], '16:9': ['16:9'], '1:1': ['1:1'], '4:3': ['4:3'], '3:4': ['3:4'],
         };
         const targets = ratioMap[targetRatio] || [targetRatio];
         
@@ -1370,8 +1379,7 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
         });
 
         if (ratioButtons.length > 0) {
-          const btn = ratioButtons[0];
-          btn.click();
+          ratioButtons[0].click();
           clickedRatio = true;
           await sleep(300);
         }
@@ -1381,6 +1389,70 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
         // ═══════════════════════════════════════════════
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
         await sleep(400);
+
+        // ═══════════════════════════════════════════════
+        // STEP 3.5: Paste Start Frame (nếu có)
+        // ═══════════════════════════════════════════════
+        let pastedFrame = false;
+        if (startImgDataUrl) {
+          try {
+            // Tìm nút "Bắt đầu" (start frame slot)
+            const startBtn = queryDeep("button, [role='button'], div[aria-haspopup='dialog']").find(el => {
+              if (!isElemVisible(el)) return false;
+              const t = (el.textContent || '').toLowerCase();
+              const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+              return t.includes('bắt đầu') || aria.includes('bắt đầu') || t.includes('start frame') || aria.includes('start');
+            });
+
+            if (startBtn) {
+              startBtn.click();
+              await sleep(800);
+
+              // Tìm dialog vừa mở
+              let dialog = document.querySelector("div[role='dialog'][data-state='open']") || document.querySelector("div[role='dialog']");
+              if (!dialog) {
+                for (let w = 0; w < 6; w++) { await sleep(300); dialog = document.querySelector("div[role='dialog']"); if (dialog) break; }
+              }
+
+              if (dialog) {
+                // Tìm file input trong dialog
+                const fileInput = dialog.querySelector("input[type='file']") || document.querySelector("input[type='file']");
+                if (fileInput) {
+                  // Convert data URL to File
+                  const arr = startImgDataUrl.split(',');
+                  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+                  const bstr = atob(arr[1] || arr[0]);
+                  let n = bstr.length;
+                  const u8arr = new Uint8Array(n);
+                  while (n--) u8arr[n] = bstr.charCodeAt(n);
+                  const fileObj = new File([u8arr], 'start_frame_' + Date.now() + '.jpg', { type: mime });
+                  const dt = new DataTransfer();
+                  dt.items.add(fileObj);
+                  fileInput.files = dt.files;
+                  fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                  pastedFrame = true;
+                  await sleep(3000); // Chờ upload
+                } else {
+                  // Fallback: Paste trực tiếp vào dialog
+                  const blob = await (await fetch(startImgDataUrl)).blob();
+                  const fileObj = new File([blob], 'start_frame.jpg', { type: 'image/jpeg' });
+                  const dt = new DataTransfer();
+                  dt.items.add(fileObj);
+                  dialog.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
+                  pastedFrame = true;
+                  await sleep(3000);
+                }
+
+                // Đóng dialog nếu vẫn mở
+                const closeBtn = dialog.querySelector("button[aria-label='Close'], button[aria-label='Đóng']");
+                if (closeBtn) { closeBtn.click(); await sleep(300); }
+                else { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })); await sleep(300); }
+              }
+            }
+          } catch (frameErr) {
+            console.warn('[MultiTab] Frame paste error:', frameErr);
+          }
+        }
 
         // ═══════════════════════════════════════════════
         // STEP 4: Gõ prompt vào Slate Editor
@@ -1476,7 +1548,8 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
         return {
           success: true,
           clickedRatio,
-          message: `Đã gõ prompt và click Submit thành công!`
+          pastedFrame,
+          message: `Đã gõ prompt và click Submit thành công!${pastedFrame ? ' (có start frame)' : ''}`
         };
       }
     });

@@ -51,6 +51,12 @@
       "run_at": "document_start"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["test_start_frame.jpg"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "externally_connectable": {
     "matches": [
       "http://localhost/*",

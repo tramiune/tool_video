@@ -3105,6 +3105,56 @@ document.addEventListener('DOMContentLoaded', () => {
       createBtn.textContent = '🚀 Tạo Video';
     });
   }
+
+  // Test Start Frame button
+  const testFrameBtn = document.getElementById('btnTestStartFrame');
+  if (testFrameBtn) {
+    testFrameBtn.addEventListener('click', async () => {
+      if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video');
+      if (!videoTab) { alert('Không có tab Video! Quét tab trước.'); return; }
+
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) { logEl.style.display = 'block'; logEl.textContent = '⏳ Đang đọc ảnh start frame...\n'; }
+      testFrameBtn.disabled = true;
+      testFrameBtn.textContent = '⏳ Đang xử lý...';
+
+      try {
+        // Đọc ảnh từ extension folder → data URL
+        const imgUrl = chrome.runtime.getURL('test_start_frame.jpg');
+        const resp = await fetch(imgUrl);
+        const blob = await resp.blob();
+        const dataUrl = await new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(blob);
+        });
+
+        if (logEl) logEl.textContent += `✅ Đã đọc ảnh (${(blob.size / 1024).toFixed(0)} KB). Gửi tới Tab ${videoTab.tabId}...\n`;
+
+        const ts = Date.now().toString().slice(-4);
+        const prompt = `${ts}. cho cô gái này nhảy điệu nhảy sôi động cháy bỏng`;
+
+        const res = await callExt('CREATE_VIDEO_MULTI_TAB', {
+          prompt,
+          tabId: videoTab.tabId,
+          aspectRatio: '9:16',
+          startImageDataUrl: dataUrl
+        });
+
+        if (res?.success) {
+          if (logEl) logEl.textContent += `✅ ${res.message}\n`;
+        } else {
+          if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ Exception: ${err.message}\n`;
+      }
+
+      testFrameBtn.disabled = false;
+      testFrameBtn.textContent = '🧪 Test: Video Start Frame (Cô gái nhảy)';
+    });
+  }
 });
 
 })();
