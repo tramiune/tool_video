@@ -3078,17 +3078,19 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
       if (checkRes?.hasPercent) {
         log(`🔄 Đang render... (thấy "${checkRes.percentText}" trên màn hình)`);
       } else {
-        // Hết % → tải thôi!
-        log(`✅ Không còn % trên màn hình. Bắt đầu tải...`);
+        // Hết % → Chờ 5s rồi kích hoạt tải
+        log(`✅ Không còn % trên màn hình. Chờ 5s rồi kích hoạt tải...`);
+        await new Promise(r => setTimeout(r, 5000));
 
-        const dlRes = await callExt('DOWNLOAD_MULTI_TAB', { tabId, query, prompt });
+        log(`🖱️ Đang chuột phải vào card và bấm Tải xuống...`);
+        const dlRes = await callExt('RIGHT_CLICK_AND_DOWNLOAD', { tabId });
 
         if (dlRes?.success) {
-          log(`🎉 TẢI THÀNH CÔNG!`);
-          return { success: true };
+          log(`🎉 THÀNH CÔNG! ${dlRes.message || 'Đã có file tải về máy.'}`);
+          return { success: true, filename: dlRes.filename };
         } else {
-          // Video có thể vừa hết % nhưng Flow cần thêm 10-20s để tạo file mp4
-          log(`⏳ Video đang hoàn tất trên Flow (${dlRes?.error || 'chưa có nút tải'}), chờ lần quét tới...`);
+          log(`❌ ${dlRes?.error || 'Có lỗi xảy ra vui lòng thử lại'}`);
+          return { success: false, error: 'Có lỗi xảy ra vui lòng thử lại' };
         }
       }
     } catch (err) {

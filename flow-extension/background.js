@@ -1491,9 +1491,14 @@ async function rightClickAndDownload(tabId) {
     });
   } catch (_) {}
 
-  // 2. Chờ menu chuột phải xuất hiện → Tìm mục "Tải xuống" → Click
   let clicked = false;
   let clickedText = '';
+  let dlCreated = null;
+  const onCreated = (item) => { dlCreated = item; };
+  if (chrome.downloads && chrome.downloads.onCreated) {
+    chrome.downloads.onCreated.addListener(onCreated);
+  }
+  const clickStartTime = Date.now();
 
   for (let attempt = 1; attempt <= 12; attempt++) {
     await new Promise(r => setTimeout(r, attempt === 1 ? 400 : 250));
@@ -1553,10 +1558,52 @@ async function rightClickAndDownload(tabId) {
   try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
 
   if (!clicked) {
-    return { success: false, error: `Không tìm thấy mục "Tải xuống" trong menu chuột phải sau khi click tại (${res0.cx}, ${res0.cy})` };
+    if (chrome.downloads && chrome.downloads.onCreated) chrome.downloads.onCreated.removeListener(onCreated);
+    return { success: false, error: `Có lỗi xảy ra vui lòng thử lại` };
   }
 
-  return { success: true, message: `Đã chuột phải tại (${res0.cx}, ${res0.cy}) và bấm "${clickedText}"!` };
+  // Chờ 5s xem có file tải về không
+  let downloadedFile = null;
+  for (let w = 0; w < 10; w++) {
+    await new Promise(r => setTimeout(r, 500));
+    if (dlCreated) {
+      downloadedFile = dlCreated;
+      break;
+    }
+    try {
+      const recent = await new Promise(res => {
+        chrome.downloads.search({ limit: 3, orderBy: ['-startTime'] }, res);
+      });
+      if (recent && recent.length > 0) {
+        const hit = recent.find(item => {
+          const st = new Date(item.startTime).getTime();
+          return st >= (clickStartTime - 1000);
+        });
+        if (hit) {
+          downloadedFile = hit;
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (chrome.downloads && chrome.downloads.onCreated) {
+    chrome.downloads.onCreated.removeListener(onCreated);
+  }
+
+  if (downloadedFile) {
+    const fname = downloadedFile.filename ? downloadedFile.filename.split(/[\/\\]/).pop() : 'file';
+    return {
+      success: true,
+      filename: fname,
+      message: `Thành công! Đã có file tải về: "${fname}"`
+    };
+  } else {
+    return {
+      success: false,
+      error: 'Có lỗi xảy ra vui lòng thử lại'
+    };
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
