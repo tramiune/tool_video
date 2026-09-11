@@ -290,6 +290,7 @@ const HANDLERS = {
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
   CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl, req.endImageDataUrl),
   DOWNLOAD_MULTI_TAB: req => downloadMultiTab(req.tabId, req.query, req.prompt),
+  CHECK_PERCENT_ON_SCREEN: req => checkPercentOnScreen(req.tabId),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
@@ -1273,6 +1274,39 @@ async function createVideoAPI(prompt, projectId, model, aspectRatio, startImage,
 // ══════════════════════════════════════
 // Fallback: UI automation
 // ══════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+// checkPercentOnScreen — Quét xem còn XX% trên màn hình không
+// ══════════════════════════════════════════════════════════════════
+async function checkPercentOnScreen(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "ISOLATED",
+      func: () => {
+        // Tìm tất cả text element hiển thị có chứa XX%
+        const allText = Array.from(document.querySelectorAll('span, div, p, b, strong')).filter(el => {
+          // Bỏ qua ô nhập prompt, form, header
+          if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container'], nav, header")) return false;
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return false;
+          const t = (el.innerText || el.textContent || '').trim();
+          // Match: "45%", "100%", "12 %" nhưng KHÔNG match "100% free", "tín dụng"
+          return /\b\d{1,3}\s*%/.test(t) && t.length < 20;
+        });
+
+        if (allText.length > 0) {
+          const texts = allText.map(el => (el.innerText || el.textContent || '').trim());
+          return { hasPercent: true, percentText: texts[0] };
+        }
+        return { hasPercent: false };
+      }
+    });
+    return results?.[0]?.result || { hasPercent: false };
+  } catch (err) {
+    return { hasPercent: false, error: err.message };
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // downloadMultiTab — Tải video GỌN: Tìm card → Right-click → Click "Tải xuống"
 // ══════════════════════════════════════════════════════════════════

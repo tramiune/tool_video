@@ -3035,7 +3035,8 @@ window.switchTab = function(tabName) {
 };
 
 // ──────────────────────────────────────────────────────────
-// monitorAndDownloadMultiTab: Sau submit, chờ 10s rồi quét mỗi 10s
+// monitorAndDownloadMultiTab: Sau submit, chờ 10s
+// Quét mỗi 10s: còn % → đang render. Hết % → tải. Có video về = OK.
 // ──────────────────────────────────────────────────────────
 async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, logEl) {
   const log = (msg) => {
@@ -3045,56 +3046,34 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
   };
 
   const query = timestamp + '.';
-  const maxAttempts = 24; // 24 x 10s = 4 phút
-  const pollInterval = 10000; // 10 giây
+  const maxAttempts = 36; // 36 x 10s = 6 phút
+  const pollInterval = 10000;
 
-  log(`⏳ Chờ 10s trước khi bắt đầu quét...`);
+  log(`⏳ Chờ 10s cho Flow bắt đầu render...`);
   await new Promise(r => setTimeout(r, 10000));
 
   for (let i = 1; i <= maxAttempts; i++) {
     log(`🔍 Quét lần ${i}/${maxAttempts}...`);
 
     try {
-      const status = await callExt('CHECK_CARD_STATUS', {
-        projectId,
-        query,
-        prompt,
-        mediaId: null,
-        workflowId: null,
-        mediaType: 'video'
-      });
-
-      if (status?.status === 'READY') {
-        log(`✅ Video đã xong! Bắt đầu tải...`);
-
-        try {
-          const dlRes = await callExt('DOWNLOAD_MULTI_TAB', {
-            tabId,
-            query,
-            prompt
-          });
-
-          if (dlRes?.success) {
-            log(`🎉 TẢI THÀNH CÔNG! File: ${dlRes.filePath || 'OK'}`);
-            return { success: true, filePath: dlRes.filePath };
-          } else {
-            log(`❌ Tải thất bại: ${dlRes?.error || 'Unknown'}`);
-            return { success: false, error: dlRes?.error };
-          }
-        } catch (dlErr) {
-          log(`❌ Lỗi tải: ${dlErr.message}`);
-          return { success: false, error: dlErr.message };
-        }
-      } else if (status?.status === 'FAILED') {
-        log(`❌ Video thất bại (vi phạm policy hoặc lỗi): ${status.error || ''}`);
-        return { success: false, error: 'Video generation failed' };
-      } else if (status?.status === 'RENDERING') {
-        const pct = status.progress || '??';
-        log(`🔄 Đang render... ${pct}%`);
-      } else if (status?.status === 'NOT_FOUND') {
-        log(`⚠️ Chưa tìm thấy card "${query}" trên màn hình. Tiếp tục chờ...`);
+      // Check: còn % trên màn hình không?
+      const checkRes = await callExt('CHECK_PERCENT_ON_SCREEN', { tabId });
+      
+      if (checkRes?.hasPercent) {
+        log(`🔄 Đang render... (thấy "${checkRes.percentText}" trên màn hình)`);
       } else {
-        log(`⏳ Trạng thái: ${status?.status || 'unknown'}`);
+        // Hết % → tải thôi!
+        log(`✅ Không còn % trên màn hình. Bắt đầu tải...`);
+
+        const dlRes = await callExt('DOWNLOAD_MULTI_TAB', { tabId, query, prompt });
+
+        if (dlRes?.success) {
+          log(`🎉 TẢI THÀNH CÔNG!`);
+          return { success: true };
+        } else {
+          log(`❌ Tải thất bại: ${dlRes?.error || 'Không có video'}`);
+          return { success: false, error: dlRes?.error || 'Download failed' };
+        }
       }
     } catch (err) {
       log(`⚠️ Lỗi quét: ${err.message}`);
@@ -3105,8 +3084,8 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
     }
   }
 
-  log(`❌ Timeout 4 phút! Video chưa xong.`);
-  return { success: false, error: 'Timeout after 4 minutes' };
+  log(`❌ Timeout 6 phút! Video chưa xong.`);
+  return { success: false, error: 'Timeout after 6 minutes' };
 }
 
 // Bind refresh button
