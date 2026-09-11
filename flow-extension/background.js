@@ -2466,7 +2466,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return true;
         };
 
-        // Helper paste ảnh vào editor
+        // Helper paste ảnh vào editor (createImageMultiTab)
         const pasteImage = async (editor, dataUrl, name) => {
           const resp = await fetch(dataUrl);
           const blob = await resp.blob();
@@ -2475,6 +2475,12 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           dt.items.add(file);
           const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
           editor.dispatchEvent(evt);
+          try { document.dispatchEvent(evt); } catch (_) {}
+          try { window.dispatchEvent(evt); } catch (_) {}
+          try {
+            const dropEvt = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
+            editor.dispatchEvent(dropEvt);
+          } catch (_) {}
         };
 
         // ── STEP 1: Tìm Slate Editor & Submit Button ──
@@ -2722,77 +2728,43 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           await sleep(500);
         }
 
-        // ── STEP 3: Gõ prompt ──
+        // ── STEP 3: Gõ prompt (chuẩn TEST_UI_STEP Step 1 đã kiểm chứng) ──
         editor.focus();
         await sleep(200);
 
-        const setCursorForPrompt = () => {
-          const sel = window.getSelection();
-          if (!sel) return false;
-
-          // 1. Tìm lá text có thể soạn thảo (không thuộc khối void / contenteditable=false)
-          const editableLeaves = Array.from(editor.querySelectorAll("span[data-slate-string='true'], span[data-slate-leaf='true'], span[data-slate-zero-width], p, [data-slate-node='element']"))
-            .filter(el => !el.closest("[data-slate-void='true']") && !el.hasAttribute("data-slate-void") && el.getAttribute("contenteditable") !== "false");
-
-          if (editableLeaves.length > 0) {
-            const target = editableLeaves[editableLeaves.length - 1];
-            try {
-              const range = document.createRange();
-              range.selectNodeContents(target);
-              range.collapse(false);
-              sel.removeAllRanges();
-              sel.addRange(range);
-              return true;
-            } catch (_) {}
-          }
-
-          // 2. Đặt con trỏ sau node con cuối cùng trong editor (tránh chọn trúng khối void contenteditable=false)
-          if (editor.childNodes.length > 0) {
-            const lastChild = editor.childNodes[editor.childNodes.length - 1];
-            try {
-              const range = document.createRange();
-              range.setStartAfter(lastChild);
-              range.collapse(true);
-              sel.removeAllRanges();
-              sel.addRange(range);
-              return true;
-            } catch (_) {}
-          }
-
-          // 3. Dự phòng: đặt con trỏ ở cuối editor
-          try {
-            const range = document.createRange();
-            range.selectNodeContents(editor);
-            range.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            return true;
-          } catch (_) {}
-          return false;
-        };
-
-        setCursorForPrompt();
-
+        // Cách A: selectAll + insertText (y hệt TEST_UI_STEP Step 1)
         try { editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true })); } catch (_) {}
+        document.execCommand('selectAll', false, null);
         document.execCommand('insertText', false, promptText);
         editor.dispatchEvent(new Event('input', { bubbles: true }));
         await sleep(300);
 
         let edText = (editor.innerText || editor.textContent || '').trim();
 
-        // Nếu chưa gõ được, click nhẹ vào vùng soạn thảo bên phải ảnh rồi thử lại
+        // Cách B: Nếu chưa nhận, click trực tiếp vào editor rồi thử lại
         if (!edText.includes(promptText.slice(0, 10))) {
-          const edRect = editor.getBoundingClientRect();
-          const clickX = Math.round(edRect.right - 20);
-          const clickY = Math.round(edRect.bottom - 15);
-          const clickTarget = document.elementFromPoint(clickX, clickY) || editor;
-          clickTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: clickX, clientY: clickY }));
-          clickTarget.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, clientX: clickX, clientY: clickY }));
-          clickTarget.click();
+          editor.click();
           editor.focus();
-          await sleep(150);
+          await sleep(200);
+          try { editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true })); } catch (_) {}
+          document.execCommand('selectAll', false, null);
+          document.execCommand('insertText', false, promptText);
+          editor.dispatchEvent(new Event('input', { bubbles: true }));
+          await sleep(300);
+          edText = (editor.innerText || editor.textContent || '').trim();
+        }
 
-          setCursorForPrompt();
+        // Cách C: Nếu vẫn chưa nhận, đưa con trỏ vào thẻ p
+        if (!edText.includes(promptText.slice(0, 10))) {
+          const pEl = editor.querySelector("p") || editor;
+          const sel = window.getSelection();
+          if (sel) {
+            const range = document.createRange();
+            range.selectNodeContents(pEl);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
           try { editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true })); } catch (_) {}
           document.execCommand('insertText', false, promptText);
           editor.dispatchEvent(new Event('input', { bubbles: true }));
@@ -2801,8 +2773,8 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
         }
 
         if (!edText.includes(promptText.slice(0, 10))) {
-          const childTags = Array.from(editor.childNodes).map(c => c.nodeName + (c.getAttribute ? ('[void=' + c.getAttribute('data-slate-void') + ']') : '')).join(', ');
-          return { success: false, error: `Gõ prompt thất bại (nodes: [${childTags}], text: "${edText.slice(0, 30)}")` };
+          const childTags = Array.from(editor.childNodes).map(c => c.nodeName).join(', ');
+          return { success: false, needCdp: true, error: `Gõ prompt thất bại (nodes: [${childTags}], text: "${edText.slice(0, 30)}")` };
         }
 
         // ── STEP 4: Mở Settings Chip → Chọn Ratio (16:9 / 9:16 / 1:1) → Đóng popover ──
