@@ -2880,4 +2880,164 @@
     }
   });
 
+// ══════════════════════════════════════════════════════════════
+// MULTI-TAB MANAGER
+// ══════════════════════════════════════════════════════════════
+const _multiTabRegistry = []; // { tabId, role: 'video'|'image', title, url, projectId, index }
+
+async function loadMultiTabRoles() {
+  try {
+    const data = await chrome.storage.local.get('multiTabRoles');
+    return data.multiTabRoles || {};
+  } catch { return {}; }
+}
+
+async function saveMultiTabRoles(roles) {
+  try { await chrome.storage.local.set({ multiTabRoles: roles }); } catch {}
+}
+
+async function refreshMultiTabList() {
+  const container = document.getElementById('multiTabList');
+  if (!container) return;
+  container.innerHTML = '<div style="color:var(--text2); font-size:11px; text-align:center; padding:10px;">⏳ Đang quét...</div>';
+
+  try {
+    const tabs = await chrome.tabs.query({ url: ["*://flow.google.com/*", "*://labs.google/*"] });
+    if (tabs.length === 0) {
+      container.innerHTML = '<div style="color:var(--accent); font-size:11px; text-align:center; padding:10px; background:var(--surface2); border-radius:6px;">❌ Chưa mở tab Google Flow nào!</div>';
+      updateMultiTabSummary();
+      return;
+    }
+
+    // Sort by window position then tab index
+    for (const tab of tabs) {
+      try {
+        const win = await chrome.windows.get(tab.windowId);
+        tab._winLeft = win.left || 0;
+      } catch { tab._winLeft = 0; }
+    }
+    tabs.sort((a, b) => {
+      if (a.windowId !== b.windowId) return a._winLeft - b._winLeft;
+      return a.index - b.index;
+    });
+
+    // Load saved roles
+    const savedRoles = await loadMultiTabRoles();
+
+    // Build registry
+    _multiTabRegistry.length = 0;
+    tabs.forEach((tab, i) => {
+      let projectId = '';
+      try {
+        const u = new URL(tab.url);
+        const parts = u.pathname.split('/');
+        if (parts.length > 2 && parts[1] === 'project') projectId = parts[2];
+      } catch {}
+
+      // Default: last tab = image, rest = video
+      const defaultRole = (i === tabs.length - 1 && tabs.length > 1) ? 'image' : 'video';
+      const role = savedRoles[tab.id] || defaultRole;
+
+      _multiTabRegistry.push({
+        tabId: tab.id,
+        role,
+        title: tab.title || '',
+        url: tab.url || '',
+        projectId,
+        index: i,
+        windowId: tab.windowId
+      });
+    });
+
+    // Render UI
+    let html = '';
+    _multiTabRegistry.forEach((entry, i) => {
+      const isVideo = entry.role === 'video';
+      const roleLabel = isVideo ? '🎥 Video' : '🖼️ Ảnh';
+      const roleColor = isVideo ? '#00e5ff' : '#e91e63';
+      const roleBg = isVideo ? 'rgba(0, 229, 255, 0.1)' : 'rgba(233, 30, 99, 0.1)';
+      const otherRole = isVideo ? 'image' : 'video';
+      const otherLabel = isVideo ? '🖼️ Ảnh' : '🎥 Video';
+
+      const projShort = entry.projectId ? entry.projectId.slice(0, 8) + '...' : 'N/A';
+      const isActive = tab => tab.active;
+
+      html += `
+        <div style="background:var(--surface2); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-weight:bold; font-size:12px; color:white; display:flex; align-items:center; gap:6px;">
+              Tab ${i + 1}
+              <span style="font-size:9px; color:var(--text2); background:var(--bg); padding:1px 5px; border-radius:4px;">ID: ${entry.tabId}</span>
+            </div>
+            <button class="btn btn-sm btnToggleRole" data-tab-id="${entry.tabId}" data-current-role="${entry.role}"
+              style="font-size:10px; font-weight:bold; color:${roleColor}; background:${roleBg}; border:1px solid ${roleColor}; padding:2px 8px; border-radius:12px; cursor:pointer; transition: all 0.2s;">
+              ${roleLabel}
+            </button>
+          </div>
+          <div style="font-size:10px; color:var(--text2); display:flex; gap:6px; flex-wrap:wrap;">
+            <span style="background:var(--bg); padding:2px 6px; border-radius:4px; color:var(--accent2);">Project: ${projShort}</span>
+          </div>
+          <div style="font-size:10px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${entry.title}">
+            📑 ${entry.title}
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+    updateMultiTabSummary();
+
+    // Bind toggle role buttons
+    container.querySelectorAll('.btnToggleRole').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tabId = parseInt(btn.dataset.tabId);
+        const currentRole = btn.dataset.currentRole;
+        const newRole = currentRole === 'video' ? 'image' : 'video';
+
+        // Update registry
+        const entry = _multiTabRegistry.find(e => e.tabId === tabId);
+        if (entry) entry.role = newRole;
+
+        // Save to storage
+        const roles = await loadMultiTabRoles();
+        roles[tabId] = newRole;
+        await saveMultiTabRoles(roles);
+
+        // Re-render
+        refreshMultiTabList();
+      });
+    });
+
+  } catch (err) {
+    container.innerHTML = `<div style="color:var(--red); font-size:11px;">Lỗi: ${err.message}</div>`;
+  }
+}
+
+function updateMultiTabSummary() {
+  const videoCount = _multiTabRegistry.filter(t => t.role === 'video').length;
+  const imageCount = _multiTabRegistry.filter(t => t.role === 'image').length;
+  const totalCount = _multiTabRegistry.length;
+  const elV = document.getElementById('multiTabVideoCount');
+  const elI = document.getElementById('multiTabImageCount');
+  const elT = document.getElementById('multiTabTotalCount');
+  if (elV) elV.textContent = videoCount;
+  if (elI) elI.textContent = imageCount;
+  if (elT) elT.textContent = totalCount;
+}
+
+// Auto-refresh when switching to multi-tab panel
+const origSwitchTab = window.switchTab;
+window.switchTab = function(tabName) {
+  origSwitchTab(tabName);
+  if (tabName === 'multi-tab') {
+    refreshMultiTabList();
+  }
+};
+
+// Bind refresh button
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('btnRefreshMultiTabs');
+  if (btn) btn.addEventListener('click', refreshMultiTabList);
+});
+
 })();

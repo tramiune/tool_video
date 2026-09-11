@@ -129,6 +129,7 @@
   <div class="tab" data-tab="click-ui" style="background: rgba(0, 214, 143, 0.12); color: var(--green); border: 1px solid rgba(0, 214, 143, 0.35);">🖱️ Auto Click UI</div>
   <div class="tab" data-tab="click-ui-image" style="background: rgba(233, 30, 99, 0.12); color: #e91e63; border: 1px solid rgba(233, 30, 99, 0.35);">🖼️ Auto Click Ảnh</div>
   <div class="tab" data-tab="test-steps" style="background: rgba(255, 153, 0, 0.12); color: #FF9900; border: 1px solid rgba(255, 153, 0, 0.35);">🛠️ Test Từng Bước</div>
+  <div class="tab" data-tab="multi-tab" style="background: linear-gradient(135deg, #e91e63, #ff9800); color:white; border-color:transparent;">🌐 Đa Tab</div>
   <div class="tab" data-tab="library" >📚 Thư Viện</div>
 </div>
 
@@ -502,6 +503,32 @@ Chiếc xe thể thao màu đỏ chạy ven biển hoàng hôn"></textarea>
   </div>
 
   <!-- TAB: Thư Viện -->
+  <!-- TAB: Đa Tab (Multi-Tab Manager) -->
+  <div class="panel" id="panel-multi-tab">
+    <div class="card">
+      <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>🌐 Trình Quản Lý Đa Tab</span>
+        <button class="btn btn-sm" id="btnRefreshMultiTabs" style="background:var(--surface2);">🔄 Quét Tab</button>
+      </div>
+      <p style="font-size:11px; color:var(--text2); margin-bottom:12px; line-height:1.5;">
+        Dưới đây là các tab Google Flow đang mở. Bấm vào vai trò để đổi giữa <b>🎥 Video</b> và <b>🖼️ Ảnh</b>.
+      </p>
+
+      <div id="multiTabList" style="display:flex; flex-direction:column; gap:8px;">
+        <div style="color:var(--text2); font-size:11px; text-align:center; padding:10px;">Bấm "🔄 Quét Tab" để bắt đầu...</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">📊 Tổng hợp</div>
+      <div id="multiTabSummary" style="font-size:12px; color:var(--text2); display:flex; gap:16px; flex-wrap:wrap;">
+        <span>🎥 Video: <b id="multiTabVideoCount">0</b> tab</span>
+        <span>🖼️ Ảnh: <b id="multiTabImageCount">0</b> tab</span>
+        <span>📋 Tổng: <b id="multiTabTotalCount">0</b> tab</span>
+      </div>
+    </div>
+  </div>
+
   <div class="panel" id="panel-library">
     <div class="card">
       <div class="card-title">📂 Project Videos & Images</div>
