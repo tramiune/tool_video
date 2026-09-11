@@ -289,6 +289,7 @@ const HANDLERS = {
   CREATE_VIDEO:       req => createVideoAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.startImage, req.endImage),
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
   CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl, req.endImageDataUrl),
+  CREATE_IMAGE_MULTI_TAB: req => createImageMultiTab(req.prompt, req.tabId, req.aspectRatio, req.referenceImages),
   DOWNLOAD_MULTI_TAB: req => downloadMultiTab(req.tabId, req.query, req.prompt),
   CHECK_PERCENT_ON_SCREEN: req => checkPercentOnScreen(req.tabId),
   DRAW_ABOVE_STT: req => drawAboveSTT(req.tabId),
@@ -2351,6 +2352,531 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
     return result;
   } catch (err) {
     logToBridge(`[MultiTab] ❌ Tab ${tab.id}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// createImageMultiTab — Phiên bản Tạo Ảnh cho Đa Tab
+// Luồng: Ctrl+V ảnh tham chiếu (nếu có) → Settings (chuyển tab Ảnh, chọn ratio) → Gõ prompt → Chờ upload ảnh → Submit
+// ══════════════════════════════════════════════════════════════════
+async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenceImages = []) {
+  let tab = null;
+  try { tab = await chrome.tabs.get(tabId); } catch(e) {}
+  if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
+
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    await new Promise(r => setTimeout(r, 500));
+  } catch (_) {}
+
+  const imgList = Array.isArray(referenceImages) 
+    ? referenceImages.filter(Boolean) 
+    : (referenceImages ? [referenceImages] : []);
+
+  logToBridge(`[MultiTab Image] Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, refImages: ${imgList.length})`);
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "ISOLATED",
+      args: [prompt, aspectRatio, imgList],
+      func: async (promptText, targetRatio, imagesToPaste) => {
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        const queryDeep = (selector) => {
+          const matches = [];
+          const walk = (node) => {
+            if (node.shadowRoot) walk(node.shadowRoot);
+            for (const child of node.children) {
+              if (child.matches && child.matches(selector)) matches.push(child);
+              walk(child);
+            }
+          };
+          walk(document.body);
+          return matches;
+        };
+
+        const queryScopeDeep = (scope, selector) => {
+          if (!scope) return [];
+          const matches = [];
+          const walk = (node) => {
+            if (node.shadowRoot) walk(node.shadowRoot);
+            for (const child of node.children) {
+              if (child.matches && child.matches(selector)) matches.push(child);
+              walk(child);
+            }
+          };
+          walk(scope);
+          return matches;
+        };
+
+        const findDeepEditor = () => {
+          const walk = (node) => {
+            if (node.shadowRoot) {
+              const res = walk(node.shadowRoot);
+              if (res) return res;
+            }
+            for (const child of node.children) {
+              if (child.tagName === 'TEXTAREA' || child.getAttribute('contenteditable') === 'true' || child.getAttribute('data-slate-editor') === 'true' || child.getAttribute('role') === 'textbox') {
+                return child;
+              }
+              const res = walk(child);
+              if (res) return res;
+            }
+            return null;
+          };
+          return walk(document.body);
+        };
+
+        const isElemVisible = (el) => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && window.getComputedStyle(el).display !== "none" && window.getComputedStyle(el).visibility !== "hidden";
+        };
+
+        const triggerClick = (el) => {
+          if (!el) return false;
+          const target = el.closest("button, [role='button'], [role='tab'], [role='radio'], [role='combobox'], [role='menuitem']") || el;
+          target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+          target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+          target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+          target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+          if (typeof target.click === "function") {
+            target.click();
+          } else {
+            target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+          }
+          return true;
+        };
+
+        // Helper paste ảnh vào editor
+        const pasteImage = async (editor, dataUrl, name) => {
+          const resp = await fetch(dataUrl);
+          const blob = await resp.blob();
+          const file = new File([blob], name + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+          editor.dispatchEvent(evt);
+        };
+
+        // ── STEP 1: Tìm Slate Editor & Submit Button ──
+        const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
+                    || document.querySelector("div[data-slate-editor='true']")
+                    || document.querySelector("div[contenteditable='true']")
+                    || document.querySelector("textarea[placeholder*='prompt' i]")
+                    || findDeepEditor();
+        if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt" };
+
+        const composerButtons = queryDeep("button, [role='button']");
+
+        let submitBtn = composerButtons.find(b => {
+          if (!isElemVisible(b)) return false;
+          const inner = (b.innerHTML || "").toLowerCase();
+          const t = (b.textContent || "").trim().toLowerCase();
+          const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+          if (b.getAttribute("type") === "submit") return true;
+          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                 Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
+        });
+
+        if (!submitBtn && editor) {
+          let parent = editor;
+          for (let i = 0; i < 8 && parent; i++) {
+            parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+            if (!parent) break;
+            const buttonsHere = queryScopeDeep(parent, "button, [role='button']").filter(b => isElemVisible(b));
+            if (buttonsHere.length > 0) {
+              const sorted = [...buttonsHere].sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+              const candidate = sorted.find(b => {
+                const t = (b.textContent || "").trim().toLowerCase();
+                const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add") || aria.includes("tác nhân") || aria.includes("agent")) return false;
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.match(/\b(720p|1080p|4k|giây|fps|16:9|9:16)\b/i) || t.match(/^\d+s/i)) return false;
+                return true;
+              });
+              if (candidate) {
+                submitBtn = candidate;
+                break;
+              }
+            }
+          }
+        }
+
+        // Tìm Settings Chip
+        let settingsChip = null;
+        const isSettingChipText = (t) => {
+          if (!t) return false;
+          return t.includes("video") || t.includes("ảnh") || t.includes("image") || 
+                 t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.includes("veo") ||
+                 t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i);
+        };
+
+        if (submitBtn) {
+           const sRect = submitBtn.getBoundingClientRect();
+           let parent = submitBtn;
+           for (let i = 0; i < 8 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn || !isElemVisible(b)) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
+             });
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+           if (!settingsChip) {
+              parent = submitBtn;
+              for (let i = 0; i < 8 && parent; i++) {
+                 parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+                 if (!parent) break;
+                 const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+                 const leftOfSubmit = buttonsHere.filter(b => {
+                   if (b === submitBtn || !isElemVisible(b)) return false;
+                   return b.getBoundingClientRect().left < sRect.left;
+                 });
+                 leftOfSubmit.sort((a, b) => Math.abs(sRect.left - a.getBoundingClientRect().right) - Math.abs(sRect.left - b.getBoundingClientRect().right));
+                 const candidate = leftOfSubmit.find(b => {
+                   const t = (b.textContent || "").trim().toLowerCase();
+                   if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                   return true;
+                 });
+                 if (candidate) {
+                   settingsChip = candidate;
+                   break;
+                 }
+              }
+           }
+        }
+
+        if (!settingsChip && editor) {
+           let parent = editor;
+           for (let i = 0; i < 8 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn || !isElemVisible(b)) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
+             });
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+        }
+
+        if (!settingsChip) {
+          const candidates = composerButtons.filter(b => {
+             if (b === submitBtn || !isElemVisible(b)) return false;
+             if (b.closest("[data-media-id], [data-workflow-id], [class*='card'], [role='listitem']")) return false;
+             const r = b.getBoundingClientRect();
+             if (r.top < 120) return false;
+             const t = (b.textContent || "").trim().toLowerCase();
+             if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+             return isSettingChipText(t);
+          });
+          if (candidates.length > 0) {
+            candidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+            settingsChip = candidates[0];
+          }
+        }
+
+        // Helper tìm tab Hình ảnh trong Popover
+        const findImageTabElement = () => {
+          const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            if (r.width < 30 || r.height < 15) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+            const t = (el.textContent || "").trim();
+            const aria = (el.getAttribute("aria-label") || "").trim();
+            const id = (el.getAttribute("id") || "").toLowerCase();
+
+            if (t.includes("Khung hình") || aria.includes("Khung hình")) return false;
+
+            return t === "Hình ảnh" || aria === "Hình ảnh" || 
+                   t.toLowerCase() === "image" || aria.toLowerCase() === "image" ||
+                   id.endsWith("-trigger-image") || id.endsWith("-trigger-IMAGE") ||
+                   (t.includes("Hình ảnh") && t.length <= 15) ||
+                   (aria.includes("Hình ảnh") && aria.length <= 15);
+          });
+          if (candidates.length === 0) return null;
+          let best = candidates.find(el => {
+            const p = el.parentElement;
+            if (p && (p.textContent.includes("Video") || p.getAttribute("role") === "tablist")) return true;
+            return false;
+          });
+          if (!best) best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+          return best.closest("[role='tab'], button, [role='button']") || best;
+        };
+
+        // Helper tìm tab Video trong Popover
+        const findVideoTabElement = () => {
+          const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            if (r.width < 30 || r.height < 15) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+            const t = (el.textContent || "").trim();
+            const aria = (el.getAttribute("aria-label") || "").trim();
+            const id = (el.getAttribute("id") || "").toLowerCase();
+
+            if (t.includes("Khung hình") || aria.includes("Khung hình") || t.includes("Hình ảnh") || aria.includes("Hình ảnh")) return false;
+            if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1080p") || t.includes("fps")) return false;
+
+            return t === "Video" || aria === "Video" || 
+                   t.toLowerCase() === "video" || aria.toLowerCase() === "video" ||
+                   id.endsWith("-trigger-video") || id.endsWith("-trigger-VIDEO") || 
+                   (t.includes("Video") && t.length <= 10) ||
+                   (aria.includes("Video") && aria.length <= 10);
+          });
+          if (candidates.length === 0) return null;
+          let best = candidates.find(el => {
+            const p = el.parentElement;
+            if (p && (p.textContent.includes("Hình ảnh") || p.getAttribute("role") === "tablist")) return true;
+            return false;
+          });
+          if (!best) best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+          return best.closest("[role='tab'], button, [role='button']") || best;
+        };
+
+        const isPopoverOpen = () => {
+          if (findImageTabElement() || findVideoTabElement()) return true;
+          const ratioBtn = queryDeep("button, [role='tab'], [role='radio']").find(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            const t = (el.textContent || "").trim();
+            return t === "16:9" || t === "9:16" || t === "1:1";
+          });
+          return !!ratioBtn;
+        };
+
+        const ensurePopoverOpen = async () => {
+          if (isPopoverOpen()) return true;
+          if (!settingsChip) return false;
+          const targetChip = settingsChip.closest("button, [role='button']") || settingsChip;
+          targetChip.click();
+          await sleep(600);
+          if (!isPopoverOpen()) {
+            targetChip.click();
+            await sleep(600);
+          }
+          return isPopoverOpen();
+        };
+
+        // ── STEP 2: Ctrl+V paste ảnh tham chiếu (nếu có) ──
+        let pastedCount = 0;
+        editor.focus();
+        await sleep(300);
+
+        if (imagesToPaste && imagesToPaste.length > 0) {
+          for (let i = 0; i < imagesToPaste.length; i++) {
+            try {
+              await pasteImage(editor, imagesToPaste[i], `ref_img_${i + 1}`);
+              pastedCount++;
+              await sleep(1000); // Chờ giữa các ảnh
+            } catch (e) {
+              console.warn(`[MultiTab Image] Paste error on img ${i + 1}:`, e);
+            }
+          }
+          await sleep(500);
+        }
+
+        // ── STEP 3: Gõ prompt ──
+        editor.focus();
+        await sleep(200);
+        const sel = window.getSelection();
+        if (sel && editor.childNodes.length > 0) {
+          const range = document.createRange();
+          const lastNode = editor.childNodes[editor.childNodes.length - 1];
+          range.selectNodeContents(lastNode);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        try { editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true })); } catch (_) {}
+        document.execCommand('insertText', false, promptText);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(300);
+
+        const edText = (editor.innerText || editor.textContent || '').trim();
+        if (!edText.includes(promptText.slice(0, 10))) {
+          return { success: false, error: "Gõ prompt thất bại" };
+        }
+
+        // ── STEP 4: Mở Settings Chip → Chọn Tab "Hình ảnh" → Chọn Ratio → Đóng popover ──
+        let clickedRatio = false;
+        let clickedTab = false;
+        let clickedDetail = 'none';
+        let chipName = settingsChip ? (settingsChip.textContent || '').trim().slice(0, 30) : 'none';
+
+        const findRatioButton = (ratio) => {
+          const candidates = queryDeep("button, [role='tab'], [role='radio'], [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+            const t = (el.textContent || "").trim();
+            const aria = (el.getAttribute("aria-label") || "").trim();
+            const val = (el.getAttribute("value") || el.getAttribute("data-value") || "").trim();
+
+            if (t.includes("16:9") && t.includes("9:16")) return false;
+            if (t.length > 25) return false;
+
+            if (ratio === "16:9") {
+              return (t === "16:9" || t.includes("16:9") || aria.includes("16:9") || val.includes("16:9")) && !t.includes("9:16");
+            }
+            if (ratio === "9:16") {
+              return (t === "9:16" || t.includes("9:16") || aria.includes("9:16") || val.includes("9:16")) && !t.includes("16:9");
+            }
+            if (ratio === "1:1") {
+              return (t === "1:1" || t.includes("1:1") || aria.includes("1:1") || val.includes("1:1"));
+            }
+            if (ratio === "4:3") {
+              return (t === "4:3" || t.includes("4:3") || aria.includes("4:3") || val.includes("4:3")) && !t.includes("3:4");
+            }
+            if (ratio === "3:4") {
+              return (t === "3:4" || t.includes("3:4") || aria.includes("3:4") || val.includes("3:4")) && !t.includes("4:3");
+            }
+            return t.includes(ratio);
+          });
+
+          if (candidates.length === 0) return null;
+
+          candidates.sort((a, b) => {
+            const isBtnA = a.matches("button, [role='tab'], [role='radio'], [role='button']");
+            const isBtnB = b.matches("button, [role='tab'], [role='radio'], [role='button']");
+            if (isBtnA && !isBtnB) return -1;
+            if (!isBtnA && isBtnB) return 1;
+            return (a.textContent || "").trim().length - (b.textContent || "").trim().length;
+          });
+
+          const best = candidates[0];
+          return best.closest("button, [role='tab'], [role='radio'], [role='button']") || best;
+        };
+
+        const opened = await ensurePopoverOpen();
+        if (opened) {
+          await sleep(600);
+
+          // 1. Chuyển sang Tab "Hình ảnh" nếu chưa active
+          const imgTab = findImageTabElement();
+          if (imgTab) {
+            const isActive = imgTab.getAttribute("data-state") === "active" || 
+                             imgTab.getAttribute("aria-selected") === "true" ||
+                             imgTab.classList.contains("active") ||
+                             (imgTab.parentElement && imgTab.parentElement.getAttribute("data-state") === "active");
+            if (!isActive) {
+              triggerClick(imgTab);
+              clickedTab = true;
+              await sleep(500);
+            } else {
+              clickedTab = true;
+            }
+          }
+
+          // 2. Chọn Tỉ Lệ Khung Hình
+          if (targetRatio) {
+            const ratioBtn = findRatioButton(targetRatio);
+            if (ratioBtn) {
+              clickedDetail = `<${ratioBtn.tagName.toLowerCase()} role="${ratioBtn.getAttribute('role')||''}"> "${(ratioBtn.textContent||'').trim()}"`;
+              
+              triggerClick(ratioBtn);
+              await sleep(200);
+
+              try { ratioBtn.click(); } catch (_) {}
+              await sleep(200);
+
+              const innerSpan = ratioBtn.querySelector("span, div");
+              if (innerSpan) {
+                try { triggerClick(innerSpan); } catch (_) {}
+              }
+
+              clickedRatio = true;
+              await sleep(500);
+            }
+          }
+
+          // 3. Đóng popover bằng outside-click vào editor
+          try {
+            editor.click();
+            editor.focus();
+          } catch (_) {}
+          await sleep(300);
+
+          if (isPopoverOpen()) {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+            await sleep(300);
+          }
+        }
+
+        // ── STEP 5: Chờ upload ảnh (nếu có paste) ──
+        if (pastedCount > 0) {
+          const waitTime = pastedCount === 1 ? 10000 : 15000;
+          await sleep(waitTime);
+        }
+
+        // ── STEP 6: Click Submit ──
+        if (!submitBtn) {
+          submitBtn = composerButtons.find(b => {
+            if (!isElemVisible(b)) return false;
+            const inner = (b.innerHTML || "").toLowerCase();
+            const t = (b.textContent || "").trim().toLowerCase();
+            const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+            if (b.getAttribute("type") === "submit") return true;
+            if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+            return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                   Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
+          });
+        }
+        if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
+
+        submitBtn.removeAttribute("disabled");
+        submitBtn.setAttribute("aria-disabled", "false");
+        submitBtn.style.pointerEvents = "auto";
+        submitBtn.style.opacity = "1";
+        triggerClick(submitBtn);
+        await sleep(500);
+
+        return {
+          success: true,
+          clickedRatio,
+          clickedTab,
+          chipFound: !!settingsChip,
+          chipName,
+          pastedCount,
+          message: `Submit Tạo Ảnh OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN (' + clickedDetail + ')' : 'Chưa tìm thấy nút (chip: ' + chipName + ')'}]${pastedCount > 0 ? ` (${pastedCount} ảnh tham chiếu đã chờ upload)` : ''}`
+        };
+      }
+    });
+
+    const result = results?.[0]?.result;
+    if (!result) return { success: false, error: "Script trả về rỗng" };
+    if (result.success) logToBridge(`[MultiTab Image] ✅ Tab ${tab.id}: ${result.message}`);
+    else logToBridge(`[MultiTab Image] ❌ Tab ${tab.id}: ${result.error}`);
+    return result;
+  } catch (err) {
+    logToBridge(`[MultiTab Image] ❌ Tab ${tab.id}: ${err.message}`);
     return { success: false, error: err.message };
   }
 }

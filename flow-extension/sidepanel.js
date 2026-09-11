@@ -3106,6 +3106,59 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
   return { success: false, error: 'Timeout after 6 minutes' };
 }
 
+// ──────────────────────────────────────────────────────────
+// Theo dõi quá trình tạo Ảnh trên Tab Đa Tab & Auto Tải về
+// Quét mỗi 5s: còn %/loading → đang render. Hết % → chờ 3s rồi chuột phải tải về
+// ──────────────────────────────────────────────────────────
+async function monitorAndDownloadImageMultiTab(tabId, timestamp, prompt, projectId, logEl) {
+  const log = (msg) => {
+    const t = new Date().toLocaleTimeString();
+    if (logEl) logEl.textContent += `[${t}] ${msg}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const maxAttempts = 20; // 20 x 5s = 100s
+  const pollInterval = 5000;
+
+  log(`⏳ Chờ 6s cho Flow bắt đầu tạo ảnh...`);
+  await new Promise(r => setTimeout(r, 6000));
+
+  for (let i = 1; i <= maxAttempts; i++) {
+    log(`🔍 Quét ảnh lần ${i}/${maxAttempts}...`);
+
+    try {
+      const checkRes = await callExt('CHECK_PERCENT_ON_SCREEN', { tabId });
+      
+      if (checkRes?.hasPercent) {
+        log(`🔄 Đang tạo ảnh... (thấy "${checkRes.percentText}" trên màn hình)`);
+      } else {
+        log(`✅ Ảnh đã hoàn tất (không còn % loading). Chờ 3s rồi kích hoạt tải...`);
+        await new Promise(r => setTimeout(r, 3000));
+
+        log(`🖱️ Đang chuột phải vào card ảnh và bấm Tải xuống...`);
+        const dlRes = await callExt('RIGHT_CLICK_AND_DOWNLOAD', { tabId });
+
+        if (dlRes?.success) {
+          log(`🎉 THÀNH CÔNG! ${dlRes.message || 'Đã có file ảnh tải về máy.'}`);
+          return { success: true, filename: dlRes.filename };
+        } else {
+          log(`❌ ${dlRes?.error || 'Có lỗi xảy ra vui lòng thử lại'}`);
+          return { success: false, error: 'Có lỗi xảy ra vui lòng thử lại' };
+        }
+      }
+    } catch (err) {
+      log(`⚠️ Lỗi quét ảnh: ${err.message}`);
+    }
+
+    if (i < maxAttempts) {
+      await new Promise(r => setTimeout(r, pollInterval));
+    }
+  }
+
+  log(`❌ Timeout 100s! Ảnh chưa xong.`);
+  return { success: false, error: 'Timeout after 100 seconds' };
+}
+
 // Bind refresh button
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('btnRefreshMultiTabs');
@@ -3596,6 +3649,219 @@ document.addEventListener('DOMContentLoaded', () => {
       log(`🏁 TẤT CẢ 10 TASK ĐÃ ĐƯỢC XỬ LÝ XONG! (${completedCount}/${tasks.length})`);
       btnBatch10.disabled = false;
       btnBatch10.textContent = '⚡ Chạy Test 10 Task Đa Tab (Đủ loại: Text, Start, Start+End)';
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Test Tạo Ảnh Đa Tab (Prompt 9:16, 16:9, 1 Ref, Nhiều Ref)
+  // ──────────────────────────────────────────────────────────
+  const loadLocalImageAsDataUrl = async (filename) => {
+    const url = chrome.runtime.getURL(filename);
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const getImageTargetTab = async () => {
+    if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+    const imgTab = _multiTabRegistry.find(t => t.role === 'image') || _multiTabRegistry[0];
+    return imgTab;
+  };
+
+  // 1. Test Ảnh: Prompt 9:16 (Không ảnh)
+  const testImg916Btn = document.getElementById('btnTestImgPrompt916');
+  if (testImg916Btn) {
+    testImg916Btn.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabImgLog') || document.getElementById('multiTabCreateLog');
+      if (logEl) logEl.style.display = 'block';
+
+      const imgTab = await getImageTargetTab();
+      if (!imgTab) { alert('Không có tab Google Flow nào! Vui lòng mở hoặc quét tab.'); return; }
+
+      testImg916Btn.disabled = true;
+      testImg916Btn.textContent = '⏳ Đang tạo ảnh 9:16...';
+
+      const ts = Date.now().toString().slice(-4);
+      const prompt = `${ts}. chân dung nghệ thuật cô gái Á Đông mặc áo dài trắng truyền thống giữa vườn hoa sen mùa hạ, ánh sáng vàng chiều tà dịu dàng, chi tiết 8k cực nét`;
+
+      if (logEl) logEl.textContent += `\n[${new Date().toLocaleTimeString()}] 🖼️ Bắt đầu test tạo ảnh 9:16 (chỉ prompt) trên Tab ${imgTab.tabId}...\n`;
+
+      try {
+        const res = await callExt('CREATE_IMAGE_MULTI_TAB', {
+          prompt,
+          tabId: imgTab.tabId,
+          aspectRatio: '9:16',
+          referenceImages: []
+        });
+
+        if (res?.success) {
+          if (logEl) logEl.textContent += `✅ ${res.message}\n`;
+          testImg916Btn.textContent = '🔍 Đang theo dõi tạo ảnh...';
+          const dlResult = await monitorAndDownloadImageMultiTab(
+            imgTab.tabId, ts, prompt, imgTab.projectId, logEl
+          );
+          if (dlResult?.success) {
+            if (logEl) logEl.textContent += `🎉 HOÀN TẤT! File: ${dlResult.filename || 'OK'}\n`;
+          }
+        } else {
+          if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ Exception: ${err.message}\n`;
+      }
+
+      testImg916Btn.disabled = false;
+      testImg916Btn.textContent = '🖼️ Test Ảnh: Prompt 9:16 (Không ảnh)';
+    });
+  }
+
+  // 2. Test Ảnh: Prompt 16:9 (Không ảnh)
+  const testImg169Btn = document.getElementById('btnTestImgPrompt169');
+  if (testImg169Btn) {
+    testImg169Btn.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabImgLog') || document.getElementById('multiTabCreateLog');
+      if (logEl) logEl.style.display = 'block';
+
+      const imgTab = await getImageTargetTab();
+      if (!imgTab) { alert('Không có tab Google Flow nào! Vui lòng mở hoặc quét tab.'); return; }
+
+      testImg169Btn.disabled = true;
+      testImg169Btn.textContent = '⏳ Đang tạo ảnh 16:9...';
+
+      const ts = Date.now().toString().slice(-4);
+      const prompt = `${ts}. phong cảnh kỳ vĩ dãy núi Alps phủ tuyết trắng phản chiếu trên mặt hồ pha lê tĩnh lặng lúc bình minh rực rỡ, góc máy rộng cinematic`;
+
+      if (logEl) logEl.textContent += `\n[${new Date().toLocaleTimeString()}] 🖼️ Bắt đầu test tạo ảnh 16:9 (chỉ prompt) trên Tab ${imgTab.tabId}...\n`;
+
+      try {
+        const res = await callExt('CREATE_IMAGE_MULTI_TAB', {
+          prompt,
+          tabId: imgTab.tabId,
+          aspectRatio: '16:9',
+          referenceImages: []
+        });
+
+        if (res?.success) {
+          if (logEl) logEl.textContent += `✅ ${res.message}\n`;
+          testImg169Btn.textContent = '🔍 Đang theo dõi tạo ảnh...';
+          const dlResult = await monitorAndDownloadImageMultiTab(
+            imgTab.tabId, ts, prompt, imgTab.projectId, logEl
+          );
+          if (dlResult?.success) {
+            if (logEl) logEl.textContent += `🎉 HOÀN TẤT! File: ${dlResult.filename || 'OK'}\n`;
+          }
+        } else {
+          if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ Exception: ${err.message}\n`;
+      }
+
+      testImg169Btn.disabled = false;
+      testImg169Btn.textContent = '🖼️ Test Ảnh: Prompt 16:9 (Không ảnh)';
+    });
+  }
+
+  // 3. Test Ảnh: 1 Ảnh Tham Chiếu
+  const testImg1RefBtn = document.getElementById('btnTestImg1Ref');
+  if (testImg1RefBtn) {
+    testImg1RefBtn.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabImgLog') || document.getElementById('multiTabCreateLog');
+      if (logEl) { logEl.style.display = 'block'; logEl.textContent += `⏳ Đang đọc ảnh tham chiếu...\n`; }
+
+      const imgTab = await getImageTargetTab();
+      if (!imgTab) { alert('Không có tab Google Flow nào! Vui lòng mở hoặc quét tab.'); return; }
+
+      testImg1RefBtn.disabled = true;
+      testImg1RefBtn.textContent = '⏳ Đang xử lý...';
+
+      try {
+        const startDataUrl = await loadLocalImageAsDataUrl('test_start_frame.jpg');
+        if (logEl) logEl.textContent += `✅ Đã đọc ảnh tham chiếu (test_start_frame.jpg). Gửi tới Tab ${imgTab.tabId}...\n`;
+
+        const ts = Date.now().toString().slice(-4);
+        const prompt = `${ts}. chân dung nghệ thuật sang trọng lấy cảm hứng từ nhân vật trong ảnh tham chiếu, ánh sáng studio nghệ thuật chuyên nghiệp`;
+
+        const res = await callExt('CREATE_IMAGE_MULTI_TAB', {
+          prompt,
+          tabId: imgTab.tabId,
+          aspectRatio: '9:16',
+          referenceImages: [startDataUrl]
+        });
+
+        if (res?.success) {
+          if (logEl) logEl.textContent += `✅ ${res.message}\n`;
+          testImg1RefBtn.textContent = '🔍 Đang theo dõi tạo ảnh...';
+          const dlResult = await monitorAndDownloadImageMultiTab(
+            imgTab.tabId, ts, prompt, imgTab.projectId, logEl
+          );
+          if (dlResult?.success) {
+            if (logEl) logEl.textContent += `🎉 HOÀN TẤT! File: ${dlResult.filename || 'OK'}\n`;
+          }
+        } else {
+          if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ Exception: ${err.message}\n`;
+      }
+
+      testImg1RefBtn.disabled = false;
+      testImg1RefBtn.textContent = '🖼️ Test Ảnh: 1 Ảnh Tham Chiếu';
+    });
+  }
+
+  // 4. Test Ảnh: Nhiều Ảnh Tham Chiếu (2 ảnh)
+  const testImgMultiRefBtn = document.getElementById('btnTestImgMultiRef');
+  if (testImgMultiRefBtn) {
+    testImgMultiRefBtn.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabImgLog') || document.getElementById('multiTabCreateLog');
+      if (logEl) { logEl.style.display = 'block'; logEl.textContent += `⏳ Đang đọc 2 ảnh tham chiếu...\n`; }
+
+      const imgTab = await getImageTargetTab();
+      if (!imgTab) { alert('Không có tab Google Flow nào! Vui lòng mở hoặc quét tab.'); return; }
+
+      testImgMultiRefBtn.disabled = true;
+      testImgMultiRefBtn.textContent = '⏳ Đang xử lý...';
+
+      try {
+        const [img1, img2] = await Promise.all([
+          loadLocalImageAsDataUrl('test_start_frame.jpg'),
+          loadLocalImageAsDataUrl('test_end_frame.jpg')
+        ]);
+        if (logEl) logEl.textContent += `✅ Đã đọc 2 ảnh tham chiếu. Gửi tới Tab ${imgTab.tabId}...\n`;
+
+        const ts = Date.now().toString().slice(-4);
+        const prompt = `${ts}. sự kết hợp phong cách: nhân vật nữ từ ảnh 1 khoác trang phục chiến binh tương lai từ ảnh 2, ánh sáng neon cyberpunk`;
+
+        const res = await callExt('CREATE_IMAGE_MULTI_TAB', {
+          prompt,
+          tabId: imgTab.tabId,
+          aspectRatio: '16:9',
+          referenceImages: [img1, img2]
+        });
+
+        if (res?.success) {
+          if (logEl) logEl.textContent += `✅ ${res.message}\n`;
+          testImgMultiRefBtn.textContent = '🔍 Đang theo dõi tạo ảnh...';
+          const dlResult = await monitorAndDownloadImageMultiTab(
+            imgTab.tabId, ts, prompt, imgTab.projectId, logEl
+          );
+          if (dlResult?.success) {
+            if (logEl) logEl.textContent += `🎉 HOÀN TẤT! File: ${dlResult.filename || 'OK'}\n`;
+          }
+        } else {
+          if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ Exception: ${err.message}\n`;
+      }
+
+      testImgMultiRefBtn.disabled = false;
+      testImgMultiRefBtn.textContent = '🖼️ Test Ảnh: Nhiều Ảnh Tham Chiếu (2 ảnh)';
     });
   }
 });
