@@ -1324,49 +1324,42 @@ async function downloadMultiTab(tabId, query, promptText = '') {
   logToBridge(`[MultiTab DL] Bắt đầu tải video trên Tab ${tab.id}, query="${query}"`);
 
   try {
-    // STEP 1: Tìm card khớp query → Right-click
+    // STEP 1: Tìm nút Play → Right-click vào nó
     const r0 = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "ISOLATED",
-      args: [query, promptText],
-      func: (q, pText) => {
-        const cleanQuery = (q || '').trim().toLowerCase();
-        const promptLower = (pText || '').trim().toLowerCase();
-
-        // Tìm tất cả text element chứa query
-        const textEls = Array.from(
-          document.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, b, strong')
-        ).filter(el => {
-          if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container']")) return false;
-          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-          if (t.includes(cleanQuery)) return true;
-          if (promptLower && t.includes(promptLower.slice(0, 30))) return true;
+      func: () => {
+        // Tìm nút Play trên màn hình
+        const playBtn = Array.from(document.querySelectorAll('button, [role="button"], div, span')).find(el => {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0 || r.width > 200 || r.height > 200) return false;
+          if (el.closest("[data-slate-editor], form, [class*='composer'], nav, header")) return false;
+          
+          const t = (el.textContent || '').trim().toLowerCase();
+          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+          
+          // Detect play icon/button
+          if (t === 'play_arrow' || t === '▶' || t === '►') return true;
+          if (aria.includes('play') || aria.includes('phát')) return true;
+          if (el.querySelector("svg.lucide-play, [data-icon*='play']")) return true;
+          // Mat-icon play
+          const matIcon = el.querySelector('mat-icon');
+          if (matIcon && (matIcon.textContent || '').trim() === 'play_arrow') return true;
+          
           return false;
         });
 
-        if (textEls.length === 0) return { success: false, error: `Không tìm thấy card chứa "${cleanQuery}"` };
+        if (!playBtn) return { success: false, error: 'Không tìm thấy nút Play trên màn hình' };
 
-        // Leo lên container card
-        let card = textEls[0];
-        let cur = card.parentElement;
-        while (cur && cur !== document.body) {
-          const r = cur.getBoundingClientRect();
-          if (r.width > 550 || r.height > 850) break;
-          card = cur;
-          cur = cur.parentElement;
-        }
-
-        // Tìm video/img trong card để right-click
-        const clickTarget = card.querySelector('video') || card.querySelector('img') || card;
-        const rect = clickTarget.getBoundingClientRect();
+        const rect = playBtn.getBoundingClientRect();
         const cx = Math.round(rect.left + rect.width / 2);
         const cy = Math.round(rect.top + rect.height / 2);
 
-        // Right-click
+        // Right-click vào nút Play
         const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX: cx, clientY: cy };
-        clickTarget.dispatchEvent(new MouseEvent('mousedown', opts));
-        clickTarget.dispatchEvent(new MouseEvent('mouseup', opts));
-        clickTarget.dispatchEvent(new MouseEvent('contextmenu', opts));
+        playBtn.dispatchEvent(new MouseEvent('mousedown', opts));
+        playBtn.dispatchEvent(new MouseEvent('mouseup', opts));
+        playBtn.dispatchEvent(new MouseEvent('contextmenu', opts));
 
         return { success: true, clientX: cx, clientY: cy };
       }
