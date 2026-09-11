@@ -1925,35 +1925,78 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           return { success: false, error: "Gõ prompt thất bại" };
         }
 
+        // Helper click đầy đủ sự kiện cho Angular/Lit/React
+        const triggerClick = (el) => {
+          if (!el) return false;
+          const target = el.closest("button, [role='button'], [role='tab'], [role='radio'], [role='combobox'], [role='menuitem']") || el;
+          ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+            try {
+              target.dispatchEvent(new PointerEvent(evt, { bubbles: true, cancelable: true, view: window }));
+            } catch (_) {
+              target.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+            }
+          });
+          if (typeof target.click === 'function') target.click();
+          return true;
+        };
+
         // ── STEP 4: Mở Settings Chip → Bấm ratio → Đóng ──
         let clickedRatio = false;
-        const chips = queryDeep("button, [role='button'], div").filter(el => {
-          if (!isVis(el)) return false;
-          const r = el.getBoundingClientRect();
-          if (r.width < 60 || r.width > 500 || r.height < 20 || r.height > 60 || r.top < 100) return false;
-          const t = (el.textContent || '').toLowerCase();
-          return t.includes('video') || t.includes('9:16') || t.includes('16:9') ||
-                 t.includes('1:1') || t.includes('720p') || t.includes('8s') || t.includes('4s') ||
-                 t.includes('veo') || t.includes('nano') || t.includes('giây') ||
-                 t.includes('khung hình') || t.includes('frame');
+        const isSettingChipText = (t) => {
+          if (!t) return false;
+          const tl = t.toLowerCase();
+          return tl.includes("video") || tl.includes("giây") || tl.includes("720p") || tl.includes("1080p") ||
+                 tl.includes("veo") || tl.includes("nano") || tl.includes("pro") || tl.includes("lite") ||
+                 tl.includes("16:9") || tl.includes("9:16") || tl.includes("1:1") || tl.includes("x1") || tl.includes("x2");
+        };
+
+        // Tìm Settings Chip trong thanh composer ở nửa dưới màn hình
+        const composerBtns = queryDeep("button, [role='button']").filter(b => {
+          if (!isVis(b)) return false;
+          if (b.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+          const r = b.getBoundingClientRect();
+          if (r.top < window.innerHeight - 300) return false; // Phải ở vùng composer đáy màn hình
+          const t = (b.textContent || '').trim();
+          if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+          return isSettingChipText(t);
         });
-        if (chips.length > 0) {
-          chips.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
-          const chip = chips[0];
-          chip.click();
-          await sleep(600);
 
+        let settingsChip = null;
+        if (composerBtns.length > 0) {
+          // Lấy nút có tọa độ top lớn nhất (gần đáy nhất)
+          composerBtns.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+          settingsChip = composerBtns[0];
+        }
+
+        if (settingsChip) {
+          // Click mở Settings Chip
+          triggerClick(settingsChip);
+          await sleep(800);
+
+          // Tìm nút tỉ lệ khung hình (targetRatio: 9:16, 16:9, ...)
           const ratioBtns = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
-            if (!isVis(el) || el === chip || chip.contains(el)) return false;
+            if (!isVis(el) || el === settingsChip || settingsChip.contains(el)) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
             const r = el.getBoundingClientRect();
-            if (r.width < 20 || r.width > 120 || r.height < 20 || r.height > 60) return false;
-            const t = (el.textContent || '').trim();
-            return t === targetRatio || t.includes(targetRatio);
+            if (r.width < 15 || r.height < 15) return false;
+            const t = (el.textContent || '').trim().toLowerCase();
+            const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+            const comb = t + " " + aria;
+            if (targetRatio === '9:16') return comb.includes('9:16') && !comb.includes('16:9');
+            if (targetRatio === '16:9') return comb.includes('16:9');
+            if (targetRatio === '1:1') return comb.includes('1:1');
+            return comb.includes(targetRatio.toLowerCase());
           });
-          if (ratioBtns.length > 0) { ratioBtns[0].click(); clickedRatio = true; await sleep(300); }
 
+          if (ratioBtns.length > 0) {
+            triggerClick(ratioBtns[0]);
+            clickedRatio = true;
+            await sleep(400);
+          }
+
+          // Đóng popover bằng Escape
           document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
-          await sleep(400);
+          await sleep(300);
         }
 
         // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
