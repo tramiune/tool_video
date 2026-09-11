@@ -1324,44 +1324,72 @@ async function downloadMultiTab(tabId, query, promptText = '') {
   logToBridge(`[MultiTab DL] Bắt đầu tải video trên Tab ${tab.id}, query="${query}"`);
 
   try {
-    // STEP 1: Tìm nút Play → Right-click vào nó
+    // STEP 1: Tìm nút Play (hoặc fallback: 200px trên STT) → Right-click
     const r0 = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "ISOLATED",
-      func: () => {
-        // Tìm nút Play trên màn hình
+      args: [query],
+      func: (q) => {
+        let cx, cy;
+
+        // ── Thử tìm nút Play trước ──
         const playBtn = Array.from(document.querySelectorAll('button, [role="button"], div, span')).find(el => {
           const r = el.getBoundingClientRect();
           if (r.width === 0 || r.height === 0 || r.width > 200 || r.height > 200) return false;
           if (el.closest("[data-slate-editor], form, [class*='composer'], nav, header")) return false;
-          
           const t = (el.textContent || '').trim().toLowerCase();
           const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-          
-          // Detect play icon/button
           if (t === 'play_arrow' || t === '▶' || t === '►') return true;
           if (aria.includes('play') || aria.includes('phát')) return true;
           if (el.querySelector("svg.lucide-play, [data-icon*='play']")) return true;
-          // Mat-icon play
           const matIcon = el.querySelector('mat-icon');
           if (matIcon && (matIcon.textContent || '').trim() === 'play_arrow') return true;
-          
           return false;
         });
 
-        if (!playBtn) return { success: false, error: 'Không tìm thấy nút Play trên màn hình' };
+        if (playBtn) {
+          const rect = playBtn.getBoundingClientRect();
+          cx = Math.round(rect.left + rect.width / 2);
+          cy = Math.round(rect.top + rect.height / 2);
+        } else {
+          // ── Fallback: Tìm STT text → bấm 200px phía trên ──
+          const cleanQ = (q || '').trim().toLowerCase();
+          const sttEl = Array.from(document.querySelectorAll('p, span, div, b, strong')).find(el => {
+            if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
+            const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+            return t.includes(cleanQ);
+          });
 
-        const rect = playBtn.getBoundingClientRect();
-        const cx = Math.round(rect.left + rect.width / 2);
-        const cy = Math.round(rect.top + rect.height / 2);
+          if (!sttEl) return { success: false, error: 'Không tìm thấy Play hoặc STT trên màn hình' };
 
-        // Right-click vào nút Play
+          const sttRect = sttEl.getBoundingClientRect();
+          cx = Math.round(sttRect.left + sttRect.width / 2);
+          cy = Math.round(sttRect.top - 200);
+          if (cy < 10) cy = 10;
+        }
+
+        // ── Vẽ vòng tròn đỏ 20px tại điểm click ──
+        const circle = document.createElement('div');
+        circle.style.cssText = `
+          position:fixed; left:${cx - 10}px; top:${cy - 10}px;
+          width:20px; height:20px; border-radius:50%;
+          background:rgba(255,0,0,0.7); border:2px solid #fff;
+          z-index:999999; pointer-events:none;
+          box-shadow: 0 0 15px rgba(255,0,0,0.8);
+          animation: pulse-circle 1s ease-out forwards;
+        `;
+        document.body.appendChild(circle);
+        // Xóa vòng tròn sau 3s
+        setTimeout(() => circle.remove(), 3000);
+
+        // ── Right-click tại điểm đó ──
+        const target = document.elementFromPoint(cx, cy) || document.body;
         const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX: cx, clientY: cy };
-        playBtn.dispatchEvent(new MouseEvent('mousedown', opts));
-        playBtn.dispatchEvent(new MouseEvent('mouseup', opts));
-        playBtn.dispatchEvent(new MouseEvent('contextmenu', opts));
+        target.dispatchEvent(new MouseEvent('mousedown', opts));
+        target.dispatchEvent(new MouseEvent('mouseup', opts));
+        target.dispatchEvent(new MouseEvent('contextmenu', opts));
 
-        return { success: true, clientX: cx, clientY: cy };
+        return { success: true, clientX: cx, clientY: cy, method: playBtn ? 'play_button' : 'stt_offset' };
       }
     });
 
