@@ -2367,8 +2367,8 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
 }
 
 // ══════════════════════════════════════════════════════════════════
-// createImageMultiTab — Bản copy 1:1 từ createVideoMultiTab với Bước 1 từ Tab Test Từng Phần
-// Luồng: Ctrl+V ảnh tham chiếu → Gõ prompt (Test B1) → Settings (tab Hình ảnh, ratio) → Chờ 15s → Submit
+// createImageMultiTab — Bản copy 1:1 từ createVideoMultiTab cho Tạo Ảnh
+// Luồng: Ctrl+V ảnh tham chiếu → Settings (ratio, tab Hình ảnh) → Gõ prompt → Chờ 15s → Submit
 // ══════════════════════════════════════════════════════════════════
 async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenceImageDataUrl = null, secondImageDataUrl = null) {
   let tab = null;
@@ -2474,7 +2474,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           const dt = new DataTransfer();
           dt.items.add(file);
           const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-          editor.dispatchEvent(evt); try { document.dispatchEvent(evt); } catch(_) {} try { window.dispatchEvent(evt); } catch(_) {}
+          editor.dispatchEvent(evt);
         };
 
         // ── STEP 1: Tìm Slate Editor & Submit Button ──
@@ -2722,12 +2722,14 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           await sleep(500);
         }
 
-        // ── STEP 3: Gõ prompt (Lấy 100% từ Bước 1 của Tab Test Từng Phần) ──
+        // ── STEP 3: Gõ prompt (Lấy chuẩn từ Bước 1 của Tab Test Từng Bước) ──
+        if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt (Editor)" };
         editor.focus();
+        await sleep(200);
         document.execCommand('selectAll', false, null);
         document.execCommand('insertText', false, promptText);
         editor.dispatchEvent(new Event('input', { bubbles: true }));
-        await sleep(500);
+        await sleep(300);
 
         // ── STEP 4: Mở Settings Chip → Chọn Ratio (16:9 / 9:16 / 1:1) → Đóng popover ──
         let clickedRatio = false;
