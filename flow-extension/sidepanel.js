@@ -3034,6 +3034,85 @@ window.switchTab = function(tabName) {
   }
 };
 
+// ──────────────────────────────────────────────────────────
+// monitorAndDownloadMultiTab: Sau submit, chờ 10s rồi quét mỗi 10s
+// ──────────────────────────────────────────────────────────
+async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, logEl) {
+  const log = (msg) => {
+    const t = new Date().toLocaleTimeString();
+    if (logEl) logEl.textContent += `[${t}] ${msg}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const query = timestamp + '.';
+  const maxAttempts = 24; // 24 x 10s = 4 phút
+  const pollInterval = 10000; // 10 giây
+
+  log(`⏳ Chờ 10s trước khi bắt đầu quét...`);
+  await new Promise(r => setTimeout(r, 10000));
+
+  for (let i = 1; i <= maxAttempts; i++) {
+    log(`🔍 Quét lần ${i}/${maxAttempts}...`);
+
+    try {
+      const status = await callExt('CHECK_CARD_STATUS', {
+        projectId,
+        query,
+        prompt,
+        mediaId: null,
+        workflowId: null,
+        mediaType: 'video'
+      });
+
+      if (status?.status === 'READY') {
+        log(`✅ Video đã xong! Bắt đầu tải...`);
+
+        try {
+          const dlRes = await callExt('DOWNLOAD_CARD_NATIVE', {
+            tabId,
+            query,
+            prompt,
+            mediaId: status.mediaId || null,
+            workflowId: status.workflowId || null,
+            mediaType: 'video',
+            projectId
+          });
+
+          if (dlRes?.success) {
+            log(`🎉 TẢI THÀNH CÔNG! File: ${dlRes.filePath || 'OK'}`);
+            return { success: true, filePath: dlRes.filePath };
+          } else {
+            log(`❌ Tải thất bại: ${dlRes?.error || 'Unknown'}`);
+            return { success: false, error: dlRes?.error };
+          }
+        } catch (dlErr) {
+          log(`❌ Lỗi tải: ${dlErr.message}`);
+          return { success: false, error: dlErr.message };
+        }
+      } else if (status?.status === 'FAILED') {
+        log(`❌ Video thất bại (vi phạm policy hoặc lỗi): ${status.error || ''}`);
+        return { success: false, error: 'Video generation failed' };
+      } else if (status?.status === 'RENDERING') {
+        const pct = status.progress || '??';
+        log(`🔄 Đang render... ${pct}%`);
+      } else if (status?.status === 'NOT_FOUND') {
+        log(`⚠️ Chưa tìm thấy card "${query}" trên màn hình. Tiếp tục chờ...`);
+      } else {
+        log(`⏳ Trạng thái: ${status?.status || 'unknown'}`);
+      }
+    } catch (err) {
+      log(`⚠️ Lỗi quét: ${err.message}`);
+    }
+
+    if (i < maxAttempts) {
+      await new Promise(r => setTimeout(r, pollInterval));
+    }
+  }
+
+  log(`❌ Timeout 4 phút! Video chưa xong.`);
+  return { success: false, error: 'Timeout after 4 minutes' };
+}
+
 // Bind refresh button
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('btnRefreshMultiTabs');
@@ -3094,6 +3173,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (res?.success) {
           if (logEl) logEl.textContent += `✅ [${new Date().toLocaleTimeString()}] Thành công! ${res.message}\n`;
+
+          // Bắt đầu monitor + auto download
+          createBtn.textContent = '🔍 Đang theo dõi render...';
+          const dlResult = await monitorAndDownloadMultiTab(
+            videoTab.tabId, ts, prompt, videoTab.projectId, logEl
+          );
+          if (dlResult?.success) {
+            if (logEl) logEl.textContent += `🎉 HOÀN TẤT! File: ${dlResult.filePath || 'OK'}\n`;
+          }
         } else {
           if (logEl) logEl.textContent += `❌ [${new Date().toLocaleTimeString()}] Lỗi: ${res?.error || 'Unknown'}\n`;
         }
@@ -3144,6 +3232,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (res?.success) {
           if (logEl) logEl.textContent += `✅ ${res.message}\n`;
+
+          // Bắt đầu monitor + auto download
+          testFrameBtn.textContent = '🔍 Đang theo dõi render...';
+          const dlResult = await monitorAndDownloadMultiTab(
+            videoTab.tabId, ts, prompt, videoTab.projectId, logEl
+          );
+          if (dlResult?.success) {
+            if (logEl) logEl.textContent += `🎉 HOÀN TẤT! File: ${dlResult.filePath || 'OK'}\n`;
+          }
         } else {
           if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
         }
