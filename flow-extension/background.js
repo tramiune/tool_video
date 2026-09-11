@@ -305,6 +305,7 @@ const HANDLERS = {
   DRAW_ABOVE_STT: req => drawAboveSTT(req.tabId),
   TEST_CLICK_DOWNLOAD: req => testClickDownload(req.tabId),
   RIGHT_CLICK_AND_DOWNLOAD: req => rightClickAndDownload(req.tabId),
+  TEST_PASTE_TWO_IMAGES: req => testPasteTwoImages(req.tabId, req.img1, req.img2, req.delayBetween),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
@@ -2903,6 +2904,177 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
     logToBridge(`[MultiTab Image] ❌ Tab ${tab.id}: ${err.message}`);
     return { success: false, error: err.message };
   }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// testPasteTwoImages — Hàm chẩn đoán & test chuyên biệt cho việc dán 2 ảnh
+// ══════════════════════════════════════════════════════════════════
+async function testPasteTwoImages(tabId, img1, img2, delayBetween = 2000) {
+  let tab = null;
+  try { tab = await chrome.tabs.get(tabId); } catch(e) {}
+  if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
+
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    await new Promise(r => setTimeout(r, 400));
+  } catch (_) {}
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    world: "ISOLATED",
+    args: [img1, img2, delayBetween],
+    func: async (dataUrl1, dataUrl2, delay) => {
+      const logs = [];
+      const log = msg => logs.push(`[${new Date().toLocaleTimeString()}] ${msg}`);
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+      const queryDeep = (selector) => {
+        const matches = [];
+        const walk = (node) => {
+          if (node.shadowRoot) walk(node.shadowRoot);
+          for (const child of node.children) {
+            if (child.matches && child.matches(selector)) matches.push(child);
+            walk(child);
+          }
+        };
+        walk(document.body);
+        return matches;
+      };
+
+      const findDeepEditor = () => {
+        const walk = (node) => {
+          if (node.shadowRoot) {
+            const res = walk(node.shadowRoot);
+            if (res) return res;
+          }
+          for (const child of node.children) {
+            if (child.tagName === 'TEXTAREA' || child.getAttribute('contenteditable') === 'true' || child.getAttribute('data-slate-editor') === 'true' || child.getAttribute('role') === 'textbox') {
+              return child;
+            }
+            const res = walk(child);
+            if (res) return res;
+          }
+          return null;
+        };
+        return walk(document.body);
+      };
+
+      const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
+                  || document.querySelector("div[data-slate-editor='true']")
+                  || document.querySelector("div[contenteditable='true']")
+                  || document.querySelector("textarea[placeholder*='prompt' i]")
+                  || findDeepEditor();
+
+      if (!editor) return { success: false, logs, error: "Không tìm thấy ô nhập editor" };
+      log(`Tìm thấy ô editor: <${editor.tagName.toLowerCase()}>`);
+
+      const doPaste = async (target, dataUrl, label) => {
+        const resp = await fetch(dataUrl);
+        const blob = await resp.blob();
+        const file = new File([blob], label + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+
+        // Bắn keydown Cmd+V / Ctrl+V
+        target.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: true, metaKey: true, bubbles: true }));
+
+        // Bắn ClipboardEvent paste vào cả target, document, window
+        const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+        target.dispatchEvent(evt);
+        try { document.dispatchEvent(evt); } catch(_) {}
+        try { window.dispatchEvent(evt); } catch(_) {}
+
+        // Thử DragEvent drop
+        const dropEvt = new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true });
+        target.dispatchEvent(dropEvt);
+
+        // Thử input file nếu có
+        const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
+        if (fileInputs.length > 0) {
+          try {
+            fileInputs[0].files = dt.files;
+            fileInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+          } catch (_) {}
+        }
+      };
+
+      const activateEditor = async () => {
+        const editableParas = Array.from(editor.querySelectorAll("[data-slate-node='element'], p"))
+          .filter(el => !el.closest("[data-slate-void='true']") && !el.hasAttribute("data-slate-void") && el.getAttribute("contenteditable") !== "false");
+        const target = editableParas.pop() || editor;
+
+        try {
+          target.scrollIntoView({ block: "nearest" });
+          target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+          target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+          target.click();
+          if (typeof target.focus === 'function') target.focus();
+          editor.click();
+          editor.focus();
+        } catch (_) {}
+
+        try {
+          const sel = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(target);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } catch (_) {}
+        await sleep(300);
+        return target;
+      };
+
+      // ── BƯỚC 1: DÁN ẢNH 1 ──
+      log("1. Focus vào editor chuẩn bị dán Ảnh 1...");
+      const target1 = await activateEditor();
+      log(`Active element trước Ảnh 1: <${document.activeElement?.tagName?.toLowerCase()}>`);
+
+      log("2. Bắn sự kiện Paste Ảnh 1...");
+      await doPaste(target1, dataUrl1, "test_start_frame");
+      log("✅ Đã bắn Paste Ảnh 1.");
+
+      log(`3. Nghỉ ${delay}ms chờ Flow xử lý Ảnh 1...`);
+      await sleep(delay);
+
+      const activeAfter1 = document.activeElement;
+      log(`Active element sau Ảnh 1: <${activeAfter1?.tagName?.toLowerCase()}> class="${activeAfter1?.className?.slice?.(0, 30) || ''}"`);
+
+      // ── BƯỚC 2: FOCUS LẠI VÀ DÁN ẢNH 2 ──
+      log("4. Focus và click lại vào editor chuẩn bị dán Ảnh 2...");
+      const target2 = await activateEditor();
+      log(`Active element trước Ảnh 2: <${document.activeElement?.tagName?.toLowerCase()}>`);
+
+      log("5. Bắn sự kiện Paste Ảnh 2...");
+      await doPaste(target2, dataUrl2, "test_end_frame");
+      log("✅ Đã bắn Paste Ảnh 2.");
+
+      log("6. Nghỉ 2000ms chờ Flow xử lý Ảnh 2...");
+      await sleep(2000);
+
+      // Quét xem trong editor có bao nhiêu thẻ void/chip hoặc ảnh
+      const voidNodes = Array.from(editor.querySelectorAll("[data-slate-void='true'], [contenteditable='false']"));
+      const images = Array.from(document.querySelectorAll("img")).filter(img => {
+        const r = img.getBoundingClientRect();
+        return r.top > 150 && r.width > 20 && r.height > 20 && !img.src.includes("googleusercontent.com/a/");
+      });
+
+      log(`📊 Kết quả: Tìm thấy ${voidNodes.length} khối void trong Slate và ${images.length} thẻ <img> trong composer.`);
+
+      return {
+        success: true,
+        logs,
+        voidCount: voidNodes.length,
+        imageCount: images.length,
+        message: logs.join("\n")
+      };
+    }
+  });
+
+  const res = results?.[0]?.result;
+  if (!res) return { success: false, error: "Script trả về rỗng" };
+  logToBridge(`[Test Paste 2 Images] Tab ${tab.id}: ${res.logs?.slice(-1)?.[0] || 'Xong'}`);
+  return res;
 }
 
 async function createVideoUI(prompt, projectId, config = {}) {

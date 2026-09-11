@@ -3867,6 +3867,57 @@ document.addEventListener('DOMContentLoaded', () => {
       testImgMultiRefBtn.textContent = '🖼️ Test Ảnh: Nhiều Ảnh Tham Chiếu (2 ảnh)';
     });
   }
+
+  // 5. Test Chỉ Dán (Ctrl+V) 2 Ảnh (Không Submit)
+  const testPaste2ImagesBtn = document.getElementById('btnTestPaste2Images');
+  if (testPaste2ImagesBtn) {
+    testPaste2ImagesBtn.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabImgLog') || document.getElementById('multiTabCreateLog');
+      if (logEl) {
+        logEl.style.display = 'block';
+        logEl.textContent = `[${new Date().toLocaleTimeString()}] 🧪 Bắt đầu test dán 2 ảnh (Không Submit)...\n`;
+      }
+
+      const imgTab = await getImageTargetTab();
+      if (!imgTab) { alert('Không có tab Google Flow nào! Vui lòng mở hoặc quét tab.'); return; }
+
+      testPaste2ImagesBtn.disabled = true;
+      testPaste2ImagesBtn.textContent = '⏳ Đang test dán 2 ảnh...';
+
+      try {
+        const [img1, img2] = await Promise.all([
+          loadLocalImageAsDataUrl('test_start_frame.jpg'),
+          loadLocalImageAsDataUrl('test_end_frame.jpg')
+        ]);
+        if (logEl) logEl.textContent += `✅ Đã đọc 2 file ảnh local. Gửi lệnh tới Tab ${imgTab.tabId}...\n`;
+
+        const res = await callExt('TEST_PASTE_TWO_IMAGES', {
+          tabId: imgTab.tabId,
+          img1,
+          img2,
+          delayBetween: 2000
+        });
+
+        if (res?.success) {
+          if (logEl) {
+            logEl.textContent += `\n--- KẾT QUẢ TEST DÁN 2 ẢNH ---\n`;
+            if (Array.isArray(res.logs)) {
+              logEl.textContent += res.logs.join('\n') + '\n';
+            } else {
+              logEl.textContent += `${res.message || 'OK'}\n`;
+            }
+          }
+        } else {
+          if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ Exception: ${err.message}\n`;
+      }
+
+      testPaste2ImagesBtn.disabled = false;
+      testPaste2ImagesBtn.textContent = '🧪 Test Chỉ Dán (Ctrl+V) 2 Ảnh (Không Submit)';
+    });
+  }
 });
 
 })();
