@@ -2706,23 +2706,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return isPopoverOpen();
         };
 
-        // ── STEP 2: Ctrl+V paste reference image (nếu có) ──
-        let pastedStart = false, pastedEnd = false;
-        editor.focus();
-        await sleep(300);
-
-        if (startImgUrl) {
-          try { await pasteImage(editor, startImgUrl, 'ref_image_1'); pastedStart = true; } catch (e) { console.warn('[MultiTab Image] Ref paste err:', e); }
-          await sleep(1000);
-        }
-
-        // ── STEP 2.5: Ctrl+V paste second reference image (nếu có) ──
-        if (endImgUrl) {
-          try { await pasteImage(editor, endImgUrl, 'ref_image_2'); pastedEnd = true; } catch (e) { console.warn('[MultiTab Image] Ref 2 paste err:', e); }
-          await sleep(500);
-        }
-
-        // ── STEP 3: Gõ prompt (Lấy chuẩn từ Bước 1 của Tab Test Từng Bước) ──
+        // ── STEP 2: Gõ prompt (Lấy chuẩn từ Bước 1 của Tab Test Từng Bước) ──
         if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt (Editor)" };
         editor.focus();
         await sleep(200);
@@ -2731,7 +2715,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
         editor.dispatchEvent(new Event('input', { bubbles: true }));
         await sleep(300);
 
-        // ── STEP 4: Mở Settings Chip → Chọn Ratio (16:9 / 9:16 / 1:1) → Đóng popover ──
+        // ── STEP 3: Mở Settings Chip → Chọn Ratio (16:9 / 9:16 / 1:1) → Đóng popover ──
         let clickedRatio = false;
         let clickedDetail = 'none';
         let chipName = settingsChip ? (settingsChip.textContent || '').trim().slice(0, 30) : 'none';
@@ -2831,6 +2815,22 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
               await sleep(300);
             }
           }
+        }
+
+        // ── STEP 4: Ctrl+V dán ảnh tham chiếu ngay trước khi Submit ──
+        let pastedStart = false, pastedEnd = false;
+        if (startImgUrl) {
+          editor.focus();
+          await sleep(200);
+          try { await pasteImage(editor, startImgUrl, 'ref_image_1'); pastedStart = true; } catch (e) { console.warn('[MultiTab Image] Ref paste err:', e); }
+          await sleep(1000);
+        }
+
+        if (endImgUrl) {
+          editor.focus();
+          await sleep(200);
+          try { await pasteImage(editor, endImgUrl, 'ref_image_2'); pastedEnd = true; } catch (e) { console.warn('[MultiTab Image] Ref 2 paste err:', e); }
+          await sleep(500);
         }
 
         // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
