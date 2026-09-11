@@ -3820,7 +3820,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (testImgMultiRefBtn) {
     testImgMultiRefBtn.addEventListener('click', async () => {
       const logEl = document.getElementById('multiTabImgLog') || document.getElementById('multiTabCreateLog');
-      if (logEl) { logEl.style.display = 'block'; logEl.textContent += `⏳ Đang đọc 2 ảnh tham chiếu...\n`; }
+      if (logEl) {
+        logEl.style.display = 'block';
+        logEl.textContent += `\n[${new Date().toLocaleTimeString()}] 🖼️ Bắt đầu test tạo ảnh: Nhiều Ảnh Tham Chiếu (2 ảnh)...\n`;
+        logEl.textContent += `⏳ Đang đọc 2 ảnh tham chiếu (test_start_frame.jpg + test_end_frame.jpg)...\n`;
+      }
 
       const imgTab = await getImageTargetTab();
       if (!imgTab) { alert('Không có tab Google Flow nào! Vui lòng mở hoặc quét tab.'); return; }
@@ -3833,7 +3837,7 @@ document.addEventListener('DOMContentLoaded', () => {
           loadLocalImageAsDataUrl('test_start_frame.jpg'),
           loadLocalImageAsDataUrl('test_end_frame.jpg')
         ]);
-        if (logEl) logEl.textContent += `✅ Đã đọc 2 ảnh tham chiếu. Gửi tới Tab ${imgTab.tabId}...\n`;
+        if (logEl) logEl.textContent += `✅ Đã đọc 2 ảnh tham chiếu. Gửi tới Tab ${imgTab.tabId} (Ctrl+V nạp cả 2 ảnh cùng lúc)...\n`;
 
         const ts = Date.now().toString().slice(-4);
         const prompt = `${ts}. sự kết hợp phong cách: nhân vật nữ từ ảnh 1 khoác trang phục chiến binh tương lai từ ảnh 2, ánh sáng neon cyberpunk`;

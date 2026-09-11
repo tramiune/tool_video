@@ -290,15 +290,16 @@ const HANDLERS = {
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
   CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl, req.endImageDataUrl),
   CREATE_IMAGE_MULTI_TAB: req => {
-    let img1 = req.referenceImageDataUrl || req.startImageDataUrl || null;
-    let img2 = req.secondImageDataUrl || req.endImageDataUrl || null;
-    if (Array.isArray(req.referenceImages)) {
-      if (!img1 && req.referenceImages[0]) img1 = req.referenceImages[0];
-      if (!img2 && req.referenceImages[1]) img2 = req.referenceImages[1];
-    } else if (typeof req.referenceImages === 'string' && !img1) {
-      img1 = req.referenceImages;
+    let images = [];
+    if (Array.isArray(req.referenceImages) && req.referenceImages.length > 0) {
+      images = req.referenceImages.filter(Boolean);
+    } else {
+      let img1 = req.referenceImageDataUrl || req.startImageDataUrl || null;
+      let img2 = req.secondImageDataUrl || req.endImageDataUrl || null;
+      if (img1) images.push(img1);
+      if (img2) images.push(img2);
     }
-    return createImageMultiTab(req.prompt, req.tabId, req.aspectRatio, img1, img2);
+    return createImageMultiTab(req.prompt, req.tabId, req.aspectRatio, images);
   },
   DOWNLOAD_MULTI_TAB: req => downloadMultiTab(req.tabId, req.query, req.prompt),
   CHECK_PERCENT_ON_SCREEN: req => checkPercentOnScreen(req.tabId),
@@ -2381,14 +2382,23 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
     await new Promise(r => setTimeout(r, 500));
   } catch (_) {}
 
-  logToBridge(`[MultiTab Image] Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, ref1: ${!!referenceImageDataUrl}, ref2: ${!!secondImageDataUrl})`);
+  // Chuẩn hóa danh sách ảnh tham chiếu (hỗ trợ mảng referenceImages hoặc từng ảnh đơn lẻ)
+  let refImages = [];
+  if (Array.isArray(referenceImageDataUrl)) {
+    refImages = referenceImageDataUrl.filter(Boolean);
+  } else {
+    if (referenceImageDataUrl) refImages.push(referenceImageDataUrl);
+    if (secondImageDataUrl) refImages.push(secondImageDataUrl);
+  }
+
+  logToBridge(`[MultiTab Image] Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, refImages: ${refImages.length})`);
 
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "ISOLATED",
-      args: [prompt, aspectRatio, referenceImageDataUrl, secondImageDataUrl],
-      func: async (promptText, targetRatio, startImgUrl, endImgUrl) => {
+      args: [prompt, aspectRatio, refImages],
+      func: async (promptText, targetRatio, imagesToPaste) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         const queryDeep = (selector) => {
@@ -2467,19 +2477,37 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return true;
         };
 
-        // Helper paste 1 hoặc nhiều ảnh cùng lúc trong 1 cú Ctrl+V duy nhất
+        // Helper paste 1 hoặc nhiều ảnh cùng lúc trong 1 cú Ctrl+V duy nhất (kế thừa từ testPasteTwoImages)
         const pasteImages = async (editor, dataUrlList) => {
           const list = Array.isArray(dataUrlList) ? dataUrlList.filter(Boolean) : [dataUrlList].filter(Boolean);
           if (list.length === 0) return false;
 
+          // 1. Tải và nạp CẢ CÁC ẢNH vào chung 1 DataTransfer (copy các ảnh cùng lúc)
           const dt = new DataTransfer();
-          for (let i = 0; i < list.length; i++) {
-            const resp = await fetch(list[i]);
-            const blob = await resp.blob();
-            const file = new File([blob], `ref_image_${i + 1}_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
-            dt.items.add(file);
+          try {
+            const blobs = await Promise.all(list.map(url => fetch(url).then(r => r.blob())));
+            blobs.forEach((blob, i) => {
+              const fileName = (i === 0 ? `start_frame_${Date.now()}.jpg` : `end_frame_${Date.now()}.jpg`);
+              const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+              dt.items.add(file);
+            });
+          } catch (err) {
+            console.error('[MultiTab Image] Lỗi nạp ảnh vào DataTransfer:', err);
+            return false;
           }
 
+          // 2. Focus và click vào editor ngay trước khi bắn sự kiện paste
+          try {
+            editor.scrollIntoView({ block: "nearest" });
+            editor.click();
+            editor.focus();
+            editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+          } catch (_) {}
+          await sleep(300);
+
+          // 3. Gán file vào thẻ <input type='file'> ẩn nếu có
           const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
           if (fileInputs.length > 0) {
             try {
@@ -2488,11 +2516,20 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             } catch (_) {}
           }
 
+          // 4. Bắn 1 sự kiện Ctrl+V duy nhất mang cả các file
           editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: true, metaKey: true, bubbles: true }));
+
           const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
           editor.dispatchEvent(evt);
           try { document.dispatchEvent(evt); } catch (_) {}
           try { window.dispatchEvent(evt); } catch (_) {}
+
+          // 5. Thử DragEvent drop cả cụm files
+          try {
+            const dropEvt = new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true });
+            editor.dispatchEvent(dropEvt);
+          } catch (_) {}
+
           return true;
         };
 
@@ -2836,26 +2873,16 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           }
         }
         // ── STEP 4: Ctrl+V dán TẤT CẢ ảnh tham chiếu cùng một lúc trong 1 lần paste duy nhất ──
-        const refList = [startImgUrl, endImgUrl].filter(Boolean);
+        const refList = Array.isArray(imagesToPaste) ? imagesToPaste.filter(Boolean) : [imagesToPaste].filter(Boolean);
         let pastedCount = refList.length;
 
         if (pastedCount > 0) {
-          try {
-            editor.scrollIntoView({ block: "nearest" });
-            editor.click();
-            editor.focus();
-            editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-            editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-            editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
-          } catch (_) {}
-          await sleep(300);
-
           try {
             await pasteImages(editor, refList);
           } catch (e) {
             console.warn('[MultiTab Image] Paste images err:', e);
           }
-          await sleep(2000);
+          await sleep(2500);
         }
 
         // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
@@ -2864,25 +2891,24 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
         }
 
         // ── STEP 6: Click Submit (y như testUiStep Step 3) ──
-        if (!submitBtn) {
-          submitBtn = queryDeep("button, [role='button']").find(b => {
-            if (!isElemVisible(b)) return false;
-            const inner = (b.innerHTML || "").toLowerCase();
-            const t = (b.textContent || "").trim().toLowerCase();
-            const aria = (b.getAttribute("aria-label") || "").toLowerCase();
-            if (b.getAttribute("type") === "submit") return true;
-            if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
-            return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
-                   Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
-          });
-        }
-        if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
+        let currentSubmitBtn = queryDeep("button, [role='button']").find(b => {
+          if (!isElemVisible(b)) return false;
+          const inner = (b.innerHTML || "").toLowerCase();
+          const t = (b.textContent || "").trim().toLowerCase();
+          const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+          if (b.getAttribute("type") === "submit") return true;
+          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                 Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
+        }) || submitBtn;
 
-        submitBtn.removeAttribute("disabled");
-        submitBtn.setAttribute("aria-disabled", "false");
-        submitBtn.style.pointerEvents = "auto";
-        submitBtn.style.opacity = "1";
-        triggerClick(submitBtn);
+        if (!currentSubmitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
+
+        currentSubmitBtn.removeAttribute("disabled");
+        currentSubmitBtn.setAttribute("aria-disabled", "false");
+        currentSubmitBtn.style.pointerEvents = "auto";
+        currentSubmitBtn.style.opacity = "1";
+        triggerClick(currentSubmitBtn);
         await sleep(500);
 
         return {
