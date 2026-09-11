@@ -3062,15 +3062,25 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
       if (checkRes?.hasPercent) {
         log(`🔄 Đang render... (thấy "${checkRes.percentText}" trên màn hình)`);
       } else {
-        // Hết % → tải thôi!
-        log(`✅ Không còn % trên màn hình. Bắt đầu tải...`);
+        // Hết % → chờ thêm 5s cho Flow cập nhật card xong
+        log(`✅ Không còn % trên màn hình. Chờ 5s cho Flow xong hẳn...`);
+        await new Promise(r => setTimeout(r, 5000));
 
-        const dlRes = await callExt('DOWNLOAD_MULTI_TAB', { tabId, query, prompt });
+        // Thử tải, nếu chưa sẵn sàng thì retry tối đa 3 lần
+        for (let retry = 1; retry <= 3; retry++) {
+          const dlRes = await callExt('DOWNLOAD_MULTI_TAB', { tabId, query, prompt });
 
-        if (dlRes?.success) {
-          log(`🎉 TẢI THÀNH CÔNG!`);
-          return { success: true };
-        } else {
+          if (dlRes?.success) {
+            log(`🎉 TẢI THÀNH CÔNG!`);
+            return { success: true };
+          }
+          
+          if (dlRes?.isStillRendering && retry < 3) {
+            log(`⚠️ Lần ${retry}: Menu chưa có "Tải xuống". Chờ 15s thử lại...`);
+            await new Promise(r => setTimeout(r, 15000));
+            continue;
+          }
+
           log(`❌ Tải thất bại: ${dlRes?.error || 'Không có video'}`);
           return { success: false, error: dlRes?.error || 'Download failed' };
         }
