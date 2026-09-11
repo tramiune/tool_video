@@ -2202,45 +2202,105 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           return { success: false, error: "Gõ prompt thất bại" };
         }
 
-        // ── STEP 4: Mở Settings Chip → Bấm ratio → Đóng (y như testUiStep Step 2 & 4.1) ──
+        // ── STEP 4: Mở Settings Chip → Chọn Ratio (16:9 / 9:16 / 1:1) → Đóng popover ──
         let clickedRatio = false;
+        let clickedDetail = 'none';
         let chipName = settingsChip ? (settingsChip.textContent || '').trim().slice(0, 30) : 'none';
+
+        const findRatioButton = (ratio) => {
+          // Lấy tất cả elements có thể là nút hoặc chứa text ratio
+          const candidates = queryDeep("button, [role='tab'], [role='radio'], [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+            const t = (el.textContent || "").trim();
+            const aria = (el.getAttribute("aria-label") || "").trim();
+            const val = (el.getAttribute("value") || el.getAttribute("data-value") || "").trim();
+
+            // Loại trừ container chứa cả 16:9 và 9:16
+            if (t.includes("16:9") && t.includes("9:16")) return false;
+            if (t.length > 25) return false;
+
+            if (ratio === "16:9") {
+              return (t === "16:9" || t.includes("16:9") || aria.includes("16:9") || val.includes("16:9")) && !t.includes("9:16");
+            }
+            if (ratio === "9:16") {
+              return (t === "9:16" || t.includes("9:16") || aria.includes("9:16") || val.includes("9:16")) && !t.includes("16:9");
+            }
+            if (ratio === "1:1") {
+              return (t === "1:1" || t.includes("1:1") || aria.includes("1:1") || val.includes("1:1"));
+            }
+            return t.includes(ratio);
+          });
+
+          if (candidates.length === 0) return null;
+
+          // Sắp xếp: Ưu tiên button, tab, radio trước; ưu tiên text ngắn nhất (phần tử lá)
+          candidates.sort((a, b) => {
+            const isBtnA = a.matches("button, [role='tab'], [role='radio'], [role='button']");
+            const isBtnB = b.matches("button, [role='tab'], [role='radio'], [role='button']");
+            if (isBtnA && !isBtnB) return -1;
+            if (!isBtnA && isBtnB) return 1;
+            return (a.textContent || "").trim().length - (b.textContent || "").trim().length;
+          });
+
+          const best = candidates[0];
+          return best.closest("button, [role='tab'], [role='radio'], [role='button']") || best;
+        };
 
         if (targetRatio) {
           const opened = await ensurePopoverOpen();
           if (opened) {
-            await sleep(400);
-            // Tìm nút ratio trong popover
-            const aspectButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
-              if (!isElemVisible(el)) return false;
-              if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
-              if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
-              const r = el.getBoundingClientRect();
-              if (r.left < 150) return false;
-              const t = (el.textContent || "").trim();
-              return t.includes("16:9") || t.includes("9:16") || t.includes("1:1");
-            });
+            await sleep(600); // Đợi popover render các options
 
-            const aspectBtn = aspectButtons.find(b => {
-              const t = (b.textContent || "").trim();
-              const aria = (b.getAttribute("aria-label") || "").trim();
-              const comb = t + " " + aria;
-              if (targetRatio === "9:16") return comb.includes("9:16") && !comb.includes("16:9");
-              if (targetRatio === "16:9") return comb.includes("16:9");
-              if (targetRatio === "1:1") return comb.includes("1:1");
-              return comb.includes(targetRatio);
-            });
-
-            if (aspectBtn) {
-              safeClick(aspectBtn.closest("[role='tab'], [role='radio'], button, [role='button']") || aspectBtn);
-              clickedRatio = true;
-              await sleep(400);
+            // Đảm bảo tab Video đang active nếu có tab bar
+            const vTab = findVideoTabElement();
+            if (vTab) {
+              const isActive = vTab.getAttribute("data-state") === "active" || 
+                               vTab.getAttribute("aria-selected") === "true" ||
+                               vTab.classList.contains("active");
+              if (!isActive) {
+                triggerClick(vTab);
+                await sleep(400);
+              }
             }
 
-            // Đóng popover bằng Escape
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
-            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+            const ratioBtn = findRatioButton(targetRatio);
+            if (ratioBtn) {
+              clickedDetail = `<${ratioBtn.tagName.toLowerCase()} role="${ratioBtn.getAttribute('role')||''}"> "${(ratioBtn.textContent||'').trim()}"`;
+              
+              // 1. Dispatch đầy đủ chuỗi pointer + mouse events (cho Angular/Lit Web Components)
+              triggerClick(ratioBtn);
+              await sleep(200);
+
+              // 2. Click native nếu có
+              try { ratioBtn.click(); } catch (_) {}
+              await sleep(200);
+
+              // 3. Nếu bên trong có span, dispatch cả span con
+              const innerSpan = ratioBtn.querySelector("span, div");
+              if (innerSpan) {
+                try { triggerClick(innerSpan); } catch (_) {}
+              }
+
+              clickedRatio = true;
+              await sleep(500); // Chờ UI cập nhật giá trị
+            }
+
+            // Đóng popover bằng outside-click vào editor (chuẩn của Flow, không làm revert thiết lập)
+            try {
+              editor.click();
+              editor.focus();
+            } catch (_) {}
             await sleep(300);
+
+            // Nếu popover vẫn còn mở sau khi click editor, mới dùng phím Escape
+            if (isPopoverOpen()) {
+              window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+              document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+              await sleep(300);
+            }
           }
         }
 
@@ -2279,7 +2339,7 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           chipName,
           pastedStart,
           pastedEnd,
-          message: `Submit OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN' : 'Chưa chọn được (chip: ' + chipName + ')'}]${frames ? ' (frames: ' + frames + ', đã chờ 15s)' : ''}`
+          message: `Submit OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN (' + clickedDetail + ')' : 'Chưa tìm thấy nút (chip: ' + chipName + ')'}]${frames ? ' (frames: ' + frames + ', đã chờ 15s)' : ''}`
         };
       }
     });
