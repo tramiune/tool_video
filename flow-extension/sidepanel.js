@@ -3359,6 +3359,184 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // ──────────────────────────────────────────────────────────
+  // Test 10 Task Đa Tab (Đủ thể loại: Text-only, Start Frame, Start+End Frame)
+  // ──────────────────────────────────────────────────────────
+  const btnBatch10 = document.getElementById('btnBatch10Tasks');
+  if (btnBatch10) {
+    btnBatch10.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) logEl.style.display = 'block';
+
+      const log = (msg) => {
+        const t = new Date().toLocaleTimeString();
+        if (logEl) logEl.textContent += `[${t}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      };
+
+      // 1. Quét danh sách Tab
+      log('🔍 Đang kiểm tra danh sách tab Google Flow...');
+      await refreshMultiTabList();
+
+      const videoTabs = _multiTabRegistry.filter(t => t.role === 'video');
+      if (videoTabs.length === 0) {
+        alert('Không tìm thấy tab nào có vai trò "Video"! Vui lòng mở ít nhất 1 tab Google Flow và gán vai trò Video.');
+        return;
+      }
+
+      log(`✅ Tìm thấy ${videoTabs.length} tab Video (ID: ${videoTabs.map(t => t.tabId).join(', ')})`);
+
+      btnBatch10.disabled = true;
+      btnBatch10.textContent = '⏳ Đang chạy 10 Task Đa Tab...';
+
+      // 2. Tải 2 ảnh test sẵn vào bộ nhớ (Base64 DataURL)
+      let startImgDataUrl = null;
+      let endImgDataUrl = null;
+      try {
+        const sRes = await fetch(chrome.runtime.getURL('test_start_frame.jpg'));
+        const sBlob = await sRes.blob();
+        startImgDataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(sBlob); });
+      } catch (e) { log(`⚠️ Không load được test_start_frame.jpg: ${e.message}`); }
+
+      try {
+        const eRes = await fetch(chrome.runtime.getURL('test_end_frame.jpg'));
+        const eBlob = await eRes.blob();
+        endImgDataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(eBlob); });
+      } catch (e) { log(`⚠️ Không load được test_end_frame.jpg: ${e.message}`); }
+
+      // 3. Danh sách 10 task đa dạng đủ các thể loại
+      const tasks = [
+        { id: 1, type: 'text', typeName: '📝 Text', color: '#00e5ff', prompt: 'con mèo con lông trắng đuổi theo cuộn len đỏ trong phòng khách' },
+        { id: 2, type: 'start', typeName: '🎬 Start', color: '#e91e63', prompt: 'cô gái nhảy điệu nhảy hiphop sôi động trên đường phố đêm neon rực rỡ' },
+        { id: 3, type: 'start_end', typeName: '🎭 Start+End', color: '#9c27b0', prompt: 'cô gái biến hình thành chiến binh H9 Gunner với hiệu ứng ánh sáng neon' },
+        { id: 4, type: 'text', typeName: '📝 Text', color: '#00e5ff', prompt: 'siêu xe thể thao màu đen bóng lao vun vút trên đường cao tốc ven biển hoàng hôn' },
+        { id: 5, type: 'start', typeName: '🎬 Start', color: '#e91e63', prompt: 'cô gái xoay người mỉm cười trước ống kính máy quay phong cách điện ảnh 4k' },
+        { id: 6, type: 'text', typeName: '📝 Text', color: '#00e5ff', prompt: 'chú chó shiba inu đeo kính râm ngồi trên thuyền lướt sóng vui nhộn' },
+        { id: 7, type: 'start_end', typeName: '🎭 Start+End', color: '#9c27b0', prompt: 'cô gái trang bị áo giáp công nghệ cao H9 Gunner sẵn sàng chiến đấu' },
+        { id: 8, type: 'start', typeName: '🎬 Start', color: '#e91e63', prompt: 'cô gái dạo bước dưới cơn mưa rào mùa hạ, ánh đèn phản chiếu lấp lánh' },
+        { id: 9, type: 'text', typeName: '📝 Text', color: '#00e5ff', prompt: 'phi thuyền không gian khổng lồ bay xuyên qua vành đai tiểu hành tinh rực sáng' },
+        { id: 10, type: 'start_end', typeName: '🎭 Start+End', color: '#9c27b0', prompt: 'hiệu ứng hạt ánh sáng biến đổi từ cô gái sang người máy H9 Gunner ma mị' }
+      ];
+
+      // 4. Render danh sách 10 task lên giao diện
+      const statusContainer = document.getElementById('batch10StatusContainer');
+      const taskListEl = document.getElementById('batch10TaskList');
+      const progressBadge = document.getElementById('batch10ProgressBadge');
+      if (statusContainer) statusContainer.style.display = 'block';
+      if (progressBadge) progressBadge.textContent = `0/${tasks.length}`;
+
+      if (taskListEl) {
+        taskListEl.innerHTML = tasks.map(t => `
+          <div id="batch10_row_${t.id}" style="background:var(--bg); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:6px 8px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <div style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:0;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-weight:bold; color:white;">#${t.id}</span>
+                <span style="font-size:9px; padding:1px 5px; border-radius:4px; font-weight:bold; background:rgba(255,255,255,0.08); color:${t.color};">${t.typeName}</span>
+                <span id="batch10_tab_${t.id}" style="font-size:9px; color:var(--text2);">⏳ Đang chờ...</span>
+              </div>
+              <div style="font-size:10px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${t.prompt}">
+                ${t.prompt}
+              </div>
+            </div>
+            <div id="batch10_status_${t.id}" style="font-size:10px; font-weight:bold; color:var(--text2); white-space:nowrap;">
+              ⏳ Chờ
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // 5. Worker Pool chia tab quản lý
+      const queue = [...tasks];
+      let completedCount = 0;
+
+      const runWorkerForTab = async (tab, workerIdx) => {
+        const tabLabel = `Tab ${tab.index + 1}`;
+        while (queue.length > 0) {
+          const task = queue.shift();
+
+          const statusEl = document.getElementById(`batch10_status_${task.id}`);
+          const tabEl = document.getElementById(`batch10_tab_${task.id}`);
+          const rowEl = document.getElementById(`batch10_row_${task.id}`);
+
+          if (tabEl) {
+            tabEl.textContent = `📌 ${tabLabel} (ID: ${tab.tabId})`;
+            tabEl.style.color = 'var(--accent2)';
+          }
+          if (statusEl) {
+            statusEl.textContent = '🔄 Đang gửi...';
+            statusEl.style.color = '#00e5ff';
+          }
+          if (rowEl) rowEl.style.borderColor = '#00e5ff';
+
+          const sImg = (task.type === 'start' || task.type === 'start_end') ? startImgDataUrl : null;
+          const eImg = (task.type === 'start_end') ? endImgDataUrl : null;
+          const timestamp = Date.now().toString().slice(-4);
+          const fullPrompt = `${timestamp}. ${task.prompt}`;
+
+          log(`[${tabLabel}] 🚀 Bắt đầu Task #${task.id} (${task.typeName}): "${fullPrompt.slice(0, 35)}..."`);
+
+          try {
+            // Bước 1: Tạo Video trên tab được phân bổ
+            const createRes = await callExt('CREATE_VIDEO_MULTI_TAB', {
+              prompt: fullPrompt,
+              tabId: tab.tabId,
+              aspectRatio: '9:16',
+              startImageDataUrl: sImg,
+              endImageDataUrl: eImg
+            });
+
+            if (!createRes?.success) {
+              throw new Error(createRes?.error || 'Lỗi khi tạo video');
+            }
+
+            if (statusEl) {
+              statusEl.textContent = '⏳ Đang render...';
+              statusEl.style.color = '#ff9800';
+            }
+            log(`[${tabLabel}] ✅ Đã submit Task #${task.id}. Đang theo dõi...`);
+
+            // Bước 2: Quét % → Hết % → Chờ 5s → Chuột phải tải → Chờ 5s kiểm tra file
+            const monRes = await monitorAndDownloadMultiTab(tab.tabId, timestamp, fullPrompt, tab.projectId, logEl);
+
+            if (monRes?.success) {
+              if (statusEl) {
+                statusEl.textContent = '✅ Xong';
+                statusEl.style.color = 'var(--green)';
+              }
+              if (rowEl) rowEl.style.borderColor = 'rgba(16,185,129,0.4)';
+              log(`[${tabLabel}] 🎉 HOÀN TẤT Task #${task.id} (${monRes.filename || 'Đã có file'})!`);
+            } else {
+              if (statusEl) {
+                statusEl.textContent = '❌ Lỗi tải';
+                statusEl.style.color = 'var(--accent)';
+              }
+              if (rowEl) rowEl.style.borderColor = 'rgba(244,67,54,0.4)';
+              log(`[${tabLabel}] ❌ Task #${task.id} thất bại: ${monRes?.error || 'Có lỗi xảy ra'}`);
+            }
+          } catch (taskErr) {
+            if (statusEl) {
+              statusEl.textContent = '❌ Thất bại';
+              statusEl.style.color = 'var(--accent)';
+            }
+            if (rowEl) rowEl.style.borderColor = 'rgba(244,67,54,0.4)';
+            log(`[${tabLabel}] ❌ Task #${task.id} gặp lỗi: ${taskErr.message}`);
+          }
+
+          completedCount++;
+          if (progressBadge) progressBadge.textContent = `${completedCount}/${tasks.length}`;
+        }
+      };
+
+      // Chạy song song các Worker trên tất cả các tab Video đang mở
+      log(`⚡ Chia đều 10 task chạy trên ${videoTabs.length} tab song song...`);
+      await Promise.all(videoTabs.map((tab, idx) => runWorkerForTab(tab, idx)));
+
+      log(`🏁 TẤT CẢ 10 TASK ĐÃ ĐƯỢC XỬ LÝ XONG! (${completedCount}/${tasks.length})`);
+      btnBatch10.disabled = false;
+      btnBatch10.textContent = '⚡ Chạy Test 10 Task Đa Tab (Đủ loại: Text, Start, Start+End)';
+    });
+  }
 });
 
 })();
