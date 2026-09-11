@@ -291,6 +291,7 @@ const HANDLERS = {
   CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl, req.endImageDataUrl),
   DOWNLOAD_MULTI_TAB: req => downloadMultiTab(req.tabId, req.query, req.prompt),
   CHECK_PERCENT_ON_SCREEN: req => checkPercentOnScreen(req.tabId),
+  DRAW_ABOVE_STT: req => drawAboveSTT(req.tabId),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
@@ -1275,6 +1276,98 @@ async function createVideoAPI(prompt, projectId, model, aspectRatio, startImage,
 // ══════════════════════════════════════
 // Fallback: UI automation
 // ══════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+// drawAboveSTT — Debug: Vẽ vùng đỏ 100px phía trên timestamp
+// ══════════════════════════════════════════════════════════════════
+async function drawAboveSTT(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "ISOLATED",
+      func: () => {
+        // Xóa các debug box cũ
+        document.querySelectorAll('[data-debug-stt-box]').forEach(el => el.remove());
+
+        // Tìm tất cả text chứa timestamp (4 chữ số + dấu .)
+        const sttEls = Array.from(document.querySelectorAll('p, span, div, b, strong')).filter(el => {
+          if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
+          const t = (el.innerText || el.textContent || '').trim();
+          return /^\d{4}\./.test(t) && t.length < 200;
+        });
+
+        if (sttEls.length === 0) return { found: 0 };
+
+        sttEls.forEach((sttEl, idx) => {
+          const sttRect = sttEl.getBoundingClientRect();
+          const cx = sttRect.left + sttRect.width / 2;
+          const cy = sttRect.top - 100;
+
+          // Vẽ vùng đỏ (hình chữ nhật) 100px phía trên STT
+          const box = document.createElement('div');
+          box.setAttribute('data-debug-stt-box', 'true');
+          box.style.cssText = `
+            position:fixed;
+            left:${cx - 30}px; top:${cy - 15}px;
+            width:60px; height:30px;
+            border:3px solid red; border-radius:8px;
+            background:rgba(255,0,0,0.15);
+            z-index:999999; pointer-events:none;
+            box-shadow: 0 0 12px rgba(255,0,0,0.5);
+          `;
+          document.body.appendChild(box);
+
+          // Vẽ đường nối từ STT lên box
+          const line = document.createElement('div');
+          line.setAttribute('data-debug-stt-box', 'true');
+          line.style.cssText = `
+            position:fixed;
+            left:${cx - 1}px; top:${cy + 15}px;
+            width:2px; height:${100 - 30}px;
+            background:rgba(255,0,0,0.5);
+            z-index:999998; pointer-events:none;
+          `;
+          document.body.appendChild(line);
+
+          // Vẽ vòng tròn nhỏ tại vị trí click chính xác
+          const dot = document.createElement('div');
+          dot.setAttribute('data-debug-stt-box', 'true');
+          dot.style.cssText = `
+            position:fixed;
+            left:${cx - 10}px; top:${cy - 10}px;
+            width:20px; height:20px; border-radius:50%;
+            background:rgba(255,0,0,0.7); border:2px solid #fff;
+            z-index:999999; pointer-events:none;
+          `;
+          document.body.appendChild(dot);
+
+          // Label
+          const label = document.createElement('div');
+          label.setAttribute('data-debug-stt-box', 'true');
+          label.style.cssText = `
+            position:fixed;
+            left:${cx + 35}px; top:${cy - 10}px;
+            font-size:11px; color:red; font-weight:bold; font-family:monospace;
+            z-index:999999; pointer-events:none;
+            text-shadow: 0 0 3px #000;
+          `;
+          label.textContent = `click (${Math.round(cx)}, ${Math.round(cy)})`;
+          document.body.appendChild(label);
+        });
+
+        // Tự xóa sau 5s
+        setTimeout(() => {
+          document.querySelectorAll('[data-debug-stt-box]').forEach(el => el.remove());
+        }, 5000);
+
+        return { found: sttEls.length };
+      }
+    });
+    return results?.[0]?.result || { found: 0 };
+  } catch (err) {
+    return { found: 0, error: err.message };
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // checkPercentOnScreen — Quét xem còn XX% trên màn hình không
 // ══════════════════════════════════════════════════════════════════

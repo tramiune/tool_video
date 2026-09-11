@@ -3305,6 +3305,18 @@ document.addEventListener('DOMContentLoaded', () => {
       testStartEndBtn.textContent = '🧪 Test: Start + End Frame (Cô gái → H9 Gunner)';
     });
   }
+
+  // Debug: Vẽ vùng trên STT
+  const drawBtn = document.getElementById('btnDrawAboveSTT');
+  if (drawBtn) {
+    drawBtn.addEventListener('click', async () => {
+      if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video');
+      if (!videoTab) { alert('Không có tab Video!'); return; }
+
+      await callExt('DRAW_ABOVE_STT', { tabId: videoTab.tabId });
+    });
+  }
 });
 
 })();
