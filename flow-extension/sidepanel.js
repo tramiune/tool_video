@@ -3245,7 +3245,69 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       testFrameBtn.disabled = false;
-      testFrameBtn.textContent = '🧪 Test: Video Start Frame (Cô gái nhảy)';
+      testFrameBtn.textContent = '🧪 Test: Start Frame (Cô gái nhảy)';
+    });
+  }
+
+  // Test Start + End Frame button
+  const testStartEndBtn = document.getElementById('btnTestStartEndFrame');
+  if (testStartEndBtn) {
+    testStartEndBtn.addEventListener('click', async () => {
+      if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video');
+      if (!videoTab) { alert('Không có tab Video! Quét tab trước.'); return; }
+
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) { logEl.style.display = 'block'; logEl.textContent = '⏳ Đang đọc 2 ảnh...\n'; }
+      testStartEndBtn.disabled = true;
+      testStartEndBtn.textContent = '⏳ Đang xử lý...';
+
+      try {
+        // Đọc cả 2 ảnh
+        const loadImg = async (name) => {
+          const url = chrome.runtime.getURL(name);
+          const resp = await fetch(url);
+          const blob = await resp.blob();
+          return new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+        };
+
+        const startDataUrl = await loadImg('test_start_frame.jpg');
+        const endDataUrl = await loadImg('test_end_frame.jpg');
+        if (logEl) logEl.textContent += `✅ Đã đọc 2 ảnh. Gửi tới Tab ${videoTab.tabId}...\n`;
+
+        const ts = Date.now().toString().slice(-4);
+        const prompt = `${ts}. cô gái biến hình thành chiến binh H9 Gunner với hiệu ứng ánh sáng neon`;
+
+        const res = await callExt('CREATE_VIDEO_MULTI_TAB', {
+          prompt,
+          tabId: videoTab.tabId,
+          aspectRatio: '9:16',
+          startImageDataUrl: startDataUrl,
+          endImageDataUrl: endDataUrl
+        });
+
+        if (res?.success) {
+          if (logEl) logEl.textContent += `✅ ${res.message}\n`;
+          testStartEndBtn.textContent = '🔍 Đang theo dõi render...';
+          const dlResult = await monitorAndDownloadMultiTab(
+            videoTab.tabId, ts, prompt, videoTab.projectId, logEl
+          );
+          if (dlResult?.success) {
+            if (logEl) logEl.textContent += `🎉 HOÀN TẤT! File: ${dlResult.filePath || 'OK'}\n`;
+          }
+        } else {
+          if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ Exception: ${err.message}\n`;
+      }
+
+      testStartEndBtn.disabled = false;
+      testStartEndBtn.textContent = '🧪 Test: Start + End Frame (Cô gái → H9 Gunner)';
     });
   }
 });

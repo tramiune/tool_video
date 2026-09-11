@@ -53,7 +53,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["test_start_frame.jpg"],
+      "resources": ["test_start_frame.jpg", "test_end_frame.jpg"],
       "matches": ["<all_urls>"]
     }
   ],

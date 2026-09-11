@@ -288,7 +288,7 @@ const HANDLERS = {
   DOWNLOAD_VIDEO:     req => downloadVideo(req.mediaId, req.filename, req.videoUrl, req.cardIndex),
   CREATE_VIDEO:       req => createVideoAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.startImage, req.endImage),
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
-  CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl),
+  CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl, req.endImageDataUrl),
   DOWNLOAD_MULTI_TAB: req => downloadMultiTab(req.tabId, req.query, req.prompt),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
@@ -1434,7 +1434,7 @@ async function downloadMultiTab(tabId, query, promptText = '') {
 // createVideoMultiTab — Phiên bản GỌN cho Đa Tab
 // Luồng: Ctrl+V ảnh → Settings (ratio) → Gõ prompt → Chờ 15s → Submit
 // ══════════════════════════════════════════════════════════════════
-async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startImageDataUrl = null) {
+async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startImageDataUrl = null, endImageDataUrl = null) {
   let tab = null;
   try { tab = await chrome.tabs.get(tabId); } catch(e) {}
   if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
@@ -1444,14 +1444,14 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
     await new Promise(r => setTimeout(r, 500));
   } catch (_) {}
 
-  logToBridge(`[MultiTab] Bắt đầu tạo video trên Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, hasFrame: ${!!startImageDataUrl})`);
+  logToBridge(`[MultiTab] Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, start: ${!!startImageDataUrl}, end: ${!!endImageDataUrl})`);
 
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "MAIN",
-      args: [prompt, aspectRatio, startImageDataUrl],
-      func: async (promptText, targetRatio, startImgDataUrl) => {
+      args: [prompt, aspectRatio, startImageDataUrl, endImageDataUrl],
+      func: async (promptText, targetRatio, startImgUrl, endImgUrl) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         const queryDeep = (sel) => {
@@ -1472,6 +1472,17 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
         };
 
+        // Helper paste ảnh vào editor
+        const pasteImage = async (editor, dataUrl, name) => {
+          const resp = await fetch(dataUrl);
+          const blob = await resp.blob();
+          const file = new File([blob], name + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+          editor.dispatchEvent(evt);
+        };
+
         // ── STEP 1: Tìm Slate Editor ──
         let editor = document.querySelector("[data-slate-editor='true']") ||
                      document.querySelector("[contenteditable='true']") ||
@@ -1485,25 +1496,42 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
         editor.focus();
         await sleep(300);
 
-        // ── STEP 2: Ctrl+V paste ảnh (nếu có) ──
-        let pastedFrame = false;
-        if (startImgDataUrl) {
-          try {
-            const resp = await fetch(startImgDataUrl);
-            const blob = await resp.blob();
-            const file = new File([blob], 'start_frame_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
-            const dt = new DataTransfer();
-            dt.items.add(file);
-            const pasteEvt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-            editor.dispatchEvent(pasteEvt);
-            pastedFrame = true;
-            await sleep(500);
-          } catch (e) {
-            console.warn('[MultiTab] Paste error:', e);
-          }
+        // ── STEP 2: Ctrl+V paste start frame (nếu có) ──
+        let pastedStart = false, pastedEnd = false;
+        if (startImgUrl) {
+          try { await pasteImage(editor, startImgUrl, 'start_frame'); pastedStart = true; } catch (e) { console.warn('[MultiTab] Start paste err:', e); }
+          await sleep(1000);
         }
 
-        // ── STEP 3: Mở Settings Chip → Bấm ratio → Đóng ──
+        // ── STEP 2.5: Ctrl+V paste end frame (nếu có) ──
+        if (endImgUrl) {
+          try { await pasteImage(editor, endImgUrl, 'end_frame'); pastedEnd = true; } catch (e) { console.warn('[MultiTab] End paste err:', e); }
+          await sleep(500);
+        }
+
+        // ── STEP 3: Gõ prompt ──
+        editor.focus();
+        await sleep(200);
+        const sel = window.getSelection();
+        if (sel && editor.childNodes.length > 0) {
+          const range = document.createRange();
+          const lastNode = editor.childNodes[editor.childNodes.length - 1];
+          range.selectNodeContents(lastNode);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        try { editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true })); } catch (_) {}
+        document.execCommand('insertText', false, promptText);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(300);
+
+        const edText = (editor.innerText || editor.textContent || '').trim();
+        if (!edText.includes(promptText.slice(0, 10))) {
+          return { success: false, error: "Gõ prompt thất bại" };
+        }
+
+        // ── STEP 4: Mở Settings Chip → Bấm ratio → Đóng ──
         let clickedRatio = false;
         const chips = queryDeep("button, [role='button'], div").filter(el => {
           if (!isVis(el)) return false;
@@ -1528,42 +1556,14 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
             const t = (el.textContent || '').trim();
             return t === targetRatio || t.includes(targetRatio);
           });
-          if (ratioBtns.length > 0) {
-            ratioBtns[0].click();
-            clickedRatio = true;
-            await sleep(300);
-          }
+          if (ratioBtns.length > 0) { ratioBtns[0].click(); clickedRatio = true; await sleep(300); }
 
           document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
           await sleep(400);
         }
 
-        // ── STEP 4: Gõ prompt ──
-        editor.focus();
-        await sleep(200);
-        const sel = window.getSelection();
-        if (sel && editor.childNodes.length > 0) {
-          const range = document.createRange();
-          const lastNode = editor.childNodes[editor.childNodes.length - 1];
-          range.selectNodeContents(lastNode);
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-        try {
-          editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true }));
-        } catch (_) {}
-        document.execCommand('insertText', false, promptText);
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
-        await sleep(300);
-
-        const edText = (editor.innerText || editor.textContent || '').trim();
-        if (!edText.includes(promptText.slice(0, 10))) {
-          return { success: false, error: "Gõ prompt thất bại" };
-        }
-
         // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
-        if (pastedFrame) {
+        if (pastedStart || pastedEnd) {
           await sleep(15000);
         }
 
@@ -1595,9 +1595,10 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
         });
         await sleep(500);
 
+        const frames = [pastedStart && 'start', pastedEnd && 'end'].filter(Boolean).join('+');
         return {
-          success: true, clickedRatio, pastedFrame,
-          message: `Submit OK!${pastedFrame ? ' (có start frame, đã chờ 15s)' : ''}`
+          success: true, clickedRatio, pastedStart, pastedEnd,
+          message: `Submit OK!${frames ? ' (frames: ' + frames + ', đã chờ 15s)' : ''}`
         };
       }
     });
