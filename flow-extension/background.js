@@ -2473,8 +2473,19 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           const file = new File([blob], name + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
           const dt = new DataTransfer();
           dt.items.add(file);
+
+          const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
+          if (fileInputs.length > 0) {
+            try {
+              fileInputs[0].files = dt.files;
+              fileInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+            } catch (_) {}
+          }
+
           const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
           editor.dispatchEvent(evt);
+          try { document.dispatchEvent(evt); } catch (_) {}
+          try { window.dispatchEvent(evt); } catch (_) {}
         };
 
         // ── STEP 1: Tìm Slate Editor & Submit Button ──
@@ -2818,23 +2829,35 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
         }
 
         // ── STEP 4: Ctrl+V dán ảnh tham chiếu ngay trước khi Submit ──
-        let pastedStart = false, pastedEnd = false;
-        if (startImgUrl) {
-          editor.focus();
-          await sleep(200);
-          try { await pasteImage(editor, startImgUrl, 'ref_image_1'); pastedStart = true; } catch (e) { console.warn('[MultiTab Image] Ref paste err:', e); }
-          await sleep(1000);
-        }
+        const refList = [startImgUrl, endImgUrl].filter(Boolean);
+        let pastedCount = 0;
 
-        if (endImgUrl) {
-          editor.focus();
-          await sleep(200);
-          try { await pasteImage(editor, endImgUrl, 'ref_image_2'); pastedEnd = true; } catch (e) { console.warn('[MultiTab Image] Ref 2 paste err:', e); }
-          await sleep(500);
+        for (let i = 0; i < refList.length; i++) {
+          const imgUrl = refList[i];
+          // Bắt buộc: Click và focus lại vào editor trước MỖI LẦN paste (đặc biệt là ảnh thứ 2)
+          try {
+            editor.scrollIntoView({ block: "nearest" });
+            editor.click();
+            editor.focus();
+            editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+          } catch (_) {}
+          await sleep(400);
+
+          try {
+            await pasteImage(editor, imgUrl, `ref_image_${i + 1}`);
+            pastedCount++;
+          } catch (e) {
+            console.warn(`[MultiTab Image] Ref paste err ${i + 1}:`, e);
+          }
+
+          // Chờ 1.5s sau mỗi ảnh để Flow nhận diện và chèn khối ảnh xong
+          await sleep(1500);
         }
 
         // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
-        if (pastedStart || pastedEnd) {
+        if (pastedCount > 0) {
           await sleep(15000);
         }
 
@@ -2860,15 +2883,13 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
         triggerClick(submitBtn);
         await sleep(500);
 
-        const frames = [pastedStart && 'ref1', pastedEnd && 'ref2'].filter(Boolean).join('+');
         return {
           success: true,
           clickedRatio,
           chipFound: !!settingsChip,
           chipName,
-          pastedStart,
-          pastedEnd,
-          message: `Submit Tạo Ảnh OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN (' + clickedDetail + ')' : 'Chưa tìm thấy nút (chip: ' + chipName + ')'}]${frames ? ' (ảnh tham chiếu: ' + frames + ', đã chờ 15s)' : ''}`
+          pastedCount,
+          message: `Submit Tạo Ảnh OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN (' + clickedDetail + ')' : 'Chưa tìm thấy nút (chip: ' + chipName + ')'}]${pastedCount > 0 ? ' (' + pastedCount + ' ảnh tham chiếu, đã chờ 15s)' : ''}`
         };
       }
     });
