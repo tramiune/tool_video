@@ -1274,20 +1274,19 @@ async function createVideoAPI(prompt, projectId, model, aspectRatio, startImage,
 // ══════════════════════════════════════
 // ══════════════════════════════════════════════════════════════════
 // createVideoMultiTab — Phiên bản GỌN cho Đa Tab
-// Chỉ: mở config → bấm ratio → đóng config → gõ prompt → submit
+// Luồng: Ctrl+V ảnh → Settings (ratio) → Gõ prompt → Chờ 15s → Submit
 // ══════════════════════════════════════════════════════════════════
 async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startImageDataUrl = null) {
   let tab = null;
   try { tab = await chrome.tabs.get(tabId); } catch(e) {}
   if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
 
-  // Focus tab
   try {
     await chrome.tabs.update(tab.id, { active: true });
     await new Promise(r => setTimeout(r, 500));
   } catch (_) {}
 
-  logToBridge(`[MultiTab] Bắt đầu tạo video trên Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio})`);
+  logToBridge(`[MultiTab] Bắt đầu tạo video trên Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, hasFrame: ${!!startImageDataUrl})`);
 
   try {
     const results = await chrome.scripting.executeScript({
@@ -1297,20 +1296,17 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
       func: async (promptText, targetRatio, startImgDataUrl) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-        // ── Helper: Query deep (bao gồm Shadow DOM) ──
         const queryDeep = (sel) => {
-          const results = [];
+          const res = [];
           const walk = (root) => {
-            try { results.push(...root.querySelectorAll(sel)); } catch {}
-            root.querySelectorAll('*').forEach(el => {
-              if (el.shadowRoot) walk(el.shadowRoot);
-            });
+            try { res.push(...root.querySelectorAll(sel)); } catch {}
+            root.querySelectorAll('*').forEach(el => { if (el.shadowRoot) walk(el.shadowRoot); });
           };
           walk(document);
-          return results;
+          return res;
         };
 
-        const isElemVisible = (el) => {
+        const isVis = (el) => {
           if (!el) return false;
           const r = el.getBoundingClientRect();
           if (r.width < 2 || r.height < 2) return false;
@@ -1318,168 +1314,75 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
         };
 
-        // ═══════════════════════════════════════════════
-        // STEP 1: Tìm Settings Chip và mở config
-        // ═══════════════════════════════════════════════
-        let settingsChip = null;
-        const chipCandidates = queryDeep("button, [role='button'], div").filter(el => {
-          if (!isElemVisible(el)) return false;
-          const r = el.getBoundingClientRect();
-          if (r.width < 60 || r.width > 500 || r.height < 20 || r.height > 60) return false;
-          if (r.top < 100) return false;
-          const t = (el.textContent || '').toLowerCase();
-          return t.includes('video') || t.includes('9:16') || t.includes('16:9') || 
-                 t.includes('1:1') || t.includes('720p') || t.includes('8s') || t.includes('4s') ||
-                 t.includes('veo') || t.includes('nano') || t.includes('giây');
-        });
-        if (chipCandidates.length > 0) {
-          chipCandidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
-          settingsChip = chipCandidates[0];
-        }
-
-        if (!settingsChip) {
-          return { success: false, error: "Không tìm thấy nút Settings Chip (config bar)" };
-        }
-
-        settingsChip.click();
-        await sleep(600);
-
-        // ═══════════════════════════════════════════════
-        // STEP 2: Nếu có startImage → bấm tab "Khung hình" / "Video"
-        // ═══════════════════════════════════════════════
-        if (startImgDataUrl) {
-          // Tìm và click tab "Khung hình" (Frames)
-          const frameTabs = queryDeep("[role='tab'], button").filter(el => {
-            if (!isElemVisible(el)) return false;
-            const t = (el.textContent || '').toLowerCase();
-            return t.includes('khung hình') || t.includes('frame');
-          });
-          if (frameTabs.length > 0) {
-            frameTabs[0].click();
-            await sleep(500);
-          }
-        }
-
-        // ═══════════════════════════════════════════════
-        // STEP 2.1: Bấm đúng tỉ lệ khung hình
-        // ═══════════════════════════════════════════════
-        const ratioMap = {
-          '9:16': ['9:16'], '16:9': ['16:9'], '1:1': ['1:1'], '4:3': ['4:3'], '3:4': ['3:4'],
-        };
-        const targets = ratioMap[targetRatio] || [targetRatio];
-        
-        let clickedRatio = false;
-        const ratioButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
-          if (!isElemVisible(el)) return false;
-          if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
-          const r = el.getBoundingClientRect();
-          if (r.width < 20 || r.width > 120 || r.height < 20 || r.height > 60) return false;
-          const t = (el.textContent || '').trim();
-          return targets.some(tr => t === tr || t.includes(tr));
-        });
-
-        if (ratioButtons.length > 0) {
-          ratioButtons[0].click();
-          clickedRatio = true;
-          await sleep(300);
-        }
-
-        // ═══════════════════════════════════════════════
-        // STEP 3: Đóng config (Escape)
-        // ═══════════════════════════════════════════════
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
-        await sleep(400);
-
-        // ═══════════════════════════════════════════════
-        // STEP 3.5: Paste Start Frame (nếu có)
-        // ═══════════════════════════════════════════════
-        let pastedFrame = false;
-        if (startImgDataUrl) {
-          try {
-            // Tìm nút "Bắt đầu" (start frame slot)
-            const startBtn = queryDeep("button, [role='button'], div[aria-haspopup='dialog']").find(el => {
-              if (!isElemVisible(el)) return false;
-              const t = (el.textContent || '').toLowerCase();
-              const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-              return t.includes('bắt đầu') || aria.includes('bắt đầu') || t.includes('start frame') || aria.includes('start');
-            });
-
-            if (startBtn) {
-              startBtn.click();
-              await sleep(800);
-
-              // Tìm dialog vừa mở
-              let dialog = document.querySelector("div[role='dialog'][data-state='open']") || document.querySelector("div[role='dialog']");
-              if (!dialog) {
-                for (let w = 0; w < 6; w++) { await sleep(300); dialog = document.querySelector("div[role='dialog']"); if (dialog) break; }
-              }
-
-              if (dialog) {
-                // Tìm file input trong dialog
-                const fileInput = dialog.querySelector("input[type='file']") || document.querySelector("input[type='file']");
-                if (fileInput) {
-                  // Convert data URL to File
-                  const arr = startImgDataUrl.split(',');
-                  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
-                  const bstr = atob(arr[1] || arr[0]);
-                  let n = bstr.length;
-                  const u8arr = new Uint8Array(n);
-                  while (n--) u8arr[n] = bstr.charCodeAt(n);
-                  const fileObj = new File([u8arr], 'start_frame_' + Date.now() + '.jpg', { type: mime });
-                  const dt = new DataTransfer();
-                  dt.items.add(fileObj);
-                  fileInput.files = dt.files;
-                  fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                  pastedFrame = true;
-                  await sleep(3000); // Chờ upload
-                } else {
-                  // Fallback: Paste trực tiếp vào dialog
-                  const blob = await (await fetch(startImgDataUrl)).blob();
-                  const fileObj = new File([blob], 'start_frame.jpg', { type: 'image/jpeg' });
-                  const dt = new DataTransfer();
-                  dt.items.add(fileObj);
-                  dialog.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
-                  pastedFrame = true;
-                  await sleep(3000);
-                }
-
-                // Đóng dialog nếu vẫn mở
-                const closeBtn = dialog.querySelector("button[aria-label='Close'], button[aria-label='Đóng']");
-                if (closeBtn) { closeBtn.click(); await sleep(300); }
-                else { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })); await sleep(300); }
-              }
-            }
-          } catch (frameErr) {
-            console.warn('[MultiTab] Frame paste error:', frameErr);
-          }
-        }
-
-        // ═══════════════════════════════════════════════
-        // STEP 4: Gõ prompt vào Slate Editor
-        // ═══════════════════════════════════════════════
+        // ── STEP 1: Tìm Slate Editor ──
         let editor = document.querySelector("[data-slate-editor='true']") ||
                      document.querySelector("[contenteditable='true']") ||
                      document.querySelector("[role='textbox']");
-        
         if (!editor) {
-          // Fallback: tìm sâu hơn
-          const editors = queryDeep("[data-slate-editor], [contenteditable='true'], [role='textbox']");
-          editor = editors.find(e => isElemVisible(e) && e.getBoundingClientRect().width > 200);
+          const eds = queryDeep("[data-slate-editor], [contenteditable='true'], [role='textbox']");
+          editor = eds.find(e => isVis(e) && e.getBoundingClientRect().width > 200);
+        }
+        if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt" };
+
+        editor.focus();
+        await sleep(300);
+
+        // ── STEP 2: Ctrl+V paste ảnh (nếu có) ──
+        let pastedFrame = false;
+        if (startImgDataUrl) {
+          try {
+            const resp = await fetch(startImgDataUrl);
+            const blob = await resp.blob();
+            const file = new File([blob], 'start_frame_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            const pasteEvt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+            editor.dispatchEvent(pasteEvt);
+            pastedFrame = true;
+            await sleep(500);
+          } catch (e) {
+            console.warn('[MultiTab] Paste error:', e);
+          }
         }
 
-        if (!editor) {
-          return { success: false, error: "Không tìm thấy ô nhập prompt (Slate Editor)" };
+        // ── STEP 3: Mở Settings Chip → Bấm ratio → Đóng ──
+        let clickedRatio = false;
+        const chips = queryDeep("button, [role='button'], div").filter(el => {
+          if (!isVis(el)) return false;
+          const r = el.getBoundingClientRect();
+          if (r.width < 60 || r.width > 500 || r.height < 20 || r.height > 60 || r.top < 100) return false;
+          const t = (el.textContent || '').toLowerCase();
+          return t.includes('video') || t.includes('9:16') || t.includes('16:9') ||
+                 t.includes('1:1') || t.includes('720p') || t.includes('8s') || t.includes('4s') ||
+                 t.includes('veo') || t.includes('nano') || t.includes('giây') ||
+                 t.includes('khung hình') || t.includes('frame');
+        });
+        if (chips.length > 0) {
+          chips.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+          const chip = chips[0];
+          chip.click();
+          await sleep(600);
+
+          const ratioBtns = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+            if (!isVis(el) || el === chip || chip.contains(el)) return false;
+            const r = el.getBoundingClientRect();
+            if (r.width < 20 || r.width > 120 || r.height < 20 || r.height > 60) return false;
+            const t = (el.textContent || '').trim();
+            return t === targetRatio || t.includes(targetRatio);
+          });
+          if (ratioBtns.length > 0) {
+            ratioBtns[0].click();
+            clickedRatio = true;
+            await sleep(300);
+          }
+
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+          await sleep(400);
         }
 
-        // Focus & clear (không scroll!)
+        // ── STEP 4: Gõ prompt ──
         editor.focus();
         await sleep(200);
-        document.execCommand('selectAll', false, null);
-        document.execCommand('delete', false, null);
-        await sleep(100);
-
-        // Type prompt
-        editor.focus();
         const sel = window.getSelection();
         if (sel && editor.childNodes.length > 0) {
           const range = document.createRange();
@@ -1489,86 +1392,65 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           sel.removeAllRanges();
           sel.addRange(range);
         }
-
         try {
-          editor.dispatchEvent(new InputEvent('beforeinput', {
-            inputType: 'insertText', data: promptText, bubbles: true, cancelable: true
-          }));
+          editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true }));
         } catch (_) {}
         document.execCommand('insertText', false, promptText);
         editor.dispatchEvent(new Event('input', { bubbles: true }));
         await sleep(300);
 
-        // Verify text was typed
-        const editorText = (editor.innerText || editor.textContent || '').trim();
-        if (!editorText.includes(promptText.slice(0, 10))) {
-          return { success: false, error: "Gõ prompt thất bại — ô nhập vẫn trống" };
+        const edText = (editor.innerText || editor.textContent || '').trim();
+        if (!edText.includes(promptText.slice(0, 10))) {
+          return { success: false, error: "Gõ prompt thất bại" };
         }
 
-        // ═══════════════════════════════════════════════
-        // STEP 5: Click nút Submit (→)
-        // ═══════════════════════════════════════════════
+        // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
+        if (pastedFrame) {
+          await sleep(15000);
+        }
+
+        // ── STEP 6: Click Submit (→) ──
         let submitBtn = null;
-        for (let attempt = 0; attempt < 25; attempt++) {
-          const candidates = queryDeep("button, [role='button']").filter(el => {
-            if (!isElemVisible(el)) return false;
+        for (let i = 0; i < 25; i++) {
+          const cands = queryDeep("button, [role='button']").filter(el => {
+            if (!isVis(el)) return false;
             const t = (el.textContent || '').trim().toLowerCase();
             const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-            const hasIcon = el.querySelector("mat-icon, [class*='arrow_forward'], [class*='send']");
-            const iconText = hasIcon ? (hasIcon.textContent || '').trim().toLowerCase() : '';
+            const ic = el.querySelector("mat-icon, [class*='arrow_forward'], [class*='send']");
+            const icT = ic ? (ic.textContent || '').trim().toLowerCase() : '';
             return t === 'arrow_forward' || t === 'send' || t === '→' ||
-                   iconText === 'arrow_forward' || iconText === 'send' ||
+                   icT === 'arrow_forward' || icT === 'send' ||
                    aria.includes('tạo') || aria.includes('create') || aria.includes('submit') || aria.includes('send') ||
                    el.getAttribute('type') === 'submit';
           });
-          if (candidates.length > 0) {
-            submitBtn = candidates[candidates.length - 1]; // Lấy nút cuối (thường nằm dưới)
-            break;
-          }
+          if (cands.length > 0) { submitBtn = cands[cands.length - 1]; break; }
           await sleep(500);
         }
+        if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
 
-        if (!submitBtn) {
-          return { success: false, error: "Không tìm thấy nút Submit (→)" };
-        }
-
-        // Remove disabled
         submitBtn.removeAttribute('disabled');
         submitBtn.removeAttribute('aria-disabled');
         submitBtn.style.pointerEvents = 'auto';
         submitBtn.style.opacity = '1';
-
-        // Click!
-        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtName => {
-          submitBtn.dispatchEvent(new PointerEvent(evtName, { bubbles: true, cancelable: true, view: window }));
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
+          submitBtn.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
         });
-
         await sleep(500);
 
         return {
-          success: true,
-          clickedRatio,
-          pastedFrame,
-          message: `Đã gõ prompt và click Submit thành công!${pastedFrame ? ' (có start frame)' : ''}`
+          success: true, clickedRatio, pastedFrame,
+          message: `Submit OK!${pastedFrame ? ' (có start frame, đã chờ 15s)' : ''}`
         };
       }
     });
 
     const result = results?.[0]?.result;
-    if (!result) {
-      return { success: false, error: "Script trả về kết quả rỗng" };
-    }
-
-    if (result.success) {
-      logToBridge(`[MultiTab] ✅ Tab ${tab.id}: Submit thành công! (Ratio clicked: ${result.clickedRatio})`);
-    } else {
-      logToBridge(`[MultiTab] ❌ Tab ${tab.id}: ${result.error}`);
-    }
-
+    if (!result) return { success: false, error: "Script trả về rỗng" };
+    if (result.success) logToBridge(`[MultiTab] ✅ Tab ${tab.id}: ${result.message}`);
+    else logToBridge(`[MultiTab] ❌ Tab ${tab.id}: ${result.error}`);
     return result;
-
   } catch (err) {
-    logToBridge(`[MultiTab] ❌ Tab ${tab.id}: Exception — ${err.message}`);
+    logToBridge(`[MultiTab] ❌ Tab ${tab.id}: ${err.message}`);
     return { success: false, error: err.message };
   }
 }
