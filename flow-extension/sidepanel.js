@@ -3216,10 +3216,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const ts = Date.now().toString().slice(-4);
         const prompt = `${ts}. cho cô gái này nhảy điệu nhảy sôi động cháy bỏng`;
 
+        const ratioBtn = document.querySelector('.multiTabRatioBtn.active');
+        const selectedRatio = ratioBtn?.dataset?.ratio || '16:9';
+
         const res = await callExt('CREATE_VIDEO_MULTI_TAB', {
           prompt,
           tabId: videoTab.tabId,
-          aspectRatio: '9:16',
+          aspectRatio: selectedRatio,
           startImageDataUrl: dataUrl
         });
 
@@ -3279,10 +3282,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const ts = Date.now().toString().slice(-4);
         const prompt = `${ts}. cô gái biến hình thành chiến binh H9 Gunner với hiệu ứng ánh sáng neon`;
 
+        const ratioBtn = document.querySelector('.multiTabRatioBtn.active');
+        const selectedRatio = ratioBtn?.dataset?.ratio || '16:9';
+
         const res = await callExt('CREATE_VIDEO_MULTI_TAB', {
           prompt,
           tabId: videoTab.tabId,
-          aspectRatio: '9:16',
+          aspectRatio: selectedRatio,
           startImageDataUrl: startDataUrl,
           endImageDataUrl: endDataUrl
         });
@@ -3439,6 +3445,10 @@ document.addEventListener('DOMContentLoaded', () => {
       btnBatch10.disabled = true;
       btnBatch10.textContent = '⏳ Đang chạy 10 Task Đa Tab...';
 
+      const ratioBtn = document.querySelector('.multiTabRatioBtn.active');
+      const selectedRatio = ratioBtn?.dataset?.ratio || '16:9';
+      log(`🎯 Tỉ lệ áp dụng cho 10 Task: ${selectedRatio}`);
+
       // 2. Tải 2 ảnh test sẵn vào bộ nhớ (Base64 DataURL)
       let startImgDataUrl = null;
       let endImgDataUrl = null;
@@ -3482,6 +3492,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <div style="display:flex; align-items:center; gap:6px;">
                 <span style="font-weight:bold; color:white;">#${t.id}</span>
                 <span style="font-size:9px; padding:1px 5px; border-radius:4px; font-weight:bold; background:rgba(255,255,255,0.08); color:${t.color};">${t.typeName}</span>
+                <span style="font-size:9px; padding:1px 5px; border-radius:4px; font-weight:bold; background:rgba(0,229,255,0.1); color:#00e5ff;">${selectedRatio}</span>
                 <span id="batch10_tab_${t.id}" style="font-size:9px; color:var(--text2);">⏳ Đang chờ...</span>
               </div>
               <div style="font-size:10px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${t.prompt}">
@@ -3523,14 +3534,14 @@ document.addEventListener('DOMContentLoaded', () => {
           const timestamp = Date.now().toString().slice(-4);
           const fullPrompt = `${timestamp}. ${task.prompt}`;
 
-          log(`[${tabLabel}] 🚀 Bắt đầu Task #${task.id} (${task.typeName}): "${fullPrompt.slice(0, 35)}..."`);
+          log(`[${tabLabel}] 🚀 Bắt đầu Task #${task.id} (${task.typeName}, ${selectedRatio}): "${fullPrompt.slice(0, 35)}..."`);
 
           try {
             // Bước 1: Tạo Video trên tab được phân bổ
             const createRes = await callExt('CREATE_VIDEO_MULTI_TAB', {
               prompt: fullPrompt,
               tabId: tab.tabId,
-              aspectRatio: '9:16',
+              aspectRatio: selectedRatio,
               startImageDataUrl: sImg,
               endImageDataUrl: eImg
             });
