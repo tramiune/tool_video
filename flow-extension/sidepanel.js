@@ -3095,7 +3095,7 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
 
         if (dlRes?.success) {
           log(`🎉 THÀNH CÔNG! ${dlRes.message || 'Đã có file tải về máy.'}`);
-          return { success: true, filename: dlRes.filename };
+          return { success: true, filename: dlRes.filename, filePath: dlRes.filePath || dlRes.filename };
         } else {
           log(`❌ ${dlRes?.error || 'Có lỗi xảy ra vui lòng thử lại'}`);
           return { success: false, error: 'Có lỗi xảy ra vui lòng thử lại' };
@@ -3148,7 +3148,7 @@ async function monitorAndDownloadImageMultiTab(tabId, timestamp, prompt, project
 
         if (dlRes?.success) {
           log(`🎉 THÀNH CÔNG! ${dlRes.message || 'Đã có file ảnh tải về máy.'}`);
-          return { success: true, filename: dlRes.filename };
+          return { success: true, filename: dlRes.filename, filePath: dlRes.filePath || dlRes.filename };
         } else {
           log(`❌ ${dlRes?.error || 'Có lỗi xảy ra vui lòng thử lại'}`);
           return { success: false, error: 'Có lỗi xảy ra vui lòng thử lại' };
@@ -3379,7 +3379,8 @@ async function runMultiTabServerWorker(task, tab) {
 
       if (dlResult?.success) {
         task.status = 'DONE';
-        task.filename = dlResult.filename || dlResult.filePath || 'video.mp4';
+        const fullFilePath = dlResult.filePath || dlResult.filename || 'video.mp4';
+        task.filename = dlResult.filename || fullFilePath;
         task.statusDetail = `✅ Xong: ${task.filename}`;
         renderMultiTabServerTasksUI();
         log(`🎉 Hoàn tất Video! File: ${task.filename}`);
@@ -3389,7 +3390,7 @@ async function runMultiTabServerWorker(task, tab) {
           callExt('REPORT_TOOL_VIDEO_RESULT', {
             id: task.serverTaskId,
             ok: true,
-            filePath: task.filename
+            filePath: fullFilePath
           }).catch(e => console.error('Lỗi gửi REPORT_TOOL_VIDEO_RESULT:', e));
         }
       } else {
@@ -3434,7 +3435,8 @@ async function runMultiTabServerWorker(task, tab) {
 
       if (dlResult?.success) {
         task.status = 'DONE';
-        task.filename = dlResult.filename || dlResult.filePath || 'image.jpg';
+        const fullFilePath = dlResult.filePath || dlResult.filename || 'image.jpg';
+        task.filename = dlResult.filename || fullFilePath;
         task.statusDetail = `✅ Xong: ${task.filename}`;
         renderMultiTabServerTasksUI();
         log(`🎉 Hoàn tất Ảnh! File: ${task.filename}`);
@@ -3444,7 +3446,7 @@ async function runMultiTabServerWorker(task, tab) {
           callExt('REPORT_TOOL_IMAGE_RESULT', {
             id: task.serverTaskId,
             ok: true,
-            filePath: task.filename
+            filePath: fullFilePath
           }).catch(e => console.error('Lỗi gửi REPORT_TOOL_IMAGE_RESULT:', e));
         }
       } else {

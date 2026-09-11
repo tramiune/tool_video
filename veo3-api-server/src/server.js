@@ -44,7 +44,7 @@ _extWss.on('connection', (ws) => {
   _extSocket = ws;
   logger.success(`[Bridge] Chrome extension connected on port ${EXTENSION_WS_PORT}`);
 
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
@@ -92,16 +92,51 @@ _extWss.on('connection', (ws) => {
         if (msg.filePath) {
           try {
             let targetPath = msg.filePath;
-            if (!fs.existsSync(targetPath)) {
-              const fallbackPath = path.join(os.homedir(), 'Downloads', path.basename(msg.filePath));
-              if (fs.existsSync(fallbackPath)) {
-                targetPath = fallbackPath;
+            const downloadsDir = path.join(os.homedir(), 'Downloads');
+
+            // Chờ tối đa 15s (30 x 500ms) để file hoàn tất ghi vào đĩa
+            for (let attempt = 0; attempt < 30; attempt++) {
+              if (!fs.existsSync(targetPath)) {
+                const fallbackPath = path.join(downloadsDir, path.basename(msg.filePath));
+                if (fs.existsSync(fallbackPath)) {
+                  targetPath = fallbackPath;
+                }
               }
+
+              // Fallback: nếu đường dẫn chưa thấy hoặc 0 bytes, tìm file .mp4 / .webm / ảnh mới nhất trong Downloads (trong 90s)
+              if (!fs.existsSync(targetPath) || (fs.existsSync(targetPath) && fs.statSync(targetPath).size === 0)) {
+                try {
+                  const files = fs.readdirSync(downloadsDir)
+                    .filter(f => !f.endsWith('.crdownload') && (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')))
+                    .map(f => {
+                      const fullF = path.join(downloadsDir, f);
+                      try {
+                        const st = fs.statSync(fullF);
+                        return { name: f, path: fullF, time: st.mtimeMs, size: st.size };
+                      } catch { return null; }
+                    })
+                    .filter(f => f && (Date.now() - f.time < 90000) && f.size > 0)
+                    .sort((a, b) => b.time - a.time);
+
+                  if (files.length > 0) {
+                    targetPath = files[0].path;
+                  }
+                } catch (_) {}
+              }
+
+              if (fs.existsSync(targetPath)) {
+                const stat = fs.statSync(targetPath);
+                if (stat.size > 0) {
+                  buffer = fs.readFileSync(targetPath);
+                  break;
+                }
+              }
+
+              await new Promise(r => setTimeout(r, 500));
             }
 
-            if (fs.existsSync(targetPath)) {
-              buffer = fs.readFileSync(targetPath);
-              logger.success(`[Bridge] Đã đọc video từ file máy tính: ${targetPath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+            if (fs.existsSync(targetPath) && buffer && buffer.length > 0) {
+              logger.success(`[Bridge] Đã đọc video/ảnh từ file máy tính: ${targetPath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
               try {
                 fs.unlinkSync(targetPath);
                 logger.info(`[Bridge] Đã dọn dẹp xoá file tạm trên máy: ${targetPath}`);
@@ -109,10 +144,10 @@ _extWss.on('connection', (ws) => {
                 logger.warn(`[Bridge] Không thể xoá file tạm: ${delErr.message}`);
               }
             } else {
-              logger.error(`[Bridge] File không tồn tại trên đường dẫn: ${msg.filePath} (và ${path.join(os.homedir(), 'Downloads', path.basename(msg.filePath))})`);
+              logger.error(`[Bridge] File không tồn tại hoặc 0 bytes trên đường dẫn: ${msg.filePath} (và ${path.join(downloadsDir, path.basename(msg.filePath))})`);
             }
           } catch (readErr) {
-            logger.error(`[Bridge] Lỗi đọc file video: ${readErr.message}`);
+            logger.error(`[Bridge] Lỗi đọc file video/ảnh: ${readErr.message}`);
           }
         } else if (msg.base64) {
           buffer = Buffer.from(msg.base64, 'base64');

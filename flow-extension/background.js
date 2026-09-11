@@ -1576,25 +1576,25 @@ async function rightClickAndDownload(tabId) {
     return { success: false, error: `Có lỗi xảy ra vui lòng thử lại` };
   }
 
-  // Chờ 5s xem có file tải về không
-  let downloadedFile = null;
-  for (let w = 0; w < 10; w++) {
+  // Chờ bắt được lượt download bắt đầu từ Chrome (tối đa 8s)
+  let targetDownloadId = null;
+  for (let w = 0; w < 16; w++) {
     await new Promise(r => setTimeout(r, 500));
-    if (dlCreated) {
-      downloadedFile = dlCreated;
+    if (dlCreated?.id) {
+      targetDownloadId = dlCreated.id;
       break;
     }
     try {
       const recent = await new Promise(res => {
-        chrome.downloads.search({ limit: 3, orderBy: ['-startTime'] }, res);
+        chrome.downloads.search({ limit: 5, orderBy: ['-startTime'] }, res);
       });
       if (recent && recent.length > 0) {
         const hit = recent.find(item => {
           const st = new Date(item.startTime).getTime();
-          return st >= (clickStartTime - 1000);
+          return st >= (clickStartTime - 1500);
         });
-        if (hit) {
-          downloadedFile = hit;
+        if (hit?.id) {
+          targetDownloadId = hit.id;
           break;
         }
       }
@@ -1605,17 +1605,44 @@ async function rightClickAndDownload(tabId) {
     chrome.downloads.onCreated.removeListener(onCreated);
   }
 
-  if (downloadedFile) {
-    const fname = downloadedFile.filename ? downloadedFile.filename.split(/[\/\\]/).pop() : 'file';
+  if (!targetDownloadId) {
+    return { success: false, error: 'Không bắt được lượt tải về từ Chrome' };
+  }
+
+  // Chờ cho file tải xong hoàn tất 100% (state === 'complete') để lấy đường dẫn file thực tế trên ổ cứng
+  let finalDownloadItem = null;
+  for (let c = 0; c < 120; c++) { // Tối đa 60s
+    await new Promise(r => setTimeout(r, 500));
+    try {
+      const items = await new Promise(res => chrome.downloads.search({ id: targetDownloadId }, res));
+      if (items && items[0]) {
+        const it = items[0];
+        if (it.state === 'complete') {
+          finalDownloadItem = it;
+          break;
+        } else if (it.state === 'interrupted') {
+          return { success: false, error: `Tải file bị gián đoạn: ${it.error || 'Unknown'}` };
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (finalDownloadItem && finalDownloadItem.filename) {
+    const fullPath = finalDownloadItem.filename;
+    const fname = fullPath.split(/[\/\\]/).pop();
+    const sizeMb = ((finalDownloadItem.fileSize || 0) / 1024 / 1024).toFixed(2);
+    logToBridge(`[MultiTab DL] 🎉 File tải xong hoàn tất: "${fullPath}" (${sizeMb} MB)`);
     return {
       success: true,
       filename: fname,
-      message: `Thành công! Đã có file tải về: "${fname}"`
+      filePath: fullPath,
+      fileSize: finalDownloadItem.fileSize,
+      message: `Thành công! Đã tải xong: "${fname}" (${sizeMb} MB)`
     };
   } else {
     return {
       success: false,
-      error: 'Có lỗi xảy ra vui lòng thử lại'
+      error: 'Quá thời gian chờ tải file hoàn tất (Timeout download)'
     };
   }
 }
