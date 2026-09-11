@@ -322,6 +322,7 @@ const HANDLERS = {
     return { success: false, error: "Không tìm thấy tab" };
   },
   REPORT_TOOL_VIDEO_RESULT: req => reportToolVideoResult(req),
+  TOGGLE_TOOL_SERVER: req => { _toolServerPaused = req.paused; return { success: true, paused: _toolServerPaused }; },
   REPORT_TOOL_IMAGE_RESULT: req => reportToolImageResult(req),
   GET_PENDING_SERVER_TASKS: () => getPendingServerTasks(),
   SCAN_FLOW_CARDS: req => scanFlowCards(req.tabId, req.projectId, req.maxSeq, req.purpose || 'video'),
@@ -4395,6 +4396,7 @@ if (chrome.action && chrome.action.onClicked) {
 const TOOL_VIDEO_WS_URL = 'ws://localhost:7788';
 let _toolWs = null;
 let _toolServerConnected = false;
+let _toolServerPaused = false; // true = không nhận task
 const _serverVideoQueue = [];
 let _isProcessingServerQueue = false;
 
@@ -4416,6 +4418,11 @@ function connectToolVideoBridge() {
     _toolWs.onmessage = async (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
+
+      if (_toolServerPaused) {
+        console.log('[Tool Video Bridge] ⏸️ Server đang TẮT, bỏ qua task:', msg.type);
+        return;
+      }
 
       if (msg.type === 'TASK_GENERATE_VIDEO') {
         console.log(`[Tool Video Bridge] Received TASK_GENERATE_VIDEO: ${msg.id}`, msg);

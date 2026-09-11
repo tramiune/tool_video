@@ -2718,13 +2718,19 @@
     setupEventListeners();
   }
 
+  let _serverPaused = false;
+
   async function updateToolServerStatus() {
     try {
       const res = await callExt("GET_TOOL_SERVER_STATUS");
       const dot = document.getElementById("toolServerDot");
       const text = document.getElementById("toolServerText");
       if (dot && text) {
-        if (res?.connected) {
+        if (_serverPaused) {
+          dot.style.background = "#ff9800";
+          text.style.color = "#ff9800";
+          text.textContent = "Server: TẮT";
+        } else if (res?.connected) {
           dot.style.background = "var(--green)";
           text.style.color = "var(--green)";
           text.textContent = "Server: Online (7788)";
@@ -2735,6 +2741,16 @@
         }
       }
     } catch (_) {}
+  }
+
+  // Toggle server on/off khi click
+  const serverStatusEl = document.getElementById("toolServerStatus");
+  if (serverStatusEl) {
+    serverStatusEl.addEventListener("click", async () => {
+      _serverPaused = !_serverPaused;
+      await callExt("TOGGLE_TOOL_SERVER", { paused: _serverPaused });
+      updateToolServerStatus();
+    });
   }
 
   // ──────────────────────────
@@ -3062,25 +3078,15 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
       if (checkRes?.hasPercent) {
         log(`🔄 Đang render... (thấy "${checkRes.percentText}" trên màn hình)`);
       } else {
-        // Hết % → chờ thêm 5s cho Flow cập nhật card xong
-        log(`✅ Không còn % trên màn hình. Chờ 5s cho Flow xong hẳn...`);
-        await new Promise(r => setTimeout(r, 5000));
+        // Hết % → tải thôi!
+        log(`✅ Không còn % trên màn hình. Bắt đầu tải...`);
 
-        // Thử tải, nếu chưa sẵn sàng thì retry tối đa 3 lần
-        for (let retry = 1; retry <= 3; retry++) {
-          const dlRes = await callExt('DOWNLOAD_MULTI_TAB', { tabId, query, prompt });
+        const dlRes = await callExt('DOWNLOAD_MULTI_TAB', { tabId, query, prompt });
 
-          if (dlRes?.success) {
-            log(`🎉 TẢI THÀNH CÔNG!`);
-            return { success: true };
-          }
-          
-          if (dlRes?.isStillRendering && retry < 3) {
-            log(`⚠️ Lần ${retry}: Menu chưa có "Tải xuống". Chờ 15s thử lại...`);
-            await new Promise(r => setTimeout(r, 15000));
-            continue;
-          }
-
+        if (dlRes?.success) {
+          log(`🎉 TẢI THÀNH CÔNG!`);
+          return { success: true };
+        } else {
           log(`❌ Tải thất bại: ${dlRes?.error || 'Không có video'}`);
           return { success: false, error: dlRes?.error || 'Download failed' };
         }
