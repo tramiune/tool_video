@@ -3308,6 +3308,55 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Test: Prompt 16:9 (Không ảnh)
+  const test169Btn = document.getElementById('btnTestPrompt169');
+  if (test169Btn) {
+    test169Btn.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) logEl.style.display = 'block';
+
+      if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video');
+      if (!videoTab) { alert('Không có tab Video!'); return; }
+
+      test169Btn.disabled = true;
+      test169Btn.textContent = '⏳ Đang tạo video 16:9...';
+
+      const ts = Date.now().toString().slice(-4);
+      const prompt = `${ts}. siêu xe thể thao màu đen bóng lao vun vút trên đường cao tốc ven biển lúc hoàng hôn, góc máy cinematic 4k`;
+
+      if (logEl) logEl.textContent += `\n[${new Date().toLocaleTimeString()}] 🎬 Bắt đầu test video 16:9 (chỉ prompt) trên Tab ${videoTab.tabId}...\n`;
+
+      try {
+        const res = await callExt('CREATE_VIDEO_MULTI_TAB', {
+          prompt,
+          tabId: videoTab.tabId,
+          aspectRatio: '16:9',
+          startImageDataUrl: null,
+          endImageDataUrl: null
+        });
+
+        if (res?.success) {
+          if (logEl) logEl.textContent += `✅ ${res.message}\n`;
+          test169Btn.textContent = '🔍 Đang theo dõi render...';
+          const dlResult = await monitorAndDownloadMultiTab(
+            videoTab.tabId, ts, prompt, videoTab.projectId, logEl
+          );
+          if (dlResult?.success) {
+            if (logEl) logEl.textContent += `🎉 HOÀN TẤT! File: ${dlResult.filename || 'OK'}\n`;
+          }
+        } else {
+          if (logEl) logEl.textContent += `❌ Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ Exception: ${err.message}\n`;
+      }
+
+      test169Btn.disabled = false;
+      test169Btn.textContent = '🧪 Test: Prompt 16:9 (Không ảnh)';
+    });
+  }
+
   // Debug: Vẽ vùng trên STT
   const drawBtn = document.getElementById('btnDrawAboveSTT');
   if (drawBtn) {
