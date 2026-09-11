@@ -3087,8 +3087,8 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
           log(`🎉 TẢI THÀNH CÔNG!`);
           return { success: true };
         } else {
-          log(`❌ Tải thất bại: ${dlRes?.error || 'Không có video'}`);
-          return { success: false, error: dlRes?.error || 'Download failed' };
+          // Video có thể vừa hết % nhưng Flow cần thêm 10-20s để tạo file mp4
+          log(`⏳ Video đang hoàn tất trên Flow (${dlRes?.error || 'chưa có nút tải'}), chờ lần quét tới...`);
         }
       }
     } catch (err) {

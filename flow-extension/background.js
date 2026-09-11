@@ -1440,7 +1440,29 @@ async function downloadMultiTab(tabId, query, promptText = '') {
         // Xóa vòng tròn sau 3s
         setTimeout(() => circle.remove(), 3000);
 
-        // ── Right-click tại điểm đó ──
+        // ── Ưu tiên 1: Tìm nút tải 📥 trực tiếp trên card ──
+        let cardContainer = sttEl.parentElement;
+        for (let d = 0; d < 6 && cardContainer; d++) {
+          const dlBtn = Array.from(cardContainer.querySelectorAll('button, [role="button"]')).find(b => {
+            const aria = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
+            if (aria.includes('tải') || aria.includes('download')) return true;
+            const svg = b.querySelector('svg');
+            if (svg) {
+              const svgHtml = svg.outerHTML.toLowerCase();
+              if (svgHtml.includes('download') || svgHtml.includes('m21 15v4') || svgHtml.includes('lucide-download')) return true;
+            }
+            return false;
+          });
+          if (dlBtn) {
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
+              dlBtn.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
+            });
+            return { success: true, directDownload: true, clientX: cx, clientY: cy };
+          }
+          cardContainer = cardContainer.parentElement;
+        }
+
+        // ── Ưu tiên 2: Right-click tại điểm (cx, cy) ──
         const target = document.elementFromPoint(cx, cy) || document.body;
         const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX: cx, clientY: cy };
         target.dispatchEvent(new MouseEvent('mousedown', opts));
@@ -1455,7 +1477,11 @@ async function downloadMultiTab(tabId, query, promptText = '') {
       return { success: false, error: r0?.[0]?.result?.error || 'Không right-click được card' };
     }
 
-    const { clientX, clientY } = r0[0].result;
+    const { clientX, clientY, directDownload } = r0[0].result;
+    if (directDownload) {
+      logToBridge(`[MultiTab DL] ✅ Đã click nút Tải xuống 📥 trực tiếp trên card!`);
+      return { success: true, message: 'Đã click nút Tải xuống 📥 trực tiếp!' };
+    }
 
     // STEP 2: Chờ menu hiện → Tìm "Tải xuống" → Click luôn
     let downloaded = false;
@@ -1470,9 +1496,9 @@ async function downloadMultiTab(tabId, query, promptText = '') {
             const r = el.getBoundingClientRect();
             if (r.width === 0 || r.height === 0 || r.width > 380 || r.height > 90) return false;
             if (el.closest("form, [class*='composer'], [class*='prompt-box']")) return false;
-            const t = (el.innerText || el.textContent || '').trim();
-            if (t.includes('giây') || t.includes('crop') || t.includes('Video ·')) return false;
-            return t === 'Tải xuống' || t.startsWith('Tải xuống') || t === 'Download';
+            const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+            if (t.includes('giây') || t.includes('crop') || t.includes('video ·')) return false;
+            return t === 'tải xuống' || t.startsWith('tải xuống') || t === 'download' || t.startsWith('download') || t.includes('tải xuống');
           });
 
           if (all.length > 0) {
