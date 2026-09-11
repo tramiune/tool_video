@@ -289,6 +289,7 @@ const HANDLERS = {
   CREATE_VIDEO:       req => createVideoAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.startImage, req.endImage),
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
   CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl),
+  DOWNLOAD_MULTI_TAB: req => downloadMultiTab(req.tabId, req.query, req.prompt),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
@@ -1272,6 +1273,163 @@ async function createVideoAPI(prompt, projectId, model, aspectRatio, startImage,
 // ══════════════════════════════════════
 // Fallback: UI automation
 // ══════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+// downloadMultiTab — Tải video GỌN: Tìm card → Right-click → Click "Tải xuống"
+// ══════════════════════════════════════════════════════════════════
+async function downloadMultiTab(tabId, query, promptText = '') {
+  let tab = null;
+  try { tab = await chrome.tabs.get(tabId); } catch(e) {}
+  if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
+
+  // Focus tab
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    await new Promise(r => setTimeout(r, 400));
+  } catch (_) {}
+
+  logToBridge(`[MultiTab DL] Bắt đầu tải video trên Tab ${tab.id}, query="${query}"`);
+
+  try {
+    // STEP 1: Tìm card khớp query → Right-click
+    const r0 = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "ISOLATED",
+      args: [query, promptText],
+      func: (q, pText) => {
+        const cleanQuery = (q || '').trim().toLowerCase();
+        const promptLower = (pText || '').trim().toLowerCase();
+
+        // Tìm tất cả text element chứa query
+        const textEls = Array.from(
+          document.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, b, strong')
+        ).filter(el => {
+          if (el.closest("[data-slate-editor], form, [class*='composer'], [class*='input-container']")) return false;
+          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          if (t.includes(cleanQuery)) return true;
+          if (promptLower && t.includes(promptLower.slice(0, 30))) return true;
+          return false;
+        });
+
+        if (textEls.length === 0) return { success: false, error: `Không tìm thấy card chứa "${cleanQuery}"` };
+
+        // Leo lên container card
+        let card = textEls[0];
+        let cur = card.parentElement;
+        while (cur && cur !== document.body) {
+          const r = cur.getBoundingClientRect();
+          if (r.width > 550 || r.height > 850) break;
+          card = cur;
+          cur = cur.parentElement;
+        }
+
+        // Tìm video/img trong card để right-click
+        const clickTarget = card.querySelector('video') || card.querySelector('img') || card;
+        const rect = clickTarget.getBoundingClientRect();
+        const cx = Math.round(rect.left + rect.width / 2);
+        const cy = Math.round(rect.top + rect.height / 2);
+
+        // Right-click
+        const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX: cx, clientY: cy };
+        clickTarget.dispatchEvent(new MouseEvent('mousedown', opts));
+        clickTarget.dispatchEvent(new MouseEvent('mouseup', opts));
+        clickTarget.dispatchEvent(new MouseEvent('contextmenu', opts));
+
+        return { success: true, clientX: cx, clientY: cy };
+      }
+    });
+
+    if (!r0?.[0]?.result?.success) {
+      return { success: false, error: r0?.[0]?.result?.error || 'Không right-click được card' };
+    }
+
+    const { clientX, clientY } = r0[0].result;
+
+    // STEP 2: Chờ menu hiện → Tìm "Tải xuống" → Click luôn
+    let downloaded = false;
+    for (let attempt = 1; attempt <= 15; attempt++) {
+      await new Promise(r => setTimeout(r, attempt === 1 ? 500 : 300));
+
+      const r1 = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: "ISOLATED",
+        func: () => {
+          const all = Array.from(document.querySelectorAll('*')).filter(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.width > 380 || r.height > 90) return false;
+            if (el.closest("form, [class*='composer'], [class*='prompt-box']")) return false;
+            const t = (el.innerText || el.textContent || '').trim();
+            if (t.includes('giây') || t.includes('crop') || t.includes('Video ·')) return false;
+            return t === 'Tải xuống' || t.startsWith('Tải xuống') || t === 'Download';
+          });
+
+          if (all.length > 0) {
+            const target = all.find(el => (el.innerText || el.textContent || '').trim() === 'Tải xuống') || all[0];
+            const clickable = target.closest("[role='menuitem'], button, [class*='item'], li, div[tabindex]") || target;
+            
+            // Click luôn!
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(ev => {
+              clickable.dispatchEvent(new PointerEvent(ev, { bubbles: true, cancelable: true, view: window }));
+            });
+            
+            return { found: true, text: (target.innerText || '').trim() };
+          }
+
+          // Kiểm tra menu chỉ có "Xoá" → video chưa xong
+          const hasDelete = Array.from(document.querySelectorAll('*')).some(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return false;
+            const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+            return (t === 'xóa' || t === 'xoá' || t === 'delete') && el.closest("[role='menu'], [role='menuitem'], [class*='menu']");
+          });
+          if (hasDelete) {
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+            return { found: false, stillRendering: true };
+          }
+
+          return { found: false };
+        }
+      });
+
+      const res = r1?.[0]?.result;
+      if (res?.found) {
+        downloaded = true;
+        logToBridge(`[MultiTab DL] ✅ Đã click "${res.text}" thành công!`);
+        break;
+      }
+      if (res?.stillRendering) {
+        logToBridge(`[MultiTab DL] ⚠️ Video chưa xong render (menu chỉ có Xoá)`);
+        return { success: false, isStillRendering: true, error: 'Video chưa render xong' };
+      }
+
+      // Backup: CDP right-click nếu menu chưa hiện
+      if (attempt === 3 || attempt === 6) {
+        try {
+          try { await chrome.debugger.attach({ tabId: tab.id }, '1.3'); } catch (_) {}
+          await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+            type: 'mousePressed', button: 'right', buttons: 2, x: clientX, y: clientY, clickCount: 1
+          });
+          await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
+            type: 'mouseReleased', button: 'right', buttons: 0, x: clientX, y: clientY
+          });
+        } catch (_) {}
+      }
+    }
+
+    // Detach debugger
+    try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
+
+    if (!downloaded) {
+      return { success: false, error: 'Không tìm thấy "Tải xuống" trong menu sau 15 lần thử' };
+    }
+
+    return { success: true, message: 'Đã click Tải xuống!' };
+
+  } catch (err) {
+    logToBridge(`[MultiTab DL] ❌ ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // createVideoMultiTab — Phiên bản GỌN cho Đa Tab
 // Luồng: Ctrl+V ảnh → Settings (ratio) → Gõ prompt → Chờ 15s → Submit

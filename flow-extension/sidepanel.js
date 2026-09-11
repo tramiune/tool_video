@@ -3068,14 +3068,10 @@ async function monitorAndDownloadMultiTab(tabId, timestamp, prompt, projectId, l
         log(`✅ Video đã xong! Bắt đầu tải...`);
 
         try {
-          const dlRes = await callExt('DOWNLOAD_CARD_NATIVE', {
+          const dlRes = await callExt('DOWNLOAD_MULTI_TAB', {
             tabId,
             query,
-            prompt,
-            mediaId: status.mediaId || null,
-            workflowId: status.workflowId || null,
-            mediaType: 'video',
-            projectId
+            prompt
           });
 
           if (dlRes?.success) {
