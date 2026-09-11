@@ -1343,7 +1343,7 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
         }
 
         // Click mở config
-        settingsChip.scrollIntoView({ block: 'nearest' });
+        // Không scroll — sếp cấm!
         settingsChip.click();
         await sleep(600);
 
@@ -1371,7 +1371,6 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
 
         if (ratioButtons.length > 0) {
           const btn = ratioButtons[0];
-          btn.scrollIntoView({ block: 'nearest' });
           btn.click();
           clickedRatio = true;
           await sleep(300);
@@ -1400,8 +1399,7 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
           return { success: false, error: "Không tìm thấy ô nhập prompt (Slate Editor)" };
         }
 
-        // Focus & clear
-        editor.scrollIntoView({ block: 'center' });
+        // Focus & clear (không scroll!)
         editor.focus();
         await sleep(200);
         document.execCommand('selectAll', false, null);
