@@ -1330,43 +1330,20 @@ async function downloadMultiTab(tabId, query, promptText = '') {
       world: "ISOLATED",
       args: [query],
       func: (q) => {
-        let cx, cy;
-
-        // ── Thử tìm nút Play trước ──
-        const playBtn = Array.from(document.querySelectorAll('button, [role="button"], div, span')).find(el => {
-          const r = el.getBoundingClientRect();
-          if (r.width === 0 || r.height === 0 || r.width > 200 || r.height > 200) return false;
-          if (el.closest("[data-slate-editor], form, [class*='composer'], nav, header")) return false;
-          const t = (el.textContent || '').trim().toLowerCase();
-          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-          if (t === 'play_arrow' || t === '▶' || t === '►') return true;
-          if (aria.includes('play') || aria.includes('phát')) return true;
-          if (el.querySelector("svg.lucide-play, [data-icon*='play']")) return true;
-          const matIcon = el.querySelector('mat-icon');
-          if (matIcon && (matIcon.textContent || '').trim() === 'play_arrow') return true;
-          return false;
+        // Tìm STT text → bấm 200px phía trên
+        const cleanQ = (q || '').trim().toLowerCase();
+        const sttEl = Array.from(document.querySelectorAll('p, span, div, b, strong')).find(el => {
+          if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
+          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          return t.includes(cleanQ);
         });
 
-        if (playBtn) {
-          const rect = playBtn.getBoundingClientRect();
-          cx = Math.round(rect.left + rect.width / 2);
-          cy = Math.round(rect.top + rect.height / 2);
-        } else {
-          // ── Fallback: Tìm STT text → bấm 200px phía trên ──
-          const cleanQ = (q || '').trim().toLowerCase();
-          const sttEl = Array.from(document.querySelectorAll('p, span, div, b, strong')).find(el => {
-            if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
-            const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-            return t.includes(cleanQ);
-          });
+        if (!sttEl) return { success: false, error: 'Không tìm thấy STT trên màn hình' };
 
-          if (!sttEl) return { success: false, error: 'Không tìm thấy Play hoặc STT trên màn hình' };
-
-          const sttRect = sttEl.getBoundingClientRect();
-          cx = Math.round(sttRect.left + sttRect.width / 2);
-          cy = Math.round(sttRect.top - 200);
-          if (cy < 10) cy = 10;
-        }
+        const sttRect = sttEl.getBoundingClientRect();
+        const cx = Math.round(sttRect.left + sttRect.width / 2);
+        let cy = Math.round(sttRect.top - 200);
+        if (cy < 10) cy = 10;
 
         // ── Vẽ vòng tròn đỏ 20px tại điểm click ──
         const circle = document.createElement('div');
@@ -1389,7 +1366,7 @@ async function downloadMultiTab(tabId, query, promptText = '') {
         target.dispatchEvent(new MouseEvent('mouseup', opts));
         target.dispatchEvent(new MouseEvent('contextmenu', opts));
 
-        return { success: true, clientX: cx, clientY: cy, method: playBtn ? 'play_button' : 'stt_offset' };
+        return { success: true, clientX: cx, clientY: cy };
       }
     });
 
