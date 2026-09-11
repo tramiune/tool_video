@@ -2467,13 +2467,18 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return true;
         };
 
-        // Helper paste ảnh vào editor
-        const pasteImage = async (editor, dataUrl, name) => {
-          const resp = await fetch(dataUrl);
-          const blob = await resp.blob();
-          const file = new File([blob], name + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
+        // Helper paste 1 hoặc nhiều ảnh cùng lúc trong 1 cú Ctrl+V duy nhất
+        const pasteImages = async (editor, dataUrlList) => {
+          const list = Array.isArray(dataUrlList) ? dataUrlList.filter(Boolean) : [dataUrlList].filter(Boolean);
+          if (list.length === 0) return false;
+
           const dt = new DataTransfer();
-          dt.items.add(file);
+          for (let i = 0; i < list.length; i++) {
+            const resp = await fetch(list[i]);
+            const blob = await resp.blob();
+            const file = new File([blob], `ref_image_${i + 1}_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+            dt.items.add(file);
+          }
 
           const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
           if (fileInputs.length > 0) {
@@ -2483,10 +2488,12 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             } catch (_) {}
           }
 
+          editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: true, metaKey: true, bubbles: true }));
           const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
           editor.dispatchEvent(evt);
           try { document.dispatchEvent(evt); } catch (_) {}
           try { window.dispatchEvent(evt); } catch (_) {}
+          return true;
         };
 
         // ── STEP 1: Tìm Slate Editor & Submit Button ──
@@ -2828,14 +2835,11 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             }
           }
         }
-
-        // ── STEP 4: Ctrl+V dán ảnh tham chiếu ngay trước khi Submit ──
+        // ── STEP 4: Ctrl+V dán TẤT CẢ ảnh tham chiếu cùng một lúc trong 1 lần paste duy nhất ──
         const refList = [startImgUrl, endImgUrl].filter(Boolean);
-        let pastedCount = 0;
+        let pastedCount = refList.length;
 
-        for (let i = 0; i < refList.length; i++) {
-          const imgUrl = refList[i];
-          // Bắt buộc: Click và focus lại vào editor trước MỖI LẦN paste (đặc biệt là ảnh thứ 2)
+        if (pastedCount > 0) {
           try {
             editor.scrollIntoView({ block: "nearest" });
             editor.click();
@@ -2844,17 +2848,14 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
             editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
           } catch (_) {}
-          await sleep(400);
+          await sleep(300);
 
           try {
-            await pasteImage(editor, imgUrl, `ref_image_${i + 1}`);
-            pastedCount++;
+            await pasteImages(editor, refList);
           } catch (e) {
-            console.warn(`[MultiTab Image] Ref paste err ${i + 1}:`, e);
+            console.warn('[MultiTab Image] Paste images err:', e);
           }
-
-          // Chờ 1.5s sau mỗi ảnh để Flow nhận diện và chèn khối ảnh xong
-          await sleep(1500);
+          await sleep(2000);
         }
 
         // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
@@ -2968,89 +2969,61 @@ async function testPasteTwoImages(tabId, img1, img2, delayBetween = 2000) {
       if (!editor) return { success: false, logs, error: "Không tìm thấy ô nhập editor" };
       log(`Tìm thấy ô editor: <${editor.tagName.toLowerCase()}>`);
 
-      const doPaste = async (target, dataUrl, label) => {
-        const resp = await fetch(dataUrl);
-        const blob = await resp.blob();
-        const file = new File([blob], label + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
-        const dt = new DataTransfer();
-        dt.items.add(file);
+      // ── BƯỚC 1: TẢI VÀ NẠP CẢ 2 ẢNH VÀO CHUNG 1 DATATRANSFER ──
+      log("1. Đang nạp CẢ 2 ẢNH vào chung 1 DataTransfer (copy 2 ảnh cùng lúc)...");
+      const dt = new DataTransfer();
 
-        // Bắn keydown Cmd+V / Ctrl+V
-        target.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: true, metaKey: true, bubbles: true }));
+      try {
+        const [resp1, resp2] = await Promise.all([fetch(dataUrl1), fetch(dataUrl2)]);
+        const [blob1, blob2] = await Promise.all([resp1.blob(), resp2.blob()]);
+        const file1 = new File([blob1], `start_frame_${Date.now()}.jpg`, { type: blob1.type || 'image/jpeg' });
+        const file2 = new File([blob2], `end_frame_${Date.now()}.jpg`, { type: blob2.type || 'image/jpeg' });
+        dt.items.add(file1);
+        dt.items.add(file2);
+        log(`✅ Đã nạp thành công 2 file vào Clipboard (dt.files.length = ${dt.files.length}).`);
+      } catch (err) {
+        log(`❌ Lỗi chuẩn bị file: ${err.message}`);
+        return { success: false, logs, error: err.message };
+      }
 
-        // Bắn ClipboardEvent paste vào cả target, document, window
-        const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-        target.dispatchEvent(evt);
-        try { document.dispatchEvent(evt); } catch(_) {}
-        try { window.dispatchEvent(evt); } catch(_) {}
+      // ── BƯỚC 2: FOCUS VÀO Ô NHẬP EDITOR ──
+      log("2. Focus và click vào editor...");
+      try {
+        editor.scrollIntoView({ block: "nearest" });
+        editor.click();
+        editor.focus();
+        editor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+        editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+      } catch (_) {}
+      await sleep(300);
 
-        // Thử DragEvent drop
-        const dropEvt = new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true });
-        target.dispatchEvent(dropEvt);
-
-        // Thử input file nếu có
-        const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
-        if (fileInputs.length > 0) {
-          try {
-            fileInputs[0].files = dt.files;
-            fileInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
-          } catch (_) {}
-        }
-      };
-
-      const activateEditor = async () => {
-        const editableParas = Array.from(editor.querySelectorAll("[data-slate-node='element'], p"))
-          .filter(el => !el.closest("[data-slate-void='true']") && !el.hasAttribute("data-slate-void") && el.getAttribute("contenteditable") !== "false");
-        const target = editableParas.pop() || editor;
-
+      // Thử chèn vào file input ẩn nếu có
+      const fileInputs = Array.from(document.querySelectorAll("input[type='file']"));
+      if (fileInputs.length > 0) {
         try {
-          target.scrollIntoView({ block: "nearest" });
-          target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-          target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-          target.click();
-          if (typeof target.focus === 'function') target.focus();
-          editor.click();
-          editor.focus();
+          fileInputs[0].files = dt.files;
+          fileInputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+          log("✅ Đã gán đồng thời 2 file vào thẻ <input type='file'> ẩn.");
         } catch (_) {}
+      }
 
-        try {
-          const sel = window.getSelection();
-          const range = document.createRange();
-          range.selectNodeContents(target);
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } catch (_) {}
-        await sleep(300);
-        return target;
-      };
+      // ── BƯỚC 3: BẮN 1 CÚ CTRL+V DUY NHẤT MANG CẢ 2 ẢNH ──
+      log("3. Bắn 1 sự kiện Ctrl+V duy nhất chứa cả 2 file...");
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "v", code: "KeyV", ctrlKey: true, metaKey: true, bubbles: true }));
 
-      // ── BƯỚC 1: DÁN ẢNH 1 ──
-      log("1. Focus vào editor chuẩn bị dán Ảnh 1...");
-      const target1 = await activateEditor();
-      log(`Active element trước Ảnh 1: <${document.activeElement?.tagName?.toLowerCase()}>`);
+      const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+      editor.dispatchEvent(evt);
+      try { document.dispatchEvent(evt); } catch(_) {}
+      try { window.dispatchEvent(evt); } catch(_) {}
+      log("✅ Đã phát sự kiện Paste mang 2 file tới editor, document và window.");
 
-      log("2. Bắn sự kiện Paste Ảnh 1...");
-      await doPaste(target1, dataUrl1, "test_start_frame");
-      log("✅ Đã bắn Paste Ảnh 1.");
+      // Thử DragEvent drop cả 2 file
+      const dropEvt = new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true });
+      editor.dispatchEvent(dropEvt);
 
-      log(`3. Nghỉ ${delay}ms chờ Flow xử lý Ảnh 1...`);
-      await sleep(delay);
-
-      const activeAfter1 = document.activeElement;
-      log(`Active element sau Ảnh 1: <${activeAfter1?.tagName?.toLowerCase()}> class="${activeAfter1?.className?.slice?.(0, 30) || ''}"`);
-
-      // ── BƯỚC 2: FOCUS LẠI VÀ DÁN ẢNH 2 ──
-      log("4. Focus và click lại vào editor chuẩn bị dán Ảnh 2...");
-      const target2 = await activateEditor();
-      log(`Active element trước Ảnh 2: <${document.activeElement?.tagName?.toLowerCase()}>`);
-
-      log("5. Bắn sự kiện Paste Ảnh 2...");
-      await doPaste(target2, dataUrl2, "test_end_frame");
-      log("✅ Đã bắn Paste Ảnh 2.");
-
-      log("6. Nghỉ 2000ms chờ Flow xử lý Ảnh 2...");
-      await sleep(2000);
+      log("4. Nghỉ 2500ms chờ Flow xử lý cả 2 ảnh...");
+      await sleep(2500);
 
       // Quét xem trong editor có bao nhiêu thẻ void/chip hoặc ảnh
       const voidNodes = Array.from(editor.querySelectorAll("[data-slate-void='true'], [contenteditable='false']"));
