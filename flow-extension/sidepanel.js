@@ -3464,18 +3464,18 @@ document.addEventListener('DOMContentLoaded', () => {
         endImgDataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(eBlob); });
       } catch (e) { log(`⚠️ Không load được test_end_frame.jpg: ${e.message}`); }
 
-      // 3. Danh sách 10 task đa dạng đủ các thể loại
+      // 3. Danh sách 10 task đa dạng đủ các thể loại và tỉ lệ (16:9 & 9:16)
       const tasks = [
-        { id: 1, type: 'text', typeName: '📝 Text', color: '#00e5ff', prompt: 'con mèo con lông trắng đuổi theo cuộn len đỏ trong phòng khách' },
-        { id: 2, type: 'start', typeName: '🎬 Start', color: '#e91e63', prompt: 'cô gái nhảy điệu nhảy hiphop sôi động trên đường phố đêm neon rực rỡ' },
-        { id: 3, type: 'start_end', typeName: '🎭 Start+End', color: '#9c27b0', prompt: 'cô gái biến hình thành chiến binh H9 Gunner với hiệu ứng ánh sáng neon' },
-        { id: 4, type: 'text', typeName: '📝 Text', color: '#00e5ff', prompt: 'siêu xe thể thao màu đen bóng lao vun vút trên đường cao tốc ven biển hoàng hôn' },
-        { id: 5, type: 'start', typeName: '🎬 Start', color: '#e91e63', prompt: 'cô gái xoay người mỉm cười trước ống kính máy quay phong cách điện ảnh 4k' },
-        { id: 6, type: 'text', typeName: '📝 Text', color: '#00e5ff', prompt: 'chú chó shiba inu đeo kính râm ngồi trên thuyền lướt sóng vui nhộn' },
-        { id: 7, type: 'start_end', typeName: '🎭 Start+End', color: '#9c27b0', prompt: 'cô gái trang bị áo giáp công nghệ cao H9 Gunner sẵn sàng chiến đấu' },
-        { id: 8, type: 'start', typeName: '🎬 Start', color: '#e91e63', prompt: 'cô gái dạo bước dưới cơn mưa rào mùa hạ, ánh đèn phản chiếu lấp lánh' },
-        { id: 9, type: 'text', typeName: '📝 Text', color: '#00e5ff', prompt: 'phi thuyền không gian khổng lồ bay xuyên qua vành đai tiểu hành tinh rực sáng' },
-        { id: 10, type: 'start_end', typeName: '🎭 Start+End', color: '#9c27b0', prompt: 'hiệu ứng hạt ánh sáng biến đổi từ cô gái sang người máy H9 Gunner ma mị' }
+        { id: 1, type: 'text', typeName: '📝 Text', ratio: '16:9', color: '#00e5ff', prompt: 'con mèo con lông trắng đuổi theo cuộn len đỏ trong phòng khách' },
+        { id: 2, type: 'start', typeName: '🎬 Start', ratio: '9:16', color: '#e91e63', prompt: 'cô gái nhảy điệu nhảy hiphop sôi động trên đường phố đêm neon rực rỡ' },
+        { id: 3, type: 'start_end', typeName: '🎭 Start+End', ratio: '16:9', color: '#9c27b0', prompt: 'cô gái biến hình thành chiến binh H9 Gunner với hiệu ứng ánh sáng neon' },
+        { id: 4, type: 'text', typeName: '📝 Text', ratio: '9:16', color: '#00e5ff', prompt: 'siêu xe thể thao màu đen bóng lao vun vút trên đường cao tốc ven biển hoàng hôn' },
+        { id: 5, type: 'start', typeName: '🎬 Start', ratio: '16:9', color: '#e91e63', prompt: 'cô gái xoay người mỉm cười trước ống kính máy quay phong cách điện ảnh 4k' },
+        { id: 6, type: 'text', typeName: '📝 Text', ratio: '16:9', color: '#00e5ff', prompt: 'chú chó shiba inu đeo kính râm ngồi trên thuyền lướt sóng vui nhộn' },
+        { id: 7, type: 'start_end', typeName: '🎭 Start+End', ratio: '9:16', color: '#9c27b0', prompt: 'cô gái trang bị áo giáp công nghệ cao H9 Gunner sẵn sàng chiến đấu' },
+        { id: 8, type: 'start', typeName: '🎬 Start', ratio: '9:16', color: '#e91e63', prompt: 'cô gái dạo bước dưới cơn mưa rào mùa hạ, ánh đèn phản chiếu lấp lánh' },
+        { id: 9, type: 'text', typeName: '📝 Text', ratio: '16:9', color: '#00e5ff', prompt: 'phi thuyền không gian khổng lồ bay xuyên qua vành đai tiểu hành tinh rực sáng' },
+        { id: 10, type: 'start_end', typeName: '🎭 Start+End', ratio: '9:16', color: '#9c27b0', prompt: 'hiệu ứng hạt ánh sáng biến đổi từ cô gái sang người máy H9 Gunner ma mị' }
       ];
 
       // 4. Render danh sách 10 task lên giao diện
@@ -3492,7 +3492,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <div style="display:flex; align-items:center; gap:6px;">
                 <span style="font-weight:bold; color:white;">#${t.id}</span>
                 <span style="font-size:9px; padding:1px 5px; border-radius:4px; font-weight:bold; background:rgba(255,255,255,0.08); color:${t.color};">${t.typeName}</span>
-                <span style="font-size:9px; padding:1px 5px; border-radius:4px; font-weight:bold; background:rgba(0,229,255,0.1); color:#00e5ff;">${selectedRatio}</span>
+                <span style="font-size:9px; padding:1px 5px; border-radius:4px; font-weight:bold; background:${t.ratio === '16:9' ? 'rgba(0,229,255,0.12)' : 'rgba(255,152,0,0.12)'}; color:${t.ratio === '16:9' ? '#00e5ff' : '#ff9800'};">${t.ratio}</span>
                 <span id="batch10_tab_${t.id}" style="font-size:9px; color:var(--text2);">⏳ Đang chờ...</span>
               </div>
               <div style="font-size:10px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${t.prompt}">
@@ -3533,15 +3533,16 @@ document.addEventListener('DOMContentLoaded', () => {
           const eImg = (task.type === 'start_end') ? endImgDataUrl : null;
           const timestamp = Date.now().toString().slice(-4);
           const fullPrompt = `${timestamp}. ${task.prompt}`;
+          const taskRatio = task.ratio || '16:9';
 
-          log(`[${tabLabel}] 🚀 Bắt đầu Task #${task.id} (${task.typeName}, ${selectedRatio}): "${fullPrompt.slice(0, 35)}..."`);
+          log(`[${tabLabel}] 🚀 Bắt đầu Task #${task.id} (${task.typeName}, ${taskRatio}): "${fullPrompt.slice(0, 35)}..."`);
 
           try {
             // Bước 1: Tạo Video trên tab được phân bổ
             const createRes = await callExt('CREATE_VIDEO_MULTI_TAB', {
               prompt: fullPrompt,
               tabId: tab.tabId,
-              aspectRatio: selectedRatio,
+              aspectRatio: taskRatio,
               startImageDataUrl: sImg,
               endImageDataUrl: eImg
             });
