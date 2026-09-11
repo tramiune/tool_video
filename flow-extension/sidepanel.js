@@ -3790,6 +3790,7 @@ document.addEventListener('DOMContentLoaded', () => {
           prompt,
           tabId: imgTab.tabId,
           aspectRatio: '9:16',
+          referenceImageDataUrl: startDataUrl,
           referenceImages: [startDataUrl]
         });
 
@@ -3841,6 +3842,8 @@ document.addEventListener('DOMContentLoaded', () => {
           prompt,
           tabId: imgTab.tabId,
           aspectRatio: '16:9',
+          referenceImageDataUrl: img1,
+          secondImageDataUrl: img2,
           referenceImages: [img1, img2]
         });
 

@@ -289,7 +289,17 @@ const HANDLERS = {
   CREATE_VIDEO:       req => createVideoAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.startImage, req.endImage),
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
   CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio, req.startImageDataUrl, req.endImageDataUrl),
-  CREATE_IMAGE_MULTI_TAB: req => createImageMultiTab(req.prompt, req.tabId, req.aspectRatio, req.referenceImages),
+  CREATE_IMAGE_MULTI_TAB: req => {
+    let img1 = req.referenceImageDataUrl || req.startImageDataUrl || null;
+    let img2 = req.secondImageDataUrl || req.endImageDataUrl || null;
+    if (Array.isArray(req.referenceImages)) {
+      if (!img1 && req.referenceImages[0]) img1 = req.referenceImages[0];
+      if (!img2 && req.referenceImages[1]) img2 = req.referenceImages[1];
+    } else if (typeof req.referenceImages === 'string' && !img1) {
+      img1 = req.referenceImages;
+    }
+    return createImageMultiTab(req.prompt, req.tabId, req.aspectRatio, img1, img2);
+  },
   DOWNLOAD_MULTI_TAB: req => downloadMultiTab(req.tabId, req.query, req.prompt),
   CHECK_PERCENT_ON_SCREEN: req => checkPercentOnScreen(req.tabId),
   DRAW_ABOVE_STT: req => drawAboveSTT(req.tabId),
@@ -2357,10 +2367,10 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
 }
 
 // ══════════════════════════════════════════════════════════════════
-// createImageMultiTab — Phiên bản Tạo Ảnh cho Đa Tab
-// Luồng: Dán ảnh tham chiếu ĐẦU TIÊN → Gõ prompt (DOM + CDP Native Input) → Settings (tab Ảnh, ratio) → Chờ upload → Submit
+// createImageMultiTab — Bản copy 1:1 từ createVideoMultiTab cho Tạo Ảnh
+// Luồng: Ctrl+V ảnh tham chiếu → Settings (ratio, tab Hình ảnh) → Gõ prompt → Chờ 15s → Submit
 // ══════════════════════════════════════════════════════════════════
-async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenceImages = []) {
+async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenceImageDataUrl = null, secondImageDataUrl = null) {
   let tab = null;
   try { tab = await chrome.tabs.get(tabId); } catch(e) {}
   if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
@@ -2370,185 +2380,14 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
     await new Promise(r => setTimeout(r, 500));
   } catch (_) {}
 
-  const imgList = Array.isArray(referenceImages) 
-    ? referenceImages.filter(Boolean) 
-    : (referenceImages ? [referenceImages] : []);
-
-  logToBridge(`[MultiTab Image] Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, refImages: ${imgList.length})`);
+  logToBridge(`[MultiTab Image] Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, ref1: ${!!referenceImageDataUrl}, ref2: ${!!secondImageDataUrl})`);
 
   try {
-    // ──────────────────────────────────────────────────────────
-    // BƯỚC A: DÁN ẢNH THAM CHIẾU ĐẦU TIÊN → GÕ PROMPT
-    // ──────────────────────────────────────────────────────────
-    const resultsA = await chrome.scripting.executeScript({
+    const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "ISOLATED",
-      args: [prompt, imgList],
-      func: async (promptText, imagesToPaste) => {
-        const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-        const queryDeep = (selector) => {
-          const matches = [];
-          const walk = (node) => {
-            if (node.shadowRoot) walk(node.shadowRoot);
-            for (const child of node.children) {
-              if (child.matches && child.matches(selector)) matches.push(child);
-              walk(child);
-            }
-          };
-          walk(document.body);
-          return matches;
-        };
-
-        const findDeepEditor = () => {
-          const walk = (node) => {
-            if (node.shadowRoot) {
-              const res = walk(node.shadowRoot);
-              if (res) return res;
-            }
-            for (const child of node.children) {
-              if (child.tagName === 'TEXTAREA' || child.getAttribute('contenteditable') === 'true' || child.getAttribute('data-slate-editor') === 'true' || child.getAttribute('role') === 'textbox') {
-                return child;
-              }
-              const res = walk(child);
-              if (res) return res;
-            }
-            return null;
-          };
-          return walk(document.body);
-        };
-
-        const pasteImage = async (editor, dataUrl, name) => {
-          const resp = await fetch(dataUrl);
-          const blob = await resp.blob();
-          const file = new File([blob], name + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-          editor.dispatchEvent(evt);
-        };
-
-        // 1. Tìm Slate Editor
-        const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
-                    || document.querySelector("div[data-slate-editor='true']")
-                    || document.querySelector("div[contenteditable='true']")
-                    || document.querySelector("textarea[placeholder*='prompt' i]")
-                    || findDeepEditor();
-        if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt" };
-
-        // 2. DÁN ẢNH THAM CHIẾU ĐẦU TIÊN (nếu có)
-        let pastedCount = 0;
-        editor.focus();
-        await sleep(300);
-
-        if (imagesToPaste && imagesToPaste.length > 0) {
-          for (let i = 0; i < imagesToPaste.length; i++) {
-            try {
-              await pasteImage(editor, imagesToPaste[i], `ref_img_${i + 1}`);
-              pastedCount++;
-              await sleep(1000); // 1s giữa mỗi ảnh
-            } catch (e) {
-              console.warn(`[MultiTab Image] Paste err img ${i + 1}:`, e);
-            }
-          }
-          await sleep(800); // Đợi Slate tạo khối thumbnail ảnh
-        }
-
-        // 3. GÕ PROMPT VÀO EDITOR (Lọc bỏ các khối ảnh void để con trỏ không bị kẹt)
-        const edRect = editor.getBoundingClientRect();
-        const clickX = Math.round(edRect.left + 60);
-        const clickY = Math.round(edRect.bottom - 15);
-        const clickTarget = document.elementFromPoint(clickX, clickY) || editor;
-
-        clickTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: clickX, clientY: clickY }));
-        clickTarget.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, clientX: clickX, clientY: clickY }));
-        clickTarget.click();
-        if (typeof editor.focus === 'function') editor.focus();
-        editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
-        await sleep(200);
-
-        const editableParas = Array.from(editor.querySelectorAll("[data-slate-node='element'], p, div"))
-          .filter(el => !el.closest("[data-slate-void='true']") && !el.hasAttribute("data-slate-void") && el.getAttribute("contenteditable") !== "false");
-        const targetPara = editableParas.pop() || editor;
-
-        targetPara.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-        targetPara.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-        targetPara.click();
-        if (typeof targetPara.focus === 'function') targetPara.focus();
-        await sleep(150);
-
-        try {
-          const leaves = Array.from(targetPara.querySelectorAll("span[data-slate-string='true'], span[data-slate-leaf='true'], span[data-slate-zero-width]"))
-            .filter(s => !s.closest("[contenteditable='false'], [data-slate-placeholder='true'], [data-slate-void='true']"));
-          const targetLeaf = leaves.pop() || targetPara;
-
-          const sel = window.getSelection();
-          const range = document.createRange();
-          range.selectNodeContents(targetLeaf);
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } catch (selErr) {
-          console.warn("[MultiTab Image] Selection collapse error:", selErr);
-        }
-        await sleep(150);
-
-        try { editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true })); } catch (_) {}
-        document.execCommand('insertText', false, promptText);
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
-        await sleep(300);
-
-        const edText = (editor.innerText || editor.textContent || '').trim();
-        const promptTyped = edText.includes(promptText.slice(0, 8));
-
-        return {
-          success: true,
-          promptTyped,
-          clickX,
-          clickY,
-          pastedCount
-        };
-      }
-    });
-
-    const resA = resultsA?.[0]?.result;
-    if (!resA || resA.success === false) {
-      return { success: false, error: resA?.error || "Lỗi dán ảnh/tìm editor" };
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // KÍCH HOẠT CDP NATIVE INPUT NẾU DOM insertText BỊ CHẶN BỞI SLATE
-    // ──────────────────────────────────────────────────────────
-    if (!resA.promptTyped && prompt) {
-      logToBridge(`[MultiTab Image] ✍️ Kích hoạt CDP Hardware Input để gõ prompt vào editor...`);
-      try {
-        await chrome.debugger.attach({ tabId: tab.id }, "1.3");
-        await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
-          type: "mousePressed", x: resA.clickX, y: resA.clickY, button: "left", clickCount: 1
-        });
-        await new Promise(r => setTimeout(r, 60));
-        await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.dispatchMouseEvent", {
-          type: "mouseReleased", x: resA.clickX, y: resA.clickY, button: "left", clickCount: 1
-        });
-        await new Promise(r => setTimeout(r, 150));
-        await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.insertText", { text: prompt });
-        await new Promise(r => setTimeout(r, 400));
-        await chrome.debugger.detach({ tabId: tab.id });
-        logToBridge(`[MultiTab Image] ✅ Đã gõ prompt thành công qua CDP.`);
-      } catch (cdpErr) {
-        console.warn("[MultiTab Image] CDP typing fallback err:", cdpErr);
-        try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
-      }
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // BƯỚC B: MỞ CÀI ĐẶT → TAB HÌNH ẢNH → CHỌN RATIO → CHỜ UPLOAD → SUBMIT
-    // ──────────────────────────────────────────────────────────
-    const resultsB = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      world: "ISOLATED",
-      args: [aspectRatio, resA.pastedCount],
-      func: async (targetRatio, pastedCount) => {
+      args: [prompt, aspectRatio, referenceImageDataUrl, secondImageDataUrl],
+      func: async (promptText, targetRatio, startImgUrl, endImgUrl) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         const queryDeep = (selector) => {
@@ -2578,6 +2417,24 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return matches;
         };
 
+        const findDeepEditor = () => {
+          const walk = (node) => {
+            if (node.shadowRoot) {
+              const res = walk(node.shadowRoot);
+              if (res) return res;
+            }
+            for (const child of node.children) {
+              if (child.tagName === 'TEXTAREA' || child.getAttribute('contenteditable') === 'true' || child.getAttribute('data-slate-editor') === 'true' || child.getAttribute('role') === 'textbox') {
+                return child;
+              }
+              const res = walk(child);
+              if (res) return res;
+            }
+            return null;
+          };
+          return walk(document.body);
+        };
+
         const isElemVisible = (el) => {
           if (!el) return false;
           const r = el.getBoundingClientRect();
@@ -2599,8 +2456,38 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return true;
         };
 
+        const safeClick = (el) => {
+          if (!el) return false;
+          if (typeof el.click === "function") {
+            el.click();
+          } else {
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+          }
+          return true;
+        };
+
+        // Helper paste ảnh vào editor
+        const pasteImage = async (editor, dataUrl, name) => {
+          const resp = await fetch(dataUrl);
+          const blob = await resp.blob();
+          const file = new File([blob], name + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+          editor.dispatchEvent(evt);
+        };
+
+        // ── STEP 1: Tìm Slate Editor & Submit Button ──
+        const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
+                    || document.querySelector("div[data-slate-editor='true']")
+                    || document.querySelector("div[contenteditable='true']")
+                    || document.querySelector("textarea[placeholder*='prompt' i]")
+                    || findDeepEditor();
+        if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt" };
+
         const composerButtons = queryDeep("button, [role='button']");
 
+        // 1. Tìm nút Submit (hỗ trợ type=submit, aria-label, svg icon, text arrow/send)
         let submitBtn = composerButtons.find(b => {
           if (!isElemVisible(b)) return false;
           const inner = (b.innerHTML || "").toLowerCase();
@@ -2612,7 +2499,31 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
                  Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
         });
 
-        // Tìm Settings Chip
+        // Dự phòng: Tìm submitBtn từ editor (nút ngoài cùng bên phải trong khung soạn thảo)
+        if (!submitBtn && editor) {
+          let parent = editor;
+          for (let i = 0; i < 8 && parent; i++) {
+            parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+            if (!parent) break;
+            const buttonsHere = queryScopeDeep(parent, "button, [role='button']").filter(b => isElemVisible(b));
+            if (buttonsHere.length > 0) {
+              const sorted = [...buttonsHere].sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+              const candidate = sorted.find(b => {
+                const t = (b.textContent || "").trim().toLowerCase();
+                const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add") || aria.includes("tác nhân") || aria.includes("agent")) return false;
+                if (t.includes("video") || t.includes("ảnh") || t.includes("image") || t.includes("banana") || t.includes("nano") || t.includes("pro") || t.includes("lite") || t.match(/\b(720p|1080p|4k|giây|fps|16:9|9:16)\b/i) || t.match(/^\d+s/i)) return false;
+                return true;
+              });
+              if (candidate) {
+                submitBtn = candidate;
+                break;
+              }
+            }
+          }
+        }
+
+        // 2. Tìm Settings Chip (y như testUiStep Step 2)
         let settingsChip = null;
         const isSettingChipText = (t) => {
           if (!t) return false;
@@ -2621,6 +2532,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
                  t.match(/\b(720p|1080p|4k|giây|fps|x[1-4]|16:9|9:16|1:1|4:3|3:4)\b/i) || t.match(/^\d+s/i);
         };
 
+        // Cách A: Tìm anh em bên cạnh submitBtn
         if (submitBtn) {
            const sRect = submitBtn.getBoundingClientRect();
            let parent = submitBtn;
@@ -2634,10 +2546,56 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
                 if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
                 return isSettingChipText(t);
              });
-             if (candidate) { settingsChip = candidate; break; }
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+           if (!settingsChip) {
+              parent = submitBtn;
+              for (let i = 0; i < 8 && parent; i++) {
+                 parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+                 if (!parent) break;
+                 const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+                 const leftOfSubmit = buttonsHere.filter(b => {
+                   if (b === submitBtn || !isElemVisible(b)) return false;
+                   return b.getBoundingClientRect().left < sRect.left;
+                 });
+                 leftOfSubmit.sort((a, b) => Math.abs(sRect.left - a.getBoundingClientRect().right) - Math.abs(sRect.left - b.getBoundingClientRect().right));
+                 const candidate = leftOfSubmit.find(b => {
+                   const t = (b.textContent || "").trim().toLowerCase();
+                   if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                   return true;
+                 });
+                 if (candidate) {
+                   settingsChip = candidate;
+                   break;
+                 }
+              }
            }
         }
 
+        // Cách B: Tìm từ Editor đi lên các node cha của khung soạn thảo
+        if (!settingsChip && editor) {
+           let parent = editor;
+           for (let i = 0; i < 8 && parent; i++) {
+             parent = parent.parentNode || (parent.getRootNode && parent.getRootNode().host);
+             if (!parent) break;
+             const buttonsHere = queryScopeDeep(parent, "button, [role='button']");
+             const candidate = buttonsHere.find(b => {
+                if (b === submitBtn || !isElemVisible(b)) return false;
+                const t = (b.textContent || "").trim().toLowerCase();
+                if (t.includes("tác nhân") || t.includes("agent") || t === "+" || b.innerHTML.toLowerCase().includes("add")) return false;
+                return isSettingChipText(t);
+             });
+             if (candidate) {
+               settingsChip = candidate;
+               break;
+             }
+           }
+        }
+
+        // Cách C: Quét toàn bộ nút trong vùng composer nửa dưới màn hình
         if (!settingsChip) {
           const candidates = composerButtons.filter(b => {
              if (b === submitBtn || !isElemVisible(b)) return false;
@@ -2654,11 +2612,47 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           }
         }
 
-        // Helper tìm tab Hình ảnh trong Popover
+        // Helper tìm tab Video trong Popover (y như testUiStep)
+        const findVideoTabElement = () => {
+          const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
+            if (!isElemVisible(el)) return false;
+            if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            if (r.width < 30 || r.height < 15) return false;
+            if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
+            const t = (el.textContent || "").trim();
+            const aria = (el.getAttribute("aria-label") || "").trim();
+            const id = (el.getAttribute("id") || "").toLowerCase();
+
+            if (t.includes("Khung hình") || aria.includes("Khung hình") || t.includes("Hình ảnh") || aria.includes("Hình ảnh")) return false;
+            if (t.includes("Video ·") || t.includes("giây") || t.includes("720p") || t.includes("1080p") || t.includes("fps")) return false;
+
+            return t === "Video" || aria === "Video" || 
+                   t.toLowerCase() === "video" || aria.toLowerCase() === "video" ||
+                   id.endsWith("-trigger-video") || id.endsWith("-trigger-VIDEO") || 
+                   (t.includes("Video") && t.length <= 10) ||
+                   (aria.includes("Video") && aria.length <= 10);
+          });
+          if (candidates.length === 0) return null;
+          let best = candidates.find(el => {
+            const p = el.parentElement;
+            if (p && (p.textContent.includes("Hình ảnh") || p.getAttribute("role") === "tablist")) return true;
+            return false;
+          });
+          if (!best) best = candidates.find(el => el.getAttribute("role") === "tab" || el.tagName === "BUTTON") || candidates[0];
+          return best.closest("[role='tab'], button, [role='button']") || best;
+        };
+
+        // Helper tìm tab Hình ảnh trong Popover (y như testUiStep)
         const findImageTabElement = () => {
           const candidates = queryDeep("[role='tab'], button, [role='button'], div, span").filter(el => {
             if (!isElemVisible(el)) return false;
             if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+            const r = el.getBoundingClientRect();
+            if (r.left < 150) return false;
+            if (r.width < 30 || r.height < 15) return false;
             if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
 
             const t = (el.textContent || "").trim();
@@ -2683,8 +2677,9 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return best.closest("[role='tab'], button, [role='button']") || best;
         };
 
+        // Kiểm tra xem Popover đã mở chưa (y như testUiStep)
         const isPopoverOpen = () => {
-          if (findImageTabElement()) return true;
+          if (findVideoTabElement() || findImageTabElement()) return true;
           const ratioBtn = queryDeep("button, [role='tab'], [role='radio']").find(el => {
             if (!isElemVisible(el)) return false;
             if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
@@ -2697,6 +2692,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return !!ratioBtn;
         };
 
+        // Mở popover an toàn nếu chưa mở (y như testUiStep)
         const ensurePopoverOpen = async () => {
           if (isPopoverOpen()) return true;
           if (!settingsChip) return false;
@@ -2710,7 +2706,51 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return isPopoverOpen();
         };
 
+        // ── STEP 2: Ctrl+V paste reference image (nếu có) ──
+        let pastedStart = false, pastedEnd = false;
+        editor.focus();
+        await sleep(300);
+
+        if (startImgUrl) {
+          try { await pasteImage(editor, startImgUrl, 'ref_image_1'); pastedStart = true; } catch (e) { console.warn('[MultiTab Image] Ref paste err:', e); }
+          await sleep(1000);
+        }
+
+        // ── STEP 2.5: Ctrl+V paste second reference image (nếu có) ──
+        if (endImgUrl) {
+          try { await pasteImage(editor, endImgUrl, 'ref_image_2'); pastedEnd = true; } catch (e) { console.warn('[MultiTab Image] Ref 2 paste err:', e); }
+          await sleep(500);
+        }
+
+        // ── STEP 3: Gõ prompt ──
+        editor.focus();
+        await sleep(200);
+        const sel = window.getSelection();
+        if (sel && editor.childNodes.length > 0) {
+          const range = document.createRange();
+          const lastNode = editor.childNodes[editor.childNodes.length - 1];
+          range.selectNodeContents(lastNode);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        try { editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: promptText, bubbles: true, cancelable: true })); } catch (_) {}
+        document.execCommand('insertText', false, promptText);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(300);
+
+        const edText = (editor.innerText || editor.textContent || '').trim();
+        if (!edText.includes(promptText.slice(0, 10))) {
+          return { success: false, error: "Gõ prompt thất bại" };
+        }
+
+        // ── STEP 4: Mở Settings Chip → Chọn Ratio (16:9 / 9:16 / 1:1) → Đóng popover ──
+        let clickedRatio = false;
+        let clickedDetail = 'none';
+        let chipName = settingsChip ? (settingsChip.textContent || '').trim().slice(0, 30) : 'none';
+
         const findRatioButton = (ratio) => {
+          // Lấy tất cả elements có thể là nút hoặc chứa text ratio
           const candidates = queryDeep("button, [role='tab'], [role='radio'], [role='button'], div, span").filter(el => {
             if (!isElemVisible(el)) return false;
             if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
@@ -2720,6 +2760,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             const aria = (el.getAttribute("aria-label") || "").trim();
             const val = (el.getAttribute("value") || el.getAttribute("data-value") || "").trim();
 
+            // Loại trừ container chứa cả 16:9 và 9:16
             if (t.includes("16:9") && t.includes("9:16")) return false;
             if (t.length > 25) return false;
 
@@ -2732,17 +2773,12 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             if (ratio === "1:1") {
               return (t === "1:1" || t.includes("1:1") || aria.includes("1:1") || val.includes("1:1"));
             }
-            if (ratio === "4:3") {
-              return (t === "4:3" || t.includes("4:3") || aria.includes("4:3") || val.includes("4:3")) && !t.includes("3:4");
-            }
-            if (ratio === "3:4") {
-              return (t === "3:4" || t.includes("3:4") || aria.includes("3:4") || val.includes("3:4")) && !t.includes("4:3");
-            }
             return t.includes(ratio);
           });
 
           if (candidates.length === 0) return null;
 
+          // Sắp xếp: Ưu tiên button, tab, radio trước; ưu tiên text ngắn nhất (phần tử lá)
           candidates.sort((a, b) => {
             const isBtnA = a.matches("button, [role='tab'], [role='radio'], [role='button']");
             const isBtnB = b.matches("button, [role='tab'], [role='radio'], [role='button']");
@@ -2755,76 +2791,69 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return best.closest("button, [role='tab'], [role='radio'], [role='button']") || best;
         };
 
-        // ── STEP 4: Mở Settings Chip → Chọn Tab "Hình ảnh" → Chọn Ratio → Đóng popover ──
-        let clickedRatio = false;
-        let clickedTab = false;
-        let clickedDetail = 'none';
+        if (targetRatio) {
+          const opened = await ensurePopoverOpen();
+          if (opened) {
+            await sleep(600); // Đợi popover render các options
 
-        const opened = await ensurePopoverOpen();
-        if (opened) {
-          await sleep(600);
-
-          // 1. Chuyển sang Tab "Hình ảnh" nếu chưa active
-          const imgTab = findImageTabElement();
-          if (imgTab) {
-            const isActive = imgTab.getAttribute("data-state") === "active" || 
-                             imgTab.getAttribute("aria-selected") === "true" ||
-                             imgTab.classList.contains("active") ||
-                             (imgTab.parentElement && imgTab.parentElement.getAttribute("data-state") === "active");
-            if (!isActive) {
-              triggerClick(imgTab);
-              clickedTab = true;
-              await sleep(500);
-            } else {
-              clickedTab = true;
+            // Đảm bảo tab Hình ảnh đang active nếu có tab bar
+            const imgTab = findImageTabElement();
+            if (imgTab) {
+              const isActive = imgTab.getAttribute("data-state") === "active" || 
+                               imgTab.getAttribute("aria-selected") === "true" ||
+                               imgTab.classList.contains("active");
+              if (!isActive) {
+                triggerClick(imgTab);
+                await sleep(400);
+              }
             }
-          }
 
-          // 2. Chọn Tỉ Lệ Khung Hình
-          if (targetRatio) {
             const ratioBtn = findRatioButton(targetRatio);
             if (ratioBtn) {
               clickedDetail = `<${ratioBtn.tagName.toLowerCase()} role="${ratioBtn.getAttribute('role')||''}"> "${(ratioBtn.textContent||'').trim()}"`;
               
+              // 1. Dispatch đầy đủ chuỗi pointer + mouse events (cho Angular/Lit Web Components)
               triggerClick(ratioBtn);
               await sleep(200);
 
+              // 2. Click native nếu có
               try { ratioBtn.click(); } catch (_) {}
               await sleep(200);
 
+              // 3. Nếu bên trong có span, dispatch cả span con
               const innerSpan = ratioBtn.querySelector("span, div");
               if (innerSpan) {
                 try { triggerClick(innerSpan); } catch (_) {}
               }
 
               clickedRatio = true;
-              await sleep(500);
+              await sleep(500); // Chờ UI cập nhật giá trị
+            }
+
+            // Đóng popover bằng outside-click vào editor (chuẩn của Flow, không làm revert thiết lập)
+            try {
+              editor.click();
+              editor.focus();
+            } catch (_) {}
+            await sleep(300);
+
+            // Nếu popover vẫn còn mở sau khi click editor, mới dùng phím Escape
+            if (isPopoverOpen()) {
+              window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+              document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+              await sleep(300);
             }
           }
-
-          // 3. Đóng popover bằng outside-click vào editor
-          try {
-            editor.click();
-            editor.focus();
-          } catch (_) {}
-          await sleep(300);
-
-          if (isPopoverOpen()) {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
-            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
-            await sleep(300);
-          }
         }
 
-        // ── STEP 5: Chờ upload ảnh (nếu có paste) ──
-        if (pastedCount > 0) {
-          const waitTime = pastedCount === 1 ? 10000 : 15000;
-          await sleep(waitTime);
+        // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
+        if (pastedStart || pastedEnd) {
+          await sleep(15000);
         }
 
-        // ── STEP 6: Click Submit ──
+        // ── STEP 6: Click Submit (y như testUiStep Step 3) ──
         if (!submitBtn) {
-          submitBtn = composerButtons.find(b => {
+          submitBtn = queryDeep("button, [role='button']").find(b => {
             if (!isElemVisible(b)) return false;
             const inner = (b.innerHTML || "").toLowerCase();
             const t = (b.textContent || "").trim().toLowerCase();
@@ -2844,19 +2873,20 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
         triggerClick(submitBtn);
         await sleep(500);
 
+        const frames = [pastedStart && 'ref1', pastedEnd && 'ref2'].filter(Boolean).join('+');
         return {
           success: true,
           clickedRatio,
-          clickedTab,
           chipFound: !!settingsChip,
           chipName,
-          pastedCount,
-          message: `Submit Tạo Ảnh OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN (' + clickedDetail + ')' : 'Chưa tìm thấy nút (chip: ' + chipName + ')'}]${pastedCount > 0 ? ` (${pastedCount} ảnh tham chiếu đã chờ upload)` : ''}`
+          pastedStart,
+          pastedEnd,
+          message: `Submit Tạo Ảnh OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN (' + clickedDetail + ')' : 'Chưa tìm thấy nút (chip: ' + chipName + ')'}]${frames ? ' (ảnh tham chiếu: ' + frames + ', đã chờ 15s)' : ''}`
         };
       }
     });
 
-    const result = resultsB?.[0]?.result;
+    const result = results?.[0]?.result;
     if (!result) return { success: false, error: "Script trả về rỗng" };
     if (result.success) logToBridge(`[MultiTab Image] ✅ Tab ${tab.id}: ${result.message}`);
     else logToBridge(`[MultiTab Image] ❌ Tab ${tab.id}: ${result.error}`);
