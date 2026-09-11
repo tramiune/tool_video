@@ -527,6 +527,28 @@ Chiếc xe thể thao màu đỏ chạy ven biển hoàng hôn"></textarea>
         <span>📋 Tổng: <b id="multiTabTotalCount">0</b> tab</span>
       </div>
     </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">🎬 Tạo Video Nhanh (Đa Tab)</div>
+      <div class="form-group">
+        <label class="form-label">Prompt</label>
+        <textarea id="multiTabPrompt" class="form-input" rows="3" style="resize:vertical;" placeholder="Nhập prompt video..."></textarea>
+      </div>
+      <div class="form-group" style="margin-top:8px;">
+        <label class="form-label">Tỉ lệ khung hình</label>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-sm multiTabRatioBtn active" data-ratio="9:16" style="border:1px solid var(--accent); padding:4px 10px;">9:16</button>
+          <button class="btn btn-sm multiTabRatioBtn" data-ratio="16:9" style="border:1px solid var(--border); padding:4px 10px;">16:9</button>
+          <button class="btn btn-sm multiTabRatioBtn" data-ratio="1:1" style="border:1px solid var(--border); padding:4px 10px;">1:1</button>
+          <button class="btn btn-sm multiTabRatioBtn" data-ratio="4:3" style="border:1px solid var(--border); padding:4px 10px;">4:3</button>
+          <button class="btn btn-sm multiTabRatioBtn" data-ratio="3:4" style="border:1px solid var(--border); padding:4px 10px;">3:4</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btnCreateVideoMultiTab" style="width:100%; margin-top:12px; background: linear-gradient(135deg, #00e5ff, #00b0ff); font-weight:bold; font-size:13px;">
+        🚀 Tạo Video
+      </button>
+      <div id="multiTabCreateLog" style="white-space:pre-wrap; word-break:break-all; max-height:150px; overflow-y:auto; margin-top:10px; font-size:11px; color:var(--accent); padding:8px; background:rgba(255,255,255,0.05); border-radius:4px; font-family:monospace; display:none;"></div>
+    </div>
   </div>
 
   <div class="panel" id="panel-library">

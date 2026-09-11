@@ -288,6 +288,7 @@ const HANDLERS = {
   DOWNLOAD_VIDEO:     req => downloadVideo(req.mediaId, req.filename, req.videoUrl, req.cardIndex),
   CREATE_VIDEO:       req => createVideoAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.startImage, req.endImage),
   CREATE_VIDEO_UI:    req => createVideoUI(req.prompt, req.projectId, req.config),
+  CREATE_VIDEO_MULTI_TAB: req => createVideoMultiTab(req.prompt, req.tabId, req.aspectRatio),
   CREATE_IMAGE:       req => createImageAPI(req.prompt, req.projectId, req.model, req.aspectRatio, req.referenceImage),
   CREATE_IMAGE_UI:    req => createImageUI(req.prompt, req.projectId, req.config),
   DELETE_VIDEO:       req => deleteVideo(req.workflowId, req.projectId, req.mediaId),
@@ -1271,6 +1272,236 @@ async function createVideoAPI(prompt, projectId, model, aspectRatio, startImage,
 // ══════════════════════════════════════
 // Fallback: UI automation
 // ══════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+// createVideoMultiTab — Phiên bản GỌN cho Đa Tab
+// Chỉ: mở config → bấm ratio → đóng config → gõ prompt → submit
+// ══════════════════════════════════════════════════════════════════
+async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16') {
+  let tab = null;
+  try { tab = await chrome.tabs.get(tabId); } catch(e) {}
+  if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
+
+  // Focus tab
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    await new Promise(r => setTimeout(r, 500));
+  } catch (_) {}
+
+  logToBridge(`[MultiTab] Bắt đầu tạo video trên Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio})`);
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      args: [prompt, aspectRatio],
+      func: async (promptText, targetRatio) => {
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        // ── Helper: Query deep (bao gồm Shadow DOM) ──
+        const queryDeep = (sel) => {
+          const results = [];
+          const walk = (root) => {
+            try { results.push(...root.querySelectorAll(sel)); } catch {}
+            root.querySelectorAll('*').forEach(el => {
+              if (el.shadowRoot) walk(el.shadowRoot);
+            });
+          };
+          walk(document);
+          return results;
+        };
+
+        const isElemVisible = (el) => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2) return false;
+          const s = getComputedStyle(el);
+          return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+        };
+
+        // ═══════════════════════════════════════════════
+        // STEP 1: Tìm Settings Chip và mở config
+        // ═══════════════════════════════════════════════
+        let settingsChip = null;
+        const chipCandidates = queryDeep("button, [role='button'], div").filter(el => {
+          if (!isElemVisible(el)) return false;
+          const r = el.getBoundingClientRect();
+          if (r.width < 60 || r.width > 500 || r.height < 20 || r.height > 60) return false;
+          if (r.top < 100) return false; // Tránh header
+          const t = (el.textContent || '').toLowerCase();
+          return t.includes('video') || t.includes('9:16') || t.includes('16:9') || 
+                 t.includes('1:1') || t.includes('720p') || t.includes('8s') || t.includes('4s') ||
+                 t.includes('veo') || t.includes('nano') || t.includes('giây');
+        });
+        if (chipCandidates.length > 0) {
+          // Lấy chip gần ô nhập nhất (dưới cùng)
+          chipCandidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+          settingsChip = chipCandidates[0];
+        }
+
+        if (!settingsChip) {
+          return { success: false, error: "Không tìm thấy nút Settings Chip (config bar)" };
+        }
+
+        // Click mở config
+        settingsChip.scrollIntoView({ block: 'nearest' });
+        settingsChip.click();
+        await sleep(600);
+
+        // ═══════════════════════════════════════════════
+        // STEP 2: Bấm đúng tỉ lệ khung hình
+        // ═══════════════════════════════════════════════
+        const ratioMap = {
+          '9:16': ['9:16'],
+          '16:9': ['16:9'],
+          '1:1': ['1:1'],
+          '4:3': ['4:3'],
+          '3:4': ['3:4'],
+        };
+        const targets = ratioMap[targetRatio] || [targetRatio];
+        
+        let clickedRatio = false;
+        const ratioButtons = queryDeep("[role='tab'], [role='radio'], button, [role='button'], div, span").filter(el => {
+          if (!isElemVisible(el)) return false;
+          if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
+          const r = el.getBoundingClientRect();
+          if (r.width < 20 || r.width > 120 || r.height < 20 || r.height > 60) return false;
+          const t = (el.textContent || '').trim();
+          return targets.some(tr => t === tr || t.includes(tr));
+        });
+
+        if (ratioButtons.length > 0) {
+          const btn = ratioButtons[0];
+          btn.scrollIntoView({ block: 'nearest' });
+          btn.click();
+          clickedRatio = true;
+          await sleep(300);
+        }
+
+        // ═══════════════════════════════════════════════
+        // STEP 3: Đóng config (Escape)
+        // ═══════════════════════════════════════════════
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+        await sleep(400);
+
+        // ═══════════════════════════════════════════════
+        // STEP 4: Gõ prompt vào Slate Editor
+        // ═══════════════════════════════════════════════
+        let editor = document.querySelector("[data-slate-editor='true']") ||
+                     document.querySelector("[contenteditable='true']") ||
+                     document.querySelector("[role='textbox']");
+        
+        if (!editor) {
+          // Fallback: tìm sâu hơn
+          const editors = queryDeep("[data-slate-editor], [contenteditable='true'], [role='textbox']");
+          editor = editors.find(e => isElemVisible(e) && e.getBoundingClientRect().width > 200);
+        }
+
+        if (!editor) {
+          return { success: false, error: "Không tìm thấy ô nhập prompt (Slate Editor)" };
+        }
+
+        // Focus & clear
+        editor.scrollIntoView({ block: 'center' });
+        editor.focus();
+        await sleep(200);
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+        await sleep(100);
+
+        // Type prompt
+        editor.focus();
+        const sel = window.getSelection();
+        if (sel && editor.childNodes.length > 0) {
+          const range = document.createRange();
+          const lastNode = editor.childNodes[editor.childNodes.length - 1];
+          range.selectNodeContents(lastNode);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+
+        try {
+          editor.dispatchEvent(new InputEvent('beforeinput', {
+            inputType: 'insertText', data: promptText, bubbles: true, cancelable: true
+          }));
+        } catch (_) {}
+        document.execCommand('insertText', false, promptText);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(300);
+
+        // Verify text was typed
+        const editorText = (editor.innerText || editor.textContent || '').trim();
+        if (!editorText.includes(promptText.slice(0, 10))) {
+          return { success: false, error: "Gõ prompt thất bại — ô nhập vẫn trống" };
+        }
+
+        // ═══════════════════════════════════════════════
+        // STEP 5: Click nút Submit (→)
+        // ═══════════════════════════════════════════════
+        let submitBtn = null;
+        for (let attempt = 0; attempt < 25; attempt++) {
+          const candidates = queryDeep("button, [role='button']").filter(el => {
+            if (!isElemVisible(el)) return false;
+            const t = (el.textContent || '').trim().toLowerCase();
+            const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+            const hasIcon = el.querySelector("mat-icon, [class*='arrow_forward'], [class*='send']");
+            const iconText = hasIcon ? (hasIcon.textContent || '').trim().toLowerCase() : '';
+            return t === 'arrow_forward' || t === 'send' || t === '→' ||
+                   iconText === 'arrow_forward' || iconText === 'send' ||
+                   aria.includes('tạo') || aria.includes('create') || aria.includes('submit') || aria.includes('send') ||
+                   el.getAttribute('type') === 'submit';
+          });
+          if (candidates.length > 0) {
+            submitBtn = candidates[candidates.length - 1]; // Lấy nút cuối (thường nằm dưới)
+            break;
+          }
+          await sleep(500);
+        }
+
+        if (!submitBtn) {
+          return { success: false, error: "Không tìm thấy nút Submit (→)" };
+        }
+
+        // Remove disabled
+        submitBtn.removeAttribute('disabled');
+        submitBtn.removeAttribute('aria-disabled');
+        submitBtn.style.pointerEvents = 'auto';
+        submitBtn.style.opacity = '1';
+
+        // Click!
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtName => {
+          submitBtn.dispatchEvent(new PointerEvent(evtName, { bubbles: true, cancelable: true, view: window }));
+        });
+
+        await sleep(500);
+
+        return {
+          success: true,
+          clickedRatio,
+          message: `Đã gõ prompt và click Submit thành công!`
+        };
+      }
+    });
+
+    const result = results?.[0]?.result;
+    if (!result) {
+      return { success: false, error: "Script trả về kết quả rỗng" };
+    }
+
+    if (result.success) {
+      logToBridge(`[MultiTab] ✅ Tab ${tab.id}: Submit thành công! (Ratio clicked: ${result.clickedRatio})`);
+    } else {
+      logToBridge(`[MultiTab] ❌ Tab ${tab.id}: ${result.error}`);
+    }
+
+    return result;
+
+  } catch (err) {
+    logToBridge(`[MultiTab] ❌ Tab ${tab.id}: Exception — ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 async function createVideoUI(prompt, projectId, config = {}) {
   // Tìm đúng Tab dành riêng cho Video
   const tab = await getFlowTab('video', projectId);

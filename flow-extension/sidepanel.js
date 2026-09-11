@@ -3038,6 +3038,73 @@ window.switchTab = function(tabName) {
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('btnRefreshMultiTabs');
   if (btn) btn.addEventListener('click', refreshMultiTabList);
+
+  // Ratio button toggle
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('multiTabRatioBtn')) {
+      document.querySelectorAll('.multiTabRatioBtn').forEach(b => {
+        b.classList.remove('active');
+        b.style.borderColor = 'var(--border)';
+        b.style.background = '';
+      });
+      e.target.classList.add('active');
+      e.target.style.borderColor = 'var(--accent)';
+    }
+  });
+
+  // Create Video button
+  const createBtn = document.getElementById('btnCreateVideoMultiTab');
+  if (createBtn) {
+    createBtn.addEventListener('click', async () => {
+      const prompt = document.getElementById('multiTabPrompt')?.value?.trim();
+      if (!prompt) { alert('Nhập prompt đã sếp ơi!'); return; }
+
+      const ratioBtn = document.querySelector('.multiTabRatioBtn.active');
+      const ratio = ratioBtn?.dataset?.ratio || '9:16';
+
+      // Tìm tab video rảnh
+      if (_multiTabRegistry.length === 0) {
+        await refreshMultiTabList();
+      }
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video');
+      if (!videoTab) {
+        alert('Không có tab nào được gán vai trò Video! Hãy quét tab và gán vai trò trước.');
+        return;
+      }
+
+      // Generate timestamp
+      const ts = Date.now().toString().slice(-4);
+      const fullPrompt = `${ts}. ${prompt}`;
+
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) {
+        logEl.style.display = 'block';
+        logEl.textContent = `⏳ [${new Date().toLocaleTimeString()}] Đang gửi "${fullPrompt.slice(0, 50)}..." tới Tab ${videoTab.tabId}...\n`;
+      }
+
+      createBtn.disabled = true;
+      createBtn.textContent = '⏳ Đang xử lý...';
+
+      try {
+        const res = await callExt('CREATE_VIDEO_MULTI_TAB', {
+          prompt: fullPrompt,
+          tabId: videoTab.tabId,
+          aspectRatio: ratio
+        });
+
+        if (res?.success) {
+          if (logEl) logEl.textContent += `✅ [${new Date().toLocaleTimeString()}] Thành công! ${res.message}\n`;
+        } else {
+          if (logEl) logEl.textContent += `❌ [${new Date().toLocaleTimeString()}] Lỗi: ${res?.error || 'Unknown'}\n`;
+        }
+      } catch (err) {
+        if (logEl) logEl.textContent += `❌ [${new Date().toLocaleTimeString()}] Exception: ${err.message}\n`;
+      }
+
+      createBtn.disabled = false;
+      createBtn.textContent = '🚀 Tạo Video';
+    });
+  }
 });
 
 })();
