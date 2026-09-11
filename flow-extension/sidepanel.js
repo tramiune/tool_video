@@ -2886,6 +2886,14 @@
       });
       return true;
     }
+    if (msg.action === "ADD_SERVER_TASK_TO_MULTI_TAB") {
+      addServerTaskToMultiTab(msg.task).then(res => {
+        sendResponse(res);
+      }).catch(err => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
     if (msg.action === "ADD_SERVER_TASK_TO_UI_BATCH") {
       addServerTaskToUiBatch(msg.task).then(res => {
         sendResponse(res);
@@ -3157,6 +3165,312 @@ async function monitorAndDownloadImageMultiTab(tabId, timestamp, prompt, project
 
   log(`❌ Timeout 100s! Ảnh chưa xong.`);
   return { success: false, error: 'Timeout after 100 seconds' };
+}
+
+// ══════════════════════════════════════════════════════════════
+// MULTI-TAB SERVER QUEUE MANAGER (Nhiệm vụ từ tool_video)
+// ══════════════════════════════════════════════════════════════
+const _multiTabServerTasks = []; // { id, serverTaskId, mediaType, prompt, aspectRatio, ... }
+const _busyMultiTabs = new Set(); // tabIds currently executing a task
+let _isProcessingMultiTabQueue = false;
+
+function renderMultiTabServerTasksUI() {
+  const listEl = document.getElementById('multiTabServerTaskList');
+  const badgeEl = document.getElementById('multiTabServerTaskBadge');
+  if (!listEl) return;
+
+  const total = _multiTabServerTasks.length;
+  const pending = _multiTabServerTasks.filter(t => t.status === 'PENDING').length;
+  const running = _multiTabServerTasks.filter(t => t.status === 'RUNNING' || t.status === 'RENDERING' || t.status === 'DOWNLOADING').length;
+  const done = _multiTabServerTasks.filter(t => t.status === 'DONE').length;
+
+  if (badgeEl) {
+    badgeEl.textContent = `${done}/${total} task (${running} đang chạy, ${pending} chờ)`;
+  }
+
+  if (_multiTabServerTasks.length === 0) {
+    listEl.innerHTML = '<div style="color:var(--text2); font-size:11px; text-align:center; padding:8px;">Chưa có task nào từ server...</div>';
+    return;
+  }
+
+  listEl.innerHTML = _multiTabServerTasks.map((t, idx) => {
+    const isVideo = t.mediaType === 'video';
+    const typeLabel = isVideo ? '🎥 Video' : '🖼️ Ảnh';
+    const typeColor = isVideo ? '#00e5ff' : '#e91e63';
+
+    let statusColor = 'var(--text2)';
+    let statusText = '⏳ Chờ tab';
+    if (t.status === 'RUNNING') {
+      statusColor = '#00e5ff';
+      statusText = t.statusDetail || '🔄 Đang gửi...';
+    } else if (t.status === 'RENDERING') {
+      statusColor = '#ff9800';
+      statusText = t.statusDetail || '⏳ Đang render...';
+    } else if (t.status === 'DOWNLOADING') {
+      statusColor = '#00bcd4';
+      statusText = '📥 Đang tải...';
+    } else if (t.status === 'DONE') {
+      statusColor = 'var(--green)';
+      statusText = `✅ Xong ${t.filename ? '(' + t.filename + ')' : ''}`;
+    } else if (t.status === 'ERROR') {
+      statusColor = 'var(--red)';
+      statusText = `❌ Lỗi: ${t.error || 'Thất bại'}`;
+    }
+
+    const tabLabel = t.tabId ? `Tab ${t.tabIndex || t.tabId}` : 'Chưa gán';
+
+    return `
+      <div style="background:var(--bg); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:6px 8px; font-size:11px; display:flex; flex-direction:column; gap:3px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-weight:bold; color:white;">#${idx + 1}</span>
+            <span style="font-size:9px; font-weight:bold; padding:1px 5px; border-radius:4px; color:${typeColor}; background:rgba(255,255,255,0.06);">${typeLabel}</span>
+            <span style="font-size:9px; color:var(--text2);">${tabLabel}</span>
+          </div>
+          <span style="font-size:10px; font-weight:bold; color:${statusColor};">${statusText}</span>
+        </div>
+        <div style="color:var(--text2); font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${t.prompt}">
+          ${t.prompt}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function addServerTaskToMultiTab(task) {
+  if (!task) return { success: false, error: "Task rỗng" };
+
+  const isVideo = task.mediaType === 'video' || (!task.mediaType && Boolean(task.duration || task.startImage || task.endImage));
+  const mediaType = isVideo ? 'video' : 'image';
+
+  const newTask = {
+    id: _multiTabServerTasks.length + 1,
+    serverTaskId: task.id,
+    mediaType,
+    projectId: task.projectId || '',
+    prompt: task.prompt || '',
+    aspectRatio: task.aspectRatio || (mediaType === 'video' ? '9:16' : '16:9'),
+    startImage: task.startImage || null,
+    endImage: task.endImage || null,
+    referenceImage: task.referenceImage || null,
+    referenceImages: Array.isArray(task.referenceImages) ? task.referenceImages : (task.referenceImage ? [task.referenceImage] : []),
+    status: 'PENDING',
+    statusDetail: 'Chờ tab rảnh...',
+    tabId: null,
+    tabIndex: null,
+    filename: null,
+    error: null,
+    createdAt: Date.now()
+  };
+
+  _multiTabServerTasks.push(newTask);
+  renderMultiTabServerTasksUI();
+
+  // Tự động chuyển qua tab Đa Tab để người dùng theo dõi
+  if (typeof window.switchTab === "function") {
+    window.switchTab("multi-tab");
+  }
+
+  toast(`📥 [tool_video] Nhận task ${mediaType === 'video' ? 'Video' : 'Ảnh'} (${task.id || newTask.id}) vào Đa Tab!`, "info");
+
+  // Kích hoạt worker pool xử lý hàng đợi
+  triggerMultiTabServerQueueProcessing();
+
+  return { success: true, taskId: newTask.id };
+}
+
+async function triggerMultiTabServerQueueProcessing() {
+  if (_isProcessingMultiTabQueue) return;
+  _isProcessingMultiTabQueue = true;
+
+  try {
+    if (_multiTabRegistry.length === 0) {
+      await refreshMultiTabList();
+    }
+
+    if (_multiTabRegistry.length === 0) {
+      console.warn('[MultiTab Server] Chưa có tab Flow nào!');
+      return;
+    }
+
+    // Duyệt qua các task PENDING
+    const pendingTasks = _multiTabServerTasks.filter(t => t.status === 'PENDING');
+    if (pendingTasks.length === 0) return;
+
+    for (const task of pendingTasks) {
+      // Tìm tab phù hợp theo role và đang rảnh (!busy)
+      let availableTab = _multiTabRegistry.find(t => t.role === task.mediaType && !_busyMultiTabs.has(t.tabId));
+
+      // Fallback: nếu cần tab Ảnh nhưng chưa tab nào có vai trò Ảnh và có tab Video rảnh đang mở > 1 tab
+      if (!availableTab && task.mediaType === 'image') {
+        const imageTabs = _multiTabRegistry.filter(t => t.role === 'image');
+        if (imageTabs.length === 0) {
+          const idleVideoTab = _multiTabRegistry.find(t => t.role === 'video' && !_busyMultiTabs.has(t.tabId));
+          if (idleVideoTab && _multiTabRegistry.length > 1) {
+            idleVideoTab.role = 'image';
+            availableTab = idleVideoTab;
+            refreshMultiTabList();
+          }
+        }
+      }
+
+      if (availableTab) {
+        _busyMultiTabs.add(availableTab.tabId);
+        task.status = 'RUNNING';
+        task.tabId = availableTab.tabId;
+        task.tabIndex = availableTab.index + 1;
+        task.statusDetail = `Tab ${task.tabIndex} đang gửi...`;
+        renderMultiTabServerTasksUI();
+
+        // Chạy worker bất đồng bộ cho task này trên tab được gán (không await ở đây để các tab khác có thể nhận song song!)
+        runMultiTabServerWorker(task, availableTab);
+      }
+    }
+  } finally {
+    _isProcessingMultiTabQueue = false;
+  }
+}
+
+async function runMultiTabServerWorker(task, tab) {
+  const logEl = task.mediaType === 'video' 
+    ? (document.getElementById('multiTabCreateLog') || document.getElementById('multiTabImgLog'))
+    : (document.getElementById('multiTabImgLog') || document.getElementById('multiTabCreateLog'));
+
+  const log = (msg) => {
+    const t = new Date().toLocaleTimeString();
+    if (logEl) {
+      logEl.style.display = 'block';
+      logEl.textContent += `[${t}] [Tab ${tab.index + 1}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  const ts = Date.now().toString().slice(-4);
+  const fullPrompt = `${ts}. ${task.prompt}`;
+  log(`🚀 Bắt đầu xử lý task #${task.id} (${task.mediaType === 'video' ? 'Video' : 'Ảnh'}): "${fullPrompt.slice(0, 40)}..."`);
+
+  try {
+    if (task.mediaType === 'video') {
+      // 1. Submit Video
+      task.statusDetail = 'Đang submit...';
+      renderMultiTabServerTasksUI();
+
+      const createRes = await callExt('CREATE_VIDEO_MULTI_TAB', {
+        prompt: fullPrompt,
+        tabId: tab.tabId,
+        aspectRatio: task.aspectRatio || '9:16',
+        startImageDataUrl: task.startImage || null,
+        endImageDataUrl: task.endImage || null
+      });
+
+      if (!createRes?.success) {
+        throw new Error(createRes?.error || 'Lỗi khi tạo video trên tab');
+      }
+
+      // 2. Theo dõi render & Tải về
+      task.status = 'RENDERING';
+      task.statusDetail = '⏳ Đang render...';
+      renderMultiTabServerTasksUI();
+      log(`✅ Đã submit video. Bắt đầu theo dõi render...`);
+
+      const dlResult = await monitorAndDownloadMultiTab(
+        tab.tabId, ts, fullPrompt, tab.projectId, logEl
+      );
+
+      if (dlResult?.success) {
+        task.status = 'DONE';
+        task.filename = dlResult.filename || dlResult.filePath || 'video.mp4';
+        task.statusDetail = `✅ Xong: ${task.filename}`;
+        renderMultiTabServerTasksUI();
+        log(`🎉 Hoàn tất Video! File: ${task.filename}`);
+
+        // Báo kết quả về server tool_video
+        if (task.serverTaskId) {
+          callExt('REPORT_TOOL_VIDEO_RESULT', {
+            id: task.serverTaskId,
+            ok: true,
+            filePath: task.filename
+          }).catch(e => console.error('Lỗi gửi REPORT_TOOL_VIDEO_RESULT:', e));
+        }
+      } else {
+        throw new Error(dlResult?.error || 'Lỗi tải video');
+      }
+
+    } else {
+      // Xử lý Ảnh
+      // 1. Chuẩn hóa referenceImages
+      let refImages = [];
+      if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
+        refImages = task.referenceImages.filter(Boolean);
+      } else if (task.referenceImage) {
+        refImages = [task.referenceImage];
+      } else if (task.startImage) {
+        refImages = [task.startImage];
+      }
+
+      task.statusDetail = 'Đang submit ảnh...';
+      renderMultiTabServerTasksUI();
+
+      const createRes = await callExt('CREATE_IMAGE_MULTI_TAB', {
+        prompt: fullPrompt,
+        tabId: tab.tabId,
+        aspectRatio: task.aspectRatio || '16:9',
+        referenceImages: refImages
+      });
+
+      if (!createRes?.success) {
+        throw new Error(createRes?.error || 'Lỗi khi tạo ảnh trên tab');
+      }
+
+      // 2. Theo dõi & Tải ảnh
+      task.status = 'RENDERING';
+      task.statusDetail = '⏳ Đang render ảnh...';
+      renderMultiTabServerTasksUI();
+      log(`✅ Đã submit ảnh. Bắt đầu theo dõi render...`);
+
+      const dlResult = await monitorAndDownloadImageMultiTab(
+        tab.tabId, ts, fullPrompt, tab.projectId, logEl
+      );
+
+      if (dlResult?.success) {
+        task.status = 'DONE';
+        task.filename = dlResult.filename || dlResult.filePath || 'image.jpg';
+        task.statusDetail = `✅ Xong: ${task.filename}`;
+        renderMultiTabServerTasksUI();
+        log(`🎉 Hoàn tất Ảnh! File: ${task.filename}`);
+
+        // Báo kết quả về server tool_video
+        if (task.serverTaskId) {
+          callExt('REPORT_TOOL_IMAGE_RESULT', {
+            id: task.serverTaskId,
+            ok: true,
+            filePath: task.filename
+          }).catch(e => console.error('Lỗi gửi REPORT_TOOL_IMAGE_RESULT:', e));
+        }
+      } else {
+        throw new Error(dlResult?.error || 'Lỗi tải ảnh');
+      }
+    }
+  } catch (err) {
+    task.status = 'ERROR';
+    task.error = err.message;
+    task.statusDetail = `❌ ${err.message}`;
+    renderMultiTabServerTasksUI();
+    log(`❌ Task #${task.id} thất bại: ${err.message}`);
+
+    if (task.serverTaskId) {
+      const reportAction = task.mediaType === 'video' ? 'REPORT_TOOL_VIDEO_RESULT' : 'REPORT_TOOL_IMAGE_RESULT';
+      callExt(reportAction, {
+        id: task.serverTaskId,
+        ok: false,
+        error: err.message
+      }).catch(e => console.error(`Lỗi gửi ${reportAction}:`, e));
+    }
+  } finally {
+    // Giải phóng tab để tab này có thể nhận task tiếp theo!
+    _busyMultiTabs.delete(tab.tabId);
+    triggerMultiTabServerQueueProcessing();
+  }
 }
 
 // Bind refresh button
@@ -3922,6 +4236,15 @@ document.addEventListener('DOMContentLoaded', () => {
       testPaste2ImagesBtn.textContent = '🧪 Test Chỉ Dán (Ctrl+V) 2 Ảnh (Không Submit)';
     });
   }
+
+  // Lấy các task Đa Tab từ server tool_video đang chờ trong background nếu có
+  callExt('GET_PENDING_MULTI_TAB_SERVER_TASKS').then(res => {
+    if (res?.success && Array.isArray(res.tasks) && res.tasks.length > 0) {
+      for (const t of res.tasks) {
+        addServerTaskToMultiTab(t);
+      }
+    }
+  }).catch(() => {});
 });
 
 })();

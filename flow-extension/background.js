@@ -341,6 +341,7 @@ const HANDLERS = {
   TOGGLE_TOOL_SERVER: req => { _toolServerPaused = req.paused; return { success: true, paused: _toolServerPaused }; },
   REPORT_TOOL_IMAGE_RESULT: req => reportToolImageResult(req),
   GET_PENDING_SERVER_TASKS: () => getPendingServerTasks(),
+  GET_PENDING_MULTI_TAB_SERVER_TASKS: () => getPendingMultiTabServerTasks(),
   SCAN_FLOW_CARDS: req => scanFlowCards(req.tabId, req.projectId, req.maxSeq, req.purpose || 'video'),
 };
 
@@ -5890,10 +5891,17 @@ if (chrome.alarms) {
 connectToolVideoBridge();
 
 let _pendingServerVideoTasks = [];
+let _pendingMultiTabServerTasks = [];
 
 function getPendingServerTasks() {
   const tasks = [..._pendingServerVideoTasks];
   _pendingServerVideoTasks = [];
+  return { success: true, tasks };
+}
+
+function getPendingMultiTabServerTasks() {
+  const tasks = [..._pendingMultiTabServerTasks];
+  _pendingMultiTabServerTasks = [];
   return { success: true, tasks };
 }
 
@@ -5931,17 +5939,18 @@ function reportToolVideoResult(req) {
 }
 
 function enqueueServerVideoTask(task) {
-  logToBridge(`[Bridge] Chuyển task video ${task.id} vào hàng đợi Auto Click UI trên Sidepanel...`);
+  logToBridge(`[Bridge] Chuyển task video ${task.id} vào hàng đợi Đa Tab trên Sidepanel...`);
+  const serverTask = { ...task, mediaType: 'video' };
 
   chrome.runtime.sendMessage({
-    action: 'ADD_SERVER_TASK_TO_UI_BATCH',
-    task: task
+    action: 'ADD_SERVER_TASK_TO_MULTI_TAB',
+    task: serverTask
   }).then(res => {
     if (!res?.success) {
-      _pendingServerVideoTasks.push(task);
+      _pendingMultiTabServerTasks.push(serverTask);
     }
   }).catch(() => {
-    _pendingServerVideoTasks.push(task);
+    _pendingMultiTabServerTasks.push(serverTask);
   });
 
   // Tự động mở Sidepanel nếu có thể
@@ -6059,19 +6068,18 @@ const _serverImageQueue = [];
 let _isProcessingServerImageQueue = false;
 
 function enqueueServerImageTask(task) {
-  logToBridge(`[Bridge] Chuyển task ảnh ${task.id} vào hàng đợi Auto Click Ảnh trên Sidepanel...`);
+  logToBridge(`[Bridge] Chuyển task ảnh ${task.id} vào hàng đợi Đa Tab trên Sidepanel...`);
+  const serverTask = { ...task, mediaType: 'image' };
 
   chrome.runtime.sendMessage({
-    action: 'ADD_SERVER_IMAGE_TASK_TO_UI_BATCH',
-    task: task
+    action: 'ADD_SERVER_TASK_TO_MULTI_TAB',
+    task: serverTask
   }).then(res => {
     if (!res?.success) {
-      _serverImageQueue.push(task);
-      processServerImageQueue();
+      _pendingMultiTabServerTasks.push(serverTask);
     }
   }).catch(() => {
-    _serverImageQueue.push(task);
-    processServerImageQueue();
+    _pendingMultiTabServerTasks.push(serverTask);
   });
 
   // Tự động mở Sidepanel nếu có thể
