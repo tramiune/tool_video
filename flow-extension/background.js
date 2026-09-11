@@ -1514,8 +1514,8 @@ async function downloadMultiTab(tabId, query, promptText = '') {
         return { success: false, isStillRendering: true, error: 'Video chưa render xong' };
       }
 
-      // Backup: CDP right-click nếu menu chưa hiện
-      if (attempt === 3 || attempt === 6) {
+      // Backup: CDP right-click nếu menu chưa hiện (kích hoạt từ lần 1 luôn)
+      if (attempt === 1 || attempt === 3 || attempt === 6) {
         try {
           try { await chrome.debugger.attach({ tabId: tab.id }, '1.3'); } catch (_) {}
           await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', {
