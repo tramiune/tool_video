@@ -1449,25 +1449,61 @@ async function rightClickAndDownload(tabId) {
     await new Promise(r => setTimeout(r, 300));
   } catch (_) {}
 
-  // 1. Tìm STT, vẽ vòng tròn đỏ 20px, click chuột phải tại (50, sttRect.top - 170)
+  // 1. Tìm nút Tải (↓), click chuột phải tại center của nút đó trừ 70px lên trên
   const r0 = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     world: "ISOLATED",
     func: () => {
-      const sttEls = Array.from(document.querySelectorAll('p, span, div, b, strong')).filter(el => {
-        if (el.closest("[data-slate-editor], form, [class*='composer']")) return false;
-        const t = (el.innerText || el.textContent || '').trim();
-        return /^\d{4}\./.test(t) && t.length < 200;
+      // Tìm nút download (↓)
+      const isDownloadBtn = (el) => {
+        if (!el || el.tagName !== 'BUTTON') return false;
+        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+        const title = (el.getAttribute('title') || '').toLowerCase();
+        const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+        const html = (el.innerHTML || '').toLowerCase();
+        return aria.includes('download') || aria.includes('tải') ||
+               title.includes('download') || title.includes('tải') ||
+               text === 'download' || text === 'tải xuống' ||
+               html.includes('file_download') || html.includes('save_alt') ||
+               text === 'file_download' || text === 'save_alt';
+      };
+
+      const allBtns = Array.from(document.querySelectorAll('button')).filter(b => {
+        const r = b.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
       });
 
-      if (sttEls.length === 0) return { success: false, error: 'Không tìm thấy STT trên màn hình' };
+      let dlBtn = allBtns.find(isDownloadBtn);
 
-      const sttEl = sttEls[0];
-      const sttRect = sttEl.getBoundingClientRect();
-      const cx = 50; // Cách lề Chrome 50px
-      const cy = Math.max(50, Math.round(sttRect.top - 120));
+      // Fallback: tìm nhóm 3 nút nhỏ liền nhau (download/redo/delete)
+      if (!dlBtn) {
+        const smallBtns = allBtns.filter(b => {
+          const r = b.getBoundingClientRect();
+          return r.width >= 20 && r.width <= 60 && r.height >= 20 && r.height <= 60 &&
+                 b.querySelector('svg, [class*="icon"], [class*="material"]');
+        });
+        for (let i = 0; i < smallBtns.length - 1; i++) {
+          const r1 = smallBtns[i].getBoundingClientRect();
+          const r2 = smallBtns[i+1]?.getBoundingClientRect();
+          const r3 = smallBtns[i+2]?.getBoundingClientRect();
+          if (r2 && r3 &&
+              Math.abs(r1.top - r2.top) < 10 &&
+              Math.abs(r1.top - r3.top) < 10 &&
+              r2.left > r1.right - 10 &&
+              r3.left > r2.right - 10) {
+            dlBtn = smallBtns[i];
+            break;
+          }
+        }
+      }
 
-      // Vẽ vòng tròn đỏ 20px tại điểm bấm
+      if (!dlBtn) return { success: false, error: 'Không tìm thấy nút Tải trên màn hình' };
+
+      const rect = dlBtn.getBoundingClientRect();
+      const cx = Math.round(rect.left + rect.width / 2);
+      const cy = Math.max(50, Math.round(rect.top + rect.height / 2) - 70);
+
+      // Vẽ vòng tròn đỏ tại điểm bấm
       const circle = document.createElement('div');
       circle.style.cssText = `
         position:fixed; left:${cx - 10}px; top:${cy - 10}px;
@@ -1475,7 +1511,6 @@ async function rightClickAndDownload(tabId) {
         background:rgba(255,0,0,0.7); border:2px solid #fff;
         z-index:999999; pointer-events:none;
         box-shadow: 0 0 15px rgba(255,0,0,0.8);
-        animation: pulse-circle 1s ease-out forwards;
       `;
       document.body.appendChild(circle);
       setTimeout(() => circle.remove(), 4000);
@@ -1487,7 +1522,7 @@ async function rightClickAndDownload(tabId) {
       target.dispatchEvent(new MouseEvent('mouseup', opts));
       target.dispatchEvent(new MouseEvent('contextmenu', opts));
 
-      return { success: true, cx, cy, stt: (sttEl.innerText || '').slice(0, 10) };
+      return { success: true, cx, cy, dlBtnText: (dlBtn.innerText || '').trim().slice(0, 20) };
     }
   });
 
