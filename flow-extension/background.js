@@ -2036,7 +2036,11 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           const t = (b.textContent || "").trim().toLowerCase();
           const aria = (b.getAttribute("aria-label") || "").toLowerCase();
           if (b.getAttribute("type") === "submit") return true;
-          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          // Exact aria match — avoid matching "Thành phần tạo hình ảnh"
+          if (b.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']")) return false;
+          const btnText = (b.innerText || b.textContent || "").trim().toLowerCase();
+          if (btnText === "cancel" || btnText === "hủy") return false;
+          if (aria === "bắt đầu tạo" || aria === "tạo" || aria === "generate" || aria === "send" || aria === "submit" || aria === "gửi" || aria === "bắt đầu") return true;
           return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
                  Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
         });
@@ -2401,19 +2405,22 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
             const t = (b.textContent || "").trim().toLowerCase();
             const aria = (b.getAttribute("aria-label") || "").toLowerCase();
             if (b.getAttribute("type") === "submit") return true;
-            if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+            // Exact aria match — avoid matching "Thành phần tạo hình ảnh"
+          if (b.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']")) return false;
+          const btnText = (b.innerText || b.textContent || "").trim().toLowerCase();
+          if (btnText === "cancel" || btnText === "hủy") return false;
+          if (aria === "bắt đầu tạo" || aria === "tạo" || aria === "generate" || aria === "send" || aria === "submit" || aria === "gửi" || aria === "bắt đầu") return true;
             return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
                    Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
           });
         }
         if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
 
-        // Submit: focus editor → Enter (đáng tin cậy hơn triggerClick)
-        editor.focus();
-        const enterOpts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
-        editor.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
-        editor.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
-        editor.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
+        submitBtn.removeAttribute("disabled");
+        submitBtn.setAttribute("aria-disabled", "false");
+        submitBtn.style.pointerEvents = "auto";
+        submitBtn.style.opacity = "1";
+        triggerClick(submitBtn);
         await sleep(500);
 
         const frames = [pastedStart && 'start', pastedEnd && 'end'].filter(Boolean).join('+');
@@ -2619,7 +2626,11 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           const t = (b.textContent || "").trim().toLowerCase();
           const aria = (b.getAttribute("aria-label") || "").toLowerCase();
           if (b.getAttribute("type") === "submit") return true;
-          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          // Exact aria match — avoid matching "Thành phần tạo hình ảnh"
+          if (b.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']")) return false;
+          const btnText = (b.innerText || b.textContent || "").trim().toLowerCase();
+          if (btnText === "cancel" || btnText === "hủy") return false;
+          if (aria === "bắt đầu tạo" || aria === "tạo" || aria === "generate" || aria === "send" || aria === "submit" || aria === "gửi" || aria === "bắt đầu") return true;
           return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
                  Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
         });
@@ -2966,7 +2977,11 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           const t = (b.textContent || "").trim().toLowerCase();
           const aria = (b.getAttribute("aria-label") || "").toLowerCase();
           if (b.getAttribute("type") === "submit") return true;
-          if (aria.includes("tạo") || aria.includes("generate") || aria.includes("submit") || aria.includes("send") || aria.includes("gửi") || aria.includes("bắt đầu")) return true;
+          // Exact aria match — avoid matching "Thành phần tạo hình ảnh"
+          if (b.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']")) return false;
+          const btnText = (b.innerText || b.textContent || "").trim().toLowerCase();
+          if (btnText === "cancel" || btnText === "hủy") return false;
+          if (aria === "bắt đầu tạo" || aria === "tạo" || aria === "generate" || aria === "send" || aria === "submit" || aria === "gửi" || aria === "bắt đầu") return true;
           return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
                  Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
         }) || submitBtn;
@@ -5184,12 +5199,9 @@ async function createImageUI(prompt, projectId, config = {}) {
           await sleep(200);
         }
 
-        // Submit: focus editor → Enter (đáng tin cậy hơn click)
-        editor.focus();
-        const enterOpts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
-        editor.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
-        editor.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
-        editor.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
+        submitBtn.removeAttribute("disabled");
+        submitBtn.setAttribute("aria-disabled", "false");
+        submitBtn.click(); // Đúng chuẩn Test B3: Click đúng 1 lần duy nhất!
         await sleep(500);
 
         return {
