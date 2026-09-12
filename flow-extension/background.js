@@ -340,6 +340,15 @@ const HANDLERS = {
   REPORT_TOOL_VIDEO_RESULT: req => reportToolVideoResult(req),
   TOGGLE_TOOL_SERVER: req => { _toolServerPaused = req.paused; return { success: true, paused: _toolServerPaused }; },
   REPORT_TOOL_IMAGE_RESULT: req => reportToolImageResult(req),
+  REPORT_TASK_STARTED: req => {
+    // Báo server reset timeout từ lúc extension submit xong
+    if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+      _toolWs.send(JSON.stringify({ type: 'TASK_STARTED', id: req.id }));
+      logToBridge(`[Bridge] Đã gửi TASK_STARTED về tool_video: ID=${req.id}`);
+      return { success: true };
+    }
+    return { success: false, error: 'WebSocket not connected' };
+  },
   GET_PENDING_SERVER_TASKS: () => getPendingServerTasks(),
   GET_PENDING_MULTI_TAB_SERVER_TASKS: () => getPendingMultiTabServerTasks(),
   SCAN_FLOW_CARDS: req => scanFlowCards(req.tabId, req.projectId, req.maxSeq, req.purpose || 'video'),

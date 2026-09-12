@@ -3373,6 +3373,11 @@ async function runMultiTabServerWorker(task, tab) {
       renderMultiTabServerTasksUI();
       log(`✅ Đã submit video. Bắt đầu theo dõi render...`);
 
+      // Báo server biết task đã submit → server reset timeout từ lúc này
+      if (task.serverTaskId) {
+        callExt('REPORT_TASK_STARTED', { id: task.serverTaskId }).catch(() => {});
+      }
+
       const dlResult = await monitorAndDownloadMultiTab(
         tab.tabId, ts, fullPrompt, tab.projectId, logEl
       );
@@ -3428,6 +3433,11 @@ async function runMultiTabServerWorker(task, tab) {
       task.statusDetail = '⏳ Đang render ảnh...';
       renderMultiTabServerTasksUI();
       log(`✅ Đã submit ảnh. Bắt đầu theo dõi render...`);
+
+      // Báo server biết task đã submit → server reset timeout từ lúc này
+      if (task.serverTaskId) {
+        callExt('REPORT_TASK_STARTED', { id: task.serverTaskId }).catch(() => {});
+      }
 
       const dlResult = await monitorAndDownloadImageMultiTab(
         tab.tabId, ts, fullPrompt, tab.projectId, logEl

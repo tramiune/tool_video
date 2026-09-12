@@ -83,6 +83,22 @@ _extWss.on('connection', (ws) => {
       return;
     }
 
+    // Extension đã submit xong lên Flow → reset timeout từ lúc này
+    if (msg.type === 'TASK_STARTED' && _extPending.has(msg.id)) {
+      const pending = _extPending.get(msg.id);
+      clearTimeout(pending.timer);
+      // Video: 11 phút từ lúc submit; Ảnh: 2 phút từ lúc submit
+      const isImage = msg.id.startsWith('img_');
+      const newTimeoutMs = isImage ? 120000 : 660000;
+      pending.timer = setTimeout(() => {
+        _extPending.delete(msg.id);
+        pending.reject(new Error(`Timeout sau khi submit (${isImage ? '2 phút' : '11 phút'})`));
+      }, newTimeoutMs);
+      logger.info(`[Bridge] TASK_STARTED ${msg.id} → reset timeout ${newTimeoutMs / 1000}s`);
+      return;
+    }
+
+
     if ((msg.type === 'TASK_RESULT' || msg.type === 'IMAGE_RESULT' || msg.type === 'VIDEO_RESULT') && _extPending.has(msg.id)) {
       const { resolve, reject, timer } = _extPending.get(msg.id);
       _extPending.delete(msg.id);
