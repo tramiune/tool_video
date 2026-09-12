@@ -4454,20 +4454,33 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
       }
 
-      // Worker pool: chạy song song tất cả tab hiện có
-      log(`✅ Tìm thấy ${allTabs.length} tab (${allTabs.filter(t=>t.role==='video').length} Video, ${allTabs.filter(t=>t.role==='image').length} Ảnh)`);
-      log(`⚡ Chia đều 100 task chạy trên ${allTabs.length} tab song song...`);
+      // Worker pool: tách queue theo role — tab Video chỉ nhận task video, tab Ảnh chỉ nhận task ảnh
+      const videoTabs100 = allTabs.filter(t => t.role === 'video');
+      const imageTabs100 = allTabs.filter(t => t.role === 'image');
 
-      const queue = [...tasks100];
+      const videoQueue = tasks100.filter(t => t.mediaType === 'video' || t.type === 'violate');
+      const imageQueue = tasks100.filter(t => t.mediaType === 'image' && t.type !== 'violate');
+
+      log(`✅ ${videoTabs100.length} tab Video (${videoQueue.length} task video/vi phạm) | ${imageTabs100.length} tab Ảnh (${imageQueue.length} task ảnh)`);
+
+      if (videoTabs100.length === 0 && videoQueue.length > 0) {
+        log('⚠️ Không có tab Video! Các task video sẽ bị bỏ qua. Gán role Video cho ít nhất 1 tab.');
+      }
+      if (imageTabs100.length === 0 && imageQueue.length > 0) {
+        log('⚠️ Không có tab Ảnh! Các task ảnh sẽ bị bỏ qua. Gán role Ảnh cho ít nhất 1 tab.');
+      }
 
       const runWorker100 = async (tab) => {
         const tabLabel = `Tab${tab.index + 1}`;
+        // Mỗi tab chỉ kéo task từ queue đúng role của nó
+        const myQueue = tab.role === 'image' ? imageQueue : videoQueue;
 
-        while (queue.length > 0) {
-          const task = queue.shift();
+        while (myQueue.length > 0) {
+          const task = myQueue.shift();
           const statusEl = document.getElementById(`b100_status_${task.id}`);
           const tabEl = document.getElementById(`b100_tab_${task.id}`);
           const rowEl = document.getElementById(`b100_row_${task.id}`);
+
 
           if (tabEl) { tabEl.textContent = `📌${tabLabel}`; tabEl.style.color = 'var(--accent2)'; }
           if (statusEl) { statusEl.textContent = '🔄 Gửi...'; statusEl.style.color = '#60a5fa'; }
@@ -4559,7 +4572,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       };
 
-      await Promise.all(allTabs.map(tab => runWorker100(tab)));
+      // Chỉ launch worker cho tab có queue tương ứng không rỗng
+      const workers = [
+        ...videoTabs100.map(tab => runWorker100(tab)),
+        ...imageTabs100.map(tab => runWorker100(tab)),
+      ];
+      await Promise.all(workers);
 
       log(`🏁 HOÀN TẤT 100 TASK! ✅${doneCount} Xong | ❌${failCount} Lỗi | ⚠️${violateCount} Vi phạm`);
       btnBatch100.disabled = false;
