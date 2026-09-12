@@ -3904,7 +3904,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (drawOnBtn) drawOnBtn.addEventListener('click', drawScript(0));
 
   const drawAboveBtn = document.getElementById('btnDrawAboveDownloadBtn');
-  if (drawAboveBtn) drawAboveBtn.addEventListener('click', drawScript(-50));
+  if (drawAboveBtn) drawAboveBtn.addEventListener('click', drawScript(-70));
 
 
   // ──────────────────────────────────────────────────────────
