@@ -1175,9 +1175,9 @@ Identity preservation is the highest priority.`;
       const clothDesc = description ? description.trim() : 'clothing';
       const shouldPreserve = preserve === 'true' || preserve === true;
       if (shouldPreserve) {
-        promptText = `A photo of the exact same person from start_frame in the exact same pose, expression, hair and background, but wearing the exact ${clothDesc} from end_frame. The clothing must look exactly identical to the garment in end_frame, preserving every single detail, print, logo, pattern, texture, and color exactly as shown, without any modifications or additions, photorealistic, high quality`;
+        promptText = `A photo of the exact same person from start_frame in the exact same pose, expression, hair and background, but wearing the exact ${clothDesc} from end_frame. The clothing shape, fabric, and style must match end_frame exactly. Do NOT transfer any text, watermarks, labels, logos, tags, brand names, or written characters from end_frame onto the person or anywhere in the image. The person's face, hair, skin, hands, and body must remain exactly as in start_frame. Photorealistic, high quality.`;
       } else {
-        promptText = `A professional studio photo of the person in start_frame wearing the exact ${clothDesc} from end_frame. The clothing must look exactly identical to the garment in end_frame, preserving every single detail, print, logo, pattern, texture, and color exactly as shown, without any modifications or additions, photorealistic, high quality`;
+        promptText = `A professional studio photo of the person in start_frame wearing the exact ${clothDesc} from end_frame. The clothing shape, fabric, and style must match end_frame exactly. Do NOT transfer any text, watermarks, labels, logos, tags, brand names, or written characters from end_frame onto the person or anywhere in the image. The person's face, hair, and body proportions must remain exactly as in start_frame. Photorealistic, high quality.`;
       }
     }
 
