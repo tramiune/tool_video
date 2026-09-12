@@ -3784,8 +3784,129 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ──────────────────────────────────────────────────────────
-  // Test 10 Task Đa Tab (Đủ thể loại: Text-only, Start Frame, Start+End Frame)
+  // ── Debug: Vẽ vòng tròn lên nút Tải / 50px trên nút Tải ──
+  const drawScript = (offsetY) => async () => {
+    if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+    const videoTab = _multiTabRegistry.find(t => t.role === 'video') || _multiTabRegistry[0];
+    if (!videoTab) { alert('Không có tab nào!'); return; }
+
+    const logEl = document.getElementById('multiTabCreateLog');
+    if (logEl) logEl.style.display = 'block';
+
+    const res = await chrome.scripting.executeScript({
+      target: { tabId: videoTab.tabId },
+      world: 'ISOLATED',
+      args: [offsetY],
+      func: (yOffset) => {
+        // Tìm nút download (↓) trong card gần nhất — ưu tiên card cuối cùng
+        const isDownloadBtn = (el) => {
+          if (!el || el.tagName !== 'BUTTON') return false;
+          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+          const title = (el.getAttribute('title') || '').toLowerCase();
+          const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+          const html = (el.innerHTML || '').toLowerCase();
+          return aria.includes('download') || aria.includes('tải') ||
+                 title.includes('download') || title.includes('tải') ||
+                 text === 'download' || text === 'tải xuống' ||
+                 html.includes('download') ||
+                 html.includes('file_download') || html.includes('save_alt') ||
+                 // Material icon text
+                 text === 'file_download' || text === 'save_alt' ||
+                 // SVG path check for download arrow shape (path d contains M with vertical line)
+                 (el.querySelector('svg') !== null && (
+                   aria.includes('download') || title.includes('download') ||
+                   // First button in the action row below a card (heuristic)
+                   false
+                 ));
+        };
+
+        // Lấy tất cả button nhìn thấy được
+        const allBtns = Array.from(document.querySelectorAll('button')).filter(b => {
+          const r = b.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
+
+        let dlBtn = allBtns.find(isDownloadBtn);
+
+        // Fallback: tìm nhóm 3 nút liền nhau (download/redo/delete) dưới card
+        // → lấy nút đầu tiên của nhóm đó
+        if (!dlBtn) {
+          // Tìm nút có SVG và nằm trong row nhỏ (width 20-50px)
+          const smallBtns = allBtns.filter(b => {
+            const r = b.getBoundingClientRect();
+            return r.width >= 20 && r.width <= 60 && r.height >= 20 && r.height <= 60 &&
+                   b.querySelector('svg, [class*="icon"], [class*="material"]');
+          });
+
+          // Tìm nhóm 3 nút gần nhau theo chiều ngang (cùng y ± 5px)
+          for (let i = 0; i < smallBtns.length - 1; i++) {
+            const r1 = smallBtns[i].getBoundingClientRect();
+            const r2 = smallBtns[i+1]?.getBoundingClientRect();
+            const r3 = smallBtns[i+2]?.getBoundingClientRect();
+            if (r2 && r3 &&
+                Math.abs(r1.top - r2.top) < 10 &&
+                Math.abs(r1.top - r3.top) < 10 &&
+                r2.left > r1.right - 10 &&
+                r3.left > r2.right - 10) {
+              dlBtn = smallBtns[i]; // nút đầu = download
+              break;
+            }
+          }
+        }
+
+        if (!dlBtn) return { success: false, error: 'Không tìm thấy nút Tải' };
+
+        const rect = dlBtn.getBoundingClientRect();
+        const cx = Math.round(rect.left + rect.width / 2);
+        const cy = Math.round(rect.top + rect.height / 2) + yOffset; // yOffset = 0 hoặc -50
+
+        // Vẽ vòng tròn
+        const circle = document.createElement('div');
+        const color = yOffset === 0 ? '#00e5ff' : '#ff4444';
+        const label = yOffset === 0 ? '🔵 Nút Tải' : '🔴 +50px trên';
+        circle.style.cssText = `
+          position:fixed; left:${cx - 14}px; top:${cy - 14}px;
+          width:28px; height:28px; border-radius:50%;
+          background:${color}55; border:3px solid ${color};
+          z-index:9999999; pointer-events:none;
+          box-shadow:0 0 12px ${color};
+        `;
+
+        // Label
+        const lbl = document.createElement('div');
+        lbl.style.cssText = `
+          position:fixed; left:${cx + 16}px; top:${cy - 10}px;
+          background:${color}; color:#000; font-size:11px; font-weight:bold;
+          padding:2px 6px; border-radius:4px; z-index:9999999; pointer-events:none;
+          white-space:nowrap;
+        `;
+        lbl.textContent = `${label} (${cx}, ${cy})`;
+
+        document.body.appendChild(circle);
+        document.body.appendChild(lbl);
+        setTimeout(() => { circle.remove(); lbl.remove(); }, 5000);
+
+        return { success: true, cx, cy, btnText: (dlBtn.innerText || '').trim().slice(0, 20) };
+      }
+    });
+
+    const result = res?.[0]?.result;
+    if (logEl) {
+      const msg = result?.success
+        ? `✅ Vẽ tại (${result.cx}, ${result.cy}) — btn: "${result.btnText || '?'}"`
+        : `❌ ${result?.error || 'Lỗi'}`;
+      logEl.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  };
+
+  const drawOnBtn = document.getElementById('btnDrawOnDownloadBtn');
+  if (drawOnBtn) drawOnBtn.addEventListener('click', drawScript(0));
+
+  const drawAboveBtn = document.getElementById('btnDrawAboveDownloadBtn');
+  if (drawAboveBtn) drawAboveBtn.addEventListener('click', drawScript(-50));
+
+
   // ──────────────────────────────────────────────────────────
   const btnBatch10 = document.getElementById('btnBatch10Tasks');
   if (btnBatch10) {
