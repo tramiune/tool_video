@@ -1874,10 +1874,7 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
   try { tab = await chrome.tabs.get(tabId); } catch(e) {}
   if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
 
-  try {
-    await chrome.tabs.update(tab.id, { active: true });
-    await new Promise(r => setTimeout(r, 500));
-  } catch (_) {}
+
 
   logToBridge(`[MultiTab] Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, start: ${!!startImageDataUrl}, end: ${!!endImageDataUrl})`);
 
@@ -2405,10 +2402,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
   try { tab = await chrome.tabs.get(tabId); } catch(e) {}
   if (!tab) return { success: false, error: `Tab ID ${tabId} không tồn tại!` };
 
-  try {
-    await chrome.tabs.update(tab.id, { active: true });
-    await new Promise(r => setTimeout(r, 500));
-  } catch (_) {}
+
 
   // Chuẩn hóa danh sách ảnh tham chiếu (hỗ trợ mảng referenceImages hoặc từng ảnh đơn lẻ)
   let refImages = [];
