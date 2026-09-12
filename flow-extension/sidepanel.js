@@ -4017,7 +4017,53 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ──────────────────────────────────────────────────────────
+  // ── Test: Focus input → Enter ──
+  const btnEnterSubmit = document.getElementById('btnTestEnterSubmit');
+  if (btnEnterSubmit) {
+    btnEnterSubmit.addEventListener('click', async () => {
+      if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video') || _multiTabRegistry[0];
+      if (!videoTab) { alert('Không có tab nào!'); return; }
+
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) logEl.style.display = 'block';
+
+      const res = await chrome.scripting.executeScript({
+        target: { tabId: videoTab.tabId },
+        world: 'ISOLATED',
+        func: () => {
+          // Tìm editor (composer input)
+          const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
+                      || document.querySelector("div[data-slate-editor='true']")
+                      || document.querySelector("div[contenteditable='true']")
+                      || document.querySelector("textarea");
+
+          if (!editor) return { success: false, error: 'Không tìm thấy editor' };
+
+          editor.focus();
+
+          // Dispatch Enter key
+          const enterOpts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+          editor.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
+          editor.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
+          editor.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
+
+          return { success: true, editorTag: editor.tagName, editorRole: editor.getAttribute('role') || '' };
+        }
+      });
+
+      const result = res?.[0]?.result;
+      if (logEl) {
+        const msg = result?.success
+          ? `✅ Đã focus <${result.editorTag} role="${result.editorRole}"> và ấn Enter`
+          : `❌ ${result?.error || 'Lỗi'}`;
+        logEl.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    });
+  }
+
+
   const btnBatch10 = document.getElementById('btnBatch10Tasks');
   if (btnBatch10) {
     btnBatch10.addEventListener('click', async () => {
