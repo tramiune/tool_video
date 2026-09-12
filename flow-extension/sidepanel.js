@@ -4239,6 +4239,334 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+
+  // ──────────────────────────────────────────────────────────
+  // Test 100 Task Đa Tab (Video + Ảnh đan xen, đủ loại + vi phạm)
+  // ──────────────────────────────────────────────────────────
+  const btnBatch100 = document.getElementById('btnBatch100Tasks');
+  if (btnBatch100) {
+    btnBatch100.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) logEl.style.display = 'block';
+
+      const log = (msg) => {
+        const t = new Date().toLocaleTimeString();
+        if (logEl) { logEl.textContent += `[${t}] ${msg}\n`; logEl.scrollTop = logEl.scrollHeight; }
+      };
+
+      log('🔍 Đang quét tab Google Flow...');
+      await refreshMultiTabList();
+
+      const allTabs = _multiTabRegistry;
+      if (allTabs.length === 0) {
+        alert('Không tìm thấy tab nào! Vui lòng mở ít nhất 1 tab Google Flow và quét tab trước.');
+        return;
+      }
+
+      btnBatch100.disabled = true;
+      btnBatch100.textContent = '⏳ Đang chạy 100 Task...';
+
+      // Tải ảnh test
+      let startImgDataUrl = null;
+      let endImgDataUrl = null;
+      try {
+        const sRes = await fetch(chrome.runtime.getURL('test_start_frame.jpg'));
+        const sBlob = await sRes.blob();
+        startImgDataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(sBlob); });
+      } catch (e) { log(`⚠️ Không load được test_start_frame.jpg: ${e.message}`); }
+      try {
+        const eRes = await fetch(chrome.runtime.getURL('test_end_frame.jpg'));
+        const eBlob = await eRes.blob();
+        endImgDataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(eBlob); });
+      } catch (e) { log(`⚠️ Không load được test_end_frame.jpg: ${e.message}`); }
+
+      // ── 100 TASK: Video & Ảnh đan xen, đủ loại tỉ lệ, có vi phạm ──
+      // type: 'video_text' | 'video_start' | 'video_start_end' | 'image_text' | 'image_1ref' | 'image_2ref' | 'violate'
+      const tasks100 = [
+        // ── VIDEO TEXT ──
+        { id:1,  mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'con mèo trắng mũm mĩm chạy đuổi theo chuồn chuồn trong vườn hoa rực rỡ ánh nắng sáng' },
+        { id:2,  mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'chân dung thiếu nữ Á Đông mặc áo dài hồng thêu hoa sen, ánh sáng vàng dịu buổi chiều tà' },
+        { id:3,  mediaType:'video', type:'video_start',    ratio:'9:16', prompt:'cô gái nhảy hiphop sôi động trên đường phố đêm Tokyo đèn neon rực rỡ' },
+        { id:4,  mediaType:'image', type:'image_1ref',     ratio:'1:1',  prompt:'phong cách tranh sơn dầu Ấn tượng, cô gái trong ảnh đứng bên dòng sông Seine lúc hoàng hôn' },
+        { id:5,  mediaType:'video', type:'video_text',     ratio:'1:1',  prompt:'phi thuyền vũ trụ khổng lồ lao qua vành đai tiểu hành tinh lấp lánh, góc quay sử thi' },
+        { id:6,  mediaType:'image', type:'image_2ref',     ratio:'16:9', prompt:'kết hợp phong cách trang phục từ 2 nhân vật trong ảnh tham chiếu, ánh sáng studio chuyên nghiệp' },
+        { id:7,  mediaType:'video', type:'video_start_end',ratio:'16:9', prompt:'cô gái biến hình thành chiến binh H9 Gunner hiệu ứng ánh sáng điện neon' },
+        { id:8,  mediaType:'image', type:'image_text',     ratio:'4:3',  prompt:'phong cảnh núi Alps phủ tuyết phản chiếu trên mặt hồ băng bình minh, góc rộng cinematic 8k' },
+        { id:9,  mediaType:'video', type:'video_text',     ratio:'9:16', prompt:'sóng biển xanh cuộn lên bãi cát trắng mịn hoàng hôn đỏ rực, quay chậm siêu đẹp' },
+        { id:10, mediaType:'image', type:'image_1ref',     ratio:'9:16', prompt:'nhân vật trong ảnh mặc trang phục hoàng gia thời Nguyễn, nền kiến trúc cung đình Huế' },
+        // ── VI PHẠM NHÓM 1 ──
+        { id:11, mediaType:'video', type:'violate',        ratio:'16:9', prompt:'cảnh bạo lực súng đạn người bắn nhau chảy máu trên đường phố thực tế cực kỳ gory' },
+        { id:12, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'bầu trời đêm đầy sao Milky Way chụp từ đỉnh núi cao, phơi sáng dài cinematic photography' },
+        { id:13, mediaType:'video', type:'video_start',    ratio:'16:9', prompt:'cô gái xoay người dưới ánh mắt trời chiều, tóc bay lãng mạn phong cách điện ảnh Hàn' },
+        { id:14, mediaType:'image', type:'image_2ref',     ratio:'1:1',  prompt:'blend 2 nhân vật thành 1 người mặc áo khoác cyberpunk, nền thành phố tương lai' },
+        { id:15, mediaType:'video', type:'video_text',     ratio:'3:4',  prompt:'chú chó Golden Retriever chạy vui vẻ trên bãi cỏ xanh sáng sớm, độ phân giải 4K' },
+        { id:16, mediaType:'image', type:'image_text',     ratio:'16:9', prompt:'thành phố tương lai năm 2150 nhìn từ trên cao, xe bay tự lái luồng sáng neon xanh tím' },
+        { id:17, mediaType:'video', type:'video_start_end',ratio:'9:16', prompt:'biến đổi cô gái thành nữ chiến binh không gian với giáp kim loại phát sáng' },
+        { id:18, mediaType:'image', type:'image_1ref',     ratio:'4:3',  prompt:'tái tạo nhân vật trong ảnh theo phong cách anime Ghibli, màu sắc pastel nhẹ nhàng' },
+        { id:19, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'đoàn tàu cao tốc lao qua cánh đồng hoa anh đào Nhật Bản mùa xuân, ánh sáng golden hour' },
+        { id:20, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'nữ ninja mặc kimono đen đứng trên mái ngói dưới trăng rằm, hoa anh đào bay xung quanh' },
+        // ── VIDEO START FRAME ──
+        { id:21, mediaType:'video', type:'video_start',    ratio:'1:1',  prompt:'cô gái đang nhảy múa dừng lại và mỉm cười nhìn vào máy quay, phong cách MV Kpop' },
+        { id:22, mediaType:'image', type:'image_2ref',     ratio:'16:9', prompt:'cảnh phòng khách nội thất sang trọng tích hợp phong cách từ 2 ảnh tham chiếu' },
+        { id:23, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'rừng Amazon lúc bình minh, ánh sáng xuyên qua tán lá, chim thú thức giấc, quay chậm 4K' },
+        { id:24, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'cô gái tóc dài ngồi đọc sách bên cửa sổ mưa rơi, ánh đèn ấm áp cozy aesthetic' },
+        // ── VI PHẠM NHÓM 2 ──
+        { id:25, mediaType:'video', type:'violate',        ratio:'9:16', prompt:'nội dung khiêu dâm rõ ràng, cảnh người lớn 18+ không kiểm duyệt' },
+        { id:26, mediaType:'video', type:'video_start',    ratio:'9:16', prompt:'cô gái dạo bước dưới mưa hè, ánh đèn phố phản chiếu lấp lánh, máy quay theo sau' },
+        { id:27, mediaType:'image', type:'image_1ref',     ratio:'9:16', prompt:'nhân vật trong ảnh xuất hiện trong cảnh hoàng cung cổ đại Trung Hoa, áo bào vàng' },
+        { id:28, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'siêu xe Ferrari đỏ lao vun vút trên đường đèo Tây Nguyên, cảnh quay flycam đẹp' },
+        { id:29, mediaType:'image', type:'image_text',     ratio:'1:1',  prompt:'robot AI thế hệ mới hình người đứng giữa thành phố hiện đại, mắt phát sáng xanh' },
+        { id:30, mediaType:'video', type:'video_start_end',ratio:'1:1',  prompt:'người phụ nữ biến thành tiên nữ với cánh trắng và hào quang vàng lung linh' },
+        { id:31, mediaType:'image', type:'image_2ref',     ratio:'9:16', prompt:'thiết kế trang phục kết hợp văn hóa 2 nhân vật từ 2 ảnh, vẽ concept art chuyên nghiệp' },
+        { id:32, mediaType:'video', type:'video_text',     ratio:'4:3',  prompt:'bão tuyết khổng lồ ập vào thành phố hiện đại, flycam bắt từ trên cao' },
+        { id:33, mediaType:'image', type:'image_text',     ratio:'16:9', prompt:'hoàng hôn trên hoang mạc Sahara, đoàn lạc đà silhouette trên nền trời đỏ cam rực' },
+        // ── VIDEO TEXT NHIỀU TỈ LỆ ──
+        { id:34, mediaType:'video', type:'video_text',     ratio:'9:16', prompt:'streamer game ngồi trước màn hình, reaction hài hước khi thắng trận, phong cách vlog' },
+        { id:35, mediaType:'image', type:'image_1ref',     ratio:'16:9', prompt:'chuyển thể nhân vật trong ảnh thành chiến binh cyberpunk 2077, thành phố tương lai' },
+        { id:36, mediaType:'video', type:'video_start',    ratio:'16:9', prompt:'cô gái vươn tay đón nắng sáng trên ban công, tóc bay nhẹ, phong cách lifestyle quảng cáo' },
+        { id:37, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'búp bê chibi anime dễ thương ngồi trên đám mây bông, màu sắc pastel dreamcore' },
+        { id:38, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'cảnh đại dương sâu thẳm, đàn cá phát sáng bơi lượn xung quanh rạn san hô, 4K HDR' },
+        // ── VI PHẠM NHÓM 3 ──
+        { id:39, mediaType:'video', type:'violate',        ratio:'16:9', prompt:'tuyên truyền khủng bố, hướng dẫn chế tạo vũ khí giết người hàng loạt' },
+        { id:40, mediaType:'image', type:'image_2ref',     ratio:'4:3',  prompt:'thiết kế phòng khách kết hợp phong cách từ 2 ảnh tham chiếu, ánh sáng ấm cúng tối giản' },
+        { id:41, mediaType:'video', type:'video_start_end',ratio:'16:9', prompt:'cảnh sáng sớm, nhân vật thức dậy và nhìn ra cửa sổ thấy bình minh rực rỡ' },
+        { id:42, mediaType:'image', type:'image_text',     ratio:'1:1',  prompt:'logo thương hiệu cà phê hiện đại tối giản màu nâu vàng, style flat design chuyên nghiệp' },
+        { id:43, mediaType:'video', type:'video_text',     ratio:'9:16', prompt:'vũ công ballet quay vòng dưới ánh đèn sân khấu, hiệu ứng hạt sáng lung linh' },
+        { id:44, mediaType:'image', type:'image_1ref',     ratio:'9:16', prompt:'nhân vật trong ảnh trở thành nhân vật trong truyện tranh manga Nhật Bản, mực đen trắng' },
+        { id:45, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'cảnh bếp Việt Nam, bà nội nấu phở, khói bốc thơm nghi ngút, ánh đèn vàng ấm cúng' },
+        { id:46, mediaType:'image', type:'image_text',     ratio:'16:9', prompt:'thác nước khổng lồ Niagara Falls chụp từ flycam drone lúc bình minh, màu sắc tươi sáng' },
+        { id:47, mediaType:'video', type:'video_start',    ratio:'1:1',  prompt:'cô gái cúi nhặt hoa và ngước nhìn lên mỉm cười, phong cách MV âm nhạc lãng mạn' },
+        { id:48, mediaType:'image', type:'image_2ref',     ratio:'9:16', prompt:'thiết kế nhân vật hero kết hợp trang bị từ 2 ảnh tham chiếu, concept art game' },
+        { id:49, mediaType:'video', type:'video_text',     ratio:'4:3',  prompt:'phố cổ Hội An về đêm đèn lồng rực rỡ, ánh đèn phản chiếu trên mặt sông Thu Bồn' },
+        { id:50, mediaType:'image', type:'image_text',     ratio:'3:4',  prompt:'cô gái mặc váy hoa đứng giữa cánh đồng hướng dương mùa hè, chụp ảnh lifestyle đẹp' },
+        // ── VI PHẠM NHÓM 4 ──
+        { id:51, mediaType:'video', type:'violate',        ratio:'9:16', prompt:'hướng dẫn tổng hợp ma túy tại nhà, công thức chất cấm methamphetamine chi tiết' },
+        { id:52, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'rừng thông Đà Lạt sáng sớm sương mờ, ánh nắng lọc qua tán cây, cảnh quay cinematic' },
+        { id:53, mediaType:'image', type:'image_1ref',     ratio:'4:3',  prompt:'nhân vật trong ảnh đứng trước cổng Vạn Lý Trường Thành mùa lá vàng, ảnh du lịch' },
+        { id:54, mediaType:'video', type:'video_start_end',ratio:'9:16', prompt:'cô gái từ từ quay người lại và mỉm cười rạng rỡ nhìn thẳng vào ống kính' },
+        { id:55, mediaType:'image', type:'image_text',     ratio:'16:9', prompt:'poster phim sci-fi rừng đại dương ngoài vũ trụ, tàu vũ trụ đổ bộ, ánh sáng epic' },
+        { id:56, mediaType:'video', type:'video_text',     ratio:'1:1',  prompt:'em bé đang tập đi những bước đầu tiên, bố mẹ hỗ trợ, ánh sáng gia đình ấm cúng' },
+        { id:57, mediaType:'image', type:'image_2ref',     ratio:'16:9', prompt:'bố cục ảnh gia đình trong phòng khách, phong cách trang trí kết hợp từ 2 ảnh tham chiếu' },
+        { id:58, mediaType:'video', type:'video_start',    ratio:'9:16', prompt:'vận động viên chạy marathon đang về đích, biểu cảm cố gắng hết sức mình, slow motion' },
+        { id:59, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'poster concert K-pop đầy màu sắc, ánh đèn sân khấu, hình ảnh idol trên backdrop' },
+        { id:60, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'ngôi nhà cổ Nhật Bản giữa rừng tre, tuyết nhẹ rơi, hồ nước tĩnh lặng, không khí zen' },
+        // ── VIDEO START + ẢNH XEN KẼ ──
+        { id:61, mediaType:'image', type:'image_1ref',     ratio:'1:1',  prompt:'nhân vật trong ảnh biến thành nhân vật trong thế giới Minecraft pixel art style' },
+        { id:62, mediaType:'video', type:'video_start_end',ratio:'16:9', prompt:'thuyền rồng đua trên sông, người chèo đồng loạt gõ trống, quay từ trên cao' },
+        { id:63, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'chiếc tách cà phê bốc khói trên bàn gỗ cạnh cửa sổ mưa, aesthetic cozy mùa đông' },
+        { id:64, mediaType:'video', type:'video_text',     ratio:'9:16', prompt:'tiktoker trẻ quay vlog street food Hà Nội, ăn bún bò Huế, phản ứng thật tự nhiên' },
+        { id:65, mediaType:'image', type:'image_2ref',     ratio:'9:16', prompt:'thiết kế bìa sách kết hợp phong cách từ 2 ảnh tham chiếu, typography hiện đại' },
+        // ── VI PHẠM NHÓM 5 ──
+        { id:66, mediaType:'video', type:'violate',        ratio:'16:9', prompt:'đánh người vị thành niên dưới 18 tuổi bạo lực học đường trẻ em bị tổn thương' },
+        { id:67, mediaType:'video', type:'video_start',    ratio:'16:9', prompt:'diễn viên bước vào khung hình từ bên trái, đứng nhìn ra biển, tóc bay trong gió' },
+        { id:68, mediaType:'image', type:'image_text',     ratio:'4:3',  prompt:'bản đồ chiến lược game chiến thuật, quân cờ vua hoàng kim trên nền nhung đỏ' },
+        { id:69, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'tiểu đoàn quân sự diễu hành qua quảng trường lớn, máy bay chiến đấu bay trên đầu' },
+        { id:70, mediaType:'image', type:'image_1ref',     ratio:'16:9', prompt:'nhân vật trong ảnh đứng trước bức tranh Mona Lisa trong bảo tàng Louvre' },
+        { id:71, mediaType:'video', type:'video_start_end',ratio:'9:16', prompt:'cảnh đêm trở thành bình minh, thành phố từ tối tăm đến sáng rực rỡ time-lapse' },
+        { id:72, mediaType:'image', type:'image_2ref',     ratio:'1:1',  prompt:'mascot thương hiệu kết hợp tính cách của 2 nhân vật trong ảnh tham chiếu' },
+        { id:73, mediaType:'video', type:'video_text',     ratio:'1:1',  prompt:'quán phở truyền thống 5 giờ sáng, khói bốc nghi ngút, hàng người xếp hàng, Hà Nội' },
+        { id:74, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'illustration digital art: thám tử mặc áo khoác trong đêm mưa thành phố noir atmosphere' },
+        { id:75, mediaType:'video', type:'video_start',    ratio:'4:3',  prompt:'nhân vật đang ngồi đọc sách đột ngột ngẩng đầu lên và tươi cười khi ai đó bước vào' },
+        // ── NHÓM ĐA DẠNG CUỐI ──
+        { id:76, mediaType:'image', type:'image_text',     ratio:'16:9', prompt:'ảnh cưới romantic golden hour, cặp đôi dưới vòm hoa lavender Provence nước Pháp' },
+        { id:77, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'show diễn thời trang haute couture Paris Fashion Week, người mẫu sải bước tự tin' },
+        { id:78, mediaType:'image', type:'image_1ref',     ratio:'9:16', prompt:'portrait nhân vật trong ảnh theo phong cách tranh Van Gogh, màu sắc đậm nét cọ' },
+        { id:79, mediaType:'video', type:'video_start_end',ratio:'16:9', prompt:'lữ khách mỏi mệt về đến nhà, mở cửa, thấy gia đình chờ đợi, khoảnh khắc ấm lòng' },
+        // ── VI PHẠM NHÓM 6 ──
+        { id:80, mediaType:'image', type:'violate',        ratio:'9:16', prompt:'ảnh deepfake lãnh đạo quốc gia làm điều sai trái, thông tin sai lệch gây mất ổn định' },
+        { id:81, mediaType:'video', type:'video_text',     ratio:'9:16', prompt:'bartender pha cocktail điêu luyện, lửa bùng cháy, ánh đèn bar mờ ảo lung linh' },
+        { id:82, mediaType:'image', type:'image_2ref',     ratio:'4:3',  prompt:'cảnh quan môi trường kết hợp yếu tố thiên nhiên từ 2 ảnh tham chiếu, ảnh nature' },
+        { id:83, mediaType:'video', type:'video_start',    ratio:'16:9', prompt:'người chơi guitar acoustic bên đống lửa trại đêm khuya, ánh lửa nhảy múa thơ mộng' },
+        { id:84, mediaType:'image', type:'image_text',     ratio:'1:1',  prompt:'icon app mobile design: ví tiền kỹ thuật số crypto, gradient tím xanh, style iOS flat' },
+        { id:85, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'cảnh quay drone từ trên cao bờ biển Maldives, nước trong xanh san hô đẹp, golden hour' },
+        { id:86, mediaType:'image', type:'image_1ref',     ratio:'16:9', prompt:'nhân vật trong ảnh làm phi công ngồi trong buồng lái máy bay chiến đấu F-22' },
+        { id:87, mediaType:'video', type:'video_start_end',ratio:'9:16', prompt:'hạt mầm nảy mầm thành cây xanh tươi tốt, time-lapse thiên nhiên tươi đẹp' },
+        { id:88, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'cửa hàng bánh ngọt Pháp boutique pâtisserie, bánh macaron đầy màu sắc trên kệ sang trọng' },
+        // ── VI PHẠM NHÓM 7 ──
+        { id:89, mediaType:'video', type:'violate',        ratio:'16:9', prompt:'nội dung phân biệt chủng tộc kích động hận thù dân tộc rõ ràng và trực tiếp' },
+        { id:90, mediaType:'video', type:'video_text',     ratio:'4:3',  prompt:'đầu bếp nổi tiếng trình diễn nấu bò Wellington tuyệt hảo trong bếp nhà hàng Michelin' },
+        { id:91, mediaType:'image', type:'image_2ref',     ratio:'16:9', prompt:'infographic so sánh sản phẩm dựa trên 2 ảnh tham chiếu, layout hiện đại rõ ràng' },
+        { id:92, mediaType:'video', type:'video_start',    ratio:'9:16', prompt:'nhân vật mở mắt trong môi trường ảo diệu kỳ, xung quanh là những tòa tháp pha lê' },
+        { id:93, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'phòng ngủ aesthetic Hàn Quốc, tông màu trắng be nhẹ nhàng, cây xanh nhỏ, đèn fairy light' },
+        { id:94, mediaType:'video', type:'video_text',     ratio:'16:9', prompt:'buổi bình minh trên đỉnh Fansipan, mây trắng bồng bềnh dưới chân, không khí trong lành' },
+        { id:95, mediaType:'image', type:'image_1ref',     ratio:'4:3',  prompt:'nhân vật trong ảnh xuất hiện trong khung cảnh truyện tranh DC Comics, action pose' },
+        { id:96, mediaType:'video', type:'video_start_end',ratio:'1:1',  prompt:'cây đào Tết từ nụ hoa đến hoa nở rộ rực rỡ, time-lapse mùa xuân Việt Nam' },
+        { id:97, mediaType:'image', type:'image_text',     ratio:'9:16', prompt:'illustration khu phố cổ Hà Nội năm 1930, xe kéo, phụ nữ áo dài đội nón lá, phong cách retro' },
+        { id:98, mediaType:'video', type:'video_text',     ratio:'9:16', prompt:'lễ hội đèn lồng Hội An, hàng nghìn đèn lồng thả xuống sông, cảnh quay drone lung linh' },
+        { id:99, mediaType:'image', type:'image_2ref',     ratio:'16:9', prompt:'thiết kế giao diện website kết hợp màu sắc từ 2 ảnh tham chiếu, UI modern clean' },
+        { id:100,mediaType:'video', type:'video_start_end',ratio:'16:9', prompt:'cảnh kết phim lãng mạn, 2 nhân vật bước về phía ánh sáng cuối đường hầm cùng nhau' },
+      ];
+
+      // Render danh sách 100 task lên UI
+      const statusContainer = document.getElementById('batch100StatusContainer');
+      const taskListEl = document.getElementById('batch100TaskList');
+      const progressBadge = document.getElementById('batch100ProgressBadge');
+      const doneCountEl = document.getElementById('batch100DoneCount');
+      const failCountEl = document.getElementById('batch100FailCount');
+      const violateCountEl = document.getElementById('batch100ViolateCount');
+      const runningCountEl = document.getElementById('batch100RunningCount');
+
+      if (statusContainer) statusContainer.style.display = 'block';
+      if (progressBadge) progressBadge.textContent = `0/100`;
+
+      let doneCount = 0, failCount = 0, violateCount = 0, runningCount = 0;
+      const updateStats = () => {
+        if (doneCountEl) doneCountEl.textContent = doneCount;
+        if (failCountEl) failCountEl.textContent = failCount;
+        if (violateCountEl) violateCountEl.textContent = violateCount;
+        if (runningCountEl) runningCountEl.textContent = runningCount;
+        if (progressBadge) progressBadge.textContent = `${doneCount + failCount + violateCount}/100`;
+      };
+
+      const typeColors = {
+        video_text:     '#00e5ff',
+        video_start:    '#e91e63',
+        video_start_end:'#9c27b0',
+        image_text:     '#06d6a0',
+        image_1ref:     '#f72585',
+        image_2ref:     '#7b2cbf',
+        violate:        '#ff5722',
+      };
+      const typeNames = {
+        video_text:     '🎥 Vid Text',
+        video_start:    '🎬 Vid+Start',
+        video_start_end:'🎭 Vid+S+E',
+        image_text:     '🖼️ Img Text',
+        image_1ref:     '🖼️ Img+1Ref',
+        image_2ref:     '🖼️ Img+2Ref',
+        violate:        '⚠️ Vi Phạm',
+      };
+
+      if (taskListEl) {
+        taskListEl.innerHTML = tasks100.map(t => `
+          <div id="b100_row_${t.id}" style="background:var(--bg); border:1px solid rgba(255,255,255,0.05); border-radius:5px; padding:5px 8px; display:flex; justify-content:space-between; align-items:center; gap:6px;">
+            <div style="display:flex; flex-direction:column; gap:1px; flex:1; min-width:0;">
+              <div style="display:flex; align-items:center; gap:5px;">
+                <span style="font-weight:bold; color:white; min-width:24px;">#${t.id}</span>
+                <span style="font-size:9px; padding:1px 4px; border-radius:3px; font-weight:bold; background:rgba(255,255,255,0.08); color:${typeColors[t.type]};">${typeNames[t.type]}</span>
+                <span style="font-size:9px; padding:1px 4px; border-radius:3px; font-weight:bold; background:rgba(255,255,255,0.06); color:${t.mediaType==='video'?'#00e5ff':'#e91e63'};">${t.ratio}</span>
+                <span id="b100_tab_${t.id}" style="font-size:9px; color:var(--text2);">⏳</span>
+              </div>
+              <div style="font-size:9px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${t.prompt}">${t.prompt.slice(0,60)}...</div>
+            </div>
+            <div id="b100_status_${t.id}" style="font-size:9px; font-weight:bold; color:var(--text2); white-space:nowrap;">⏳ Chờ</div>
+          </div>
+        `).join('');
+      }
+
+      // Worker pool: chạy song song tất cả tab hiện có
+      log(`✅ Tìm thấy ${allTabs.length} tab (${allTabs.filter(t=>t.role==='video').length} Video, ${allTabs.filter(t=>t.role==='image').length} Ảnh)`);
+      log(`⚡ Chia đều 100 task chạy trên ${allTabs.length} tab song song...`);
+
+      const queue = [...tasks100];
+
+      const runWorker100 = async (tab) => {
+        const tabLabel = `Tab${tab.index + 1}`;
+
+        while (queue.length > 0) {
+          const task = queue.shift();
+          const statusEl = document.getElementById(`b100_status_${task.id}`);
+          const tabEl = document.getElementById(`b100_tab_${task.id}`);
+          const rowEl = document.getElementById(`b100_row_${task.id}`);
+
+          if (tabEl) { tabEl.textContent = `📌${tabLabel}`; tabEl.style.color = 'var(--accent2)'; }
+          if (statusEl) { statusEl.textContent = '🔄 Gửi...'; statusEl.style.color = '#60a5fa'; }
+          if (rowEl) rowEl.style.borderColor = '#60a5fa';
+
+          runningCount++;
+          updateStats();
+
+          const ts = Date.now().toString().slice(-4);
+          const fullPrompt = `${ts}. ${task.prompt}`;
+
+          // Xác định startImg / endImg theo loại task
+          const sImg = (task.type === 'video_start' || task.type === 'video_start_end') ? startImgDataUrl : null;
+          const eImg = (task.type === 'video_start_end') ? endImgDataUrl : null;
+
+          log(`[${tabLabel}] 🚀 Task #${task.id} (${typeNames[task.type]}, ${task.ratio}): "${task.prompt.slice(0,35)}..."`);
+
+          try {
+            let createRes;
+            if (task.mediaType === 'video' || task.type === 'violate') {
+              // Vi phạm test bằng video (để thấy flow handle lỗi)
+              createRes = await callExt('CREATE_VIDEO_MULTI_TAB', {
+                prompt: fullPrompt,
+                tabId: tab.tabId,
+                aspectRatio: task.ratio,
+                startImageDataUrl: sImg,
+                endImageDataUrl: eImg
+              });
+            } else {
+              // Ảnh
+              const refs = [];
+              if (task.type === 'image_1ref' || task.type === 'image_2ref') refs.push(startImgDataUrl);
+              if (task.type === 'image_2ref') refs.push(endImgDataUrl);
+              createRes = await callExt('CREATE_IMAGE_MULTI_TAB', {
+                prompt: fullPrompt,
+                tabId: tab.tabId,
+                aspectRatio: task.ratio,
+                referenceImages: refs.filter(Boolean)
+              });
+            }
+
+            if (!createRes?.success) throw new Error(createRes?.error || 'Lỗi tạo');
+
+            if (statusEl) { statusEl.textContent = '⏳ Render...'; statusEl.style.color = '#fbbf24'; }
+            if (rowEl) rowEl.style.borderColor = '#fbbf24';
+
+            // Monitor & Download
+            const monRes = task.mediaType === 'image' && task.type !== 'violate'
+              ? await monitorAndDownloadImageMultiTab(tab.tabId, ts, fullPrompt, tab.projectId, logEl)
+              : await monitorAndDownloadMultiTab(tab.tabId, ts, fullPrompt, tab.projectId, logEl);
+
+            runningCount--;
+
+            if (monRes?.success) {
+              doneCount++;
+              if (statusEl) { statusEl.textContent = '✅ Xong'; statusEl.style.color = '#4ade80'; }
+              if (rowEl) rowEl.style.borderColor = 'rgba(74,222,128,0.4)';
+              log(`[${tabLabel}] ✅ #${task.id} XONG: ${monRes.filename || 'OK'}`);
+            } else {
+              const isViolation = monRes?.error && (monRes.error.includes('vi phạm') || monRes.error.includes('không thành công') || monRes.error.includes('policy'));
+              if (isViolation || task.type === 'violate') {
+                violateCount++;
+                if (statusEl) { statusEl.textContent = '⚠️ Vi phạm'; statusEl.style.color = '#fbbf24'; }
+                if (rowEl) rowEl.style.borderColor = 'rgba(251,191,36,0.4)';
+                log(`[${tabLabel}] ⚠️ #${task.id} VI PHẠM: ${monRes?.error || 'Chính sách'}`);
+              } else {
+                failCount++;
+                if (statusEl) { statusEl.textContent = '❌ Lỗi'; statusEl.style.color = '#f87171'; }
+                if (rowEl) rowEl.style.borderColor = 'rgba(248,113,113,0.4)';
+                log(`[${tabLabel}] ❌ #${task.id} LỖI: ${monRes?.error || 'Thất bại'}`);
+              }
+            }
+          } catch (err) {
+            runningCount = Math.max(0, runningCount - 1);
+            const isViolation = err.message && (err.message.includes('vi phạm') || err.message.includes('policy') || task.type === 'violate');
+            if (isViolation) {
+              violateCount++;
+              if (statusEl) { statusEl.textContent = '⚠️ Vi phạm'; statusEl.style.color = '#fbbf24'; }
+              if (rowEl) rowEl.style.borderColor = 'rgba(251,191,36,0.4)';
+            } else {
+              failCount++;
+              if (statusEl) { statusEl.textContent = '❌ Lỗi'; statusEl.style.color = '#f87171'; }
+              if (rowEl) rowEl.style.borderColor = 'rgba(248,113,113,0.4)';
+            }
+            log(`[${tabLabel}] ❌ #${task.id} Exception: ${err.message}`);
+          }
+
+          updateStats();
+        }
+      };
+
+      await Promise.all(allTabs.map(tab => runWorker100(tab)));
+
+      log(`🏁 HOÀN TẤT 100 TASK! ✅${doneCount} Xong | ❌${failCount} Lỗi | ⚠️${violateCount} Vi phạm`);
+      btnBatch100.disabled = false;
+      btnBatch100.textContent = '🚀 Chạy Test 100 Task (Video + Ảnh đan xen, đủ loại + vi phạm)';
+    });
+  }
+
   // Lấy các task Đa Tab từ server tool_video đang chờ trong background nếu có
   callExt('GET_PENDING_MULTI_TAB_SERVER_TASKS').then(res => {
     if (res?.success && Array.isArray(res.tasks) && res.tasks.length > 0) {

@@ -579,12 +579,29 @@ Chiếc xe thể thao màu đỏ chạy ven biển hoàng hôn"></textarea>
         ⚡ Chạy Test 10 Task Đa Tab (Đủ loại: Text, Start, Start+End)
       </button>
 
+      <button class="btn" id="btnBatch100Tasks" style="width:100%; margin-top:8px; background: linear-gradient(135deg, #7c3aed, #db2777); color:white; font-weight:bold; font-size:12px; padding:10px; border-radius:6px; box-shadow:0 2px 8px rgba(124,58,237,0.4);">
+        🚀 Chạy Test 100 Task (Video + Ảnh đan xen, đủ loại + vi phạm)
+      </button>
+
       <div id="batch10StatusContainer" style="display:none; margin-top:12px; background:var(--surface2); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div style="font-weight:bold; font-size:12px; color:#ff9800;">📊 Tiến độ 10 Task Đa Tab</div>
           <span id="batch10ProgressBadge" style="font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(255,152,0,0.15); color:#ff9800; font-weight:bold;">0/10</span>
         </div>
         <div id="batch10TaskList" style="display:flex; flex-direction:column; gap:5px; max-height:220px; overflow-y:auto; font-size:11px;"></div>
+      </div>
+      <div id="batch100StatusContainer" style="display:none; margin-top:12px; background:var(--surface2); border:1px solid rgba(124,58,237,0.3); border-radius:8px; padding:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-weight:bold; font-size:12px; color:#a78bfa;">🚀 Tiến độ 100 Task</div>
+          <span id="batch100ProgressBadge" style="font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(124,58,237,0.2); color:#a78bfa; font-weight:bold;">0/100</span>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px; font-size:10px;">
+          <span>✅ Xong: <b id="batch100DoneCount" style="color:#4ade80;">0</b></span>
+          <span>❌ Lỗi: <b id="batch100FailCount" style="color:#f87171;">0</b></span>
+          <span>⚠️ Vi phạm: <b id="batch100ViolateCount" style="color:#fbbf24;">0</b></span>
+          <span>🔄 Đang chạy: <b id="batch100RunningCount" style="color:#60a5fa;">0</b></span>
+        </div>
+        <div id="batch100TaskList" style="display:flex; flex-direction:column; gap:4px; max-height:300px; overflow-y:auto; font-size:10px;"></div>
       </div>
       <div id="multiTabCreateLog" style="white-space:pre-wrap; word-break:break-all; max-height:150px; overflow-y:auto; margin-top:10px; font-size:11px; color:var(--accent); padding:8px; background:rgba(255,255,255,0.05); border-radius:4px; font-family:monospace; display:none;"></div>
     </div>
