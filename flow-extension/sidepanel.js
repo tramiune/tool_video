@@ -4000,7 +4000,7 @@ document.addEventListener('DOMContentLoaded', () => {
           lbl.textContent = `🟢 Submit (${cx}, ${cy})`;
           document.body.appendChild(overlay);
           document.body.appendChild(lbl);
-          setTimeout(() => { overlay.remove(); lbl.remove(); }, 5000);
+          setTimeout(() => { overlay.remove(); lbl.remove(); }, 10000);
 
           return { success: true, cx, cy, tag: submitBtn.tagName, aria: submitBtn.getAttribute('aria-label') || '', text: (submitBtn.innerText || '').trim().slice(0, 20) };
         }
