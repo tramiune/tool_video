@@ -2408,11 +2408,12 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
         }
         if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
 
-        submitBtn.removeAttribute("disabled");
-        submitBtn.setAttribute("aria-disabled", "false");
-        submitBtn.style.pointerEvents = "auto";
-        submitBtn.style.opacity = "1";
-        triggerClick(submitBtn);
+        // Submit: focus editor → Enter (đáng tin cậy hơn triggerClick)
+        editor.focus();
+        const enterOpts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+        editor.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
+        editor.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
+        editor.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
         await sleep(500);
 
         const frames = [pastedStart && 'start', pastedEnd && 'end'].filter(Boolean).join('+');
@@ -5183,9 +5184,12 @@ async function createImageUI(prompt, projectId, config = {}) {
           await sleep(200);
         }
 
-        submitBtn.removeAttribute("disabled");
-        submitBtn.setAttribute("aria-disabled", "false");
-        submitBtn.click(); // Đúng chuẩn Test B3: Click đúng 1 lần duy nhất!
+        // Submit: focus editor → Enter (đáng tin cậy hơn click)
+        editor.focus();
+        const enterOpts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+        editor.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
+        editor.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
+        editor.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
         await sleep(500);
 
         return {
