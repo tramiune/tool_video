@@ -1552,7 +1552,9 @@ async function rightClickAndDownload(tabId) {
   let clicked = false;
   let clickedText = '';
   let dlCreated = null;
-  const onCreated = (item) => { dlCreated = item; };
+  const onCreated = (item) => {
+    if (item.tabId === tab.id) dlCreated = item; // chỉ nhận download của đúng tab này
+  };
   if (chrome.downloads && chrome.downloads.onCreated) {
     chrome.downloads.onCreated.addListener(onCreated);
   }
