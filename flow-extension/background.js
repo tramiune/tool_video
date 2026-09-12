@@ -2001,7 +2001,7 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
         const pasteImage = async (editor, dataUrl, name) => {
           const resp = await fetch(dataUrl);
           const blob = await resp.blob();
-          const file = new File([blob], name + '_' + Date.now() + '.jpg', { type: blob.type || 'image/jpeg' });
+          const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
           const dt = new DataTransfer();
           dt.items.add(file);
           const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
