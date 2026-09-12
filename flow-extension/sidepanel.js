@@ -3931,24 +3931,49 @@ document.addEventListener('DOMContentLoaded', () => {
         target: { tabId: videoTab.tabId },
         world: 'ISOLATED',
         func: () => {
-          // Tìm submit button — dùng cùng logic với createVideoMultiTab
+          // Tìm submit button (nút → trong composer) — loại trừ card cancel buttons
           const isVisible = (el) => {
             if (!el) return false;
             const r = el.getBoundingClientRect();
             return r.width > 0 && r.height > 0 && r.top < window.innerHeight && r.bottom > 0;
           };
 
+          const isInComposer = (el) => {
+            const inCard = el.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']");
+            if (inCard) return false;
+            const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+            if (t === 'cancel' || t === 'hủy' || t === 'hủy bỏ') return false;
+            return true;
+          };
+
           const allBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(isVisible);
 
-          const submitBtn = allBtns.find(b => {
-            const inner = (b.innerHTML || '').toLowerCase();
-            const t = (b.textContent || '').trim().toLowerCase();
-            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-            if (b.getAttribute('type') === 'submit') return true;
-            if (aria.includes('tạo') || aria.includes('generate') || aria.includes('submit') || aria.includes('send') || aria.includes('gửi') || aria.includes('bắt đầu')) return true;
-            return inner.includes('arrow_forward') || inner.includes('send') || t === 'arrow_forward' || t === 'send' ||
-                   Boolean(b.querySelector('svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up'));
-          });
+          // Ưu tiên 1: type=submit
+          let submitBtn = allBtns.find(b => b.getAttribute('type') === 'submit' && isInComposer(b));
+
+          // Ưu tiên 2: nút có SVG mũi tên → (arrow_forward, arrow-right, arrow-up, send)
+          if (!submitBtn) {
+            submitBtn = allBtns.find(b => {
+              if (!isInComposer(b)) return false;
+              const inner = (b.innerHTML || '').toLowerCase();
+              const t = (b.textContent || '').trim().toLowerCase();
+              return inner.includes('arrow_forward') || t === 'arrow_forward' ||
+                     Boolean(b.querySelector('svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon="arrow-right"], svg[data-icon="send"]'));
+            });
+          }
+
+          // Ưu tiên 3: aria-label chính xác về generate/send (không phải "tạo hình ảnh" chung chung)
+          if (!submitBtn) {
+            submitBtn = allBtns.find(b => {
+              if (!isInComposer(b)) return false;
+              const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+              const t = (b.textContent || '').trim().toLowerCase();
+              // Chỉ match aria chính xác, không match "thành phần tạo hình ảnh"
+              return (aria === 'generate' || aria === 'send' || aria === 'submit' ||
+                      aria === 'tạo' || aria === 'gửi' || aria === 'bắt đầu') ||
+                     (t === 'send' || t === 'generate');
+            });
+          }
 
           if (!submitBtn) return { success: false, error: 'Không tìm thấy nút Submit' };
 
