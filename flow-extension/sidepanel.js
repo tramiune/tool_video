@@ -3916,6 +3916,81 @@ document.addEventListener('DOMContentLoaded', () => {
   const drawAboveBtn = document.getElementById('btnDrawAboveDownloadBtn');
   if (drawAboveBtn) drawAboveBtn.addEventListener('click', drawScript(-70));
 
+  // ── Debug: Vẽ lên nút Submit ──
+  const drawSubmitBtn = document.getElementById('btnDrawOnSubmitBtn');
+  if (drawSubmitBtn) {
+    drawSubmitBtn.addEventListener('click', async () => {
+      if (_multiTabRegistry.length === 0) await refreshMultiTabList();
+      const videoTab = _multiTabRegistry.find(t => t.role === 'video') || _multiTabRegistry[0];
+      if (!videoTab) { alert('Không có tab nào!'); return; }
+
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) logEl.style.display = 'block';
+
+      const res = await chrome.scripting.executeScript({
+        target: { tabId: videoTab.tabId },
+        world: 'ISOLATED',
+        func: () => {
+          // Tìm submit button — dùng cùng logic với createVideoMultiTab
+          const isVisible = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.top < window.innerHeight && r.bottom > 0;
+          };
+
+          const allBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(isVisible);
+
+          const submitBtn = allBtns.find(b => {
+            const inner = (b.innerHTML || '').toLowerCase();
+            const t = (b.textContent || '').trim().toLowerCase();
+            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+            if (b.getAttribute('type') === 'submit') return true;
+            if (aria.includes('tạo') || aria.includes('generate') || aria.includes('submit') || aria.includes('send') || aria.includes('gửi') || aria.includes('bắt đầu')) return true;
+            return inner.includes('arrow_forward') || inner.includes('send') || t === 'arrow_forward' || t === 'send' ||
+                   Boolean(b.querySelector('svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up'));
+          });
+
+          if (!submitBtn) return { success: false, error: 'Không tìm thấy nút Submit' };
+
+          const rect = submitBtn.getBoundingClientRect();
+          const cx = Math.round(rect.left + rect.width / 2);
+          const cy = Math.round(rect.top + rect.height / 2);
+
+          // Vẽ viền xanh + vòng tròn
+          const overlay = document.createElement('div');
+          overlay.style.cssText = `
+            position:fixed; left:${rect.left - 3}px; top:${rect.top - 3}px;
+            width:${rect.width + 6}px; height:${rect.height + 6}px;
+            border:3px solid #4ade80; border-radius:8px;
+            z-index:9999999; pointer-events:none;
+            box-shadow:0 0 12px #4ade80;
+          `;
+          const lbl = document.createElement('div');
+          lbl.style.cssText = `
+            position:fixed; left:${rect.right + 6}px; top:${rect.top}px;
+            background:#4ade80; color:#000; font-size:11px; font-weight:bold;
+            padding:2px 6px; border-radius:4px; z-index:9999999; pointer-events:none;
+            white-space:nowrap;
+          `;
+          lbl.textContent = `🟢 Submit (${cx}, ${cy})`;
+          document.body.appendChild(overlay);
+          document.body.appendChild(lbl);
+          setTimeout(() => { overlay.remove(); lbl.remove(); }, 5000);
+
+          return { success: true, cx, cy, tag: submitBtn.tagName, aria: submitBtn.getAttribute('aria-label') || '', text: (submitBtn.innerText || '').trim().slice(0, 20) };
+        }
+      });
+
+      const result = res?.[0]?.result;
+      if (logEl) {
+        const msg = result?.success
+          ? `✅ Submit tại (${result.cx}, ${result.cy}) — <${result.tag}> aria="${result.aria}" text="${result.text}"`
+          : `❌ ${result?.error || 'Lỗi'}`;
+        logEl.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    });
+  }
 
   // ──────────────────────────────────────────────────────────
   const btnBatch10 = document.getElementById('btnBatch10Tasks');
