@@ -1465,7 +1465,7 @@ async function rightClickAndDownload(tabId) {
       const sttEl = sttEls[0];
       const sttRect = sttEl.getBoundingClientRect();
       const cx = 50; // Cách lề Chrome 50px
-      const cy = Math.max(50, Math.round(sttRect.top - 170));
+      const cy = Math.max(50, Math.round(sttRect.top - 120));
 
       // Vẽ vòng tròn đỏ 20px tại điểm bấm
       const circle = document.createElement('div');
