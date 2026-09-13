@@ -21,6 +21,7 @@ const telegram = require('./telegram');
 const audioClient = require('./audio_client');
 const { processAutoToolJob, resumeAutoToolJobs, generateProjectIdea, generateCharacterSuggestions, generateStyleSuggestion, generateScenes, generateCharacterImage, validatePlan } = require('./autotool');
 const drama = require('./drama');
+const sumo  = require('./sumo');
 const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
 
 const app = express();
@@ -2078,10 +2079,14 @@ app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
   try {
     const topic = String(req.body?.topic || '').trim();
     const channelType = String(req.body?.channelType || 'drama').trim();
-    
-    // Auto-generate the full script content using Gemini on creation
-    const draft = await drama.generateDramaScript({ topic, channelType });
-    
+
+    // Route to sumo or drama module
+    const isSumo = channelType === 'sumo';
+    const draft = isSumo
+      ? await sumo.generateSumoScript({ topic })
+      : await drama.generateDramaScript({ topic, channelType });
+    const normalize = isSumo ? sumo.normalizeSumoScript : drama.normalizeDramaScript;
+
     const ref = db.collection('drama_scripts').doc();
     const now = Date.now();
     const data = {
@@ -2089,47 +2094,48 @@ app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
       userEmail: req.authUser.email,
       topic,
       channelType,
-      ...drama.normalizeDramaScript(draft),
+      ...normalize(draft),
       status: 'draft',
       createdAt: now,
       updatedAt: now
     };
     await ref.set(data);
-    logger.success(`[Drama] Created and generated script for ${req.authUser.email}: ${draft.title} (Channel: ${channelType})`);
+    logger.success(`[${isSumo ? 'Sumo' : 'Drama'}] Created script for ${req.authUser.email}: ${draft.title}`);
     return res.status(201).json({ success: true, script: { id: ref.id, ...data } });
   } catch (error) {
-    logger.error('Drama script creation and generation failed', error);
+    logger.error('Script creation failed', error);
     return res.status(500).json({ error: error.message });
   }
 });
+
 
 app.post('/api/drama/scripts/:id/ai/generate', requireDramaAccess, async (req, res) => {
   try {
     const scriptRef = db.collection('drama_scripts').doc(req.params.id);
     const snapshot = await scriptRef.get();
-    if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
+    if (!snapshot.exists) return res.status(404).json({ error: 'Script not found' });
     const current = snapshot.data();
     if (current.userId !== req.authUser.uid) return res.status(403).json({ error: 'Forbidden' });
 
     const channelType = String(req.body?.channelType || current.channelType || 'drama').trim();
-    const draft = await drama.generateDramaScript({
-      topic: String(req.body?.topic || current.topic || '').trim(),
-      channelType
-    });
+    const isSumo = channelType === 'sumo';
+    const topic = String(req.body?.topic || current.topic || '').trim();
+    const draft = isSumo
+      ? await sumo.generateSumoScript({ topic })
+      : await drama.generateDramaScript({ topic, channelType });
+    const normalize = isSumo ? sumo.normalizeSumoScript : drama.normalizeDramaScript;
+
     const now = Date.now();
-    const updated = {
-      ...drama.normalizeDramaScript({ ...current, ...draft }),
-      channelType,
-      updatedAt: now
-    };
+    const updated = { ...normalize({ ...current, ...draft }), channelType, updatedAt: now };
     await scriptRef.update(updated);
-    logger.success(`[Drama] AI script generated for ${req.authUser.email}: ${draft.title} (Channel: ${channelType})`);
+    logger.success(`[${isSumo ? 'Sumo' : 'Drama'}] AI script regen for ${req.authUser.email}: ${draft.title}`);
     return res.json({ success: true, script: { id: scriptRef.id, ...updated } });
   } catch (error) {
-    logger.error('Drama AI script generation failed', error);
+    logger.error('Script AI generation failed', error);
     return res.status(500).json({ error: error.message });
   }
 });
+
 
 app.get('/api/drama/scripts/:id', requireDramaAccess, async (req, res) => {
   try {
@@ -2190,17 +2196,20 @@ app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => 
     const scriptData = snapshot.data();
     if (scriptData.userId !== req.authUser.uid && !req.authUser.isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
-    const script = drama.normalizeDramaScript(scriptData);
+    const script = scriptData.channelType === 'sumo'
+      ? sumo.normalizeSumoScript(scriptData)
+      : drama.normalizeDramaScript(scriptData);
     if (!script.title) return res.status(400).json({ error: 'Generate a script before creating a video' });
     if (!Array.isArray(script.scenes) || script.scenes.length < 1) {
       return res.status(400).json({ error: 'Generate and save the scene plan before creating a video' });
     }
 
+    const isSumo = scriptData.channelType === 'sumo';
     const jobRef = db.collection('drama_jobs').doc();
     let episodeNumber;
     await db.runTransaction(async transaction => {
       const transactionSnapshot = await transaction.get(scriptRef);
-      if (!transactionSnapshot.exists) throw Object.assign(new Error('Drama script not found'), { statusCode: 404 });
+      if (!transactionSnapshot.exists) throw Object.assign(new Error('Script not found'), { statusCode: 404 });
       const current = transactionSnapshot.data();
       episodeNumber = (Number(current.episodeCount) || 0) + 1;
       const now = Date.now();
@@ -2209,6 +2218,7 @@ app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => 
         userId: req.authUser.uid,
         userEmail: req.authUser.email,
         scriptId: req.params.id,
+        channelType: scriptData.channelType || 'drama',
         title: script.title,
         characters: script.characters,
         baseImagePrompt: script.baseImagePrompt,
@@ -2242,7 +2252,8 @@ app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => 
         updatedAt: now
       });
     });
-    drama.processDramaJob(jobRef.id);
+    if (isSumo) sumo.processSumoJob(jobRef.id);
+    else drama.processDramaJob(jobRef.id);
     return res.status(202).json({ success: true, jobId: jobRef.id, status: 'queued', episodeNumber });
   } catch (error) {
     logger.error('Drama job creation failed', error);
@@ -3645,6 +3656,7 @@ startCookieSyncListener().then(() => {
     startFirestoreListener();
     resumeAutoToolJobs().catch(err => logger.error('[AutoTool] Resume failed', err));
     drama.resumeDramaJobs().catch(err => logger.error('[Drama] Resume failed', err));
+    sumo.resumeSumoJobs().catch(err => logger.error('[Sumo] Resume failed', err));
   });
 
   // Run cleanup once per day at 23:50 server time
