@@ -392,6 +392,7 @@ function App() {
   const [simulateAmount, setSimulateAmount] = useState('30000');
   const [simulateLoading, setSimulateLoading] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
+  const [pricingModalFromExpiry, setPricingModalFromExpiry] = useState(false);
   const [limitError, setLimitError] = useState(null);
   const [selectedTierForPay, setSelectedTierForPay] = useState(null);
   const [isAudioView, setIsAudioView] = useState(false);
@@ -1120,6 +1121,7 @@ function App() {
       }, { merge: true });
       
       setShowPricingModal(false);
+      setPricingModalFromExpiry(false);
     } catch (e) {
       console.error("Upgrade failed:", e);
       alert("Không thể hoàn tất nâng cấp lúc này. Bạn vui lòng thử lại hoặc liên hệ nhóm hỗ trợ Zalo nhé! 🥺");
@@ -6024,6 +6026,14 @@ function App() {
     };
 
     const isExpired = userTier !== 'free' && userExpiryDate && userExpiryDate < Date.now();
+
+    // Hết hạn gói → mở bảng giá ngay, không cho bỏ qua
+    if (isExpired) {
+      setPricingModalFromExpiry(true);
+      setShowPricingModal(true);
+      return;
+    }
+
     const activeUserTier = isExpired ? 'free' : userTier;
     const currentLimits = limits[activeUserTier] || limits.free;
     const usage = getTodayUsage();
@@ -7423,7 +7433,7 @@ function App() {
         }}>
           <div style={{
             background: '#16161a',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            border: pricingModalFromExpiry ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: '20px',
             width: '100%',
             maxWidth: '800px',
@@ -7432,21 +7442,45 @@ function App() {
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7)'
+            boxShadow: pricingModalFromExpiry ? '0 25px 60px rgba(239,68,68,0.25)' : '0 25px 60px rgba(0, 0, 0, 0.7)'
           }}>
+            {/* Banner hết hạn */}
+            {pricingModalFromExpiry && (
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(251,191,36,0.1) 100%)',
+                borderBottom: '1px solid rgba(239,68,68,0.2)',
+                padding: '12px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                <div>
+                  <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'standard_99k' ? 'Standard' : userTier === 'premium_169k' ? 'Premium' : userTier} của bạn đã hết hạn
+                  </div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', marginTop: '2px' }}>
+                    Gia hạn hoặc nâng cấp để tiếp tục tạo nội dung
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Header */}
             <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold', color: '#fff' }}>Bảng Giá Dịch Vụ meo3</h3>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Nâng cấp ngay để mở khóa toàn bộ sức mạnh sáng tạo</span>
               </div>
-              <button 
-                type="button" 
-                onClick={() => setShowPricingModal(false)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.6rem', padding: '0 5px' }}
-              >
-                ×
-              </button>
+              {/* Chỉ hiện nút X khi KHÔNG phải từ expiry */}
+              {!pricingModalFromExpiry && (
+                <button
+                  type="button"
+                  onClick={() => { setShowPricingModal(false); setPricingModalFromExpiry(false); }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.6rem', padding: '0 5px' }}
+                >
+                  ×
+                </button>
+              )}
             </div>
 
             {/* Pricing Grid */}
