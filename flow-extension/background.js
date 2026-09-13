@@ -2414,14 +2414,25 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
                    Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
           });
         }
-        if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
-
-        submitBtn.removeAttribute("disabled");
-        submitBtn.setAttribute("aria-disabled", "false");
-        submitBtn.style.pointerEvents = "auto";
-        submitBtn.style.opacity = "1";
-        triggerClick(submitBtn);
-        await sleep(500);
+        // ── STEP 6: Click Submit bằng tọa độ cố định ──
+        const SUBMIT_X = 430, SUBMIT_Y = 735;
+        let clickTarget = document.elementFromPoint(SUBMIT_X, SUBMIT_Y);
+        // Drill vào shadow DOM nếu cần
+        while (clickTarget && clickTarget.shadowRoot) {
+          const inner = clickTarget.shadowRoot.elementFromPoint(SUBMIT_X, SUBMIT_Y);
+          if (!inner || inner === clickTarget) break;
+          clickTarget = inner;
+        }
+        // Lấy button gần nhất, fallback về submitBtn tìm được trước
+        clickTarget = clickTarget?.closest("button, [role='button']") || clickTarget || submitBtn;
+        if (!clickTarget) return { success: false, error: 'Không tìm thấy element tại tọa độ submit' };
+        clickTarget.removeAttribute('disabled');
+        clickTarget.setAttribute('aria-disabled', 'false');
+        clickTarget.style.pointerEvents = 'auto';
+        triggerClick(clickTarget);
+        await sleep(200);
+        clickTarget.click();
+        await sleep(300);
 
         const frames = [pastedStart && 'start', pastedEnd && 'end'].filter(Boolean).join('+');
         return {
