@@ -4018,6 +4018,79 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ── 🟠 Tô Submit: vẽ overlay đặc lên đúng vị trí submit button ──
+  const btnHighlightOverlay = document.getElementById('btnHighlightSubmitOverlay');
+  if (btnHighlightOverlay) {
+    btnHighlightOverlay.addEventListener('click', async () => {
+      const logEl = document.getElementById('multiTabCreateLog');
+      if (logEl) logEl.style.display = 'block';
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) { if (logEl) logEl.textContent += '[ERR] Không có tab active\n'; return; }
+
+      const res = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          const queryDeep = (sel) => {
+            const found = [];
+            const walk = (root) => {
+              root.querySelectorAll(sel).forEach(el => found.push(el));
+              root.querySelectorAll('*').forEach(el => { if (el.shadowRoot) walk(el.shadowRoot); });
+            };
+            walk(document);
+            return found;
+          };
+          const isVis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top < window.innerHeight && r.bottom > 0; };
+
+          const btn = queryDeep("button, [role='button']").find(b => {
+            if (!isVis(b)) return false;
+            if (b.closest("[data-media-id],[class*='card'],[class*='result'],[class*='generation']")) return false;
+            const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+            if (t === 'cancel' || t === 'hủy') return false;
+            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+            if (aria === 'bắt đầu tạo' || aria === 'tạo' || aria === 'generate' || aria === 'send' || aria === 'submit' || aria === 'gửi') return true;
+            const inner = (b.innerHTML || '').toLowerCase();
+            return inner.includes('arrow_forward') || inner.includes('send') || t === 'arrow_forward';
+          });
+
+          if (!btn) return { success: false, error: 'Không tìm thấy submit button' };
+          const rect = btn.getBoundingClientRect();
+          const fromRight = window.innerWidth - rect.right;
+          const fromBottom = window.innerHeight - rect.bottom;
+
+          document.querySelectorAll('.__dbg_so').forEach(el => el.remove());
+
+          const style = document.createElement('style');
+          style.className = '__dbg_so';
+          style.textContent = '@keyframes __dbgpulse{from{opacity:.4}to{opacity:1}}';
+          document.body.appendChild(style);
+
+          const overlay = document.createElement('div');
+          overlay.className = '__dbg_so';
+          overlay.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;background:rgba(251,100,30,.75);border:3px solid #ff4400;border-radius:8px;z-index:9999999;pointer-events:none;box-shadow:0 0 20px rgba(255,80,0,.9);animation:__dbgpulse .5s infinite alternate;`;
+          document.body.appendChild(overlay);
+
+          const lbl = document.createElement('div');
+          lbl.className = '__dbg_so';
+          lbl.style.cssText = `position:fixed;right:${fromRight}px;bottom:${fromBottom + rect.height + 6}px;background:#ff4400;color:#fff;font-size:11px;font-weight:bold;padding:3px 7px;border-radius:5px;z-index:9999999;pointer-events:none;white-space:nowrap;font-family:monospace;`;
+          lbl.textContent = `🟠 bottom:${Math.round(fromBottom)}px right:${Math.round(fromRight)}px ${Math.round(rect.width)}×${Math.round(rect.height)}`;
+          document.body.appendChild(lbl);
+
+          setTimeout(() => document.querySelectorAll('.__dbg_so').forEach(el => el.remove()), 15000);
+          return { success: true, aria: btn.getAttribute('aria-label') || '', text: (btn.innerText || '').trim().slice(0, 30), fromBottom: Math.round(fromBottom), fromRight: Math.round(fromRight), w: Math.round(rect.width), h: Math.round(rect.height) };
+        }
+      });
+
+      const r = res?.[0]?.result;
+      if (logEl) {
+        const msg = r?.success
+          ? `🟠 Submit | cách đáy:${r.fromBottom}px | cách phải:${r.fromRight}px | ${r.w}×${r.h} | aria="${r.aria}" text="${r.text}"`
+          : `❌ ${r?.error || 'Lỗi'}`;
+        logEl.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    });
+  }
+
   // ──────────────────────────────────────────────────────────
   const btnBatch10 = document.getElementById('btnBatch10Tasks');
   if (btnBatch10) {
