@@ -88,12 +88,12 @@ _extWss.on('connection', (ws) => {
     if (msg.type === 'TASK_STARTED' && _extPending.has(msg.id)) {
       const pending = _extPending.get(msg.id);
       clearTimeout(pending.timer);
-      // Video: 11 phút từ lúc submit; Ảnh: 2 phút từ lúc submit
+      // Video: 11 phút từ lúc submit; Ảnh: 10 phút từ lúc submit
       const isImage = msg.id.startsWith('img_');
-      const newTimeoutMs = isImage ? 120000 : 660000;
+      const newTimeoutMs = isImage ? 600000 : 660000;
       pending.timer = setTimeout(() => {
         _extPending.delete(msg.id);
-        pending.reject(new Error(`Timeout sau khi submit (${isImage ? '2 phút' : '11 phút'})`));
+        pending.reject(new Error(`Timeout sau khi submit (${isImage ? '10 phút' : '11 phút'})`));
       }, newTimeoutMs);
       logger.info(`[Bridge] TASK_STARTED ${msg.id} → reset timeout ${newTimeoutMs / 1000}s`);
       return;
@@ -254,7 +254,7 @@ const extensionBridge = {
     });
   },
 
-  async generateImage(task, timeoutMs = 120000) {
+  async generateImage(task, timeoutMs = 600000) {
     if (!this.connected) return Promise.reject(new Error('Flow Extension chưa kết nối'));
     const id = task.id || `img_${Date.now()}`;
     
