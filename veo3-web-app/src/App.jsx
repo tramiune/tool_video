@@ -5810,6 +5810,10 @@ function App() {
     return () => unsubscribe();
   }, [user]);
 
+  const handleAnonymousLogin = () => {
+    alert("Tính năng này đang được phát triển!");
+  };
+
   const handleLogin = async () => {
     trackTikTokEvent('click_login');
     try {
