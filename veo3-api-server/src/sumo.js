@@ -304,60 +304,76 @@ async function runSumoJob(jobId) {
     let snap = await jobRef.get();
     if (!snap.exists || TERMINAL_JOB_STATUSES.has(snap.data().status)) return;
     let job = snap.data();
+    const isAdmin = job.isAdmin === true;
     const totalSteps = job.scenes.length * 2;
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), `sumo-${jobId}-`));
-    const clips  = [];
+    // Pre-allocate clips array to preserve scene order when running in parallel
+    const clips = new Array(job.scenes.length).fill(null);
+
+    // Helper: process a single scene (image → video → download clip)
+    const processScene = async (idx) => {
+      snap = await jobRef.get(); job = snap.data();
+      if (job.status === 'failed') return;
+      let scene = job.scenes[idx];
+
+      // STEP 1: gen image independently
+      let imgUrl = scene.imageUrl;
+      if (!imgUrl || !(await checkUrlExists(imgUrl))) {
+        const refs = getSumoCharacterRefs(scene.imagePrompt);
+        logger.info(`[Sumo] Scene ${idx + 1}: gen image with ${refs.length} ref(s)${isAdmin ? ' [admin/parallel]' : ''}`);
+        const r = await runChildTaskWithRetry({
+          jobRef, job: { ...job, characters: job.characters || [] },
+          sceneIndex: idx, taskType: 'startImage',
+          prompt: buildSumoImagePrompt(job, scene, idx),
+          extraTaskData: { userId: job.userId, email: job.userEmail || null, isAdmin, type: 'image', status: 'pending', aspectRatio: '9:16', model: 'nano_banana_2', count: 1, referenceImages: refs },
+          timeoutMs: IMAGE_TIMEOUT_MS, stageStatus: 'image_processing',
+          progressUpdate: { status: 'generating', currentScene: idx + 1, progress: Math.round((idx * 2 / totalSteps) * 100) },
+        });
+        imgUrl = r.url; scene.imageUrl = imgUrl;
+        await updateScene(jobRef, idx, { imageUrl: imgUrl, startImageUrl: imgUrl, imageStatus: 'completed', startImageStatus: 'completed', status: 'image_completed' }, { progress: Math.round(((idx * 2 + 0.8) / totalSteps) * 100) });
+        logger.success(`[Sumo] Scene ${idx + 1} image: ${imgUrl}`);
+      }
+
+      // STEP 2: gen video
+      snap = await jobRef.get(); job = snap.data();
+      if (job.status === 'failed') return;
+      scene = job.scenes[idx];
+      let vidUrl = scene.videoUrl;
+      if (!vidUrl || !(await checkUrlExists(vidUrl))) {
+        logger.info(`[Sumo] Scene ${idx + 1}: gen video`);
+        const r = await runChildTaskWithRetry({
+          jobRef, job: { ...job, characters: job.characters || [] },
+          sceneIndex: idx, taskType: 'video',
+          prompt: buildSumoVideoPrompt(job, scene, idx),
+          extraTaskData: { userId: job.userId, email: job.userEmail || null, isAdmin, type: 'video', status: 'pending', aspectRatio: '9:16', model: 'veo_3_1_lite', count: 1, durationSeconds: 8, startImage: imgUrl },
+          timeoutMs: VIDEO_TIMEOUT_MS, stageStatus: 'video_processing',
+          progressUpdate: { status: 'generating', currentScene: idx + 1, progress: Math.round(((idx * 2 + 1) / totalSteps) * 100) },
+        });
+        vidUrl = r.url; scene.videoUrl = vidUrl;
+        await updateScene(jobRef, idx, { videoUrl: vidUrl, videoStatus: 'completed', status: 'video_completed' }, { progress: Math.round(((idx * 2 + 1.8) / totalSteps) * 100) });
+        logger.success(`[Sumo] Scene ${idx + 1} video: ${vidUrl}`);
+      }
+
+      const clip = path.join(tmpDir, `clip-${String(idx).padStart(2, '0')}.mp4`);
+      await downloadFile(vidUrl, clip);
+      clips[idx] = clip;
+      await updateScene(jobRef, idx, { status: 'completed' });
+    };
+
     try {
-      for (let idx = 0; idx < job.scenes.length; idx++) {
-        failedIdx = idx;
-        snap = await jobRef.get(); job = snap.data();
-        if (job.status === 'failed') return;
-        let scene = job.scenes[idx];
-
-        // STEP 1: gen image independently
-        let imgUrl = scene.imageUrl;
-        if (!imgUrl || !(await checkUrlExists(imgUrl))) {
-          const refs = getSumoCharacterRefs(scene.imagePrompt);
-          logger.info(`[Sumo] Scene ${idx + 1}: gen image with ${refs.length} ref(s)`);
-          const r = await runChildTaskWithRetry({
-            jobRef, job: { ...job, characters: job.characters || [] },
-            sceneIndex: idx, taskType: 'startImage',
-            prompt: buildSumoImagePrompt(job, scene, idx),
-            extraTaskData: { userId: job.userId, email: job.userEmail || null, type: 'image', status: 'pending', aspectRatio: '9:16', model: 'nano_banana_2', count: 1, referenceImages: refs },
-            timeoutMs: IMAGE_TIMEOUT_MS, stageStatus: 'image_processing',
-            progressUpdate: { status: 'generating', currentScene: idx + 1, progress: Math.round((idx * 2 / totalSteps) * 100) },
-          });
-
-          imgUrl = r.url; scene.imageUrl = imgUrl;
-          await updateScene(jobRef, idx, { imageUrl: imgUrl, startImageUrl: imgUrl, imageStatus: 'completed', startImageStatus: 'completed', status: 'image_completed' }, { progress: Math.round(((idx * 2 + 0.8) / totalSteps) * 100) });
-          logger.success(`[Sumo] Scene ${idx + 1} image: ${imgUrl}`);
+      if (isAdmin) {
+        // Admin: all scenes run in parallel for maximum speed
+        logger.info(`[Sumo] Job ${jobId} running ${job.scenes.length} scenes in PARALLEL (admin)`);
+        await Promise.all(job.scenes.map((_, idx) => processScene(idx).catch(err => {
+          failedIdx = idx;
+          throw err;
+        })));
+      } else {
+        // Regular user: sequential scene processing
+        for (let idx = 0; idx < job.scenes.length; idx++) {
+          failedIdx = idx;
+          await processScene(idx);
         }
-
-        // STEP 2: gen video
-        snap = await jobRef.get(); job = snap.data();
-        if (job.status === 'failed') return;
-        scene = job.scenes[idx];
-        let vidUrl = scene.videoUrl;
-        if (!vidUrl || !(await checkUrlExists(vidUrl))) {
-          logger.info(`[Sumo] Scene ${idx + 1}: gen video`);
-          const r = await runChildTaskWithRetry({
-            jobRef, job: { ...job, characters: job.characters || [] },
-            sceneIndex: idx, taskType: 'video',
-            prompt: buildSumoVideoPrompt(job, scene, idx),
-            extraTaskData: { userId: job.userId, email: job.userEmail || null, type: 'video', status: 'pending', aspectRatio: '9:16', model: 'veo_3_1_lite', count: 1, durationSeconds: 8, startImage: imgUrl },
-            timeoutMs: VIDEO_TIMEOUT_MS, stageStatus: 'video_processing',
-            progressUpdate: { status: 'generating', currentScene: idx + 1, progress: Math.round(((idx * 2 + 1) / totalSteps) * 100) },
-          });
-
-          vidUrl = r.url; scene.videoUrl = vidUrl;
-          await updateScene(jobRef, idx, { videoUrl: vidUrl, videoStatus: 'completed', status: 'video_completed' }, { progress: Math.round(((idx * 2 + 1.8) / totalSteps) * 100) });
-          logger.success(`[Sumo] Scene ${idx + 1} video: ${vidUrl}`);
-        }
-
-        const clip = path.join(tmpDir, `clip-${String(idx).padStart(2, '0')}.mp4`);
-        await downloadFile(vidUrl, clip);
-        clips.push(clip);
-        await updateScene(jobRef, idx, { status: 'completed' });
       }
 
       snap = await jobRef.get(); job = snap.data();
@@ -367,7 +383,7 @@ async function runSumoJob(jobId) {
         return;
       }
       await jobRef.update({ status: 'concatenating', currentScene: null, updatedAt: Date.now() });
-      const finalUrl = await concatenateSumoClips(jobId, clips);
+      const finalUrl = await concatenateSumoClips(jobId, clips.filter(Boolean));
       await jobRef.update({ status: 'completed', progress: 100, finalUrl, error: null, completedAt: Date.now(), updatedAt: Date.now() });
       await recordSumoEpisode(jobRef, { ...job, finalUrl }).catch(() => {});
       logger.success(`[Sumo] Job ${jobId} done: ${finalUrl}`);

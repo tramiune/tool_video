@@ -39,6 +39,12 @@ class UserVideoLimitProvider {
     try {
       const snapshot = await this.db.collection('users').doc(userId).get();
       const data = snapshot.exists ? snapshot.data() : {};
+      // Admin users are not subject to per-user video limits
+      if (data.isAdmin === true) {
+        const expiresAt = Date.now() + this.ttlMs;
+        this.cache.set(userId, { tier: 'admin', limit: 999, expiresAt });
+        return 999;
+      }
       const expiryDate = typeof data.expiryDate?.toMillis === 'function'
         ? data.expiryDate.toMillis()
         : Number(data.expiryDate || 0);

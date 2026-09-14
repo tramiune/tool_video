@@ -2217,6 +2217,7 @@ app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => 
       transaction.set(jobRef, {
         userId: req.authUser.uid,
         userEmail: req.authUser.email,
+        isAdmin: req.authUser.isAdmin || false,
         scriptId: req.params.id,
         channelType: scriptData.channelType || 'drama',
         title: script.title,
@@ -3019,11 +3020,15 @@ function startFirestoreListener() {
 // ─── IMAGE WORKER (concurrent) ──────────────────────────────────────────────
 
 function drainImageQueue() {
-  while (activeImageWorkers < IMAGE_CONCURRENCY && imageQueue.length > 0) {
-    const taskId = imageQueue.shift();
-    activeImageWorkers++;
+  while (imageQueue.length > 0) {
+    const taskId = imageQueue[0];
+    const isAdmin = tasks[taskId]?.isAdmin === true;
+    // Admin tasks bypass the global concurrency cap
+    if (!isAdmin && activeImageWorkers >= IMAGE_CONCURRENCY) break;
+    imageQueue.shift();
+    if (!isAdmin) activeImageWorkers++;
     runImageTask(taskId).finally(() => {
-      activeImageWorkers--;
+      if (!isAdmin) activeImageWorkers--;
       drainImageQueue(); // pick next task when a slot frees up
     });
   }
