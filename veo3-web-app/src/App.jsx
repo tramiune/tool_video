@@ -7492,17 +7492,17 @@ function App() {
                 </ul>
                 <button
                   onClick={() => handleSelectTierForPay('basic_69k')}
-                  disabled={userTier === 'basic_69k' || userTier === 'standard_99k' || userTier === 'premium_169k'}
+                  disabled={false}
                   style={{
                     width: '100%',
                     padding: '10px',
-                    background: (userTier === 'basic_69k' || userTier === 'standard_99k' || userTier === 'premium_169k') ? 'rgba(255,255,255,0.05)' : '#3b82f6',
+                    background: '#3b82f6',
                     border: 'none',
                     borderRadius: '8px',
-                    color: (userTier === 'basic_69k' || userTier === 'standard_99k' || userTier === 'premium_169k') ? 'var(--text-secondary)' : '#fff',
+                    color: '#fff',
                     fontSize: '0.85rem',
                     fontWeight: 'bold',
-                    cursor: (userTier === 'basic_69k' || userTier === 'standard_99k' || userTier === 'premium_169k') ? 'default' : 'pointer'
+                    cursor: 'pointer'
                   }}
                 >
                   {userTier === 'basic_69k' ? 'Gói hiện tại' : 
@@ -7537,17 +7537,17 @@ function App() {
                 </ul>
                 <button
                   onClick={() => handleSelectTierForPay('premium_169k')}
-                  disabled={userTier === 'premium_169k'}
+                  disabled={false}
                   style={{
                     width: '100%',
                     padding: '10px',
-                    background: userTier === 'premium_169k' ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+                    background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
                     border: 'none',
                     borderRadius: '8px',
-                    color: userTier === 'premium_169k' ? 'var(--text-secondary)' : '#16161a',
+                    color: '#16161a',
                     fontSize: '0.85rem',
                     fontWeight: 'bold',
-                    cursor: userTier === 'premium_169k' ? 'default' : 'pointer'
+                    cursor: 'pointer'
                   }}
                 >
                   {userTier === 'premium_169k' ? 'Gói hiện tại' : `Nâng cấp +${getUpgradeCost('premium_169k') / 1000}k`}
