@@ -44,6 +44,33 @@ function getSumoCharacterRefs(promptText) {
   return refs;
 }
 
+// Build speaking note: vị trí nhân vật + chỉ rõ ai nói ai im miệng
+function buildSpeakingNote(dialogue, imagePrompt) {
+  const p = (imagePrompt || '').toLowerCase();
+  const chars = [];
+  if (p.includes('bin'))                                                           chars.push('Bin');
+  if (p.includes('sumo') || p.includes('deer') || p.includes('huou') ||
+      p.includes('hươu'))                                                          chars.push('Sumo');
+  if (p.includes('mother') || p.includes('mom') || p.includes('mẹ'))             chars.push('Mom');
+  if (chars.length === 0) chars.push('Bin', 'Sumo');
+
+  const positions = ['on the LEFT side of frame', 'on the RIGHT side of frame', 'in the background center'];
+  const charPos   = {};
+  chars.forEach((c, i) => { charPos[c] = positions[i] || 'in frame'; });
+  const posDesc = chars.map(c => `${c} ${charPos[c]}`).join(', ');
+
+  const sp = (dialogue?.[0]?.speaker || '').toLowerCase();
+  const speakerName = sp.includes('bin') ? 'Bin'
+    : (sp.includes('sumo') || sp.includes('hươu') || sp.includes('huou')) ? 'Sumo'
+    : (sp.includes('mẹ') || sp.includes('me') || sp.includes('mom') || sp.includes('mother')) ? 'Mom'
+    : chars[0] || 'Bin';
+  const listeners = chars.filter(c => c !== speakerName);
+
+  return `Character positions: ${posDesc}. ONLY ${speakerName} speaks and moves lips in this scene.`
+    + (listeners.length ? ` ${listeners.join(' and ')} listen(s) quietly with mouth closed, not speaking.` : '');
+}
+
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 function extractJson(content) {
   const text = String(content || '').trim();
@@ -150,15 +177,18 @@ function buildSumoImagePrompt(job, scene, idx) {
 function buildSumoVideoPrompt(job, scene, idx) {
   const seq  = String(Number(idx) + 1).padStart(3, '0') + '.';
   const dlg  = Array.isArray(scene.dialogue) ? scene.dialogue : [];
+  const speakingNote = buildSpeakingNote(dlg, scene.imagePrompt || '');
   const parts = [
     String(scene.videoPrompt || scene.description || '').trim(),
     'Duration: exactly 8 seconds. Vertical 9:16.',
     'IMPORTANT: Chu huou Sumo must ONLY stand and walk on TWO LEGS.',
-    dlg.length ? `Dialogue (natural lip sync): ${dlg.map(l => `${l.speaker}: "${l.text}"`).join(' ')}` : '',
+    speakingNote,
+    dlg.length ? `Dialogue (lip sync only the speaker above): ${dlg.map(l => `${l.speaker}: "${l.text}"`).join(' ')}` : '',
     'One coherent 8-second continuous vertical 9:16 clip. Locked static camera, no cuts, no split screen.',
   ].filter(Boolean);
   return `${seq} ${parts.join('\n')}`;
 }
+
 
 // ─── AI script generation ─────────────────────────────────────────────────────
 async function generateSumoScript({ topic } = {}) {
@@ -184,7 +214,10 @@ async function generateSumoScript({ topic } = {}) {
     '- Cảnh 6 (Kết + CTA): Bin pose cute cùng Sumo, hỏi khán giả câu vui để kích comment.',
     'BỐ CỤC ĐIỆN ẢNH: KHÔNG đứng hàng ngang. Tư thế đa dạng (ngồi/đứng/tựa). Chiều sâu khung hình. Camera tĩnh, không cắt cảnh. Khung đơn 9:16. Không text/subtitle.',
     'Sumo LUÔN đi 2 chân. Mỗi cảnh có góc máy KHÁC NHAU (close-up/medium/wide).',
+    'imagePrompt PHẢI ghi rõ vị trí từng nhân vật: "On the LEFT side...", "On the RIGHT side...", "in the CENTER...". Mỗi cảnh AI tự chọn vị trí hợp lý theo bố cục.',
+    'videoPrompt: mô tả chuyển động KHÔNG chứa dialogue.',
     'JSON không markdown: {"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
+
     `Đúng ${MAX_SUMO_SCENES} cảnh. dialogue: 1 câu/cảnh, 25-35 từ tiếng Việt ≈ 8 giây.`,
   ].join('\n');
 
