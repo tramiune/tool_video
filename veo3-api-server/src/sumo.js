@@ -323,10 +323,11 @@ async function runSumoJob(jobId) {
             jobRef, job: { ...job, characters: job.characters || [] },
             sceneIndex: idx, taskType: 'startImage',
             prompt: buildSumoImagePrompt(job, scene, idx),
-            extraTaskData: { userId: job.userId, email: job.userEmail || null, type: 'image', status: 'pending', referenceImages: refs },
+            extraTaskData: { userId: job.userId, email: job.userEmail || null, type: 'image', status: 'pending', aspectRatio: '9:16', model: 'nano_banana_2', count: 1, referenceImages: refs },
             timeoutMs: IMAGE_TIMEOUT_MS, stageStatus: 'image_processing',
             progressUpdate: { status: 'generating', currentScene: idx + 1, progress: Math.round((idx * 2 / totalSteps) * 100) },
           });
+
           imgUrl = r.url; scene.imageUrl = imgUrl;
           await updateScene(jobRef, idx, { imageUrl: imgUrl, startImageUrl: imgUrl, imageStatus: 'completed', startImageStatus: 'completed', status: 'image_completed' }, { progress: Math.round(((idx * 2 + 0.8) / totalSteps) * 100) });
           logger.success(`[Sumo] Scene ${idx + 1} image: ${imgUrl}`);
@@ -343,10 +344,11 @@ async function runSumoJob(jobId) {
             jobRef, job: { ...job, characters: job.characters || [] },
             sceneIndex: idx, taskType: 'video',
             prompt: buildSumoVideoPrompt(job, scene, idx),
-            extraTaskData: { userId: job.userId, email: job.userEmail || null, type: 'video', status: 'pending', startImage: imgUrl },
+            extraTaskData: { userId: job.userId, email: job.userEmail || null, type: 'video', status: 'pending', aspectRatio: '9:16', model: 'veo_3_1_lite', count: 1, durationSeconds: 8, startImage: imgUrl },
             timeoutMs: VIDEO_TIMEOUT_MS, stageStatus: 'video_processing',
             progressUpdate: { status: 'generating', currentScene: idx + 1, progress: Math.round(((idx * 2 + 1) / totalSteps) * 100) },
           });
+
           vidUrl = r.url; scene.videoUrl = vidUrl;
           await updateScene(jobRef, idx, { videoUrl: vidUrl, videoStatus: 'completed', status: 'video_completed' }, { progress: Math.round(((idx * 2 + 1.8) / totalSteps) * 100) });
           logger.success(`[Sumo] Scene ${idx + 1} video: ${vidUrl}`);
