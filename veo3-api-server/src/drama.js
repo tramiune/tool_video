@@ -414,6 +414,8 @@ async function runDramaJob(jobId) {
     let snapshot = await jobRef.get();
     if (!snapshot.exists || TERMINAL_JOB_STATUSES.has(snapshot.data().status)) return;
     let job = snapshot.data();
+    // Guard: sumo jobs must only be processed by sumo.js, not drama pipeline
+    if (job.channelType === 'sumo') return;
 
     const totalSteps = job.scenes.length * 3;
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), `drama-${jobId}-`));
@@ -1079,7 +1081,9 @@ async function resumeDramaJobs() {
   const snapshot = await db.collection('drama_jobs').get();
   let resumed = 0;
   for (const document of snapshot.docs) {
-    if (!TERMINAL_JOB_STATUSES.has(document.data().status) && processDramaJob(document.id)) resumed++;
+    const data = document.data();
+    if (data.channelType === 'sumo') continue; // sumo jobs handled by sumo.js
+    if (!TERMINAL_JOB_STATUSES.has(data.status) && processDramaJob(document.id)) resumed++;
   }
   logger.info(`[Drama] Resumed ${resumed} nonterminal job(s)`);
   return resumed;

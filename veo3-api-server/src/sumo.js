@@ -166,7 +166,7 @@ function buildSumoImagePrompt(job, scene, idx) {
     String(scene.imagePrompt || scene.description || '').trim(),
     job.baseImagePrompt ? `Environment: ${job.baseImagePrompt}` : '',
     '3D Pixar animated film style, vibrant, expressive, cute, warm natural lighting.',
-    'IMPORTANT: Chu huou Sumo must ALWAYS stand upright and walk ONLY on TWO LEGS. Do NOT change appearance, colors, clothing, proportions, facial features of Bin or Sumo.',
+    'CRITICAL CHARACTER CONSISTENCY — Match reference images EXACTLY: Bin = 5-year-old boy with blue-orange-white horizontal striped t-shirt and blue shorts, chubby cheeks, black hair, cartoon proportions. Sumo = anthropomorphic deer/giraffe standing ONLY on TWO HIND LEGS (NEVER four legs), bright red superhero cape, red bow tie, tall neck, friendly face. Mother = Vietnamese woman, warm expression, casual home clothing. DO NOT alter face shape, clothing colors, clothing pattern, body proportions, or species of any character. Characters must be IDENTICAL to their reference images.',
     'Cinematic staging: natural varied postures with depth (foreground/midground/background). No stiff lineup.',
     'Single unified vertical 9:16 shot. Full-bleed. NO split screen, NO collage, NO panels, NO duplicate characters.',
     'No text, no subtitles, no name labels, no written words on screen.',
