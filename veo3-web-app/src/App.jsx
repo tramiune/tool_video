@@ -7,12 +7,29 @@ import { auth, googleProvider, db, storage } from './lib/firebase';
 import './index.css';
 import BeforeAfterPanel from './BeforeAfterPanel';
 
+const safeGetLocalStorage = (key, fallback = null) => {
+  try { return window.localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
+};
+const safeSetLocalStorage = (key, value) => {
+  try { window.localStorage.setItem(key, value); } catch (e) { console.warn('localStorage set blocked', e); }
+};
+const safeRemoveLocalStorage = (key) => {
+  try { window.localStorage.removeItem(key); } catch (e) { console.warn('localStorage remove blocked', e); }
+};
+const safeGetSessionStorage = (key, fallback = null) => {
+  try { return window.sessionStorage.getItem(key) || fallback; } catch (e) { return fallback; }
+};
+const safeSetSessionStorage = (key, value) => {
+  try { window.sessionStorage.setItem(key, value); } catch (e) { console.warn('sessionStorage set blocked', e); }
+};
+
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
 
 const trackTikTokEvent = (eventName, metadata = {}) => {
-  if (sessionStorage.getItem('is_from_tiktok') === 'true') {
+  if (safeGetSessionStorage('is_from_tiktok') === 'true') {
     const authUser = auth.currentUser;
-    const source = sessionStorage.getItem('webview_source') || 'other';
+    const source = safeGetSessionStorage('webview_source') || 'other';
     fetch(`${API_BASE}/api/track/tiktok-event`, {
       method: 'POST',
       headers: {
@@ -37,16 +54,16 @@ function generateSessionId() {
 }
 
 function getLocalSessionId() {
-  let id = localStorage.getItem(SESSION_STORAGE_KEY);
+  let id = safeGetLocalStorage(SESSION_STORAGE_KEY);
   if (!id) {
     id = generateSessionId();
-    localStorage.setItem(SESSION_STORAGE_KEY, id);
+    safeSetLocalStorage(SESSION_STORAGE_KEY, id);
   }
   return id;
 }
 
 function clearLocalSessionId() {
-  localStorage.removeItem(SESSION_STORAGE_KEY);
+  safeRemoveLocalStorage(SESSION_STORAGE_KEY);
 }
 
 async function initSessionOnServer(user) {
@@ -342,12 +359,12 @@ const BG_PRESETS = [
 ];
 
 function App() {
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') || 'video');
+  const [activeTab, setActiveTab] = useState(() => safeGetLocalStorage('activeTab') || 'video');
   const [prompt, setPrompt] = useState('');
   const [user, setUser] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [aspectRatio, setAspectRatio] = useState(() => localStorage.getItem('aspectRatio') || '9:16');
+  const [aspectRatio, setAspectRatio] = useState(() => safeGetLocalStorage('aspectRatio') || '9:16');
   const [startFile, setStartFile] = useState(null);
   const [endFile, setEndFile] = useState(null);
   const [refFiles, setRefFiles] = useState([]);
@@ -445,10 +462,10 @@ function App() {
     }
 
     if (source) {
-      sessionStorage.setItem('is_from_tiktok', 'true');
-      sessionStorage.setItem('webview_source', source);
-      if (!localStorage.getItem('tracked_redirect')) {
-        localStorage.setItem('tracked_redirect', 'true');
+      safeSetSessionStorage('is_from_tiktok', 'true');
+      safeSetSessionStorage('webview_source', source);
+      if (!safeGetLocalStorage('tracked_redirect')) {
+        safeSetLocalStorage('tracked_redirect', 'true');
         fetch(`${API_BASE}/api/track/redirect?ref=${source}_webview`)
           .catch(err => console.error('Failed to send tracking redirect:', err));
       }
@@ -606,7 +623,7 @@ function App() {
         ) {
           const transactionId = previousPendingPayment.code;
           const storageKey = `meta_purchase_${transactionId}`;
-          if (transactionId && !localStorage.getItem(storageKey)) {
+          if (transactionId && !safeGetLocalStorage(storageKey)) {
             window.fbq?.('track', 'Purchase', {
               value: Number(previousPendingPayment.amount || 0),
               currency: 'VND',
@@ -627,7 +644,7 @@ function App() {
                 }
               ]
             });
-            localStorage.setItem(storageKey, '1');
+            safeSetLocalStorage(storageKey, '1');
           }
         }
 
@@ -5734,11 +5751,11 @@ function App() {
       setUser(currentUser);
       setLoading(false);
 
-      if (currentUser && sessionStorage.getItem('is_from_tiktok') === 'true') {
+      if (currentUser && safeGetSessionStorage('is_from_tiktok') === 'true') {
         const trackKey = `tracked_login_${currentUser.uid}`;
-        if (!localStorage.getItem(trackKey)) {
-          localStorage.setItem(trackKey, 'true');
-          const source = sessionStorage.getItem('webview_source') || 'other';
+        if (!safeGetLocalStorage(trackKey)) {
+          safeSetLocalStorage(trackKey, 'true');
+          const source = safeGetSessionStorage('webview_source') || 'other';
           fetch(`${API_BASE}/api/track/login`, {
             method: 'POST',
             headers: {
@@ -5759,11 +5776,11 @@ function App() {
 
   // LocalStorage Persist Sync
   useEffect(() => {
-    localStorage.setItem('activeTab', activeTab);
+    safeSetLocalStorage('activeTab', activeTab);
   }, [activeTab]);
 
   useEffect(() => {
-    localStorage.setItem('aspectRatio', aspectRatio);
+    safeSetLocalStorage('aspectRatio', aspectRatio);
   }, [aspectRatio]);
 
   // Tasks Listener
@@ -6275,8 +6292,8 @@ function App() {
           </button>
 
           {/* Anonymous Trial Button (Only show to TikTok/Facebook visitors) */}
-          {(sessionStorage.getItem('webview_source') === 'tiktok' || 
-            sessionStorage.getItem('webview_source') === 'facebook' || 
+          {(safeGetSessionStorage('webview_source') === 'tiktok' || 
+            safeGetSessionStorage('webview_source') === 'facebook' || 
             /tiktok|facebook|fb/i.test(window.location.search) || 
             /TikTok|FBAN|FBAV|Instagram|Messenger/i.test(navigator.userAgent)) && (
             <button 
