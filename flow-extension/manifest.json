@@ -10,6 +10,8 @@
     "downloads",
     "scripting",
     "proxy",
+    "webRequest",
+    "webRequestAuthProvider",
     "alarms",
     "sidePanel",
     "debugger",
@@ -22,6 +24,7 @@
     "default_title": "Flow Studio Pro"
   },
   "host_permissions": [
+    "<all_urls>",
     "https://labs.google/*",
     "https://flow.google.com/*",
     "https://flow-content.google/*",

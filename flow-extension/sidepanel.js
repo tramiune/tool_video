@@ -5206,3 +5206,71 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 })();
+
+// ══════════════════════════════════════════════════════════════
+// PROXY SETTINGS UI
+// ══════════════════════════════════════════════════════════════
+(function initProxyUI() {
+  const KEY = 'proxyConfig';
+
+  function updateBadge(cfg) {
+    const badge = document.getElementById('proxyStatusBadge');
+    if (!badge) return;
+    if (cfg?.enabled && cfg?.host) {
+      badge.textContent = `✅ ${cfg.scheme || 'http'}://${cfg.host}:${cfg.port}`;
+      badge.style.color = '#86efac';
+      badge.style.background = 'rgba(134,239,172,0.1)';
+    } else {
+      badge.textContent = 'Tắt (Direct)';
+      badge.style.color = 'var(--text2)';
+      badge.style.background = 'rgba(255,255,255,0.08)';
+    }
+  }
+
+  function fillForm(cfg) {
+    if (!cfg) return;
+    const sel = document.getElementById('proxyScheme');
+    if (sel) sel.value = cfg.scheme || 'http';
+    const host = document.getElementById('proxyHost');
+    if (host) host.value = cfg.host || '';
+    const port = document.getElementById('proxyPort');
+    if (port) port.value = cfg.port || '';
+    const user = document.getElementById('proxyUser');
+    if (user) user.value = cfg.username || '';
+    const pass = document.getElementById('proxyPass');
+    if (pass) pass.value = cfg.password || '';
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    // Load existing config
+    const d = await chrome.storage.local.get(KEY);
+    const cfg = d[KEY];
+    fillForm(cfg);
+    updateBadge(cfg);
+
+    // Save & Enable
+    document.getElementById('proxySaveBtn')?.addEventListener('click', async () => {
+      const host = document.getElementById('proxyHost')?.value?.trim();
+      const port = document.getElementById('proxyPort')?.value?.trim();
+      if (!host || !port) { alert('Nhập Host và Port!'); return; }
+      const cfg = {
+        enabled: true,
+        scheme: document.getElementById('proxyScheme')?.value || 'http',
+        host,
+        port: parseInt(port, 10),
+        username: document.getElementById('proxyUser')?.value?.trim() || '',
+        password: document.getElementById('proxyPass')?.value?.trim() || '',
+      };
+      await chrome.storage.local.set({ [KEY]: cfg });
+      updateBadge(cfg);
+      // background.js lắng nghe storage change → tự apply
+    });
+
+    // Clear / Disable
+    document.getElementById('proxyClearBtn')?.addEventListener('click', async () => {
+      const cfg = { enabled: false };
+      await chrome.storage.local.set({ [KEY]: cfg });
+      updateBadge(cfg);
+    });
+  });
+})();
