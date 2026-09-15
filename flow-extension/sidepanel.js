@@ -3480,6 +3480,8 @@ async function runMultiTabServerWorker(task, tab) {
       }).catch(e => console.error(`Lỗi gửi ${reportAction}:`, e));
     }
   } finally {
+    // Delay 5s để Flow UI reset hoàn toàn trước khi nhận task tiếp theo
+    await new Promise(r => setTimeout(r, 5000));
     // Giải phóng tab để tab này có thể nhận task tiếp theo!
     _busyMultiTabs.delete(tab.tabId);
     triggerMultiTabServerQueueProcessing();
