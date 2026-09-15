@@ -5068,20 +5068,31 @@ document.addEventListener('DOMContentLoaded', () => {
             pointerEvents:'none',
           });
 
-          // Circle
+          // Circle (nhỏ hơn, có tâm)
           const circle = document.createElement('div');
           Object.assign(circle.style, {
-            width:'44px', height:'44px', borderRadius:'50%',
-            background:'rgba(99,102,241,0.9)', border:'2.5px solid white',
-            boxShadow:'0 0 0 4px rgba(99,102,241,0.35), 0 4px 20px rgba(0,0,0,0.5)',
+            width:'24px', height:'24px', borderRadius:'50%',
+            background:'rgba(99,102,241,0.25)', border:'2px solid rgba(99,102,241,0.9)',
+            boxShadow:'0 0 0 3px rgba(99,102,241,0.25), 0 2px 12px rgba(0,0,0,0.5)',
+            position:'relative', display:'flex', alignItems:'center', justifyContent:'center',
           });
+
+          // Tâm (center dot)
+          const centerDot = document.createElement('div');
+          Object.assign(centerDot.style, {
+            width:'4px', height:'4px', borderRadius:'50%',
+            background:'white',
+            boxShadow:'0 0 3px rgba(0,0,0,0.8)',
+            pointerEvents:'none',
+          });
+          circle.appendChild(centerDot);
 
           // Save button
           const saveBtn = document.createElement('button');
           saveBtn.textContent = '💾 Lưu vị trí';
           Object.assign(saveBtn.style, {
-            position:'absolute', bottom:'-34px', left:'50%', transform:'translateX(-50%)',
-            whiteSpace:'nowrap', fontSize:'11px', padding:'3px 10px', borderRadius:'6px',
+            position:'absolute', bottom:'-30px', left:'50%', transform:'translateX(-50%)',
+            whiteSpace:'nowrap', fontSize:'10px', padding:'2px 8px', borderRadius:'6px',
             background:'#6366f1', color:'white', border:'none', cursor:'pointer',
             boxShadow:'0 2px 8px rgba(0,0,0,0.4)',
           });
@@ -5093,10 +5104,11 @@ document.addEventListener('DOMContentLoaded', () => {
           Object.assign(dot.style, {
             position: 'fixed', top: '50%', left: '50%',
             transform: 'translate(-50%,-50%)',
-            width: '44px', height: '44px',
+            width: '24px', height: '24px',
             zIndex: '2147483647', cursor: 'grab',
             userSelect: 'none',
           });
+
 
           // Drag logic
           let dragging = false, ox = 0, oy = 0;
