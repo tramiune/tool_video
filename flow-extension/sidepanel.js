@@ -5046,59 +5046,92 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Inject draggable dot into Flow tab ────────────────────────
   async function mcInjectDot(tabId) {
     _mcPickingTabId = tabId;
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'ISOLATED',
-      func: () => {
-        const DOT_ID = 'mc-dot';
-        const OLD = document.getElementById(DOT_ID);
-        if (OLD) OLD.remove();
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'ISOLATED',
+        func: () => {
+          const DOT_ID = 'mc-dot';
+          const OLD = document.getElementById(DOT_ID);
+          if (OLD) OLD.remove();
 
-        const dot = document.createElement('div');
-        dot.id = DOT_ID;
-        dot.title = 'Kéo tôi đến vị trí cần click rồi nhấn Lưu';
-        dot.innerHTML = `
-          <div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;color:white;background:rgba(0,0,0,0.7);padding:1px 5px;border-radius:4px;pointer-events:none;">Kéo tôi</div>
-          <div style="width:100%;height:100%;border-radius:50%;background:rgba(99,102,241,0.9);border:2px solid white;box-shadow:0 0 0 3px rgba(99,102,241,0.4);"></div>
-          <button id="mc-dot-save" style="position:absolute;bottom:-28px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;padding:2px 8px;border-radius:6px;background:#6366f1;color:white;border:none;cursor:pointer;">💾 Lưu</button>
-        `;
-        Object.assign(dot.style, {
-          position: 'fixed', top: '50%', left: '50%',
-          transform: 'translate(-50%,-50%)',
-          width: '40px', height: '40px',
-          zIndex: '2147483647', cursor: 'grab',
-          userSelect: 'none',
-        });
+          const dot = document.createElement('div');
+          dot.id = DOT_ID;
 
-        // Drag logic
-        let dragging = false, ox = 0, oy = 0;
-        dot.addEventListener('mousedown', e => {
-          if (e.target.id === 'mc-dot-save') return;
-          dragging = true; dot.style.cursor = 'grabbing';
-          const r = dot.getBoundingClientRect();
-          ox = e.clientX - r.left; oy = e.clientY - r.top;
-          e.preventDefault();
-        });
-        document.addEventListener('mousemove', e => {
-          if (!dragging) return;
-          dot.style.left = (e.clientX - ox + 20) + 'px';
-          dot.style.top  = (e.clientY - oy + 20) + 'px';
-          dot.style.transform = 'none';
-        });
-        document.addEventListener('mouseup', () => { dragging = false; dot.style.cursor = 'grab'; });
+          // Label
+          const label = document.createElement('div');
+          label.textContent = 'Kéo tôi';
+          Object.assign(label.style, {
+            position:'absolute', top:'-22px', left:'50%', transform:'translateX(-50%)',
+            whiteSpace:'nowrap', fontSize:'11px', color:'white',
+            background:'rgba(0,0,0,0.75)', padding:'2px 6px', borderRadius:'4px',
+            pointerEvents:'none',
+          });
 
-        // Save button → report coords back to extension
-        document.getElementById('mc-dot-save').addEventListener('click', () => {
-          const r = dot.getBoundingClientRect();
-          const cx = r.left + r.width / 2;
-          const cy = r.top  + r.height / 2;
-          chrome.runtime.sendMessage({ action: 'MC_POSITION_PICKED', x: cx, y: cy });
-          dot.remove();
-        });
+          // Circle
+          const circle = document.createElement('div');
+          Object.assign(circle.style, {
+            width:'44px', height:'44px', borderRadius:'50%',
+            background:'rgba(99,102,241,0.9)', border:'2.5px solid white',
+            boxShadow:'0 0 0 4px rgba(99,102,241,0.35), 0 4px 20px rgba(0,0,0,0.5)',
+          });
 
-        document.body.appendChild(dot);
-      }
-    });
+          // Save button
+          const saveBtn = document.createElement('button');
+          saveBtn.textContent = '💾 Lưu vị trí';
+          Object.assign(saveBtn.style, {
+            position:'absolute', bottom:'-34px', left:'50%', transform:'translateX(-50%)',
+            whiteSpace:'nowrap', fontSize:'11px', padding:'3px 10px', borderRadius:'6px',
+            background:'#6366f1', color:'white', border:'none', cursor:'pointer',
+            boxShadow:'0 2px 8px rgba(0,0,0,0.4)',
+          });
+
+          dot.appendChild(label);
+          dot.appendChild(circle);
+          dot.appendChild(saveBtn);
+
+          Object.assign(dot.style, {
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%,-50%)',
+            width: '44px', height: '44px',
+            zIndex: '2147483647', cursor: 'grab',
+            userSelect: 'none',
+          });
+
+          // Drag logic
+          let dragging = false, ox = 0, oy = 0;
+          dot.addEventListener('mousedown', e => {
+            if (e.target === saveBtn) return;
+            dragging = true; dot.style.cursor = 'grabbing';
+            const r = dot.getBoundingClientRect();
+            ox = e.clientX - r.left; oy = e.clientY - r.top;
+            e.preventDefault(); e.stopPropagation();
+          });
+          document.addEventListener('mousemove', e => {
+            if (!dragging) return;
+            dot.style.left = (e.clientX - ox + 22) + 'px';
+            dot.style.top  = (e.clientY - oy + 22) + 'px';
+            dot.style.transform = 'none';
+          });
+          document.addEventListener('mouseup', () => { dragging = false; dot.style.cursor = 'grab'; });
+
+          // Save → report coords
+          saveBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            const r = circle.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const cy = r.top  + r.height / 2;
+            chrome.runtime.sendMessage({ action: 'MC_POSITION_PICKED', x: cx, y: cy });
+            dot.remove();
+          });
+
+          document.body.appendChild(dot);
+        }
+      });
+    } catch (err) {
+      alert('Lỗi inject dot: ' + err.message);
+      console.error('[MyClick]', err);
+    }
   }
 
   // ── Listen for position picked from Flow tab ───────────────────
