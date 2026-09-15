@@ -5029,6 +5029,9 @@ document.addEventListener('DOMContentLoaded', () => {
           el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
           el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, clientX: x, clientY: y }));
           el.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+          // Focus để hiện con trỏ trong input/textarea/contenteditable
+          const focusTarget = el.closest('input, textarea, [contenteditable]') || el;
+          if (typeof focusTarget.focus === 'function') focusTarget.focus();
         }
       }
     });
