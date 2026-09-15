@@ -78,6 +78,8 @@ _extWss.on('connection', (ws) => {
   const clientId = `ext_${++_clientCounter}`;
   _extClients.set(clientId, ws);
   _clientOrder.push(clientId); // stable order for rotation slot assignment
+  ws._clientId = clientId;
+  ws._profileId = null; // filled on HELLO
   const slotMin = Math.round(ROTATION_INTERVAL_MS / 60000);
   logger.success(`[Bridge] Chrome extension connected — clientId: ${clientId} (total: ${_extClients.size}, rotation: ${slotMin}min/profile)`);
 
@@ -87,8 +89,27 @@ _extWss.on('connection', (ws) => {
 
     // Extension gửi tên profile khi mới connect
     if (msg.type === 'HELLO') {
-      const label = msg.profileId || msg.label || clientId;
-      logger.info(`[Bridge] ${clientId} identified as: ${label}`);
+      const profileId = msg.profileId || msg.label || clientId;
+      ws._profileId = profileId;
+
+      // Nếu cùng profile đã connect trước → thay slot cũ thay vì push thêm
+      let replacedOld = false;
+      for (const [oldId, oldWs] of _extClients.entries()) {
+        if (oldId === clientId) continue;
+        if (oldWs._profileId === profileId) {
+          // Thay slot cũ bằng clientId mới
+          const idx = _clientOrder.indexOf(oldId);
+          if (idx >= 0) _clientOrder.splice(idx, 1, clientId);
+          // Xoá slot push lúc connect (chưa có profileId lúc đó)
+          const newIdx = _clientOrder.lastIndexOf(clientId);
+          if (newIdx !== idx && newIdx >= 0) _clientOrder.splice(newIdx, 1);
+          _extClients.delete(oldId);
+          replacedOld = true;
+          logger.info(`[Bridge] ${clientId} replaced old slot of ${oldId} (profile: ${profileId})`);
+          break;
+        }
+      }
+      if (!replacedOld) logger.info(`[Bridge] ${clientId} identified as: ${profileId} (new slot)`);
       return;
     }
 
@@ -860,10 +881,12 @@ app.get('/api/ext-status', (req, res) => {
     totalConnected: connected.length,
     clients: connected.map((id, i) => ({
       clientId: id,
+      profileId: _extClients.get(id)?._profileId || '(chưa HELLO)',
       isActive: i === slotIndex,
       pendingTasks: pendingByClient[id] || 0,
     })),
     activeClientId,
+    activeProfileId: _extClients.get(activeClientId)?._profileId || null,
     rotationIntervalMins: slotMinutes,
     currentSlot,
     nextRotationInSecs: Math.round(nextSlotInMs / 1000),

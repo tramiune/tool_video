@@ -5978,10 +5978,27 @@ function connectToolVideoBridge() {
       _toolServerConnected = true;
       // Gửi HELLO kèm profileId để server nhận diện nick Chrome này
       try {
-        const info = await new Promise(r => chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, r));
-        _toolWs.send(JSON.stringify({ type: 'HELLO', profileId: info?.email || 'unknown' }));
+        // 1) Thử lấy email từ chrome.identity
+        let profileId = null;
+        try {
+          const info = await new Promise(r => chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, r));
+          if (info?.email) profileId = info.email;
+        } catch (_) {}
+
+        // 2) Nếu không có email → dùng stable ID lưu trong storage
+        if (!profileId) {
+          const d = await chrome.storage.local.get('_extProfileId');
+          if (d._extProfileId) {
+            profileId = d._extProfileId;
+          } else {
+            profileId = 'profile_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+            await chrome.storage.local.set({ _extProfileId: profileId });
+          }
+        }
+
+        _toolWs.send(JSON.stringify({ type: 'HELLO', profileId }));
       } catch (_) {
-        _toolWs.send(JSON.stringify({ type: 'HELLO', profileId: 'unknown' }));
+        _toolWs.send(JSON.stringify({ type: 'HELLO', profileId: 'fallback_' + Date.now() }));
       }
       chrome.runtime.sendMessage({ type: 'TOOL_SERVER_STATUS', connected: true }).catch(() => {});
     };
