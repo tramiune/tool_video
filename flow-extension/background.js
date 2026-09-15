@@ -7800,23 +7800,17 @@ async function checkCardStatus(projectId, query = "001.", promptText = "", media
           return hasErrorKeywords || (hasAlertIcon && hasTrash);
         }
 
-        // Helper trích xuất câu báo lỗi chi tiết
+        // Helper trích xuất câu báo lỗi chi tiết — lấy text thật từ card
         function getCardErrorMessage(el) {
-          const text = (el?.innerText || el?.textContent || "").trim();
-          if (text.includes("trẻ vị thành niên")) {
-            return "Vi phạm chính sách: Trẻ vị thành niên";
-          }
-          if (text.includes("vi phạm chính sách") || text.includes("chính sách")) {
-            return "Vi phạm chính sách nội dung Flow";
-          }
-          if (text.includes("gây hại")) {
-            return "Nội dung gây hại (Flow từ chối tạo)";
-          }
-          if (text.includes("Không thành công") || text.includes("không thành công")) {
-            return "Không thành công trên Flow (Có 3 nút: Thử lại, Sử dụng lại, Xoá)";
-          }
-          if (text.toLowerCase().includes("failed")) {
-            return "Flow generation failed";
+          const rawText = (el?.innerText || el?.textContent || "").trim();
+          // Lọc bỏ heading, nút bấm, biểu tượng — giữ lại câu lỗi thật
+          const skipExact = new Set(['Không thành công', 'Thử lại', 'Sử dụng lại', 'Xoá', 'Xóa', 'Retry', 'Delete', 'Use again', '△', '⚠', '⚠️']);
+          const lines = rawText
+            .split('\n')
+            .map(l => l.trim())
+            .filter(l => l.length > 4 && !skipExact.has(l));
+          if (lines.length > 0) {
+            return lines.join(' ').slice(0, 300);
           }
           return "Render không thành công trên Flow";
         }
