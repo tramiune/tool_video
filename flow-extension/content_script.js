@@ -184,4 +184,77 @@
   }, 10000);
 
   console.log("🔌 Flow Studio content script active with Keep-Alive (isolated world)");
+
+  // ── Floating circular action button ──────────────────────────────────────────
+  function injectFloatingButton() {
+    if (document.getElementById('fsp-fab')) return;
+
+    const btn = document.createElement('div');
+    btn.id = 'fsp-fab';
+    btn.innerHTML = `
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+    `;
+
+    Object.assign(btn.style, {
+      position:             'fixed',
+      bottom:               '150px',
+      left:                 '50%',
+      transform:            'translateX(-50%)',
+      zIndex:               '2147483647',
+      width:                '52px',
+      height:               '52px',
+      borderRadius:         '50%',
+      background:           'rgba(30, 30, 40, 0.82)',
+      backdropFilter:       'blur(12px)',
+      WebkitBackdropFilter: 'blur(12px)',
+      border:               '1.5px solid rgba(255,255,255,0.15)',
+      boxShadow:            '0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3)',
+      display:              'flex',
+      alignItems:           'center',
+      justifyContent:       'center',
+      cursor:               'pointer',
+      userSelect:           'none',
+      transition:           'transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease',
+      opacity:              '0.85',
+    });
+
+    btn.addEventListener('mouseenter', () => {
+      btn.style.transform = 'translateX(-50%) scale(1.1)';
+      btn.style.opacity   = '1';
+      btn.style.boxShadow = '0 6px 32px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = 'translateX(-50%) scale(1)';
+      btn.style.opacity   = '0.85';
+      btn.style.boxShadow = '0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3)';
+    });
+    btn.addEventListener('mousedown', () => {
+      btn.style.transform = 'translateX(-50%) scale(0.94)';
+    });
+    btn.addEventListener('mouseup', () => {
+      btn.style.transform = 'translateX(-50%) scale(1.1)';
+    });
+
+    btn.addEventListener('click', () => {
+      // TODO: gắn action vào đây
+      chrome.runtime.sendMessage({ action: 'FAB_CLICKED' }).catch(() => {});
+    });
+
+    document.body.appendChild(btn);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectFloatingButton);
+  } else {
+    injectFloatingButton();
+  }
+
+  // Re-inject nếu SPA navigate làm mất button
+  new MutationObserver(() => {
+    if (!document.getElementById('fsp-fab')) injectFloatingButton();
+  }).observe(document.body, { childList: true, subtree: false });
+
 })();
+
