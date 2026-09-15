@@ -4954,3 +4954,207 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 })();
+
+// ══════════════════════════════════════════════════════════════
+// MY CLICK — Event recorder & trigger
+// ══════════════════════════════════════════════════════════════
+(function initMyClick() {
+  const STORAGE_KEY = 'myClickEvents';
+  let _mcEvents = [];      // [{ id, name, x, y, tabId? }]
+  let _mcPickingTabId = null; // tab đang inject chấm
+
+  // ── Load / Save ──────────────────────────────────────────────
+  async function mcLoad() {
+    const d = await chrome.storage.local.get(STORAGE_KEY);
+    _mcEvents = Array.isArray(d[STORAGE_KEY]) ? d[STORAGE_KEY] : [];
+  }
+  async function mcSave() {
+    await chrome.storage.local.set({ [STORAGE_KEY]: _mcEvents });
+  }
+
+  // ── Render event list ─────────────────────────────────────────
+  function mcRender() {
+    const list = document.getElementById('mcEventList');
+    if (!list) return;
+    if (_mcEvents.length === 0) {
+      list.innerHTML = '<div style="font-size:11px; color:var(--text2); text-align:center; padding:20px 0;">Chưa có sự kiện nào. Bấm + Thêm để tạo.</div>';
+      return;
+    }
+    list.innerHTML = _mcEvents.map((ev, i) => `
+      <div style="background:var(--surface2); border:1px solid rgba(99,102,241,0.2); border-radius:8px; padding:9px 10px; display:flex; flex-direction:column; gap:5px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-size:12px; font-weight:bold; color:#a5b4fc;">${ev.name}</div>
+          <div style="display:flex; gap:5px;">
+            <button class="mcTrigger" data-idx="${i}"
+              style="font-size:10px; padding:2px 8px; border-radius:6px; background:rgba(99,102,241,0.3); color:#818cf8; border:1px solid rgba(99,102,241,0.5); cursor:pointer;">▶ Trigger</button>
+            <button class="mcDelete" data-idx="${i}"
+              style="font-size:10px; padding:2px 6px; border-radius:6px; background:rgba(248,113,113,0.1); color:#f87171; border:1px solid rgba(248,113,113,0.3); cursor:pointer;">🗑</button>
+          </div>
+        </div>
+        <div style="font-size:10px; color:var(--text2);">
+          📍 x: <b style="color:white">${Math.round(ev.x)}</b> &nbsp; y: <b style="color:white">${Math.round(ev.y)}</b>
+          ${ev.tabId ? `&nbsp;·&nbsp; Tab <b style="color:white">${ev.tabId}</b>` : ''}
+        </div>
+      </div>
+    `).join('');
+
+    list.querySelectorAll('.mcTrigger').forEach(btn => {
+      btn.addEventListener('click', () => mcTrigger(_mcEvents[parseInt(btn.dataset.idx)]));
+    });
+    list.querySelectorAll('.mcDelete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        _mcEvents.splice(parseInt(btn.dataset.idx), 1);
+        await mcSave(); mcRender();
+      });
+    });
+  }
+
+  // ── Trigger: click at saved coords in the saved tab ───────────
+  async function mcTrigger(ev) {
+    if (!ev) return;
+    // Find a suitable tab (saved tabId or first Flow tab)
+    let tabId = ev.tabId;
+    if (!tabId) {
+      const tabs = await chrome.tabs.query({ url: ['https://flow.google.com/*', 'https://labs.google/*'] });
+      if (tabs.length > 0) tabId = tabs[0].id;
+    }
+    if (!tabId) { alert('Không tìm thấy tab Flow để trigger!'); return; }
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      args: [ev.x, ev.y],
+      func: (x, y) => {
+        const el = document.elementFromPoint(x, y);
+        if (el) {
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+          el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+          el.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        }
+      }
+    });
+  }
+
+  // ── Populate tab select ────────────────────────────────────────
+  async function mcPopulateTabs() {
+    const sel = document.getElementById('mcTabSelect');
+    if (!sel) return;
+    const tabs = await chrome.tabs.query({ url: ['https://flow.google.com/*', 'https://labs.google/*'] });
+    sel.innerHTML = '<option value="">-- chọn tab --</option>' +
+      tabs.map(t => `<option value="${t.id}">${t.id} — ${t.title?.slice(0, 40) || t.url?.slice(0, 40)}</option>`).join('');
+  }
+
+  // ── Inject draggable dot into Flow tab ────────────────────────
+  async function mcInjectDot(tabId) {
+    _mcPickingTabId = tabId;
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: () => {
+        const DOT_ID = 'mc-dot';
+        const OLD = document.getElementById(DOT_ID);
+        if (OLD) OLD.remove();
+
+        const dot = document.createElement('div');
+        dot.id = DOT_ID;
+        dot.title = 'Kéo tôi đến vị trí cần click rồi nhấn Lưu';
+        dot.innerHTML = `
+          <div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;color:white;background:rgba(0,0,0,0.7);padding:1px 5px;border-radius:4px;pointer-events:none;">Kéo tôi</div>
+          <div style="width:100%;height:100%;border-radius:50%;background:rgba(99,102,241,0.9);border:2px solid white;box-shadow:0 0 0 3px rgba(99,102,241,0.4);"></div>
+          <button id="mc-dot-save" style="position:absolute;bottom:-28px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;padding:2px 8px;border-radius:6px;background:#6366f1;color:white;border:none;cursor:pointer;">💾 Lưu</button>
+        `;
+        Object.assign(dot.style, {
+          position: 'fixed', top: '50%', left: '50%',
+          transform: 'translate(-50%,-50%)',
+          width: '40px', height: '40px',
+          zIndex: '2147483647', cursor: 'grab',
+          userSelect: 'none',
+        });
+
+        // Drag logic
+        let dragging = false, ox = 0, oy = 0;
+        dot.addEventListener('mousedown', e => {
+          if (e.target.id === 'mc-dot-save') return;
+          dragging = true; dot.style.cursor = 'grabbing';
+          const r = dot.getBoundingClientRect();
+          ox = e.clientX - r.left; oy = e.clientY - r.top;
+          e.preventDefault();
+        });
+        document.addEventListener('mousemove', e => {
+          if (!dragging) return;
+          dot.style.left = (e.clientX - ox + 20) + 'px';
+          dot.style.top  = (e.clientY - oy + 20) + 'px';
+          dot.style.transform = 'none';
+        });
+        document.addEventListener('mouseup', () => { dragging = false; dot.style.cursor = 'grab'; });
+
+        // Save button → report coords back to extension
+        document.getElementById('mc-dot-save').addEventListener('click', () => {
+          const r = dot.getBoundingClientRect();
+          const cx = r.left + r.width / 2;
+          const cy = r.top  + r.height / 2;
+          chrome.runtime.sendMessage({ action: 'MC_POSITION_PICKED', x: cx, y: cy });
+          dot.remove();
+        });
+
+        document.body.appendChild(dot);
+      }
+    });
+  }
+
+  // ── Listen for position picked from Flow tab ───────────────────
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action !== 'MC_POSITION_PICKED') return;
+    const coords = document.getElementById('mcPickedCoords');
+    const txt    = document.getElementById('mcCoordsText');
+    if (coords && txt) {
+      coords.style.display = 'block';
+      txt.textContent = `x=${Math.round(msg.x)}, y=${Math.round(msg.y)}`;
+    }
+    // Store temporarily on the form
+    document._mcTempX = msg.x;
+    document._mcTempY = msg.y;
+    document._mcTempTabId = _mcPickingTabId;
+  });
+
+  // ── Init UI once panel is ready ────────────────────────────────
+  document.addEventListener('DOMContentLoaded', async () => {
+    await mcLoad();
+    mcRender();
+
+    // + Thêm
+    document.getElementById('mcBtnAdd')?.addEventListener('click', async () => {
+      await mcPopulateTabs();
+      const form = document.getElementById('mcCreateForm');
+      if (form) { form.style.display = 'flex'; document.getElementById('mcEventName')?.focus(); }
+      document._mcTempX = null; document._mcTempY = null;
+      const coords = document.getElementById('mcPickedCoords');
+      if (coords) coords.style.display = 'none';
+    });
+
+    // Huỷ
+    document.getElementById('mcBtnCancel')?.addEventListener('click', () => {
+      const form = document.getElementById('mcCreateForm');
+      if (form) form.style.display = 'none';
+    });
+
+    // Kéo chấm
+    document.getElementById('mcBtnPickPos')?.addEventListener('click', async () => {
+      const tabId = parseInt(document.getElementById('mcTabSelect')?.value || '0');
+      if (!tabId) { alert('Chọn tab Flow trước!'); return; }
+      await mcInjectDot(tabId);
+    });
+
+    // Lưu
+    document.getElementById('mcBtnSave')?.addEventListener('click', async () => {
+      const name = document.getElementById('mcEventName')?.value?.trim();
+      if (!name) { alert('Nhập tên sự kiện!'); return; }
+      if (document._mcTempX == null) { alert('Chưa chọn vị trí! Kéo chấm rồi bấm Lưu trong tab Flow trước.'); return; }
+      _mcEvents.push({ id: Date.now(), name, x: document._mcTempX, y: document._mcTempY, tabId: document._mcTempTabId });
+      await mcSave();
+      mcRender();
+      const form = document.getElementById('mcCreateForm');
+      if (form) form.style.display = 'none';
+      document.getElementById('mcEventName').value = '';
+    });
+  });
+})();

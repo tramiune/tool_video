@@ -130,6 +130,7 @@
   <div class="tab" data-tab="click-ui-image" style="display:none">🖼️ Auto Click Ảnh</div>
   <div class="tab active" data-tab="test-steps" style="background: rgba(255, 153, 0, 0.12); color: #FF9900; border: 1px solid rgba(255, 153, 0, 0.35);">🛠️ Test Từng Bước</div>
   <div class="tab" data-tab="multi-tab" style="background: linear-gradient(135deg, #e91e63, #ff9800); color:white; border-color:transparent;">🌐 Đa Tab</div>
+  <div class="tab" data-tab="my-click" style="background: rgba(99,102,241,0.15); color:#818cf8; border: 1px solid rgba(99,102,241,0.4);">🖱️ My Click</div>
   <div class="tab" data-tab="library" style="display:none">📚 Thư Viện</div>
 </div>
 
@@ -952,6 +953,46 @@ A cyberpunk street with neon signs and flying cars in the rain"></textarea>
   </div>
   <div id="liveLogList" style="max-height:130px; min-height:55px; overflow-y:auto; font-family:monospace; font-size:11px; display:flex; flex-direction:column; gap:4px; background:#05070a; border-radius:6px; padding:6px 8px; border:1px solid rgba(255,255,255,0.08); color:#cbd5e1; scroll-behavior:smooth;">
     <div style="color:var(--text2); font-style:italic;">Đang chờ lệnh tạo video từ bạn hoặc từ tool_video...</div>
+  </div>
+</div>
+
+<!-- TAB: MY CLICK -->
+<div class="panel" id="panel-my-click">
+  <div style="padding:12px; display:flex; flex-direction:column; gap:12px;">
+
+    <!-- Header + Add button -->
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div style="font-weight:bold; font-size:13px; color:#818cf8;">🖱️ My Click Events</div>
+      <button id="mcBtnAdd" style="font-size:11px; padding:4px 10px; border-radius:8px; background:rgba(99,102,241,0.2); color:#818cf8; border:1px solid rgba(99,102,241,0.4); cursor:pointer;">+ Thêm</button>
+    </div>
+
+    <!-- Create form (hidden by default) -->
+    <div id="mcCreateForm" style="display:none; background:var(--surface2); border:1px solid rgba(99,102,241,0.3); border-radius:8px; padding:10px; flex-direction:column; gap:8px;">
+      <div style="font-size:11px; color:var(--text2);">Tên sự kiện</div>
+      <input id="mcEventName" type="text" placeholder="vd: click_submit, tap_menu..." maxlength="60"
+        style="width:100%; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:var(--bg); color:white; font-size:12px; outline:none;"/>
+      <div style="font-size:11px; color:var(--text2); margin-top:2px;">Chọn tab Flow để kéo chấm</div>
+      <select id="mcTabSelect"
+        style="width:100%; box-sizing:border-box; padding:5px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:var(--bg); color:white; font-size:11px; outline:none;">
+        <option value="">-- chọn tab --</option>
+      </select>
+      <button id="mcBtnPickPos" style="padding:6px; border-radius:6px; background:rgba(99,102,241,0.25); color:#818cf8; border:1px solid rgba(99,102,241,0.4); font-size:11px; cursor:pointer; font-weight:bold;">
+        ⭕ Kéo chấm để chọn vị trí
+      </button>
+      <div id="mcPickedCoords" style="font-size:10px; color:var(--text2); display:none;">
+        📍 Đã chọn: <span id="mcCoordsText"></span>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button id="mcBtnSave" style="flex:1; padding:6px; border-radius:6px; background:rgba(99,102,241,0.4); color:white; border:1px solid rgba(99,102,241,0.6); font-size:11px; cursor:pointer; font-weight:bold;">💾 Lưu</button>
+        <button id="mcBtnCancel" style="padding:6px 10px; border-radius:6px; background:rgba(255,255,255,0.05); color:var(--text2); border:1px solid rgba(255,255,255,0.1); font-size:11px; cursor:pointer;">Huỷ</button>
+      </div>
+    </div>
+
+    <!-- Event list -->
+    <div id="mcEventList" style="display:flex; flex-direction:column; gap:8px;">
+      <div style="font-size:11px; color:var(--text2); text-align:center; padding:20px 0;">Chưa có sự kiện nào. Bấm + Thêm để tạo.</div>
+    </div>
+
   </div>
 </div>
 
