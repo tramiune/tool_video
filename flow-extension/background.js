@@ -1925,11 +1925,15 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
   logToBridge(`[MultiTab] Tab ${tab.id}: "${prompt.slice(0, 40)}..." (Ratio: ${aspectRatio}, start: ${!!startImageDataUrl}, end: ${!!endImageDataUrl})`);
 
   try {
+    // Load My Click events for coordinate-based clicking (fallback to selector-based if not defined)
+    const _mcStore = await chrome.storage.local.get('myClickEvents');
+    const myClickEvents = Array.isArray(_mcStore.myClickEvents) ? _mcStore.myClickEvents : [];
+
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: "ISOLATED",
-      args: [prompt, aspectRatio, startImageDataUrl, endImageDataUrl],
-      func: async (promptText, targetRatio, startImgUrl, endImgUrl) => {
+      args: [prompt, aspectRatio, startImageDataUrl, endImageDataUrl, myClickEvents],
+      func: async (promptText, targetRatio, startImgUrl, endImgUrl, mcEvents) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         const queryDeep = (selector) => {
@@ -2017,6 +2021,20 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           dt.items.add(file);
           const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
           editor.dispatchEvent(evt);
+        };
+
+        // ── My Click helpers (coordinate-based) ──────────────────
+        const mcEv = (name) => (mcEvents || []).find(e => e.name === name);
+        const mcClickAt = (x, y) => {
+          const el = document.elementFromPoint(x, y);
+          if (!el) return false;
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+          el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+          el.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+          if (typeof el.click === 'function') el.click();
+          const ft = el.closest('input, textarea, [contenteditable]');
+          if (ft && typeof ft.focus === 'function') ft.focus();
+          return true;
         };
 
         // ── STEP 1: Tìm Slate Editor & Submit Button ──
@@ -2254,8 +2272,8 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
 
         // ── STEP 2: Ctrl+V paste start frame (nếu có) ──
         let pastedStart = false, pastedEnd = false;
-        editor.focus();
-        await sleep(300);
+        // ── STEP 2: focus editor → paste start/end frame ──
+        { const ev = mcEv('focus'); if (ev) { mcClickAt(ev.x, ev.y); await sleep(300); } else { editor.focus(); await sleep(300); } }
 
         if (startImgUrl) {
           try { await pasteImage(editor, startImgUrl, 'start_frame'); pastedStart = true; } catch (e) { console.warn('[MultiTab] Start paste err:', e); }
@@ -2269,8 +2287,7 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
         }
 
         // ── STEP 3: Gõ prompt ──
-        editor.focus();
-        await sleep(200);
+        { const ev = mcEv('focus'); if (ev) { mcClickAt(ev.x, ev.y); await sleep(200); } else { editor.focus(); await sleep(200); } }
         const sel = window.getSelection();
         if (sel && editor.childNodes.length > 0) {
           const range = document.createRange();
@@ -2338,7 +2355,20 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
         };
 
         if (targetRatio) {
-          const opened = await ensurePopoverOpen();
+          // ── My Click: open_config ──────────────────────────────
+          const ocEv = mcEv('open_config');
+          let opened = false;
+          if (ocEv) {
+            if (!isPopoverOpen()) {
+              mcClickAt(ocEv.x, ocEv.y);
+              await sleep(600);
+              if (!isPopoverOpen()) { mcClickAt(ocEv.x, ocEv.y); await sleep(600); }
+            }
+            opened = isPopoverOpen();
+          } else {
+            opened = await ensurePopoverOpen();
+          }
+
           if (opened) {
             await sleep(600); // Đợi popover render các options
 
@@ -2348,42 +2378,35 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
               const isActive = vTab.getAttribute("data-state") === "active" || 
                                vTab.getAttribute("aria-selected") === "true" ||
                                vTab.classList.contains("active");
-              if (!isActive) {
-                triggerClick(vTab);
-                await sleep(400);
-              }
+              if (!isActive) { triggerClick(vTab); await sleep(400); }
             }
 
-            const ratioBtn = findRatioButton(targetRatio);
-            if (ratioBtn) {
-              clickedDetail = `<${ratioBtn.tagName.toLowerCase()} role="${ratioBtn.getAttribute('role')||''}"> "${(ratioBtn.textContent||'').trim()}"`;
-              
-              // 1. Dispatch đầy đủ chuỗi pointer + mouse events (cho Angular/Lit Web Components)
-              triggerClick(ratioBtn);
-              await sleep(200);
-
-              // 2. Click native nếu có
-              try { ratioBtn.click(); } catch (_) {}
-              await sleep(200);
-
-              // 3. Nếu bên trong có span, dispatch cả span con
-              const innerSpan = ratioBtn.querySelector("span, div");
-              if (innerSpan) {
-                try { triggerClick(innerSpan); } catch (_) {}
-              }
-
+            // ── My Click: ratio ────────────────────────────────────
+            const ratioEvName = targetRatio === '16:9' ? 'video_16:9' : 'video_9:16';
+            const ratioEv = mcEv(ratioEvName);
+            if (ratioEv) {
+              mcClickAt(ratioEv.x, ratioEv.y);
               clickedRatio = true;
-              await sleep(500); // Chờ UI cập nhật giá trị
+              clickedDetail = `MyClick(${Math.round(ratioEv.x)},${Math.round(ratioEv.y)})`;
+              await sleep(500);
+            } else {
+              const ratioBtn = findRatioButton(targetRatio);
+              if (ratioBtn) {
+                clickedDetail = `<${ratioBtn.tagName.toLowerCase()} role="${ratioBtn.getAttribute('role')||''}"> "${(ratioBtn.textContent||'').trim()}"`;
+                triggerClick(ratioBtn);
+                await sleep(200);
+                try { ratioBtn.click(); } catch (_) {}
+                await sleep(200);
+                const innerSpan = ratioBtn.querySelector("span, div");
+                if (innerSpan) { try { triggerClick(innerSpan); } catch (_) {} }
+                clickedRatio = true;
+                await sleep(500);
+              }
             }
 
-            // Đóng popover bằng outside-click vào editor (chuẩn của Flow, không làm revert thiết lập)
-            try {
-              editor.click();
-              editor.focus();
-            } catch (_) {}
+            // Đóng popover bằng outside-click vào editor
+            try { editor.click(); editor.focus(); } catch (_) {}
             await sleep(300);
-
-            // Nếu popover vẫn còn mở sau khi click editor, mới dùng phím Escape
             if (isPopoverOpen()) {
               window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
               document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
@@ -2397,30 +2420,33 @@ async function createVideoMultiTab(prompt, tabId, aspectRatio = '9:16', startIma
           await sleep(15000);
         }
 
-        // ── STEP 6: Click Submit (y như testUiStep Step 3) ──
-        if (!submitBtn) {
-          submitBtn = queryDeep("button, [role='button']").find(b => {
-            if (!isElemVisible(b)) return false;
-            const inner = (b.innerHTML || "").toLowerCase();
-            const t = (b.textContent || "").trim().toLowerCase();
-            const aria = (b.getAttribute("aria-label") || "").toLowerCase();
-            if (b.getAttribute("type") === "submit") return true;
-            // Exact aria match — avoid matching "Thành phần tạo hình ảnh"
-          if (b.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']")) return false;
-          const btnText = (b.innerText || b.textContent || "").trim().toLowerCase();
-          if (btnText === "cancel" || btnText === "hủy") return false;
-          if (aria === "bắt đầu tạo" || aria === "tạo" || aria === "generate" || aria === "send" || aria === "submit" || aria === "gửi" || aria === "bắt đầu") return true;
-            return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
-                   Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
-          });
+        // ── STEP 6: Click Submit ──────────────────────────────────
+        const submitEv = mcEv('submit');
+        if (submitEv) {
+          mcClickAt(submitEv.x, submitEv.y);
+        } else {
+          if (!submitBtn) {
+            submitBtn = queryDeep("button, [role='button']").find(b => {
+              if (!isElemVisible(b)) return false;
+              const inner = (b.innerHTML || "").toLowerCase();
+              const t = (b.textContent || "").trim().toLowerCase();
+              const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+              if (b.getAttribute("type") === "submit") return true;
+              if (b.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']")) return false;
+              const btnText = (b.innerText || b.textContent || "").trim().toLowerCase();
+              if (btnText === "cancel" || btnText === "hủy") return false;
+              if (aria === "bắt đầu tạo" || aria === "tạo" || aria === "generate" || aria === "send" || aria === "submit" || aria === "gửi" || aria === "bắt đầu") return true;
+              return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                     Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
+            });
+          }
+          if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
+          submitBtn.removeAttribute("disabled");
+          submitBtn.setAttribute("aria-disabled", "false");
+          submitBtn.style.pointerEvents = "auto";
+          submitBtn.style.opacity = "1";
+          triggerClick(submitBtn);
         }
-        if (!submitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
-
-        submitBtn.removeAttribute("disabled");
-        submitBtn.setAttribute("aria-disabled", "false");
-        submitBtn.style.pointerEvents = "auto";
-        submitBtn.style.opacity = "1";
-        triggerClick(submitBtn);
         await sleep(500);
 
         const frames = [pastedStart && 'start', pastedEnd && 'end'].filter(Boolean).join('+');
