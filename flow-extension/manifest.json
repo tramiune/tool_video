@@ -12,7 +12,8 @@
     "proxy",
     "alarms",
     "sidePanel",
-    "debugger"
+    "debugger",
+    "identity"
   ],
   "side_panel": {
     "default_path": "sidepanel.html"

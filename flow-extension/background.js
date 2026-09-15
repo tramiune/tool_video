@@ -5924,7 +5924,13 @@ function connectToolVideoBridge() {
     _toolWs.onopen = async () => {
       console.log('[Tool Video Bridge] Connected to tool_video server on port 7788');
       _toolServerConnected = true;
-      _toolWs.send(JSON.stringify({ type: 'EXTENSION_HELLO' }));
+      // Gửi HELLO kèm profileId để server nhận diện nick Chrome này
+      try {
+        const info = await new Promise(r => chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, r));
+        _toolWs.send(JSON.stringify({ type: 'HELLO', profileId: info?.email || 'unknown' }));
+      } catch (_) {
+        _toolWs.send(JSON.stringify({ type: 'HELLO', profileId: 'unknown' }));
+      }
       chrome.runtime.sendMessage({ type: 'TOOL_SERVER_STATUS', connected: true }).catch(() => {});
     };
 

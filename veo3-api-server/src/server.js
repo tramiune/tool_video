@@ -38,19 +38,45 @@ const io = new SocketIOServer(server, {
 const { WebSocketServer } = require('ws');
 const EXTENSION_WS_PORT = parseInt(process.env.EXTENSION_WS_PORT || '7788', 10);
 const _extWss = new WebSocketServer({ port: EXTENSION_WS_PORT });
-let _extSocket = null; // chỉ giữ 1 kết nối extension tại 1 thời điểm
-const _extPending = new Map(); // id → { resolve, reject, timer }
+
+// Multi-profile support: Map<clientId, ws>
+const _extClients = new Map();
+let _clientCounter = 0;
+const _extPending = new Map(); // id → { resolve, reject, timer, clientId }
+
+// Pick the connected client with fewest in-flight pending tasks (least-loaded)
+function pickBestClient() {
+  const pendingCount = new Map();
+  for (const { clientId } of _extPending.values()) {
+    pendingCount.set(clientId, (pendingCount.get(clientId) || 0) + 1);
+  }
+  let best = null, bestLoad = Infinity;
+  for (const [clientId, ws] of _extClients) {
+    if (ws.readyState !== 1) continue; // skip disconnected
+    const load = pendingCount.get(clientId) || 0;
+    if (load < bestLoad) { bestLoad = load; best = { clientId, ws }; }
+  }
+  return best;
+}
 
 _extWss.on('connection', (ws) => {
-  _extSocket = ws;
-  logger.success(`[Bridge] Chrome extension connected on port ${EXTENSION_WS_PORT}`);
+  const clientId = `ext_${++_clientCounter}`;
+  _extClients.set(clientId, ws);
+  logger.success(`[Bridge] Chrome extension connected — clientId: ${clientId} (total: ${_extClients.size})`);
 
   ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
+    // Extension gửi tên profile khi mới connect
+    if (msg.type === 'HELLO') {
+      const label = msg.profileId || msg.label || clientId;
+      logger.info(`[Bridge] ${clientId} identified as: ${label}`);
+      return;
+    }
+
     if (msg.type === 'BRIDGE_LOG' && msg.message) {
-      logger.info(`[Extension Bridge] ${msg.message}`);
+      logger.info(`[Extension Bridge:${clientId}] ${msg.message}`);
       return;
     }
 
@@ -95,10 +121,9 @@ _extWss.on('connection', (ws) => {
         _extPending.delete(msg.id);
         pending.reject(new Error(`Timeout sau khi submit (${isImage ? '10 phút' : '11 phút'})`));
       }, newTimeoutMs);
-      logger.info(`[Bridge] TASK_STARTED ${msg.id} → reset timeout ${newTimeoutMs / 1000}s`);
+      logger.info(`[Bridge:${clientId}] TASK_STARTED ${msg.id} → reset timeout ${newTimeoutMs / 1000}s`);
       return;
     }
-
 
     if ((msg.type === 'TASK_RESULT' || msg.type === 'IMAGE_RESULT' || msg.type === 'VIDEO_RESULT') && _extPending.has(msg.id)) {
       const { resolve, reject, timer } = _extPending.get(msg.id);
@@ -171,11 +196,7 @@ _extWss.on('connection', (ws) => {
         }
 
         if (buffer && buffer.length > 0) {
-          resolve({
-            buffer,
-            mediaId: msg.mediaId,
-            downloadUrl: msg.downloadUrl
-          });
+          resolve({ buffer, mediaId: msg.mediaId, downloadUrl: msg.downloadUrl });
         } else {
           reject(new Error(msg.error || 'Video buffer rỗng hoặc không thể đọc file'));
         }
@@ -186,17 +207,20 @@ _extWss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    if (_extSocket === ws) _extSocket = null;
-    logger.warn('[Bridge] Chrome extension disconnected');
-    // Reject all pending tasks when connection is lost
+    _extClients.delete(clientId);
+    logger.warn(`[Bridge] Chrome extension ${clientId} disconnected (remaining: ${_extClients.size})`);
+    // Chỉ reject pending tasks của client này — client khác không bị ảnh hưởng
     for (const [id, pending] of _extPending.entries()) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error('Extension disconnected during generation'));
-      _extPending.delete(id);
+      if (pending.clientId === clientId) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error(`Extension ${clientId} disconnected during generation`));
+        _extPending.delete(id);
+      }
     }
   });
   ws.on('error', () => {});
 });
+
 
 async function imageInputToBase64(imgInput) {
   if (!imgInput) return null;
@@ -227,10 +251,18 @@ async function imageInputToBase64(imgInput) {
 }
 
 const extensionBridge = {
-  get connected() { return _extSocket && _extSocket.readyState === 1; },
+  get connected() {
+    for (const ws of _extClients.values()) {
+      if (ws.readyState === 1) return true;
+    }
+    return false;
+  },
+
+  get clientCount() { return _extClients.size; },
 
   async generateVideo(task, timeoutMs = 660000) {
-    if (!this.connected) return Promise.reject(new Error('Flow Extension chưa kết nối'));
+    const client = pickBestClient();
+    if (!client) return Promise.reject(new Error('Flow Extension chưa kết nối'));
     const id = task.id || `vid_${Date.now()}`;
     const startImgB64 = await imageInputToBase64(task.startImage || task.referenceImages?.[0] || null);
     const endImgB64 = await imageInputToBase64(task.endImage || task.referenceImages?.[1] || null);
@@ -239,8 +271,9 @@ const extensionBridge = {
         _extPending.delete(id);
         reject(new Error('Extension video generation timeout (10 phút)'));
       }, timeoutMs);
-      _extPending.set(id, { resolve, reject, timer });
-      _extSocket.send(JSON.stringify({
+      _extPending.set(id, { resolve, reject, timer, clientId: client.clientId });
+      logger.info(`[Bridge] Route vid task ${id} → ${client.clientId}`);
+      client.ws.send(JSON.stringify({
         type: 'TASK_GENERATE_VIDEO',
         id,
         projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
@@ -255,16 +288,17 @@ const extensionBridge = {
   },
 
   async generateImage(task, timeoutMs = 600000) {
-    if (!this.connected) return Promise.reject(new Error('Flow Extension chưa kết nối'));
+    const client = pickBestClient();
+    if (!client) return Promise.reject(new Error('Flow Extension chưa kết nối'));
     const id = task.id || `img_${Date.now()}`;
-    
+
     let rawRefs = [];
     if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
       rawRefs = task.referenceImages;
     } else if (task.referenceImage) {
       rawRefs = [task.referenceImage];
     }
-    
+
     const refBase64Array = [];
     for (const raw of rawRefs) {
       if (raw) {
@@ -278,8 +312,9 @@ const extensionBridge = {
         _extPending.delete(id);
         reject(new Error('Extension image generation timeout (2 phút)'));
       }, timeoutMs);
-      _extPending.set(id, { resolve, reject, timer });
-      _extSocket.send(JSON.stringify({
+      _extPending.set(id, { resolve, reject, timer, clientId: client.clientId });
+      logger.info(`[Bridge] Route img task ${id} → ${client.clientId}`);
+      client.ws.send(JSON.stringify({
         type: 'TASK_GENERATE_IMAGE',
         id,
         projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
@@ -301,10 +336,10 @@ const extensionBridge = {
       const pending = _extPending.get(id);
       clearTimeout(pending.timer);
       _extPending.delete(id);
-      if (this.connected) {
-        try {
-          _extSocket.send(JSON.stringify({ type: 'TASK_CANCEL', id }));
-        } catch (_) {}
+      // Send cancel to the specific client that owns this task
+      const ws = _extClients.get(pending.clientId);
+      if (ws && ws.readyState === 1) {
+        try { ws.send(JSON.stringify({ type: 'TASK_CANCEL', id })); } catch (_) {}
       }
       pending.reject(new Error(reason));
       return true;
@@ -313,41 +348,44 @@ const extensionBridge = {
   },
 
   getToken(timeoutMs = 10000) {
-    if (!this.connected) return Promise.reject(new Error('Extension bridge not connected'));
+    const client = pickBestClient();
+    if (!client) return Promise.reject(new Error('Extension bridge not connected'));
     const id = `tok_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         _extPending.delete(id);
         reject(new Error('Extension bridge token timeout'));
       }, timeoutMs);
-      _extPending.set(id, { resolve, reject, timer });
-      _extSocket.send(JSON.stringify({ type: 'GET_TOKEN', id }));
+      _extPending.set(id, { resolve, reject, timer, clientId: client.clientId });
+      client.ws.send(JSON.stringify({ type: 'GET_TOKEN', id }));
     });
   },
 
   solveCaptcha(action = 'IMAGE_GENERATION', timeoutMs = 25000) {
-    if (!this.connected) return Promise.reject(new Error('Extension bridge not connected'));
+    const client = pickBestClient();
+    if (!client) return Promise.reject(new Error('Extension bridge not connected'));
     const id = `cap_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         _extPending.delete(id);
         reject(new Error('Extension bridge captcha timeout'));
       }, timeoutMs);
-      _extPending.set(id, { resolve, reject, timer });
-      _extSocket.send(JSON.stringify({ type: 'SOLVE_CAPTCHA', id, action }));
+      _extPending.set(id, { resolve, reject, timer, clientId: client.clientId });
+      client.ws.send(JSON.stringify({ type: 'SOLVE_CAPTCHA', id, action }));
     });
   },
 
   downloadImage(mediaId, prompt = '', targetUrl = null, timeoutMs = 30000) {
-    if (!this.connected) return Promise.reject(new Error('Extension bridge not connected'));
+    const client = pickBestClient();
+    if (!client) return Promise.reject(new Error('Extension bridge not connected'));
     const id = `img_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         _extPending.delete(id);
         reject(new Error('Extension bridge timeout'));
       }, timeoutMs);
-      _extPending.set(id, { resolve, reject, timer });
-      _extSocket.send(JSON.stringify({ type: 'DOWNLOAD_IMAGE', id, mediaId, prompt, targetUrl }));
+      _extPending.set(id, { resolve, reject, timer, clientId: client.clientId });
+      client.ws.send(JSON.stringify({ type: 'DOWNLOAD_IMAGE', id, mediaId, prompt, targetUrl }));
     });
   }
 };
