@@ -2993,10 +2993,17 @@ async function refreshMultiTabList() {
               Tab ${i + 1}
               <span style="font-size:9px; color:var(--text2); background:var(--bg); padding:1px 5px; border-radius:4px;">ID: ${entry.tabId}</span>
             </div>
-            <button class="btn btn-sm btnToggleRole" data-tab-id="${entry.tabId}" data-current-role="${entry.role}"
-              style="font-size:10px; font-weight:bold; color:${roleColor}; background:${roleBg}; border:1px solid ${roleColor}; padding:2px 8px; border-radius:12px; cursor:pointer; transition: all 0.2s;">
-              ${roleLabel}
-            </button>
+            <div style="display:flex; gap:5px; align-items:center;">
+              <button class="btn btn-sm btnDrawCircle" data-tab-id="${entry.tabId}"
+                title="Vẽ hình tròn trong tab này"
+                style="font-size:10px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:0; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2); cursor:pointer; color:white; transition:all 0.15s;">
+                ⭕
+              </button>
+              <button class="btn btn-sm btnToggleRole" data-tab-id="${entry.tabId}" data-current-role="${entry.role}"
+                style="font-size:10px; font-weight:bold; color:${roleColor}; background:${roleBg}; border:1px solid ${roleColor}; padding:2px 8px; border-radius:12px; cursor:pointer; transition: all 0.2s;">
+                ${roleLabel}
+              </button>
+            </div>
           </div>
           <div style="font-size:10px; color:var(--text2); display:flex; gap:6px; flex-wrap:wrap;">
             <span style="background:var(--bg); padding:2px 6px; border-radius:4px; color:var(--accent2);">Project: ${projShort}</span>
@@ -3029,6 +3036,50 @@ async function refreshMultiTabList() {
 
         // Re-render
         refreshMultiTabList();
+      });
+    });
+
+    // Bind draw-circle buttons
+    container.querySelectorAll('.btnDrawCircle').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tabId = parseInt(btn.dataset.tabId);
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'ISOLATED',
+            func: () => {
+              const CIRCLE_ID = 'fsp-fab';
+              // Toggle: nếu đã có thì xóa
+              const existing = document.getElementById(CIRCLE_ID);
+              if (existing) { existing.remove(); return; }
+
+              const el = document.createElement('div');
+              el.id = CIRCLE_ID;
+              el.innerHTML = `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+              Object.assign(el.style, {
+                position: 'fixed', bottom: '150px', left: '50%',
+                transform: 'translateX(-50%)', zIndex: '2147483647',
+                width: '52px', height: '52px', borderRadius: '50%',
+                background: 'rgba(30,30,40,0.82)', backdropFilter: 'blur(12px)',
+                border: '1.5px solid rgba(255,255,255,0.15)',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', userSelect: 'none', opacity: '0.85',
+                transition: 'transform 0.15s ease, opacity 0.15s ease',
+              });
+              el.addEventListener('mouseenter', () => { el.style.transform = 'translateX(-50%) scale(1.1)'; el.style.opacity = '1'; });
+              el.addEventListener('mouseleave', () => { el.style.transform = 'translateX(-50%) scale(1)'; el.style.opacity = '0.85'; });
+              el.addEventListener('mousedown', () => { el.style.transform = 'translateX(-50%) scale(0.94)'; });
+              el.addEventListener('mouseup',   () => { el.style.transform = 'translateX(-50%) scale(1.1)'; });
+              document.body.appendChild(el);
+            }
+          });
+          // Visual feedback on draw button
+          btn.textContent = '🔵';
+          setTimeout(() => { btn.textContent = '⭕'; }, 800);
+        } catch (e) {
+          console.warn('[DrawCircle] Error:', e.message);
+        }
       });
     });
 
