@@ -839,6 +839,39 @@ app.get('/api/token-status', async (req, res) => {
   res.json({ hasToken, age });
 });
 
+// Debug: extension bridge & rotation status
+app.get('/api/ext-status', (req, res) => {
+  const connected = _clientOrder.filter(id => {
+    const ws = _extClients.get(id);
+    return ws && ws.readyState === 1;
+  });
+  const slotIndex = connected.length > 1
+    ? Math.floor(Date.now() / ROTATION_INTERVAL_MS) % connected.length
+    : 0;
+  const activeClientId = connected[slotIndex] || null;
+  const pendingByClient = {};
+  for (const { clientId } of _extPending.values()) {
+    pendingByClient[clientId] = (pendingByClient[clientId] || 0) + 1;
+  }
+  const slotMinutes = Math.round(ROTATION_INTERVAL_MS / 60000);
+  const currentSlot  = Math.floor(Date.now() / ROTATION_INTERVAL_MS);
+  const nextSlotInMs = (currentSlot + 1) * ROTATION_INTERVAL_MS - Date.now();
+  res.json({
+    totalConnected: connected.length,
+    clients: connected.map((id, i) => ({
+      clientId: id,
+      isActive: i === slotIndex,
+      pendingTasks: pendingByClient[id] || 0,
+    })),
+    activeClientId,
+    rotationIntervalMins: slotMinutes,
+    currentSlot,
+    nextRotationInSecs: Math.round(nextSlotInMs / 1000),
+    clientOrder: _clientOrder,
+    totalPending: _extPending.size,
+  });
+});
+
 app.get('/api/user-info', async (req, res) => {
   try {
     const projectId = await apiClient.ensureProject();
