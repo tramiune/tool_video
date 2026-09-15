@@ -160,19 +160,33 @@ async function concatenateSumoClips(jobId, clipPaths) {
 }
 
 // ─── Prompt builders ──────────────────────────────────────────────────────────
-function buildSumoImagePrompt(job, scene, idx) {
+function buildSumoImagePrompt(job, scene, idx, refs = []) {
   const seq   = String(Number(idx) + 1).padStart(3, '0') + '.';
+
+  // Build explicit mapping: tell the model exactly which pasted image = which character/product
+  const refLines = [];
+  refs.forEach((url, i) => {
+    const n = i + 1;
+    if (url.includes('bin_character'))    refLines.push(`[Pasted image ${n}] = BIN character — copy EXACTLY: face, body, blue-orange-white striped t-shirt, blue shorts, chubby cheeks, black hair.`);
+    else if (url.includes('sumo_character')) refLines.push(`[Pasted image ${n}] = SUMO DEER character — copy EXACTLY: face, antlers, bright red superhero cape, red bow tie, tall neck, ALWAYS standing upright on TWO HIND LEGS only.`);
+    else if (url.includes('mother_character')) refLines.push(`[Pasted image ${n}] = MOTHER character — copy EXACTLY: face, hair, clothing, warm expression.`);
+    else if (url.includes('sumo_product')) refLines.push(`[Pasted image ${n}] = SUMO GẠC HƯƠU NON product packaging — reproduce the EXACT pouch design: same colors, logo text, layout, shape. This is a product prop in the scene, NOT a character.`);
+  });
+
   const parts = [
     String(scene.imagePrompt || scene.description || '').trim(),
     job.baseImagePrompt ? `Environment: ${job.baseImagePrompt}` : '',
     '3D Pixar animated film style, vibrant, expressive, cute, warm natural lighting.',
-    'CRITICAL CHARACTER CONSISTENCY — Match reference images EXACTLY: Bin = 5-year-old boy with blue-orange-white horizontal striped t-shirt and blue shorts, chubby cheeks, black hair, cartoon proportions. Sumo = anthropomorphic deer/giraffe standing ONLY on TWO HIND LEGS (NEVER four legs), bright red superhero cape, red bow tie, tall neck, friendly face. Mother = Vietnamese woman, warm expression, casual home clothing. DO NOT alter face shape, clothing colors, clothing pattern, body proportions, or species of any character. Characters must be IDENTICAL to their reference images.',
+    refLines.length > 0
+      ? `REFERENCE IMAGES — use EACH pasted image as the EXACT design source:\n${refLines.join('\n')}\nDO NOT alter face shape, clothing colors, clothing pattern, body proportions, species, or product design of any item above.`
+      : 'CRITICAL: Characters must be IDENTICAL to their reference images in appearance, clothing, and proportions.',
     'Cinematic staging: natural varied postures with depth (foreground/midground/background). No stiff lineup.',
     'Single unified vertical 9:16 shot. Full-bleed. NO split screen, NO collage, NO panels, NO duplicate characters.',
     'No text, no subtitles, no name labels, no written words on screen.',
   ].filter(Boolean);
   return `${seq} ${parts.join('\n')}`;
 }
+
 
 function buildSumoVideoPrompt(job, scene, idx) {
   const seq  = String(Number(idx) + 1).padStart(3, '0') + '.';
@@ -324,7 +338,7 @@ async function runSumoJob(jobId) {
         const r = await runChildTaskWithRetry({
           jobRef, job: { ...job, characters: job.characters || [] },
           sceneIndex: idx, taskType: 'startImage',
-          prompt: buildSumoImagePrompt(job, scene, idx),
+          prompt: buildSumoImagePrompt(job, scene, idx, refs),
           extraTaskData: { userId: job.userId, email: job.userEmail || null, isAdmin, type: 'image', status: 'pending', aspectRatio: '9:16', model: 'nano_banana_2', count: 1, referenceImages: refs },
           timeoutMs: IMAGE_TIMEOUT_MS, stageStatus: 'image_processing',
           progressUpdate: { status: 'generating', currentScene: idx + 1, progress: Math.round((idx * 2 / totalSteps) * 100) },
