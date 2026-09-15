@@ -44,25 +44,42 @@ const _extClients = new Map();
 let _clientCounter = 0;
 const _extPending = new Map(); // id → { resolve, reject, timer, clientId }
 
-// Pick the connected client with fewest in-flight pending tasks (least-loaded)
-function pickBestClient() {
-  const pendingCount = new Map();
-  for (const { clientId } of _extPending.values()) {
-    pendingCount.set(clientId, (pendingCount.get(clientId) || 0) + 1);
+// Time-based rotation — default 1h per profile (configurable via env ROTATION_INTERVAL_MINS)
+const ROTATION_INTERVAL_MS = parseInt(process.env.ROTATION_INTERVAL_MINS || '60', 10) * 60 * 1000;
+const _clientOrder = []; // ordered by first connection time → determines slot assignment
+
+// Returns the clientId scheduled for the current time slot (rotation-aware)
+// If that client is offline, falls back to any available client
+function pickActiveClient() {
+  // Get connected clients in stable connection order
+  const connected = _clientOrder.filter(id => {
+    const ws = _extClients.get(id);
+    return ws && ws.readyState === 1;
+  });
+  if (connected.length === 0) return null;
+
+  // Single client: no rotation needed
+  if (connected.length === 1) {
+    const ws = _extClients.get(connected[0]);
+    return { clientId: connected[0], ws };
   }
-  let best = null, bestLoad = Infinity;
-  for (const [clientId, ws] of _extClients) {
-    if (ws.readyState !== 1) continue; // skip disconnected
-    const load = pendingCount.get(clientId) || 0;
-    if (load < bestLoad) { bestLoad = load; best = { clientId, ws }; }
-  }
-  return best;
+
+  // Multi-client: pick by time slot
+  const slotIndex = Math.floor(Date.now() / ROTATION_INTERVAL_MS) % connected.length;
+  const activeId = connected[slotIndex];
+  const ws = _extClients.get(activeId);
+  return { clientId: activeId, ws };
 }
+
+// Keep pickBestClient as alias (used internally for non-rotation fallback)
+const pickBestClient = pickActiveClient;
 
 _extWss.on('connection', (ws) => {
   const clientId = `ext_${++_clientCounter}`;
   _extClients.set(clientId, ws);
-  logger.success(`[Bridge] Chrome extension connected — clientId: ${clientId} (total: ${_extClients.size})`);
+  _clientOrder.push(clientId); // stable order for rotation slot assignment
+  const slotMin = Math.round(ROTATION_INTERVAL_MS / 60000);
+  logger.success(`[Bridge] Chrome extension connected — clientId: ${clientId} (total: ${_extClients.size}, rotation: ${slotMin}min/profile)`);
 
   ws.on('message', async (raw) => {
     let msg;
