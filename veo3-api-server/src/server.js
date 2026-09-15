@@ -2083,7 +2083,7 @@ app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
     // Route to sumo or drama module
     const isSumo = channelType === 'sumo';
     const draft = isSumo
-      ? await sumo.generateSumoScript({ topic })
+      ? await sumo.generateSumoScript({ topic, episodeNumber: 1 })
       : await drama.generateDramaScript({ topic, channelType });
     const normalize = isSumo ? sumo.normalizeSumoScript : drama.normalizeDramaScript;
 
@@ -2121,7 +2121,7 @@ app.post('/api/drama/scripts/:id/ai/generate', requireDramaAccess, async (req, r
     const isSumo = channelType === 'sumo';
     const topic = String(req.body?.topic || current.topic || '').trim();
     const draft = isSumo
-      ? await sumo.generateSumoScript({ topic })
+      ? await sumo.generateSumoScript({ topic, episodeNumber: (Number(current.episodeCount) || 0) + 1 })
       : await drama.generateDramaScript({ topic, channelType });
     const normalize = isSumo ? sumo.normalizeSumoScript : drama.normalizeDramaScript;
 
