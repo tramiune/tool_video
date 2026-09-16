@@ -2905,12 +2905,11 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
         const chipName = settingsChip ? (settingsChip.textContent || '').trim().slice(0, 30) : 'none';
 
         // Helper: gõ prompt
+        // Gõ prompt — dùng đúng code step 1 của testUiStep (đã test OK)
         const typePrompt = async () => {
-          editor.click();
+          if (!editor) return;
           editor.focus();
-          await sleep(400);
           document.execCommand('selectAll', false, null);
-          await sleep(100);
           document.execCommand('insertText', false, promptText);
           editor.dispatchEvent(new Event('input', { bubbles: true }));
           await sleep(300);
