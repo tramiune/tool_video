@@ -2484,6 +2484,68 @@
     bindClick('btnTestStep4_7', () => runTest4(4.7, "Focus Text"));
     bindClick('btnTestStep4_8', () => runTest4(4.8, "Auto Paste"));
     bindClick('btnTestStep4', () => runTest4(4, "All Config"));
+    bindClick('btnTestClearRefImgs', async () => {
+      const log = document.getElementById('testStepLog');
+      if (log) log.textContent = '🔍 Đang tìm ref image chips...';
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: false },
+          world: 'MAIN',
+          func: () => {
+            // Tìm tất cả nút X/close trên ref image chips trong vùng composer
+            const selectors = [
+              // Flow's attachment close buttons
+              'button[aria-label*="close" i]', 'button[aria-label*="remove" i]',
+              'button[aria-label*="xóa" i]', 'button[aria-label*="delete" i]',
+              // Generic close buttons near image chips
+              '[data-testid*="close"]', '[data-testid*="remove"]',
+              'button[class*="close"]', 'button[class*="remove"]',
+              'button[class*="delete"]', 'button[class*="clear"]',
+            ];
+
+            // Chỉ tìm trong vùng composer (bottom area), tránh click nhầm card kết quả
+            const composerRoot = document.querySelector('[class*="composer"], [class*="input-area"], [class*="prompt-area"]')
+                              || document.body;
+
+            let found = [];
+            for (const sel of selectors) {
+              const els = Array.from(composerRoot.querySelectorAll(sel));
+              found.push(...els.filter(el => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && rect.top > window.innerHeight * 0.4;
+              }));
+            }
+            // Deduplicate
+            found = [...new Set(found)];
+
+            // Log info về từng nút tìm được (chưa click)
+            const info = found.map(el => ({
+              tag: el.tagName,
+              aria: el.getAttribute('aria-label') || '',
+              cls: (el.className || '').slice(0, 60),
+              rect: el.getBoundingClientRect(),
+              text: (el.textContent || '').trim().slice(0, 20),
+            }));
+
+            // Click tất cả
+            let clicked = 0;
+            for (const el of found) {
+              try { el.click(); clicked++; } catch (_) {}
+            }
+
+            return { clicked, total: found.length, info };
+          },
+        });
+        const d = result?.result;
+        if (log) {
+          log.textContent = `✅ Tìm thấy ${d?.total || 0} nút, đã click ${d?.clicked || 0}\n\n`
+            + (d?.info || []).map((b, i) => `[${i}] ${b.tag} aria="${b.aria}" cls="${b.cls}" text="${b.text}" top=${Math.round(b.rect?.top)}`).join('\n');
+        }
+      } catch (e) {
+        if (log) log.textContent = '❌ Lỗi: ' + e.message;
+      }
+    });
     bindClick('btnTestStep5', () => runTest4(5.0, "Quét Media ID & DOM"));
     bindClick('btnTestOldApi', () => runTest4(6.0, "Test API Cũ (tRPC flow.projectInitialData)"));
     bindClick('btnTestDownload', () => runTest4(7.0, "Test Tải Video Trực Tiếp Trên Tab Flow"));
