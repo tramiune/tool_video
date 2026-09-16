@@ -2552,7 +2552,10 @@
       const log = document.getElementById('testStepLog');
       if (log) log.textContent = '🎨 Đang vẽ...';
       try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabs = await chrome.tabs.query({ url: ['https://flow.google.com/*', 'https://labs.google/*'] });
+        const tab = tabs[0];
+        if (!tab) { if (log) log.textContent = '❌ Không tìm thấy tab Flow!'; return; }
+        if (log) log.textContent += ` (tab: ${tab.title?.slice(0,30)})`;
         const d = await findRefXButtons(tab.id, false);
         if (log) {
           log.textContent = `🎨 Tìm thấy ${d?.total || 0} nút (vẽ ${Math.min(d?.total||0,99)} overlay, tự xóa sau 4s)\n\n`
@@ -2565,7 +2568,9 @@
       const log = document.getElementById('testStepLog');
       if (log) log.textContent = '🔍 Đang tìm ref image chips...';
       try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabs = await chrome.tabs.query({ url: ['https://flow.google.com/*', 'https://labs.google/*'] });
+        const tab = tabs[0];
+        if (!tab) { if (log) log.textContent = '❌ Không tìm thấy tab Flow!'; return; }
         const [result] = await chrome.scripting.executeScript({
           target: { tabId: tab.id, allFrames: false },
           world: 'MAIN',
