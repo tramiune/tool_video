@@ -2485,69 +2485,6 @@
     bindClick('btnTestStep4_8', () => runTest4(4.8, "Auto Paste"));
     bindClick('btnTestStep4', () => runTest4(4, "All Config"));
 
-    bindClick('btnTestPaste2Ref', async () => {
-      const log = document.getElementById('testStepLog');
-      if (log) log.textContent = '📋 Đang load 2 ảnh test...';
-      try {
-        // Load 2 test images as dataURL from extension resources
-        const loadDataUrl = async (filename) => {
-          const url = chrome.runtime.getURL(filename);
-          const resp = await fetch(url);
-          const blob = await resp.blob();
-          return new Promise(resolve => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(blob);
-          });
-        };
-        const [img1, img2] = await Promise.all([
-          loadDataUrl('test_start_frame.jpg'),
-          loadDataUrl('test_end_frame.jpg'),
-        ]);
-        if (log) log.textContent = '📋 Đã load ảnh, đang inject vào Flow tab...';
-
-        const tabs = await chrome.tabs.query({ url: ['https://flow.google.com/*', 'https://labs.google/*'] });
-        const tab = tabs[0];
-        if (!tab) { if (log) log.textContent = '❌ Không tìm thấy tab Flow!'; return; }
-
-        const [result] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id, allFrames: false },
-          world: 'MAIN',
-          args: [img1, img2],
-          func: async (dataUrl1, dataUrl2) => {
-            const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-            // Tìm editor
-            const editor = document.querySelector("div[role='textbox'][data-slate-editor='true']")
-                        || document.querySelector("div[data-slate-editor='true']")
-                        || document.querySelector("div[contenteditable='true']");
-            if (!editor) return { success: false, error: 'Không tìm thấy editor' };
-
-            editor.focus();
-            await sleep(300);
-
-            // Paste 2 ảnh cùng 1 lần
-            const dt = new DataTransfer();
-            for (const [i, dataUrl] of [[0, dataUrl1], [1, dataUrl2]]) {
-              const resp = await fetch(dataUrl);
-              const blob = await resp.blob();
-              dt.items.add(new File([blob], `ref_${i}.jpg`, { type: blob.type || 'image/jpeg' }));
-            }
-            const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-            editor.dispatchEvent(evt);
-            return { success: true };
-          },
-        });
-
-        const d = result?.result;
-        if (log) log.textContent = d?.success
-          ? `✅ Đã focus + paste 2 ảnh vào tab: ${tab.title?.slice(0, 40)}`
-          : `❌ ${d?.error}`;
-      } catch (e) {
-        if (log) log.textContent = '❌ Lỗi: ' + e.message;
-      }
-    });
-
     // Shared helper: find ref image X buttons in Flow composer
     async function findRefXButtons(tabId, doClick) {
       const [result] = await chrome.scripting.executeScript({
@@ -4726,7 +4663,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await callExt('CREATE_IMAGE_MULTI_TAB', {
           prompt,
           tabId: imgTab.tabId,
-          aspectRatio: '16:9',
+          aspectRatio: '9:16',
           referenceImageDataUrl: img1,
           secondImageDataUrl: img2,
           referenceImages: [img1, img2]
