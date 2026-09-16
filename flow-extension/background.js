@@ -3004,43 +3004,43 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             }
           }
         }
-        // ── STEP 4: Ctrl+V → Click X (clear cũ) → Ctrl+V lại (paste sạch) ──
+        // ── STEP 4: Clear ảnh ref cũ → Ctrl+V dán ảnh tham chiếu mới ──
         const refList = Array.isArray(imagesToPaste) ? imagesToPaste.filter(Boolean) : [imagesToPaste].filter(Boolean);
         let pastedCount = refList.length;
 
         if (pastedCount > 0) {
-          // 4a. Paste lần 1 (kích hoạt Flow nhận ảnh)
-          try { await pasteImages(editor, refList); } catch (e) { console.warn('[MultiTab Image] Paste1 err:', e); }
-          await sleep(600);
+          // 4.1: Chờ 1s
+          await sleep(1000);
 
-          // 4b. Click X để clear TẤT CẢ chips (cũ + vừa paste)
-          const clearXChips = () => {
-            const selectors = [
-              'button[aria-label*="close" i]', 'button[aria-label*="remove" i]',
-              'button[aria-label*="xóa" i]', 'button[aria-label*="delete" i]',
-              '[data-testid*="close"]', '[data-testid*="remove"]',
-              'button[class*="close"]', 'button[class*="remove"]',
-              'button[class*="delete"]', 'button[class*="clear"]',
-            ];
-            const composerRoot = document.querySelector('[class*="composer"], [class*="input-area"], [class*="prompt-area"]') || document.body;
-            let found = [];
-            for (const sel of selectors) {
-              found.push(...Array.from(composerRoot.querySelectorAll(sel)).filter(el => {
-                const r = el.getBoundingClientRect();
-                return r.width > 0 && r.height > 0 && r.top > window.innerHeight * 0.4;
-              }));
-            }
-            found = [...new Set(found)];
-            let clicked = 0;
-            for (const el of found) { try { el.click(); clicked++; } catch (_) {} }
-            return clicked;
-          };
-          const cleared = clearXChips();
-          console.log(`[MultiTab Image] Cleared ${cleared} ref chips`);
-          await sleep(400);
+          // 4.2: Click X để xóa ảnh ref cũ (nếu có)
+          const xSelectors = [
+            'button[aria-label*="close" i]', 'button[aria-label*="remove" i]',
+            'button[aria-label*="xóa" i]', 'button[aria-label*="delete" i]',
+            '[data-testid*="close"]', '[data-testid*="remove"]',
+            'button[class*="close"]', 'button[class*="remove"]',
+            'button[class*="delete"]', 'button[class*="clear"]',
+          ];
+          const composerRoot = document.querySelector('[class*="composer"], [class*="input-area"], [class*="prompt-area"]') || document.body;
+          let xBtns = [];
+          for (const sel of xSelectors) {
+            xBtns.push(...Array.from(composerRoot.querySelectorAll(sel)).filter(el => {
+              const r = el.getBoundingClientRect();
+              return r.width > 0 && r.height > 0 && r.top > window.innerHeight * 0.4;
+            }));
+          }
+          xBtns = [...new Set(xBtns)];
+          for (const btn of xBtns) { try { btn.click(); } catch (_) {} }
+          if (xBtns.length > 0) {
+            console.log(`[MultiTab Image] Cleared ${xBtns.length} old ref image chip(s)`);
+            await sleep(500);
+          }
 
-          // 4c. Paste lần 2 (paste thật, sạch)
-          try { await pasteImages(editor, refList); } catch (e) { console.warn('[MultiTab Image] Paste2 err:', e); }
+          // 4.3: Paste ảnh tham chiếu mới
+          try {
+            await pasteImages(editor, refList);
+          } catch (e) {
+            console.warn('[MultiTab Image] Paste images err:', e);
+          }
           await sleep(2500);
         }
 
