@@ -2484,6 +2484,83 @@
     bindClick('btnTestStep4_7', () => runTest4(4.7, "Focus Text"));
     bindClick('btnTestStep4_8', () => runTest4(4.8, "Auto Paste"));
     bindClick('btnTestStep4', () => runTest4(4, "All Config"));
+
+    // Shared helper: find ref image X buttons in Flow composer
+    async function findRefXButtons(tabId, doClick) {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: false },
+        world: 'MAIN',
+        args: [doClick],
+        func: (doClick) => {
+          const selectors = [
+            'button[aria-label*="close" i]', 'button[aria-label*="remove" i]',
+            'button[aria-label*="xóa" i]', 'button[aria-label*="delete" i]',
+            '[data-testid*="close"]', '[data-testid*="remove"]',
+            'button[class*="close"]', 'button[class*="remove"]',
+            'button[class*="delete"]', 'button[class*="clear"]',
+          ];
+          const composerRoot = document.querySelector('[class*="composer"], [class*="input-area"], [class*="prompt-area"]') || document.body;
+          let found = [];
+          for (const sel of selectors) {
+            found.push(...Array.from(composerRoot.querySelectorAll(sel)).filter(el => {
+              const r = el.getBoundingClientRect();
+              return r.width > 0 && r.height > 0 && r.top > window.innerHeight * 0.4;
+            }));
+          }
+          found = [...new Set(found)];
+
+          if (!doClick) {
+            // Remove old overlays
+            document.querySelectorAll('.__ref_x_overlay').forEach(e => e.remove());
+            // Draw overlay on each button
+            found.forEach((el, i) => {
+              const r = el.getBoundingClientRect();
+              const div = document.createElement('div');
+              div.className = '__ref_x_overlay';
+              div.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;
+                background:rgba(243,156,18,0.45);border:2px solid #f39c12;border-radius:4px;
+                z-index:2147483647;pointer-events:none;display:flex;align-items:center;justify-content:center;
+                font-size:10px;color:white;font-weight:bold;text-shadow:0 1px 3px rgba(0,0,0,0.9);`;
+              div.textContent = i + 1;
+              document.body.appendChild(div);
+              // Tự xóa sau 4s
+              setTimeout(() => div.remove(), 4000);
+            });
+          } else {
+            document.querySelectorAll('.__ref_x_overlay').forEach(e => e.remove());
+          }
+
+          const info = found.map((el, i) => ({
+            i, tag: el.tagName,
+            aria: el.getAttribute('aria-label') || '',
+            cls: (el.className || '').slice(0, 60),
+            text: (el.textContent || '').trim().slice(0, 20),
+            top: Math.round(el.getBoundingClientRect().top),
+          }));
+
+          let clicked = 0;
+          if (doClick) {
+            for (const el of found) { try { el.click(); clicked++; } catch (_) {} }
+          }
+          return { total: found.length, clicked, info };
+        },
+      });
+      return result?.result;
+    }
+
+    bindClick('btnHighlightRefImgs', async () => {
+      const log = document.getElementById('testStepLog');
+      if (log) log.textContent = '🎨 Đang vẽ...';
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const d = await findRefXButtons(tab.id, false);
+        if (log) {
+          log.textContent = `🎨 Tìm thấy ${d?.total || 0} nút (vẽ ${Math.min(d?.total||0,99)} overlay, tự xóa sau 4s)\n\n`
+            + (d?.info || []).map(b => `[${b.i}] ${b.tag} aria="${b.aria}" cls="${b.cls}" text="${b.text}" top=${b.top}`).join('\n');
+        }
+      } catch (e) { if (log) log.textContent = '❌ ' + e.message; }
+    });
+
     bindClick('btnTestClearRefImgs', async () => {
       const log = document.getElementById('testStepLog');
       if (log) log.textContent = '🔍 Đang tìm ref image chips...';
