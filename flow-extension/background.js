@@ -3038,6 +3038,16 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           // 4.4: Paste lần thực sự
           try { await pasteImages(editor, refList); } catch (e) { console.warn('[MultiTab Image] Paste 2 err:', e); }
           await sleep(2500);
+
+          // 4.5: Gõ lại prompt (phòng paste xóa mất text)
+          try {
+            editor.focus();
+            await sleep(200);
+            document.execCommand('selectAll', false, null);
+            document.execCommand('insertText', false, promptText);
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+            await sleep(300);
+          } catch (e) { console.warn('[MultiTab Image] Re-type prompt err:', e); }
         }
 
         // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
