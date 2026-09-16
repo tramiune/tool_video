@@ -3009,10 +3009,10 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
         let pastedCount = refList.length;
 
         if (pastedCount > 0) {
-          // 4.1: Chờ 1s
-          await sleep(1000);
+          // 4.1: Paste lần đầu (trigger UI)
+          try { await pasteImages(editor, refList); } catch (e) { console.warn('[MultiTab Image] Paste 1 err:', e); }
 
-          // 4.2: Click X để xóa ảnh ref cũ (nếu có)
+          // 4.2: Click X xóa tất cả chips (cũ + vừa paste)
           const xSelectors = [
             'button[aria-label*="close" i]', 'button[aria-label*="remove" i]',
             'button[aria-label*="xóa" i]', 'button[aria-label*="delete" i]',
@@ -3030,17 +3030,13 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           }
           xBtns = [...new Set(xBtns)];
           for (const btn of xBtns) { try { btn.click(); } catch (_) {} }
-          if (xBtns.length > 0) {
-            console.log(`[MultiTab Image] Cleared ${xBtns.length} old ref image chip(s)`);
-            await sleep(500);
-          }
+          console.log(`[MultiTab Image] Cleared ${xBtns.length} chip(s)`);
 
-          // 4.3: Paste ảnh tham chiếu mới
-          try {
-            await pasteImages(editor, refList);
-          } catch (e) {
-            console.warn('[MultiTab Image] Paste images err:', e);
-          }
+          // 4.3: Chờ 500ms
+          await sleep(500);
+
+          // 4.4: Paste lần thực sự
+          try { await pasteImages(editor, refList); } catch (e) { console.warn('[MultiTab Image] Paste 2 err:', e); }
           await sleep(2500);
         }
 
