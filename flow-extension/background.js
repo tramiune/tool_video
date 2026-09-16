@@ -2906,9 +2906,11 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
 
         // Helper: gõ prompt
         const typePrompt = async () => {
+          editor.click();
           editor.focus();
-          await sleep(200);
+          await sleep(400);
           document.execCommand('selectAll', false, null);
+          await sleep(100);
           document.execCommand('insertText', false, promptText);
           editor.dispatchEvent(new Event('input', { bubbles: true }));
           await sleep(300);
@@ -2987,8 +2989,13 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             clickedRatio = true;
             await sleep(500);
           }
+          // Đóng popover
           try { editor.click(); editor.focus(); } catch (_) {}
-          await sleep(300);
+          await sleep(400);
+          if (isPopoverOpen()) {
+            document.body.click();
+            await sleep(200);
+          }
           if (isPopoverOpen()) {
             window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
             document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
