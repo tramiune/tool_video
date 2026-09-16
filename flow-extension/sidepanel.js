@@ -2526,17 +2526,15 @@
             editor.focus();
             await sleep(300);
 
-            // Paste từng ảnh
-            for (const dataUrl of [dataUrl1, dataUrl2]) {
+            // Paste 2 ảnh cùng 1 lần
+            const dt = new DataTransfer();
+            for (const [i, dataUrl] of [[0, dataUrl1], [1, dataUrl2]]) {
               const resp = await fetch(dataUrl);
               const blob = await resp.blob();
-              const file = new File([blob], 'ref.jpg', { type: blob.type || 'image/jpeg' });
-              const dt = new DataTransfer();
-              dt.items.add(file);
-              const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-              editor.dispatchEvent(evt);
-              await sleep(800);
+              dt.items.add(new File([blob], `ref_${i}.jpg`, { type: blob.type || 'image/jpeg' }));
             }
+            const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+            editor.dispatchEvent(evt);
             return { success: true };
           },
         });
