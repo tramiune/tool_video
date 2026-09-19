@@ -131,6 +131,7 @@
   <div class="tab active" data-tab="test-steps" style="background: rgba(255, 153, 0, 0.12); color: #FF9900; border: 1px solid rgba(255, 153, 0, 0.35);">🛠️ Test Từng Bước</div>
   <div class="tab" data-tab="multi-tab" style="background: linear-gradient(135deg, #e91e63, #ff9800); color:white; border-color:transparent;">🌐 Đa Tab</div>
   <div class="tab" data-tab="my-click" style="background: rgba(99,102,241,0.15); color:#818cf8; border: 1px solid rgba(99,102,241,0.4);">🖱️ My Click</div>
+  <div class="tab" data-tab="bulk-ai" style="background: rgba(16,185,129,0.15); color:#34d399; border: 1px solid rgba(16,185,129,0.4);">🤖 Bulk AI</div>
   <div class="tab" data-tab="library" style="display:none">📚 Thư Viện</div>
 </div>
 
@@ -180,7 +181,6 @@
           <button class="btn btn-primary" id="btnHighlightRefImgs" style="flex:1; background:#f39c12; font-weight:bold; font-size:11px;">🎨 Vẽ X Buttons</button>
           <button class="btn btn-primary" id="btnTestClearRefImgs" style="flex:1; background:#e74c3c; font-weight:bold; font-size:11px;">🗑️ Click X Xóa</button>
         </div>
-        <button class="btn btn-primary" id="btnTestPaste2Ref" style="width:100%; margin-top:6px; background:#8e44ad; font-weight:bold; font-size:11px;">📋 Test Focus + Ctrl+V 2 Ảnh Ref</button>
         <button class="btn btn-primary" id="btnTestStep5" style="width:100%; margin-top:6px; background: #00bcd4; font-weight: bold;">Test B5: 🔍 Quét Media ID &amp; DOM Tab Flow</button>
         <button class="btn btn-primary" id="btnTestOldApi" style="width:100%; margin-top:6px; background: #e056fd; font-weight: bold;">🧪 Test B6: 📡 Thử Gọi API Cũ (tRPC flow.projectInitialData & status)</button>
         <button class="btn btn-primary" id="btnTestDownload" style="width:100%; margin-top:6px; background: #4caf50; font-weight: bold;">📥 Test B7: 🔍 Test Tải Video Trực Tiếp Trên Tab Flow</button>
@@ -1028,6 +1028,56 @@ A cyberpunk street with neon signs and flying cars in the rain"></textarea>
     </div>
 
   </div>
+</div>
+
+<!-- TAB: BULK AI STUDIO -->
+<div class="panel" id="panel-bulk-ai">
+  <div class="card">
+    <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>🤖 Bulk AI Studio Auto</span>
+      <span id="bulkAiStatusBadge" style="font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(255,255,255,0.08); color:var(--text2);">Chờ</span>
+    </div>
+
+    <!-- Tab Bulk AI URL -->
+    <div style="font-size:10px; color:var(--text2); margin-bottom:8px; line-height:1.5;">
+      Tự động paste prompt → bấm Chạy Danh Sách → theo dõi GIÁM SÁT → tải ảnh khi xong.
+    </div>
+
+    <!-- Danh sách prompt -->
+    <label class="form-label">📋 Danh sách prompt (mỗi dòng 1 prompt):</label>
+    <textarea id="bulkAiPrompts" class="form-input" rows="6"
+      style="font-size:11px; font-family:monospace; line-height:1.5; resize:vertical;"
+      placeholder="0001. Chân dung cô gái...&#10;0002. Phong cảnh núi rừng...&#10;0003. ..."></textarea>
+
+    <!-- Buttons -->
+    <div style="display:flex; gap:6px; margin-top:8px;">
+      <button id="btnBulkAiPasteRun" style="flex:1; padding:8px; border-radius:8px; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; font-size:12px; font-weight:bold; cursor:pointer;">
+        🚀 Paste &amp; Chạy
+      </button>
+      <button id="btnBulkAiMonitorOnly" style="padding:8px 12px; border-radius:8px; background:rgba(255,255,255,0.08); color:var(--text2); border:1px solid rgba(255,255,255,0.12); font-size:11px; cursor:pointer;">
+        🔍 Chỉ Monitor
+      </button>
+      <button id="btnBulkAiStop" style="padding:8px 10px; border-radius:8px; background:rgba(248,113,113,0.15); color:#f87171; border:1px solid rgba(248,113,113,0.3); font-size:11px; cursor:pointer;">
+        ■ Stop
+      </button>
+    </div>
+  </div>
+
+  <!-- Download log -->
+  <div class="card" style="margin-top:8px;">
+    <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>📥 Đã tải về</span>
+      <button id="btnBulkAiClearLog" style="font-size:10px; padding:2px 8px; border-radius:6px; background:rgba(255,255,255,0.06); color:var(--text2); border:1px solid rgba(255,255,255,0.1); cursor:pointer;">Xóa log</button>
+    </div>
+    <div id="bulkAiDownloadList" style="display:flex; flex-direction:column; gap:6px; min-height:30px;">
+      <div style="font-size:11px; color:var(--text2); text-align:center; padding:8px;">Chưa có ảnh nào được tải...</div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div id="bulkAiLog" style="white-space:pre-wrap; word-break:break-all; max-height:180px; overflow-y:auto;
+    margin:8px; font-size:11px; color:var(--accent); padding:8px;
+    background:rgba(255,255,255,0.04); border-radius:6px; font-family:monospace; display:none;"></div>
 </div>
 
 <div class="toast-container" id="toasts"></div>

@@ -5418,3 +5418,200 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 })();
+
+// ══════════════════════════════════════════════════════════════
+// BULK AI STUDIO AUTOMATION
+// ══════════════════════════════════════════════════════════════
+(function initBulkAI() {
+  let _monitorTimer = null;
+  let _downloadedCards = new Set();
+  let _promptLines = [];
+  let _bulkTabId = null;
+
+  const logEl  = () => document.getElementById('bulkAiLog');
+  const badge  = () => document.getElementById('bulkAiStatusBadge');
+  const dlList = () => document.getElementById('bulkAiDownloadList');
+
+  function log(msg) {
+    const el = logEl();
+    if (!el) return;
+    el.style.display = 'block';
+    el.textContent += '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function setBadge(text, color) {
+    const el = badge();
+    if (el) { el.textContent = text; el.style.color = color || 'var(--text2)'; }
+  }
+
+  function extractPrefix(line) {
+    const m = (line || '').match(/^(\d+)[.\-_\s]/);
+    return m ? m[1] : Date.now().toString().slice(-6);
+  }
+
+  async function findBulkTab() {
+    const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+    return tabs.find(t => t.url && t.url.includes('/tool/') && t.url.includes('mode=EDIT')) || null;
+  }
+
+  async function pasteAndRun(tabId, promptsText) {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      world: 'MAIN',
+      args: [promptsText],
+      func: function(text) {
+        var allTA = Array.from(document.querySelectorAll('textarea'));
+        var ta = allTA.find(function(t) {
+          var ph = (t.placeholder || '').toLowerCase();
+          var nearby = (t.closest('[class]') ? t.closest('[class]').textContent : '').toLowerCase();
+          return ph.includes('ý tưởng') || ph.includes('prompt') || nearby.includes('nhập danh sách') || nearby.includes('bulk');
+        }) || allTA[allTA.length - 1];
+        if (!ta) return { ok: false, error: 'Không tìm thấy textarea NHẬP DANH SÁCH' };
+        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value') && Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+        if (nativeSetter) nativeSetter.call(ta, text); else ta.value = text;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        ta.dispatchEvent(new Event('change', { bubbles: true }));
+        var runBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
+          var t2 = (b.textContent || '').toLowerCase();
+          return t2.includes('chạy danh sách') || t2.includes('chay danh sach');
+        });
+        if (!runBtn) return { ok: false, error: 'Không tìm thấy nút CHẠY DANH SÁCH', pasted: true };
+        runBtn.click();
+        return { ok: true, btnText: runBtn.textContent.trim().slice(0, 40) };
+      },
+    });
+    return res && res.result;
+  }
+
+  async function scanCards(tabId) {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      world: 'MAIN',
+      func: function() {
+        var cards = [];
+        var allDivs = Array.from(document.querySelectorAll('div, article, li'));
+        for (var i = 0; i < allDivs.length; i++) {
+          var div = allDivs[i];
+          var txt = div.textContent || '';
+          var numMatch = txt.match(/\b(0\d{2})\b/);
+          if (!numMatch) continue;
+          var rect = div.getBoundingClientRect();
+          if (rect.width < 50 || rect.width > 260 || rect.height < 60 || rect.height > 380) continue;
+          var isDone = txt.includes('XONG') || txt.toLowerCase().includes('done');
+          var img = div.querySelector('img');
+          if (isDone && img && img.src && img.src.startsWith('http')) {
+            cards.push({ cardNum: numMatch[1], imgSrc: img.src });
+          }
+        }
+        var seen = {};
+        return cards.filter(function(c) { if (seen[c.cardNum]) return false; seen[c.cardNum] = 1; return true; });
+      },
+    });
+    return (res && res.result) || [];
+  }
+
+  async function downloadImage(imgSrc, prefix) {
+    var filename = prefix + '.jpg';
+    return new Promise(function(resolve) {
+      chrome.downloads.download({ url: imgSrc, filename: filename, saveAs: false }, function(id) {
+        resolve({ id: id, filename: filename });
+      });
+    });
+  }
+
+  function addDownloadEntry(prefix, filename, cardNum) {
+    var el = dlList();
+    if (!el) return;
+    var placeholder = el.querySelector('div[style*="text-align"]');
+    if (placeholder) placeholder.remove();
+    var entry = document.createElement('div');
+    entry.style.cssText = 'display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:11px;';
+    entry.innerHTML = '<span style="color:#34d399; font-weight:bold;">✅</span>' +
+      '<span style="color:white;">' + filename + '</span>' +
+      '<span style="color:var(--text2); font-size:10px;">card ' + cardNum + '</span>';
+    el.appendChild(entry);
+  }
+
+  async function startMonitor(tabId, promptLines) {
+    setBadge('🔍 Monitoring...', '#34d399');
+    log('🔍 Bắt đầu monitor tab ' + tabId + ' — poll mỗi 4s');
+    _monitorTimer = setInterval(async function() {
+      try {
+        var cards = await scanCards(tabId);
+        for (var j = 0; j < cards.length; j++) {
+          var cardNum = cards[j].cardNum;
+          var imgSrc  = cards[j].imgSrc;
+          if (_downloadedCards.has(cardNum)) continue;
+          _downloadedCards.add(cardNum);
+          var idx = parseInt(cardNum, 10) - 1;
+          var promptLine = promptLines[idx] || '';
+          var prefix = extractPrefix(promptLine) || cardNum;
+          log('📥 Card ' + cardNum + ' XONG → tải: ' + prefix + '.jpg');
+          var dl = await downloadImage(imgSrc, prefix);
+          addDownloadEntry(prefix, dl.filename, cardNum);
+          setBadge('✅ ' + _downloadedCards.size + ' tải xong', '#34d399');
+        }
+      } catch(e) {
+        log('⚠️ Monitor error: ' + e.message);
+      }
+    }, 4000);
+  }
+
+  function stopMonitor() {
+    if (_monitorTimer) { clearInterval(_monitorTimer); _monitorTimer = null; }
+    setBadge('■ Dừng', 'var(--text2)');
+    log('■ Đã dừng monitor.');
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('btnBulkAiPasteRun') && document.getElementById('btnBulkAiPasteRun').addEventListener('click', async function() {
+      var prompts = (document.getElementById('bulkAiPrompts') || {}).value || '';
+      prompts = prompts.trim();
+      if (!prompts) { alert('Nhập danh sách prompt trước!'); return; }
+      _downloadedCards.clear();
+      _promptLines = prompts.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+      var tab = await findBulkTab();
+      if (!tab) {
+        log('❌ Không tìm thấy tab Bulk AI Studio!\nHãy mở flow.google.com → Tool → Bulk AI Studio.');
+        setBadge('❌ Không có tab', '#f87171');
+        return;
+      }
+      _bulkTabId = tab.id;
+      log('✅ Tab: ' + (tab.title || '').slice(0, 40));
+      var res = await pasteAndRun(tab.id, prompts);
+      if (!res || !res.ok) {
+        log('❌ ' + ((res && res.error) || 'Lỗi không xác định'));
+        if (!res || !res.pasted) return;
+        log('⚠️ Không tìm thấy nút Chạy — bắt đầu monitor thôi...');
+      } else {
+        log('✅ Đã paste ' + _promptLines.length + ' prompt và click "' + res.btnText + '"');
+      }
+      stopMonitor();
+      await startMonitor(tab.id, _promptLines);
+    });
+
+    document.getElementById('btnBulkAiMonitorOnly') && document.getElementById('btnBulkAiMonitorOnly').addEventListener('click', async function() {
+      _downloadedCards.clear();
+      var prompts = ((document.getElementById('bulkAiPrompts') || {}).value || '').trim();
+      _promptLines = prompts.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+      var tab = await findBulkTab();
+      if (!tab) { log('❌ Không tìm thấy tab Bulk AI Studio!'); return; }
+      _bulkTabId = tab.id;
+      log('🔍 Monitor-only: ' + (tab.title || '').slice(0, 40));
+      stopMonitor();
+      await startMonitor(tab.id, _promptLines);
+    });
+
+    document.getElementById('btnBulkAiStop') && document.getElementById('btnBulkAiStop').addEventListener('click', stopMonitor);
+
+    document.getElementById('btnBulkAiClearLog') && document.getElementById('btnBulkAiClearLog').addEventListener('click', function() {
+      var el = dlList();
+      if (el) el.innerHTML = '<div style="font-size:11px; color:var(--text2); text-align:center; padding:8px;">Chưa có ảnh nào được tải...</div>';
+      var lg = logEl();
+      if (lg) { lg.textContent = ''; lg.style.display = 'none'; }
+      _downloadedCards.clear();
+      setBadge('Chờ', 'var(--text2)');
+    });
+  });
+})();
