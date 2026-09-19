@@ -5580,8 +5580,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const _serverSttMap = new Map();
 
   // Nhận task từ background.js — chạy y hệt bấm nút Paste & Chạy
-  chrome.runtime.onMessage.addListener(function(msg) {
+  chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
     if (msg.action !== 'SIDEPANEL_BULK_RUN') return;
+    sendResponse({ ok: true }); // Phải gọi ngay để background.js không reject Promise
     const serverTasks = msg.tasks || [];
     if (!serverTasks.length) return;
     // Đăng ký map stt → taskId

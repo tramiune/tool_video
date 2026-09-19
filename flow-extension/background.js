@@ -6443,12 +6443,10 @@ async function processServerImageQueue() {
     // Gửi sang sidepanel để chạy — sidepanel dùng code Bulk AI đã hoạt động
     const sidepanelTasks = tasks.map(t => ({ id: t.id, stt: t._stt, prompt: t.prompt, ratio: t.aspectRatio || '9:16' }));
     logToBridge(`[BulkAI] Gửi ${tasks.length} task sang sidepanel (SIDEPANEL_BULK_RUN)...`);
-    chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_RUN', tasks: sidepanelTasks }).catch(() => {
-      logToBridge('❌ Sidepanel không mở — hãy mở extension panel trước khi chạy task ảnh');
-      tasks.forEach(t => {
-        if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
-          _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: 'Sidepanel chưa mở' }));
-      });
+    chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_RUN', tasks: sidepanelTasks }).catch((err) => {
+      // sendMessage reject có thể chỉ do sidepanel không gọi sendResponse — KHÔNG gửi IMAGE_RESULT lỗi
+      // vì sidepanel VẪN nhận và xử lý message bình thường
+      logToBridge(`⚠️ SIDEPANEL_BULK_RUN sendMessage warning: ${err?.message || err}`);
     });
 
   } catch (err) {
