@@ -1093,6 +1093,17 @@ A cyberpunk street with neon signs and flying cars in the rain"></textarea>
     </div>
   </div>
 
+  <!-- Live Task Monitor -->
+  <div class="card" style="margin-top:8px;">
+    <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>📊 Trạng thái Tasks</span>
+      <span id="bulkTaskSummary" style="font-size:10px; color:var(--text2);"></span>
+    </div>
+    <div id="bulkTaskList" style="display:flex; flex-direction:column; gap:4px; max-height:260px; overflow-y:auto;">
+      <div style="font-size:11px; color:var(--text2); text-align:center; padding:8px;">Chưa có task nào...</div>
+    </div>
+  </div>
+
   <!-- Log -->
   <div id="bulkAiLog" style="white-space:pre-wrap; word-break:break-all; max-height:180px; overflow-y:auto;
     margin:8px; font-size:11px; color:var(--accent); padding:8px;

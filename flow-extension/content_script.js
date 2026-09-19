@@ -220,6 +220,14 @@
         total: e.data.total,
       });
     }
+
+    // Tool gửi trạng thái tasks theo thời gian thực
+    if (e.data.type === 'BULK_STATUS_UPDATE') {
+      chrome.runtime.sendMessage({
+        action: 'BULK_STATUS_UPDATE',
+        tasks: e.data.tasks,
+      });
+    }
   });
 
   // Extension background → MAIN world

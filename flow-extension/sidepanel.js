@@ -60,18 +60,50 @@
       // Tool Bulk AI báo xong tất cả task
       } else if (msg?.action === 'BULK_TASKS_DONE') {
         const { completed = 0, errors = 0, total = 0 } = msg;
-        // Log vào testStepLog nếu đang mở
         const logEl = document.getElementById('testStepLog');
         if (logEl) {
           logEl.style.display = 'block';
           logEl.textContent = `🎉 Bulk AI xong!\n✅ Thành công: ${completed}/${total}\n❌ Lỗi: ${errors}`;
         }
-        // Toast notification
-        const toast = document.createElement('div');
-        toast.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:99999;background:#10b981;color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:bold;box-shadow:0 4px 16px rgba(0,0,0,0.3);';
-        toast.textContent = `🎉 Bulk AI xong! ${completed}/${total} ảnh ✅`;
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 5000);
+        const badge = document.getElementById('bulkAiStatusBadge');
+        if (badge) { badge.textContent = `✅ Xong ${completed}/${total}`; badge.style.background = 'rgba(16,185,129,0.2)'; badge.style.color = '#10b981'; }
+
+      // Tool gửi trạng thái tasks real-time
+      } else if (msg?.action === 'BULK_STATUS_UPDATE') {
+        const tasks = msg.tasks || [];
+        const listEl = document.getElementById('bulkTaskList');
+        const summaryEl = document.getElementById('bulkTaskSummary');
+        const badge = document.getElementById('bulkAiStatusBadge');
+        if (!listEl) return;
+
+        const done = tasks.filter(t => t.status === 'completed').length;
+        const err  = tasks.filter(t => t.status === 'error').length;
+        const proc = tasks.filter(t => t.status === 'processing').length;
+        const pend = tasks.filter(t => t.status === 'pending').length;
+
+        if (summaryEl) summaryEl.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
+        if (badge) {
+          if (proc > 0 || pend > 0) { badge.textContent = `⚙️ Đang chạy ${done}/${tasks.length}`; badge.style.background = 'rgba(99,102,241,0.2)'; badge.style.color = '#818cf8'; }
+          else if (tasks.length > 0) { badge.textContent = `✅ Xong ${done}/${tasks.length}`; badge.style.background = 'rgba(16,185,129,0.2)'; badge.style.color = '#10b981'; }
+        }
+
+        const statusCfg = {
+          pending:    { icon: '⏳', color: '#64748b', bg: 'rgba(100,116,139,0.12)' },
+          processing: { icon: '⚙️', color: '#818cf8', bg: 'rgba(99,102,241,0.15)' },
+          completed:  { icon: '✅', color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+          error:      { icon: '❌', color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+        };
+
+        listEl.innerHTML = tasks.length === 0
+          ? '<div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">Chưa có task nào...</div>'
+          : tasks.map(t => {
+              const cfg = statusCfg[t.status] || statusCfg.pending;
+              return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:${cfg.bg};font-size:11px;">
+                <span>${cfg.icon}</span>
+                <span style="flex:1;color:#e2e8f0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.stt}">${t.stt || t.id}</span>
+                <span style="font-size:9px;color:${cfg.color};background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:4px;flex-shrink:0;">${t.ratio || ''}</span>
+              </div>`;
+            }).join('');
 
         // Cập nhật cho batchTasks và uiBatchTasks nếu có query cụ thể
         if (msg.query && msg.query.trim()) {
