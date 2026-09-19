@@ -6348,83 +6348,147 @@ async function processServerImageQueue() {
   if (_isProcessingServerImageQueue || !_serverImageQueue.length) return;
   _isProcessingServerImageQueue = true;
 
-  while (_serverImageQueue.length > 0) {
-    const task = _serverImageQueue.shift();
-    try {
-      // ĐẢM BẢO ĐÁNH SỐ THỨ TỰ 001., 002. ĐẦU PROMPT
+  // Lấy tất cả tasks hiện tại trong queue
+  const tasks = [];
+  while (_serverImageQueue.length > 0) tasks.push(_serverImageQueue.shift());
+
+  try {
+    // 1. Format STT cho mỗi task
+    for (const task of tasks) {
       let prompt = (task.prompt || '').trim();
-      let seqStr = "";
+      let seqStr = '';
       const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
       if (matchSeq) {
         const num = parseInt(matchSeq[1], 10);
-        seqStr = String(num).padStart(3, '0') + ".";
+        seqStr = String(num).padStart(3, '0') + '.';
         prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
       } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
         const num = Number(task.sceneIndex) + 1;
-        seqStr = String(num).padStart(3, '0') + ".";
+        seqStr = String(num).padStart(3, '0') + '.';
         prompt = `${seqStr} ${prompt}`;
-        await updateMaxSeq(task.projectId, num, "image");
+        await updateMaxSeq(task.projectId, num, 'image');
       } else {
-        const seqRes = await getMaxSeq(task.projectId, "image");
+        const seqRes = await getMaxSeq(task.projectId, 'image');
         const nextSeq = (seqRes?.maxSeq || 0) + 1;
-        await updateMaxSeq(task.projectId, nextSeq, "image");
-        seqStr = String(nextSeq).padStart(3, '0') + ".";
+        await updateMaxSeq(task.projectId, nextSeq, 'image');
+        seqStr = String(nextSeq).padStart(3, '0') + '.';
         prompt = `${seqStr} ${prompt}`;
       }
       task.prompt = prompt;
       task.seq = seqStr;
+      task._stt = seqStr.replace('.', '').trim(); // e.g. "001"
+    }
 
-      logToBridge(`Bắt đầu tạo ảnh cho task: ${task.id} (prompt: "${(task.prompt || '').slice(0, 30)}...")`);
+    // 2. Tìm tab Bulk AI Studio
+    const allTabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+    const bulkTab = allTabs.find(t => t.url?.includes('/tool/') && (t.url.includes('mode=EDIT') || t.url.includes('mode=APP')));
+    if (!bulkTab) throw new Error('Không tìm thấy tab Bulk AI Studio — hãy mở flow.google.com/.../tool/...?mode=APP');
 
-      const model = "NARWHAL";
-      let aspect = "IMAGE_ASPECT_RATIO_LANDSCAPE";
-      if (task.aspectRatio === '9:16' || task.aspectRatio?.includes('PORTRAIT')) {
-        aspect = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-      } else if (task.aspectRatio === '16:9' || task.aspectRatio?.includes('LANDSCAPE')) {
-        aspect = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-      } else if (task.aspectRatio === '1:1' || task.aspectRatio?.includes('SQUARE')) {
-        aspect = 'IMAGE_ASPECT_RATIO_SQUARE';
+    const tabId = bulkTab.id;
+    logToBridge(`[BulkAI] Gửi ${tasks.length} task ảnh vào tab: ${bulkTab.title?.slice(0, 40)}`);
+
+    // 3. Format prompt lines: "ratio|stt. prompt"
+    const promptLines = tasks.map(t => {
+      const r = t.aspectRatio || '9:16';
+      return `${r}|${t.prompt}`;
+    });
+
+    // 4. Inject status interceptor vào main frame
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      world: 'MAIN',
+      func: function() {
+        if (window.__bulkStatusInterceptorActive) return;
+        window.__bulkStatusInterceptorActive = true;
+        window.__bulkStatusData = null;
+        window.addEventListener('message', function(e) {
+          if (e.data && (e.data.type === 'BULK_STATUS_UPDATE' || e.data.type === 'BULK_DONE')) {
+            window.__bulkStatusData = e.data;
+          }
+        });
       }
+    });
 
-      // Gọi API tạo ảnh trực tiếp giống tab Tạo Ảnh (KHÔNG fallback sang Auto Click)
-      logToBridge(`[Image Engine] Gọi API tạo ảnh cho task ${task.id}...`);
-      const res = await createImageAPI(prompt, task.projectId, model, aspect, task.referenceImage);
-
-      if (!res?.success || !res?.mediaId) {
-        const detailStr = res?.detail ? ` (${res.detail})` : '';
-        throw new Error((res?.error || 'Không nhận được Media ID từ Google Flow API') + detailStr);
+    // 5. Gửi BULK_ADD_TASKS vào tool iframe qua postMessage
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      world: 'MAIN',
+      args: [promptLines],
+      func: function(prompts) {
+        window.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
+        document.querySelectorAll('iframe').forEach(function(f) {
+          try { f.contentWindow && f.contentWindow.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*'); } catch(_) {}
+        });
       }
+    });
+    logToBridge(`[BulkAI] Đã gửi ${promptLines.length} prompts. Poll kết quả mỗi 2s...`);
 
-      const mediaId = res.mediaId;
+    // 6. Map stt → task để lookup khi poll
+    const sttMap = {};
+    tasks.forEach(t => { sttMap[t._stt] = t; });
+    const doneStt = new Set();
 
-      logToBridge(`🎉 Task ảnh ${task.id} thành công! Media ID: ${mediaId}. Đang tải file ảnh về máy...`);
-      const fname = `flow_img_${Date.now()}_${mediaId.slice(0, 8)}.jpg`;
-      const dlRes = await downloadFileToDisk(mediaId, fname);
-      logToBridge(`✅ Đã tải xong ảnh về máy: ${dlRes.filePath} (${(dlRes.fileSize / 1024).toFixed(0)} KB)! Gửi cho tool_video...`);
+    // 7. Poll mỗi 2s, timeout 10 phút
+    const MAX_WAIT = 10 * 60 * 1000;
+    const POLL_INTERVAL = 2000;
+    const startTime = Date.now();
 
+    await new Promise((resolve) => {
+      const timer = setInterval(async () => {
+        if (Date.now() - startTime > MAX_WAIT) {
+          clearInterval(timer);
+          for (const t of tasks) {
+            if (!doneStt.has(t._stt)) {
+              logToBridge(`❌ Task ${t.id} timeout`);
+              if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+                _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: 'Timeout 10 phút' }));
+              }
+            }
+          }
+          resolve();
+          return;
+        }
+        try {
+          const [res] = await chrome.scripting.executeScript({
+            target: { tabId, allFrames: false },
+            world: 'MAIN',
+            func: function() { const d = window.__bulkStatusData; window.__bulkStatusData = null; return d; }
+          });
+          const data = res?.result;
+          if (!data || data.type !== 'BULK_STATUS_UPDATE' || !data.tasks) return;
+          for (const toolTask of data.tasks) {
+            const stt = (toolTask.stt || '').split('.')[0]?.trim();
+            if (!stt || doneStt.has(stt)) continue;
+            const origTask = sttMap[stt];
+            if (!origTask) continue;
+            if (toolTask.status === 'completed') {
+              doneStt.add(stt);
+              logToBridge(`✅ Task ảnh ${origTask.id} (STT ${stt}) xong!`);
+              if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+                _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: origTask.id, filePath: `${stt}.jpg`, ok: true }));
+              }
+            } else if (toolTask.status === 'error') {
+              doneStt.add(stt);
+              logToBridge(`❌ Task ảnh ${origTask.id} lỗi`);
+              if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+                _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: origTask.id, ok: false, error: toolTask.error || 'Tool error' }));
+              }
+            }
+          }
+          if (doneStt.size >= tasks.length) {
+            clearInterval(timer);
+            logToBridge(`🎉 Tất cả ${tasks.length} task ảnh hoàn thành!`);
+            resolve();
+          }
+        } catch (_) {}
+      }, POLL_INTERVAL);
+    });
+
+  } catch (err) {
+    logToBridge(`❌ processServerImageQueue (BulkAI) thất bại: ${err.message}`);
+    for (const t of tasks) {
       if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
-        _toolWs.send(JSON.stringify({
-          type: 'IMAGE_RESULT',
-          id: task.id,
-          mediaId: mediaId,
-          filePath: dlRes.filePath,
-          downloadUrl: dlRes.url,
-          ok: true
-        }));
-      }
-
-      try { chrome.downloads.erase({ id: dlRes.downloadId }); } catch (_) {}
-
-      await new Promise(r => setTimeout(r, 2000));
-    } catch (err) {
-      logToBridge(`❌ Task ảnh ${task.id} thất bại: ${err.message}`);
-      if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
-        _toolWs.send(JSON.stringify({
-          type: 'IMAGE_RESULT',
-          id: task.id,
-          ok: false,
-          error: err.message
-        }));
+        _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: err.message }));
       }
     }
   }
