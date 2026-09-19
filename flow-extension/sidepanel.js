@@ -5345,22 +5345,34 @@ document.addEventListener('DOMContentLoaded', () => {
           });
 
 
-          // Drag logic
+          // Drag logic — dùng Pointer Capture để bypass tool's React handlers
           let dragging = false, ox = 0, oy = 0;
-          dot.addEventListener('mousedown', e => {
+          dot.addEventListener('pointerdown', e => {
             if (e.target === saveBtn) return;
-            dragging = true; dot.style.cursor = 'grabbing';
+            dragging = true;
+            dot.style.cursor = 'grabbing';
             const r = dot.getBoundingClientRect();
-            ox = e.clientX - r.left; oy = e.clientY - r.top;
+            ox = e.clientX - r.left;
+            oy = e.clientY - r.top;
+            dot.setPointerCapture(e.pointerId); // tất cả pointer events → dot, bỏ qua tool
             e.preventDefault(); e.stopPropagation();
           });
-          document.addEventListener('mousemove', e => {
+          dot.addEventListener('pointermove', e => {
             if (!dragging) return;
-            dot.style.left = (e.clientX - ox + 22) + 'px';
-            dot.style.top  = (e.clientY - oy + 22) + 'px';
+            dot.style.left = (e.clientX - ox + 12) + 'px';
+            dot.style.top  = (e.clientY - oy + 12) + 'px';
             dot.style.transform = 'none';
+            e.preventDefault(); e.stopPropagation();
           });
-          document.addEventListener('mouseup', () => { dragging = false; dot.style.cursor = 'grab'; });
+          dot.addEventListener('pointerup', e => {
+            dragging = false;
+            dot.style.cursor = 'grab';
+            dot.releasePointerCapture(e.pointerId);
+          });
+          dot.addEventListener('pointercancel', e => {
+            dragging = false;
+            dot.style.cursor = 'grab';
+          });
 
           // Save → report coords
           saveBtn.addEventListener('click', e => {
