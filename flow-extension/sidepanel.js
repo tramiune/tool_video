@@ -5663,10 +5663,10 @@ document.addEventListener('DOMContentLoaded', () => {
       func: function() {
         if (window.__bulkStatusInterceptorActive) return;
         window.__bulkStatusInterceptorActive = true;
-        window.__bulkStatusData = null;
+        window.__bulkStatusQueue = [];
         window.addEventListener('message', function(e) {
           if (e.data && (e.data.type === 'BULK_STATUS_UPDATE' || e.data.type === 'BULK_DONE')) {
-            window.__bulkStatusData = e.data;
+            window.__bulkStatusQueue.push(e.data);
           }
         });
         console.log('[Ext] Bulk status interceptor installed on main frame');
@@ -5714,35 +5714,37 @@ document.addEventListener('DOMContentLoaded', () => {
           target: { tabId, allFrames: false },
           world: 'MAIN',
           func: function() {
-            const d = window.__bulkStatusData;
-            window.__bulkStatusData = null; // consume
-            return d;
+            const q = window.__bulkStatusQueue || [];
+            window.__bulkStatusQueue = []; // consume all
+            return q;
           }
         });
-        const data = res && res.result;
-        if (!data) return;
-        if (data.type === 'BULK_STATUS_UPDATE' && data.tasks) {
-          renderTaskList(data.tasks);
-          // Gửi kết quả về background.js cho các task từ server
-          if (_serverSttMap.size > 0) {
-            data.tasks.forEach(function(t) {
-              var stt = (t.stt || '').split('.')[0]?.trim();
-              if (!stt || !_serverSttMap.has(stt)) return;
-              if (t.status === 'completed') {
-                var taskId = _serverSttMap.get(stt);
-                _serverSttMap.delete(stt);
-                chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, ok: true });
-                log(`✅ [Server] Task STT ${stt} xong — báo về tool_video`);
-              } else if (t.status === 'error') {
-                var taskId = _serverSttMap.get(stt);
-                _serverSttMap.delete(stt);
-                chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, ok: false, error: t.error || 'error' });
-              }
-            });
+        const queue = res && res.result;
+        if (!queue || !queue.length) return;
+        
+        for (const data of queue) {
+          if (data.type === 'BULK_STATUS_UPDATE' && data.tasks) {
+            renderTaskList(data.tasks);
+            // Gửi kết quả về background.js cho các task từ server
+            if (_serverSttMap.size > 0) {
+              data.tasks.forEach(function(t) {
+                var stt = (t.stt || '').split('.')[0]?.trim();
+                if (!stt || !_serverSttMap.has(stt)) return;
+                if (t.status === 'completed') {
+                  var taskId = _serverSttMap.get(stt);
+                  _serverSttMap.delete(stt);
+                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, ok: true });
+                  log(`✅ [Server] Task STT ${stt} xong — báo về tool_video`);
+                } else if (t.status === 'error') {
+                  var taskId = _serverSttMap.get(stt);
+                  _serverSttMap.delete(stt);
+                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, ok: false, error: t.error || 'error' });
+                }
+              });
+            }
           }
-        }
-        if (data.type === 'BULK_DONE') {
-          const { completed = 0, errors = 0, total = 0 } = data;
+          if (data.type === 'BULK_DONE') {
+            const { completed = 0, errors = 0, total = 0 } = data;
           log(`🎉 Xong! ✅${completed} ❌${errors} / ${total} tasks`);
           setBadge(`✅ Xong ${completed}/${total}`, '#10b981');
           // Cập nhật task list UI — mark tất cả task đang processing → completed
@@ -5760,7 +5762,8 @@ document.addEventListener('DOMContentLoaded', () => {
           if (summaryEl) summaryEl.textContent = `✅${completed} ⚙️0 ⏳0 ❌${errors}`;
           stopStatusPolling();
         }
-      } catch (_) {}
+        } // close for loop
+      } catch (err) { console.error('Poll error:', err); }
     }, 2000);
     log('📡 Bắt đầu poll trạng thái mỗi 2s...');
   }
