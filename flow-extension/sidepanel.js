@@ -5576,6 +5576,33 @@ document.addEventListener('DOMContentLoaded', () => {
   let _downloadedCards = new Set();
   let _promptLines = [];
   let _bulkTabId = null;
+  // stt → taskId — map các task server đang chờ kết quả từ Bulk AI
+  const _serverSttMap = new Map();
+
+  // Nhận task từ background.js — chạy y hệt bấm nút Paste & Chạy
+  chrome.runtime.onMessage.addListener(function(msg) {
+    if (msg.action !== 'SIDEPANEL_BULK_RUN') return;
+    const serverTasks = msg.tasks || [];
+    if (!serverTasks.length) return;
+    // Đăng ký map stt → taskId
+    serverTasks.forEach(t => _serverSttMap.set(t.stt, t.id));
+    // Format prompts và chạy
+    const promptsText = serverTasks.map(t => `${t.ratio || '9:16'}|${t.prompt}`).join('\n');
+    findBulkTab().then(async function(tab) {
+      if (!tab) {
+        serverTasks.forEach(t => {
+          chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: t.id, ok: false, error: 'Không tìm thấy tab Bulk AI' });
+          _serverSttMap.delete(t.stt);
+        });
+        return;
+      }
+      _bulkTabId = tab.id;
+      log(`[Server] Nhận ${serverTasks.length} task từ tool_video → Bulk AI...`);
+      await pasteAndRun(tab.id, promptsText);
+      await injectStatusInterceptor(tab.id);
+      startStatusPolling(tab.id);
+    });
+  });
 
   const logEl  = () => document.getElementById('bulkAiLog');
   const badge  = () => document.getElementById('bulkAiStatusBadge');
@@ -5692,6 +5719,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data) return;
         if (data.type === 'BULK_STATUS_UPDATE' && data.tasks) {
           renderTaskList(data.tasks);
+          // Gửi kết quả về background.js cho các task từ server
+          if (_serverSttMap.size > 0) {
+            data.tasks.forEach(function(t) {
+              var stt = (t.stt || '').split('.')[0]?.trim();
+              if (!stt || !_serverSttMap.has(stt)) return;
+              if (t.status === 'completed') {
+                var taskId = _serverSttMap.get(stt);
+                _serverSttMap.delete(stt);
+                chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, ok: true });
+                log(`✅ [Server] Task STT ${stt} xong — báo về tool_video`);
+              } else if (t.status === 'error') {
+                var taskId = _serverSttMap.get(stt);
+                _serverSttMap.delete(stt);
+                chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, ok: false, error: t.error || 'error' });
+              }
+            });
+          }
         }
         if (data.type === 'BULK_DONE') {
           const { completed = 0, errors = 0, total = 0 } = data;

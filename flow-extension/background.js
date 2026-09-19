@@ -6322,9 +6322,20 @@ let _isProcessingServerImageQueue = false;
 // stt → task — map task đang chờ Bulk AI xong
 const _bulkAiPendingTasks = new Map();
 
-// Lắng nghe BULK_STATUS_UPDATE từ content_script (qua chrome.runtime)
-// Chain: Tool iframe → window.parent.postMessage → content_script → chrome.runtime.sendMessage
+// Lắng nghe kết quả từ sidepanel (SIDEPANEL_BULK_DONE) và BULK_STATUS_UPDATE từ content_script
 chrome.runtime.onMessage.addListener(function(msg) {
+  // Sidepanel báo task xong → gửi IMAGE_RESULT về server
+  if (msg?.action === 'SIDEPANEL_BULK_DONE') {
+    const { taskId, stt, ok, error } = msg;
+    logToBridge(ok ? `✅ [BulkAI] Task ${taskId} (STT ${stt}) xong → IMAGE_RESULT` : `❌ [BulkAI] Task ${taskId} lỗi: ${error}`);
+    if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+      _toolWs.send(JSON.stringify(ok
+        ? { type: 'IMAGE_RESULT', id: taskId, filePath: `${stt}.jpg`, ok: true }
+        : { type: 'IMAGE_RESULT', id: taskId, ok: false, error: error || 'Bulk AI error' }
+      ));
+    }
+    return;
+  }
   if (msg?.action !== 'BULK_STATUS_UPDATE' || !_bulkAiPendingTasks.size) return;
   const tasks = msg.tasks || [];
   for (const toolTask of tasks) {
@@ -6362,7 +6373,7 @@ async function processServerImageQueue() {
   while (_serverImageQueue.length > 0) tasks.push(_serverImageQueue.shift());
 
   try {
-    // 1. Format STT
+    // Format STT cho mỗi task
     for (const task of tasks) {
       let prompt = (task.prompt || '').trim();
       let seqStr = '';
@@ -6388,51 +6399,23 @@ async function processServerImageQueue() {
       task._stt = seqStr.replace('.', '').trim();
     }
 
-    // 2. Tìm tab Bulk AI Studio
-    const allTabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
-    const bulkTab = allTabs.find(t => t.url?.includes('/tool/'));
-    if (!bulkTab) throw new Error('Không tìm thấy tab Bulk AI Studio');
-    const tabId = bulkTab.id;
-    logToBridge(`[BulkAI] Gửi ${tasks.length} task ảnh → tab: ${bulkTab.title?.slice(0, 40)}`);
-
-    // 3. Đăng ký vào _bulkAiPendingTasks — chrome.runtime.onMessage sẽ xử lý kết quả
-    // (dùng onMessage thay setInterval vì service worker có thể bị sleep)
-    tasks.forEach(t => _bulkAiPendingTasks.set(t._stt, t));
-
-    // 4. Timeout 10 phút
-    setTimeout(() => {
-      for (const t of tasks) {
-        if (_bulkAiPendingTasks.has(t._stt)) {
-          _bulkAiPendingTasks.delete(t._stt);
-          logToBridge(`❌ Task ${t.id} timeout 10 phút`);
-          if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
-            _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: 'Timeout 10 phút' }));
-        }
-      }
-    }, 10 * 60 * 1000);
-
-    // 5. Gửi BULK_ADD_TASKS vào tool iframe
-    const promptLines = tasks.map(t => `${t.aspectRatio || '9:16'}|${t.prompt}`);
-    await chrome.scripting.executeScript({
-      target: { tabId, allFrames: false },
-      world: 'MAIN',
-      args: [promptLines],
-      func: function(prompts) {
-        window.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
-        document.querySelectorAll('iframe').forEach(function(f) {
-          try { f.contentWindow && f.contentWindow.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*'); } catch(_) {}
-        });
-      }
+    // Gửi sang sidepanel để chạy — sidepanel dùng code Bulk AI đã hoạt động
+    const sidepanelTasks = tasks.map(t => ({ id: t.id, stt: t._stt, prompt: t.prompt, ratio: t.aspectRatio || '9:16' }));
+    logToBridge(`[BulkAI] Gửi ${tasks.length} task sang sidepanel (SIDEPANEL_BULK_RUN)...`);
+    chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_RUN', tasks: sidepanelTasks }).catch(() => {
+      logToBridge('❌ Sidepanel không mở — hãy mở extension panel trước khi chạy task ảnh');
+      tasks.forEach(t => {
+        if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
+          _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: 'Sidepanel chưa mở' }));
+      });
     });
-    logToBridge(`[BulkAI] Đã gửi ${promptLines.length} prompts → chờ BULK_STATUS_UPDATE qua chrome.runtime.onMessage...`);
 
   } catch (err) {
     logToBridge(`❌ processServerImageQueue lỗi: ${err.message}`);
-    for (const t of tasks) {
-      _bulkAiPendingTasks.delete(t._stt);
+    tasks.forEach(t => {
       if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
         _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: err.message }));
-    }
+    });
   }
 
   _isProcessingServerImageQueue = false;
