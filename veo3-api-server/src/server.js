@@ -431,6 +431,47 @@ global.extensionBridge = extensionBridge;
 
 logger.info(`[Bridge] WebSocket server listening on ws://localhost:${EXTENSION_WS_PORT}`);
 
+// ── Bulk AI Studio WebSocket Server ──────────────────────────────────────────
+// Flow Bulk AI Studio tool connects here. Server broadcasts prompts → tool runs them.
+const BULK_AI_WS_PORT = parseInt(process.env.BULK_AI_WS_PORT || '7789', 10);
+const _bulkAiWss = new WebSocketServer({ port: BULK_AI_WS_PORT });
+const _bulkAiClients = new Set();
+
+_bulkAiWss.on('connection', (ws, req) => {
+  _bulkAiClients.add(ws);
+  logger.info(`[BulkAI WS] Client connected (total: ${_bulkAiClients.size})`);
+
+  // Send welcome + current queue status
+  ws.send(JSON.stringify({ type: 'connected', port: BULK_AI_WS_PORT }));
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      logger.info(`[BulkAI WS] Recv: ${JSON.stringify(msg).slice(0, 100)}`);
+    } catch (_) {}
+  });
+
+  ws.on('close', () => {
+    _bulkAiClients.delete(ws);
+    logger.info(`[BulkAI WS] Client disconnected (total: ${_bulkAiClients.size})`);
+  });
+
+  ws.on('error', (err) => {
+    logger.error(`[BulkAI WS] Error: ${err.message}`);
+    _bulkAiClients.delete(ws);
+  });
+});
+
+logger.info(`[BulkAI WS] Bulk AI Studio WebSocket listening on ws://localhost:${BULK_AI_WS_PORT}`);
+
+// Broadcast một message tới tất cả Bulk AI clients
+function bulkAiBroadcast(message) {
+  const payload = typeof message === 'string' ? message : JSON.stringify(message);
+  for (const ws of _bulkAiClients) {
+    try { if (ws.readyState === 1) ws.send(payload); } catch (_) {}
+  }
+}
+
 
 
 // Stream server logs to all connected WebSocket clients (dashboard UI)
@@ -892,6 +933,42 @@ app.get('/api/ext-status', (req, res) => {
     nextRotationInSecs: Math.round(nextSlotInMs / 1000),
     clientOrder: _clientOrder,
     totalPending: _extPending.size,
+  });
+});
+
+// ── Bulk AI Studio WS API ─────────────────────────────────────────────────────
+// POST /api/bulk-send — nhận danh sách prompt, broadcast từng dòng tới Bulk AI tool
+// Body: { prompts: ["9:16|prompt1", "prompt2", ...], delayMs: 500 }
+app.post('/api/bulk-send', (req, res) => {
+  const { prompts = [], delayMs = 500, ratio = '9:16' } = req.body || {};
+  if (!Array.isArray(prompts) || prompts.length === 0) {
+    return res.status(400).json({ ok: false, error: 'prompts array is empty' });
+  }
+  if (_bulkAiClients.size === 0) {
+    return res.status(503).json({ ok: false, error: 'No Bulk AI tool connected on ws://localhost:7789' });
+  }
+
+  // Broadcast từng prompt với delay để tool xử lý tuần tự
+  (async () => {
+    for (let i = 0; i < prompts.length; i++) {
+      let line = String(prompts[i]).trim();
+      // Nếu chưa có ratio prefix → thêm vào
+      if (!line.includes('|')) line = `${ratio}|${line}`;
+      bulkAiBroadcast(line);
+      logger.info(`[BulkAI] Sent prompt ${i + 1}/${prompts.length}: "${line.slice(0, 60)}"`);
+      if (i < prompts.length - 1) await new Promise(r => setTimeout(r, delayMs));
+    }
+  })();
+
+  res.json({ ok: true, sent: prompts.length, clients: _bulkAiClients.size });
+});
+
+// GET /api/bulk-status — trạng thái kết nối Bulk AI WS
+app.get('/api/bulk-status', (req, res) => {
+  res.json({
+    wsPort: BULK_AI_WS_PORT,
+    wsUrl: `ws://localhost:${BULK_AI_WS_PORT}`,
+    connectedClients: _bulkAiClients.size,
   });
 });
 
