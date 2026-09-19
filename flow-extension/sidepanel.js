@@ -5605,29 +5605,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function pasteAndRun(tabId, promptsText) {
+    const prompts = promptsText.split('\n').map(l => l.trim()).filter(Boolean);
     const [res] = await chrome.scripting.executeScript({
       target: { tabId, allFrames: false },
       world: 'MAIN',
-      args: [promptsText],
-      func: function(text) {
-        var allTA = Array.from(document.querySelectorAll('textarea'));
-        var ta = allTA.find(function(t) {
-          var ph = (t.placeholder || '').toLowerCase();
-          var nearby = (t.closest('[class]') ? t.closest('[class]').textContent : '').toLowerCase();
-          return ph.includes('ý tưởng') || ph.includes('prompt') || nearby.includes('nhập danh sách') || nearby.includes('bulk');
-        }) || allTA[allTA.length - 1];
-        if (!ta) return { ok: false, error: 'Không tìm thấy textarea NHẬP DANH SÁCH' };
-        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value') && Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-        if (nativeSetter) nativeSetter.call(ta, text); else ta.value = text;
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-        ta.dispatchEvent(new Event('change', { bubbles: true }));
-        var runBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
-          var t2 = (b.textContent || '').toLowerCase();
-          return t2.includes('chạy danh sách') || t2.includes('chay danh sach');
+      args: [prompts],
+      func: function(prompts) {
+        // Gửi cho chính window (nếu tool là main frame)
+        window.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
+        // Gửi cho tất cả iframes (tool thường nằm trong iframe)
+        var iframeCount = 0;
+        document.querySelectorAll('iframe').forEach(function(iframe) {
+          try { iframe.contentWindow && iframe.contentWindow.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*'); iframeCount++; } catch(_) {}
         });
-        if (!runBtn) return { ok: false, error: 'Không tìm thấy nút CHẠY DANH SÁCH', pasted: true };
-        runBtn.click();
-        return { ok: true, btnText: runBtn.textContent.trim().slice(0, 40) };
+        return { ok: true, prompts: prompts.length, iframes: iframeCount };
       },
     });
     return res && res.result;
