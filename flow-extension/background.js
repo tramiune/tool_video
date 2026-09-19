@@ -6362,7 +6362,7 @@ async function processServerImageQueue() {
   while (_serverImageQueue.length > 0) tasks.push(_serverImageQueue.shift());
 
   try {
-    // 1. Format STT cho mỗi task
+    // 1. Format STT
     for (const task of tasks) {
       let prompt = (task.prompt || '').trim();
       let seqStr = '';
@@ -6385,24 +6385,33 @@ async function processServerImageQueue() {
       }
       task.prompt = prompt;
       task.seq = seqStr;
-      task._stt = seqStr.replace('.', '').trim(); // e.g. "001"
+      task._stt = seqStr.replace('.', '').trim();
     }
 
     // 2. Tìm tab Bulk AI Studio
     const allTabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
     const bulkTab = allTabs.find(t => t.url?.includes('/tool/'));
-    if (!bulkTab) throw new Error('Không tìm thấy tab Bulk AI Studio — hãy mở flow.google.com/.../tool/...');
-
+    if (!bulkTab) throw new Error('Không tìm thấy tab Bulk AI Studio');
     const tabId = bulkTab.id;
-    logToBridge(`[BulkAI] Gửi ${tasks.length} task ảnh vào tab: ${bulkTab.title?.slice(0, 40)}`);
+    logToBridge(`[BulkAI] Gửi ${tasks.length} task ảnh → tab: ${bulkTab.title?.slice(0, 40)}`);
 
-    // 3. Format prompt lines: "ratio|stt. prompt"
+    // 3. Inject interceptor vào main frame (giống sidepanel startStatusPolling)
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      world: 'MAIN',
+      func: function() {
+        window.__bulkStatusInterceptorActive = true;
+        window.__bulkStatusData = null;
+        window.addEventListener('message', function(e) {
+          if (e.data && (e.data.type === 'BULK_STATUS_UPDATE' || e.data.type === 'BULK_DONE')) {
+            window.__bulkStatusData = e.data;
+          }
+        });
+      }
+    });
+
+    // 4. Gửi BULK_ADD_TASKS vào tool iframe
     const promptLines = tasks.map(t => `${t.aspectRatio || '9:16'}|${t.prompt}`);
-
-    // 4. Đăng ký task vào _bulkAiPendingTasks (để onMessage handler nhận kết quả)
-    tasks.forEach(t => _bulkAiPendingTasks.set(t._stt, t));
-
-    // 5. Gửi BULK_ADD_TASKS vào tool iframe qua postMessage
     await chrome.scripting.executeScript({
       target: { tabId, allFrames: false },
       world: 'MAIN',
@@ -6414,26 +6423,65 @@ async function processServerImageQueue() {
         });
       }
     });
-    logToBridge(`[BulkAI] Đã gửi ${promptLines.length} prompts → chờ BULK_STATUS_UPDATE từ content_script...`);
+    logToBridge(`[BulkAI] Đã gửi ${promptLines.length} prompts. Poll mỗi 2s...`);
 
-    // 6. Timeout 10 phút — fail các task chưa xong
-    setTimeout(() => {
-      for (const [stt, t] of _bulkAiPendingTasks) {
-        _bulkAiPendingTasks.delete(stt);
-        logToBridge(`❌ Task ${t.id} timeout sau 10 phút`);
-        if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
-          _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: 'Timeout 10 phút' }));
+    // 5. Build stt → task map
+    const sttMap = {};
+    tasks.forEach(t => { sttMap[t._stt] = t; });
+    const doneStt = new Set();
+
+    // 6. Poll mỗi 2s — giống sidepanel startStatusPolling đã proven ✅
+    const MAX_WAIT = 10 * 60 * 1000;
+    const startTime = Date.now();
+    await new Promise((resolve) => {
+      const timer = setInterval(async () => {
+        if (Date.now() - startTime > MAX_WAIT) {
+          clearInterval(timer);
+          for (const t of tasks) {
+            if (!doneStt.has(t._stt)) {
+              if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
+                _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: 'Timeout 10 phút' }));
+            }
+          }
+          resolve();
+          return;
         }
-      }
-    }, 10 * 60 * 1000);
+        try {
+          const [res] = await chrome.scripting.executeScript({
+            target: { tabId, allFrames: false },
+            world: 'MAIN',
+            func: function() { const d = window.__bulkStatusData; window.__bulkStatusData = null; return d; }
+          });
+          const data = res?.result;
+          if (!data || !data.tasks) return;
+          for (const toolTask of data.tasks) {
+            const stt = (toolTask.stt || '').split('.')[0]?.trim();
+            if (!stt || doneStt.has(stt) || !sttMap[stt]) continue;
+            if (toolTask.status === 'completed') {
+              doneStt.add(stt);
+              logToBridge(`✅ Task ảnh ${sttMap[stt].id} (STT ${stt}) xong!`);
+              if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
+                _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: sttMap[stt].id, filePath: `${stt}.jpg`, ok: true }));
+            } else if (toolTask.status === 'error') {
+              doneStt.add(stt);
+              if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
+                _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: sttMap[stt].id, ok: false, error: toolTask.error || 'error' }));
+            }
+          }
+          if (doneStt.size >= tasks.length) {
+            clearInterval(timer);
+            logToBridge(`🎉 Tất cả ${tasks.length} task ảnh hoàn thành!`);
+            resolve();
+          }
+        } catch (_) {}
+      }, 2000);
+    });
 
   } catch (err) {
     logToBridge(`❌ processServerImageQueue lỗi: ${err.message}`);
     for (const t of tasks) {
-      _bulkAiPendingTasks.delete(t._stt);
-      if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+      if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
         _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: err.message }));
-      }
     }
   }
 
