@@ -5729,5 +5729,73 @@ document.addEventListener('DOMContentLoaded', () => {
       _downloadedCards.clear();
       setBadge('Chờ', 'var(--text2)');
     });
+
+    // ── Test-step buttons (fallback: also register here) ──
+    var elFocus = document.getElementById('btnTestBulkAiFocus');
+    if (elFocus) elFocus.addEventListener('click', async function() {
+      var text = (document.getElementById('testBulkAiInput') || {}).value || '';
+      text = text.trim();
+      var lg = document.getElementById('testStepLog');
+      function setLog(s) { if (lg) { lg.style.display = 'block'; lg.textContent = s; } }
+
+      if (!text) { setLog('❌ Nhập nội dung vào ô trên trước!'); return; }
+      var tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+      var tab = tabs.find(function(t) { return t.url && t.url.includes('/tool/') && (t.url.includes('mode=EDIT') || t.url.includes('mode=APP')); });
+      if (!tab) { setLog('❌ Không tìm thấy tab Bulk AI Studio!'); return; }
+      setLog('⏳ Nhập vào tab: ' + (tab.title || '').slice(0, 40) + '...');
+
+      var res = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false }, world: 'MAIN', args: [text],
+        func: function(txt) {
+          var allTA = Array.from(document.querySelectorAll('textarea'));
+          var ta = allTA.find(function(t) {
+            var ph = (t.placeholder || '').toLowerCase();
+            var nearby = (t.closest('[class]') || document.body).textContent.toLowerCase();
+            return ph.includes('ý tưởng') || ph.includes('idea') || ph.includes('prompt')
+                || nearby.includes('nhập danh sách') || nearby.includes('bulk');
+          }) || allTA[allTA.length - 1];
+          if (!ta) return { ok: false, error: 'Không tìm thấy textarea', n: allTA.length };
+          ta.focus();
+          var s = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value') && Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+          if (s) s.call(ta, txt); else ta.value = txt;
+          ['input','change','blur'].forEach(function(ev) { ta.dispatchEvent(new Event(ev, { bubbles: true })); });
+          return { ok: true, ph: (ta.placeholder || '').slice(0, 50), len: txt.length };
+        }
+      });
+      var r = res && res[0] && res[0].result;
+      setLog(r && r.ok ? ('✅ Đã nhập ' + r.len + ' ký tự (placeholder: "' + r.ph + '")') : ('❌ ' + (r && r.error || 'Lỗi không xác định') + ' (textarea count: ' + (r && r.n) + ')'));
+    });
+
+    var elRun = document.getElementById('btnTestBulkAiClickRun');
+    if (elRun) elRun.addEventListener('click', async function() {
+      var lg = document.getElementById('testStepLog');
+      function setLog(s) { if (lg) { lg.style.display = 'block'; lg.textContent = s; } }
+      var tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+      var tab = tabs.find(function(t) { return t.url && t.url.includes('/tool/') && (t.url.includes('mode=EDIT') || t.url.includes('mode=APP')); });
+      if (!tab) { setLog('❌ Không tìm thấy tab Bulk AI Studio!'); return; }
+      setLog('⏳ Tìm nút CHẠY DANH SÁCH...');
+
+      var res = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false }, world: 'MAIN',
+        func: function() {
+          var allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+          var vis = allBtns.filter(function(b) { var r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+          var debug = vis.map(function(b) { return (b.innerText || b.textContent || '').trim().slice(0, 60); });
+          var runBtn = vis.find(function(b) {
+            var t = (b.innerText || b.textContent || '').toLowerCase().trim();
+            return t.includes('chạy danh sách') || t.includes('chay danh sach') || (t.includes('chạy') && t.includes('danh'));
+          });
+          if (!runBtn) return { ok: false, debug: debug };
+          runBtn.click();
+          return { ok: true, btnText: (runBtn.innerText || runBtn.textContent || '').trim().slice(0, 50), debug: debug };
+        }
+      });
+      var r = res && res[0] && res[0].result;
+      if (r && r.ok) {
+        setLog('✅ Đã click: "' + r.btnText + '"');
+      } else {
+        setLog('❌ Không thấy nút!\n\nTất cả buttons visible:\n' + ((r && r.debug) || []).map(function(t, i) { return '[' + i + '] "' + t + '"'; }).join('\n'));
+      }
+    });
   });
 })();
