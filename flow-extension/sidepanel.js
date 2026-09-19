@@ -5697,6 +5697,19 @@ document.addEventListener('DOMContentLoaded', () => {
           const { completed = 0, errors = 0, total = 0 } = data;
           log(`🎉 Xong! ✅${completed} ❌${errors} / ${total} tasks`);
           setBadge(`✅ Xong ${completed}/${total}`, '#10b981');
+          // Cập nhật task list UI — mark tất cả task đang processing → completed
+          const listEl = document.getElementById('bulkTaskList');
+          if (listEl) {
+            listEl.querySelectorAll('div').forEach(function(row) {
+              var icon = row.querySelector('span:first-child');
+              if (icon && icon.textContent === '⚙️') {
+                icon.textContent = '✅';
+                row.style.background = 'rgba(16,185,129,0.12)';
+              }
+            });
+          }
+          const summaryEl = document.getElementById('bulkTaskSummary');
+          if (summaryEl) summaryEl.textContent = `✅${completed} ⚙️0 ⏳0 ❌${errors}`;
           stopStatusPolling();
         }
       } catch (_) {}
