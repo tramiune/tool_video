@@ -6059,8 +6059,8 @@ let _toolServerPaused = false;
 const _serverVideoQueue = [];
 let _isProcessingServerQueue = false;
 
-// Queue IMAGE_RESULT khi _toolWs chưa kết nối — flush khi onopen
-const _pendingImageResults = [];
+// Pending IMAGE_RESULT dùng chrome.storage.session (persist qua service worker restart)
+// _pendingImageResults array bị reset khi SW restart — storage.session thì không
 
 function connectToolVideoBridge() {
   if (_toolWs && (_toolWs.readyState === WebSocket.OPEN || _toolWs.readyState === WebSocket.CONNECTING)) {
@@ -6098,11 +6098,16 @@ function connectToolVideoBridge() {
         _toolWs.send(JSON.stringify({ type: 'HELLO', profileId: 'fallback_' + Date.now() }));
       }
       chrome.runtime.sendMessage({ type: 'TOOL_SERVER_STATUS', connected: true }).catch(() => {});
-      // Flush các IMAGE_RESULT bị queue khi WS chưa kết nối
-      while (_pendingImageResults.length > 0) {
-        const msg = _pendingImageResults.shift();
-        try { _toolWs.send(JSON.stringify(msg)); logToBridge(`✅ [BulkAI] Flush IMAGE_RESULT: ${msg.id}`); } catch(_) {}
-      }
+      // Flush IMAGE_RESULT bị queue trong storage.session (survive SW restart)
+      chrome.storage.session.get('pendingImageResults', function(data) {
+        const arr = data.pendingImageResults || [];
+        if (arr.length) {
+          arr.forEach(function(msg) {
+            try { _toolWs.send(JSON.stringify(msg)); logToBridge(`✅ [BulkAI] Flush IMAGE_RESULT: ${msg.id}`); } catch(_) {}
+          });
+          chrome.storage.session.remove('pendingImageResults');
+        }
+      });
     };
 
     _toolWs.onmessage = async (event) => {
@@ -6335,6 +6340,8 @@ chrome.runtime.onMessage.addListener(function(msg) {
   // Sidepanel báo task xong → gửi IMAGE_RESULT về server
   if (msg?.action === 'SIDEPANEL_BULK_DONE') {
     const { taskId, stt, ok, error } = msg;
+    const wsState = _toolWs ? ['CONNECTING','OPEN','CLOSING','CLOSED'][_toolWs.readyState] : 'NULL';
+    logToBridge(`[BulkAI] SIDEPANEL_BULK_DONE nhận được — task: ${taskId}, WS: ${wsState}`);
     if (!ok) {
       logToBridge(`❌ [BulkAI] Task ${taskId} lỗi: ${error}`);
       if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
@@ -6358,9 +6365,13 @@ chrome.runtime.onMessage.addListener(function(msg) {
       if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
         _toolWs.send(JSON.stringify(payload));
       } else {
-        // WS chưa kết nối (service worker vừa wake up) — queue và reconnect
-        logToBridge(`⏳ WS chưa mở — queue IMAGE_RESULT ${taskId}, reconnect...`);
-        _pendingImageResults.push(payload);
+        // WS chưa kết nối (service worker vừa wake up) — lưu vào storage.session và reconnect
+        logToBridge(`⏳ WS chưa mở — lưu IMAGE_RESULT ${taskId} vào storage, reconnect...`);
+        chrome.storage.session.get('pendingImageResults', function(data) {
+          const arr = data.pendingImageResults || [];
+          arr.push(payload);
+          chrome.storage.session.set({ pendingImageResults: arr });
+        });
         connectToolVideoBridge();
       }
     });
