@@ -2688,6 +2688,94 @@
       }
     });
 
+    // ── BULK AI STUDIO TEST BUTTONS ──
+    bindClick('btnTestBulkAiFocus', async () => {
+      const text = document.getElementById('testBulkAiInput')?.value?.trim();
+      const logEl = document.getElementById('testStepLog');
+      if (!text) { if (logEl) logEl.textContent = '❌ Nhập nội dung vào ô bên trên trước!'; return; }
+
+      const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+      const tab = tabs.find(t => t.url?.includes('/tool/') && (t.url.includes('mode=EDIT') || t.url.includes('mode=APP')));
+      if (!tab) { if (logEl) logEl.textContent = '❌ Không tìm thấy tab Bulk AI Studio!'; return; }
+
+      if (logEl) logEl.textContent = `⏳ Tìm textarea và nhập text vào tab: ${tab.title?.slice(0,40)}...`;
+
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
+        world: 'MAIN',
+        args: [text],
+        func: (txt) => {
+          const allTA = Array.from(document.querySelectorAll('textarea'));
+          // Tìm textarea NHẬP DANH SÁCH: kiểm tra placeholder hoặc label nearby
+          const ta = allTA.find(t => {
+            const ph = (t.placeholder || '').toLowerCase();
+            const parent = t.closest('[class]');
+            const nearby = parent ? parent.textContent.toLowerCase() : '';
+            return ph.includes('ý tưởng') || ph.includes('prompt') || ph.includes('tư tưởng')
+                || nearby.includes('nhập danh sách') || nearby.includes('bulk')
+                || ph.includes('idea');
+          }) || allTA[allTA.length - 1];
+          if (!ta) return { ok: false, error: 'Không tìm thấy textarea', count: allTA.length };
+
+          ta.focus();
+          ta.select();
+          // React-compatible setter
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+          if (setter) setter.call(ta, txt); else ta.value = txt;
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+          ta.dispatchEvent(new Event('change', { bubbles: true }));
+          ta.dispatchEvent(new Event('blur', { bubbles: true }));
+          return { ok: true, ph: ta.placeholder?.slice(0,50), len: txt.length };
+        },
+      });
+
+      const r = res?.result;
+      if (logEl) {
+        if (r?.ok) logEl.textContent = `✅ Đã nhập ${r.len} ký tự vào textarea (placeholder: "${r.ph}")`;
+        else logEl.textContent = `❌ ${r?.error} (tổng textarea trên trang: ${r?.count})`;
+      }
+    });
+
+    bindClick('btnTestBulkAiClickRun', async () => {
+      const logEl = document.getElementById('testStepLog');
+      const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+      const tab = tabs.find(t => t.url?.includes('/tool/') && (t.url.includes('mode=EDIT') || t.url.includes('mode=APP')));
+      if (!tab) { if (logEl) logEl.textContent = '❌ Không tìm thấy tab Bulk AI Studio!'; return; }
+      if (logEl) logEl.textContent = `⏳ Đang tìm nút CHẠY DANH SÁCH...`;
+
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
+        world: 'MAIN',
+        func: () => {
+          const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+          // Log all visible button texts for debugging
+          const debug = allBtns.filter(b => {
+            const r = b.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          }).map(b => (b.innerText || b.textContent || '').trim().slice(0, 60));
+
+          const runBtn = allBtns.find(b => {
+            const t = (b.innerText || b.textContent || '').toLowerCase().trim();
+            return t.includes('chạy danh sách') || t.includes('chay danh sach')
+                || t.includes('run list') || t.includes('run batch') || t === 'run'
+                || t.includes('chạy') && t.includes('danh');
+          });
+          if (!runBtn) return { ok: false, debug };
+          runBtn.click();
+          return { ok: true, btnText: (runBtn.innerText || runBtn.textContent || '').trim().slice(0,50), debug };
+        },
+      });
+
+      const r = res?.result;
+      if (logEl) {
+        if (r?.ok) logEl.textContent = `✅ Đã click nút: "${r.btnText}"`;
+        else {
+          logEl.textContent = `❌ Không tìm thấy nút CHẠY DANH SÁCH!\n\nCác button visible:\n`
+            + (r?.debug || []).map((t, i) => `[${i}] "${t}"`).join('\n');
+        }
+      }
+    });
+
     const runTestImg = async (subStep, label) => {
       const pid = document.getElementById("projectId")?.value || "";
       const ratio = document.getElementById("testImgRatio")?.value || "9:16";
