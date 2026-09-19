@@ -6320,28 +6320,9 @@ const _serverImageQueue = [];
 let _isProcessingServerImageQueue = false;
 
 function enqueueServerImageTask(task) {
-  logToBridge(`[Bridge] Chuyển task ảnh ${task.id} vào hàng đợi Đa Tab trên Sidepanel...`);
-  const serverTask = { ...task, mediaType: 'image' };
-
-  chrome.runtime.sendMessage({
-    action: 'ADD_SERVER_TASK_TO_MULTI_TAB',
-    task: serverTask
-  }).then(res => {
-    if (!res?.success) {
-      _pendingMultiTabServerTasks.push(serverTask);
-    }
-  }).catch(() => {
-    _pendingMultiTabServerTasks.push(serverTask);
-  });
-
-  // Tự động mở Sidepanel nếu có thể
-  if (chrome.sidePanel && chrome.sidePanel.open) {
-    chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(tabs => {
-      if (tabs.length && tabs[0].windowId) {
-        chrome.sidePanel.open({ windowId: tabs[0].windowId }).catch(() => {});
-      }
-    }).catch(() => {});
-  }
+  logToBridge(`[BulkAI] Nhận task ảnh ${task.id} — đẩy vào queue Bulk AI Studio...`);
+  _serverImageQueue.push(task);
+  processServerImageQueue();
 }
 
 async function processServerImageQueue() {
