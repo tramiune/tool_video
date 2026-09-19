@@ -226,8 +226,8 @@ function handleMessage(req, sender, sendResponse) {
 
   const handler = HANDLERS[req.action];
   if (!handler) {
-    // Let dedicated listeners handle their own actions (e.g. BULK_WS_*)
-    if (req.action && req.action.startsWith('BULK_WS_')) return false;
+    // Let dedicated listeners handle their own actions (BULK_*, MY_CLICK_* etc.)
+    if (req.action && (req.action.startsWith('BULK_') || req.action.startsWith('BULK_WS_'))) return false;
     sendResponse({ success: false, error: "Unknown: " + req.action });
     return true;
   }

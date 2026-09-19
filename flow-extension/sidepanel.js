@@ -5742,6 +5742,58 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
+    // 🧪 Test: giả lập BULK_STATUS_UPDATE thẳng vào sidepanel
+    document.getElementById('btnBulkAiTestMsg') && document.getElementById('btnBulkAiTestMsg').addEventListener('click', async function() {
+      log('🧪 Test 1: Render trực tiếp vào sidepanel...');
+      // Giả lập message trực tiếp để xem UI có update không
+      const fakeTasks = [
+        { id: '1', stt: '0001. Test task', status: 'completed', ratio: '9:16' },
+        { id: '2', stt: '0002. Running task', status: 'processing', ratio: '9:16' },
+        { id: '3', stt: '0003. Pending task', status: 'pending', ratio: '1:1' },
+      ];
+      // Fire message event thẳng vào sidepanel listener
+      chrome.runtime.onMessage.dispatch && chrome.runtime.onMessage.dispatch(
+        { action: 'BULK_STATUS_UPDATE', tasks: fakeTasks }, {}, () => {}
+      );
+      // Fallback: gọi thẳng hàm render
+      const listEl = document.getElementById('bulkTaskList');
+      const summaryEl = document.getElementById('bulkTaskSummary');
+      if (listEl) {
+        const statusCfg = {
+          pending:    { icon: '⏳', color: '#64748b', bg: 'rgba(100,116,139,0.12)' },
+          processing: { icon: '⚙️', color: '#818cf8', bg: 'rgba(99,102,241,0.15)' },
+          completed:  { icon: '✅', color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+          error:      { icon: '❌', color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+        };
+        listEl.innerHTML = fakeTasks.map(t => {
+          const cfg = statusCfg[t.status] || statusCfg.pending;
+          return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:${cfg.bg};font-size:11px;">
+            <span>${cfg.icon}</span>
+            <span style="flex:1;color:#e2e8f0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.stt}</span>
+            <span style="font-size:9px;color:${cfg.color};background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:4px;flex-shrink:0;">${t.ratio}</span>
+          </div>`;
+        }).join('');
+        if (summaryEl) summaryEl.textContent = '✅1 ⚙️1 ⏳1 ❌0';
+        log('✅ Test 1 OK: task list đã render trong extension');
+      }
+
+      // Test 2: gửi postMessage vào flow tab để test content_script bridge
+      log('🧪 Test 2: Gửi postMessage vào flow tab...');
+      const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+      const tab = tabs[0];
+      if (!tab) { log('❌ Không tìm thấy tab flow.google.com'); return; }
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
+        world: 'MAIN',
+        args: [fakeTasks],
+        func: (tasks) => {
+          window.postMessage({ type: 'BULK_STATUS_UPDATE', tasks }, '*');
+          console.log('[Test] postMessage BULK_STATUS_UPDATE sent', tasks.length, 'tasks');
+        }
+      });
+      log('📨 postMessage đã gửi → đợi 1s xem task list có cập nhật không...');
+    });
+
     document.getElementById('btnBulkAiPasteRun') && document.getElementById('btnBulkAiPasteRun').addEventListener('click', async function() {
       var prompts = (document.getElementById('bulkAiPrompts') || {}).value || '';
       prompts = prompts.trim();
