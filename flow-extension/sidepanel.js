@@ -5565,6 +5565,34 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('btnBulkAiScanBtns') && document.getElementById('btnBulkAiScanBtns').addEventListener('click', async function() {
+      var tab = await findBulkTab();
+      if (!tab) { log('❌ Không tìm thấy tab Bulk AI!'); return; }
+      var [res] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
+        world: 'MAIN',
+        func: function() {
+          // Tất cả button + div/span có role=button + clickable
+          var els = Array.from(document.querySelectorAll('button, [role="button"], [class*="btn"], [class*="button"]'));
+          return els.slice(0, 40).map(function(el) {
+            var r = el.getBoundingClientRect();
+            return {
+              tag: el.tagName,
+              text: (el.innerText || el.textContent || '').trim().slice(0, 60),
+              cls: (el.className || '').slice(0, 50),
+              visible: r.width > 0 && r.height > 0,
+              disabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
+            };
+          });
+        }
+      });
+      var btns = (res && res.result) || [];
+      log('🔎 Tìm thấy ' + btns.length + ' buttons:');
+      btns.forEach(function(b, i) {
+        if (b.visible) log('[' + i + '] <' + b.tag + '> "' + b.text + '" cls="' + b.cls + '"' + (b.disabled ? ' [disabled]' : ''));
+      });
+    });
+
     document.getElementById('btnBulkAiPasteRun') && document.getElementById('btnBulkAiPasteRun').addEventListener('click', async function() {
       var prompts = (document.getElementById('bulkAiPrompts') || {}).value || '';
       prompts = prompts.trim();
