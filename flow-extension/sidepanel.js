@@ -5600,7 +5600,10 @@ document.addEventListener('DOMContentLoaded', () => {
       log(`[Server] Nhận ${serverTasks.length} task từ tool_video → Bulk AI...`);
       await pasteAndRun(tab.id, promptsText);
       await injectStatusInterceptor(tab.id);
-      startStatusPolling(tab.id);
+      // Chỉ start polling nếu chưa chạy — tránh stop polling làm mất task trước
+      if (!_pollTimer) {
+        startStatusPolling(tab.id);
+      }
     });
   });
 
