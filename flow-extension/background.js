@@ -6360,10 +6360,10 @@ async function processServerImageQueue() {
       task._stt = seqStr.replace('.', '').trim(); // e.g. "001"
     }
 
-    // 2. Tìm tab Bulk AI Studio
+    // 2. Tìm tab Bulk AI Studio — chỉ cần có /tool/ trong URL
     const allTabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
-    const bulkTab = allTabs.find(t => t.url?.includes('/tool/') && (t.url.includes('mode=EDIT') || t.url.includes('mode=APP')));
-    if (!bulkTab) throw new Error('Không tìm thấy tab Bulk AI Studio — hãy mở flow.google.com/.../tool/...?mode=APP');
+    const bulkTab = allTabs.find(t => t.url?.includes('/tool/'));
+    if (!bulkTab) throw new Error('Không tìm thấy tab Bulk AI Studio — hãy mở flow.google.com/.../tool/...');
 
     const tabId = bulkTab.id;
     logToBridge(`[BulkAI] Gửi ${tasks.length} task ảnh vào tab: ${bulkTab.title?.slice(0, 40)}`);
