@@ -2740,44 +2740,40 @@
 
     bindClick('btnTestBulkAiClickRun', async () => {
       const logEl = document.getElementById('testStepLog');
+      const text = document.getElementById('testBulkAiInput')?.value?.trim();
+      if (!text) { if (logEl) logEl.textContent = '❌ Nhập prompt vào ô trên trước!'; return; }
+
       const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
       const tab = tabs.find(t => t.url?.includes('/tool/') && (t.url.includes('mode=EDIT') || t.url.includes('mode=APP')));
       if (!tab) { if (logEl) logEl.textContent = '❌ Không tìm thấy tab Bulk AI Studio!'; return; }
-      if (logEl) logEl.textContent = `⏳ Đang tìm nút CHẠY DANH SÁCH...`;
+      if (logEl) logEl.textContent = `⏳ Gửi postMessage vào tool iframe...`;
 
-      const [res] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: true },
+      const prompts = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+      // Inject vào MAIN frame → broadcast postMessage tới tất cả child iframes
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
         world: 'MAIN',
-        func: () => {
-          const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
-          // Log all visible button texts for debugging
-          const debug = allBtns.filter(b => {
-            const r = b.getBoundingClientRect();
-            return r.width > 0 && r.height > 0;
-          }).map(b => (b.innerText || b.textContent || '').trim().slice(0, 60));
-
-          const runBtn = allBtns.find(b => {
-            const t = (b.innerText || b.textContent || '').toLowerCase().trim();
-            return t.includes('chạy danh sách') || t.includes('chay danh sach')
-                || t.includes('run list') || t.includes('run batch') || t === 'run'
-                || t.includes('chạy') && t.includes('danh');
+        args: [prompts],
+        func: (prompts) => {
+          // 1) Gửi cho chính window (nếu tool là main frame)
+          window.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
+          // 2) Gửi cho tất cả iframes
+          let iframeCount = 0;
+          document.querySelectorAll('iframe').forEach(iframe => {
+            try {
+              iframe.contentWindow?.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
+              iframeCount++;
+            } catch (_) {}
           });
-          if (!runBtn) return { ok: false, debug };
-          runBtn.click();
-          return { ok: true, btnText: (runBtn.innerText || runBtn.textContent || '').trim().slice(0,50), debug };
+          return { ok: true, prompts: prompts.length, iframes: iframeCount };
         },
       });
 
-      // allFrames:true → pick first frame that clicked successfully
-      const allResults = (Array.isArray(res) ? res : [res]).map(x => x?.result);
-      const r = allResults.find(x => x?.ok) || allResults[0];
+      const r = results?.[0]?.result;
       if (logEl) {
-        if (r?.ok) logEl.textContent = `✅ Đã click nút: "${r.btnText}"`;
-        else {
-          const allDebug = allResults.flatMap(x => x?.debug || []);
-          logEl.textContent = `❌ Không tìm thấy nút CHẠY DANH SÁCH!\n\nCác button visible (tất cả frames):\n`
-            + allDebug.map((t, i) => `[${i}] "${t}"`).join('\n');
-        }
+        if (r?.ok) logEl.textContent = `✅ Đã gửi ${r.prompts} prompt tới tool (${r.iframes} iframe).\n⚠️ Tool cần có listener window.addEventListener('message') để nhận.\nXem hướng dẫn prompt Tool Builder trong Log.`;
+        else logEl.textContent = '❌ executeScript thất bại';
       }
     });
 
