@@ -5633,6 +5633,90 @@ document.addEventListener('DOMContentLoaded', () => {
     return res && res.result;
   }
 
+  // Inject interceptor vào main frame để capture postMessage từ tool iframe
+  async function injectStatusInterceptor(tabId) {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      world: 'MAIN',
+      func: function() {
+        if (window.__bulkStatusInterceptorActive) return;
+        window.__bulkStatusInterceptorActive = true;
+        window.__bulkStatusData = null;
+        window.addEventListener('message', function(e) {
+          if (e.data && (e.data.type === 'BULK_STATUS_UPDATE' || e.data.type === 'BULK_DONE')) {
+            window.__bulkStatusData = e.data;
+          }
+        });
+        console.log('[Ext] Bulk status interceptor installed on main frame');
+      }
+    });
+  }
+
+  let _pollTimer = null;
+  const STATUS_CFG = {
+    pending:    { icon: '⏳', color: '#64748b', bg: 'rgba(100,116,139,0.12)' },
+    processing: { icon: '⚙️', color: '#818cf8', bg: 'rgba(99,102,241,0.15)' },
+    completed:  { icon: '✅', color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+    error:      { icon: '❌', color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+  };
+
+  function renderTaskList(tasks) {
+    const listEl = document.getElementById('bulkTaskList');
+    const summaryEl = document.getElementById('bulkTaskSummary');
+    if (!listEl || !tasks || !tasks.length) return;
+    const done = tasks.filter(t => t.status === 'completed').length;
+    const err  = tasks.filter(t => t.status === 'error').length;
+    const proc = tasks.filter(t => t.status === 'processing').length;
+    const pend = tasks.filter(t => t.status === 'pending').length;
+    if (summaryEl) summaryEl.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
+    const badgeEl = badge();
+    if (badgeEl) {
+      if (proc > 0 || pend > 0) { badgeEl.textContent = `⚙️ Đang chạy ${done}/${tasks.length}`; badgeEl.style.color = '#818cf8'; }
+      else { badgeEl.textContent = `✅ Xong ${done}/${tasks.length}`; badgeEl.style.color = '#10b981'; }
+    }
+    listEl.innerHTML = tasks.map(t => {
+      const cfg = STATUS_CFG[t.status] || STATUS_CFG.pending;
+      return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:${cfg.bg};font-size:11px;">
+        <span>${cfg.icon}</span>
+        <span style="flex:1;color:#e2e8f0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.stt||''}">${t.stt || t.id}</span>
+        <span style="font-size:9px;color:${cfg.color};background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:4px;flex-shrink:0;">${t.ratio||''}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function startStatusPolling(tabId) {
+    stopStatusPolling();
+    _pollTimer = setInterval(async () => {
+      try {
+        const [res] = await chrome.scripting.executeScript({
+          target: { tabId, allFrames: false },
+          world: 'MAIN',
+          func: function() {
+            const d = window.__bulkStatusData;
+            window.__bulkStatusData = null; // consume
+            return d;
+          }
+        });
+        const data = res && res.result;
+        if (!data) return;
+        if (data.type === 'BULK_STATUS_UPDATE' && data.tasks) {
+          renderTaskList(data.tasks);
+        }
+        if (data.type === 'BULK_DONE') {
+          const { completed = 0, errors = 0, total = 0 } = data;
+          log(`🎉 Xong! ✅${completed} ❌${errors} / ${total} tasks`);
+          setBadge(`✅ Xong ${completed}/${total}`, '#10b981');
+          stopStatusPolling();
+        }
+      } catch (_) {}
+    }, 2000);
+    log('📡 Bắt đầu poll trạng thái mỗi 2s...');
+  }
+
+  function stopStatusPolling() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  }
+
   async function scanCards(tabId) {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId, allFrames: false },
@@ -5816,6 +5900,9 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         log('✅ Đã paste ' + _promptLines.length + ' prompt và click "' + res.btnText + '"');
       }
+      // Inject interceptor và bắt đầu poll status từ tool
+      await injectStatusInterceptor(tab.id);
+      startStatusPolling(tab.id);
       stopMonitor();
       await startMonitor(tab.id, _promptLines);
     });
@@ -5832,7 +5919,10 @@ document.addEventListener('DOMContentLoaded', () => {
       await startMonitor(tab.id, _promptLines);
     });
 
-    document.getElementById('btnBulkAiStop') && document.getElementById('btnBulkAiStop').addEventListener('click', stopMonitor);
+    document.getElementById('btnBulkAiStop') && document.getElementById('btnBulkAiStop').addEventListener('click', function() {
+      stopMonitor();
+      stopStatusPolling();
+    });
 
     document.getElementById('btnBulkAiClearLog') && document.getElementById('btnBulkAiClearLog').addEventListener('click', function() {
       var el = dlList();
