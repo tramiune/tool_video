@@ -2701,7 +2701,7 @@
       if (logEl) logEl.textContent = `⏳ Tìm textarea và nhập text vào tab: ${tab.title?.slice(0,40)}...`;
 
       const [res] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: false },
+        target: { tabId: tab.id, allFrames: true },
         world: 'MAIN',
         args: [text],
         func: (txt) => {
@@ -2729,10 +2729,12 @@
         },
       });
 
-      const r = res?.result;
+      // allFrames:true → array of results from each frame; pick first success
+      const r = (Array.isArray(res) ? res : [res]).map(x => x?.result).find(x => x?.ok) 
+             || (Array.isArray(res) ? res : [res]).map(x => x?.result)[0];
       if (logEl) {
         if (r?.ok) logEl.textContent = `✅ Đã nhập ${r.len} ký tự vào textarea (placeholder: "${r.ph}")`;
-        else logEl.textContent = `❌ ${r?.error} (tổng textarea trên trang: ${r?.count})`;
+        else logEl.textContent = `❌ ${r?.error} (tổng textarea: ${r?.count})`;
       }
     });
 
@@ -2744,7 +2746,7 @@
       if (logEl) logEl.textContent = `⏳ Đang tìm nút CHẠY DANH SÁCH...`;
 
       const [res] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: false },
+        target: { tabId: tab.id, allFrames: true },
         world: 'MAIN',
         func: () => {
           const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
@@ -2766,12 +2768,15 @@
         },
       });
 
-      const r = res?.result;
+      // allFrames:true → pick first frame that clicked successfully
+      const allResults = (Array.isArray(res) ? res : [res]).map(x => x?.result);
+      const r = allResults.find(x => x?.ok) || allResults[0];
       if (logEl) {
         if (r?.ok) logEl.textContent = `✅ Đã click nút: "${r.btnText}"`;
         else {
-          logEl.textContent = `❌ Không tìm thấy nút CHẠY DANH SÁCH!\n\nCác button visible:\n`
-            + (r?.debug || []).map((t, i) => `[${i}] "${t}"`).join('\n');
+          const allDebug = allResults.flatMap(x => x?.debug || []);
+          logEl.textContent = `❌ Không tìm thấy nút CHẠY DANH SÁCH!\n\nCác button visible (tất cả frames):\n`
+            + allDebug.map((t, i) => `[${i}] "${t}"`).join('\n');
         }
       }
     });
@@ -5757,7 +5762,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setLog('⏳ Nhập vào tab: ' + (tab.title || '').slice(0, 40) + '...');
 
       var res = await chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: false }, world: 'MAIN', args: [text],
+        target: { tabId: tab.id, allFrames: true }, world: 'MAIN', args: [text],
         func: function(txt) {
           var allTA = Array.from(document.querySelectorAll('textarea'));
           var ta = allTA.find(function(t) {
@@ -5788,7 +5793,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setLog('⏳ Tìm nút CHẠY DANH SÁCH...');
 
       var res = await chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: false }, world: 'MAIN',
+        target: { tabId: tab.id, allFrames: true }, world: 'MAIN',
         func: function() {
           var allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
           var vis = allBtns.filter(function(b) { var r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
