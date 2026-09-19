@@ -57,6 +57,22 @@
           logEl.scrollTop = logEl.scrollHeight;
         }
 
+      // Tool Bulk AI báo xong tất cả task
+      } else if (msg?.action === 'BULK_TASKS_DONE') {
+        const { completed = 0, errors = 0, total = 0 } = msg;
+        // Log vào testStepLog nếu đang mở
+        const logEl = document.getElementById('testStepLog');
+        if (logEl) {
+          logEl.style.display = 'block';
+          logEl.textContent = `🎉 Bulk AI xong!\n✅ Thành công: ${completed}/${total}\n❌ Lỗi: ${errors}`;
+        }
+        // Toast notification
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:99999;background:#10b981;color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:bold;box-shadow:0 4px 16px rgba(0,0,0,0.3);';
+        toast.textContent = `🎉 Bulk AI xong! ${completed}/${total} ảnh ✅`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+
         // Cập nhật cho batchTasks và uiBatchTasks nếu có query cụ thể
         if (msg.query && msg.query.trim()) {
           const qClean = msg.query.trim().toLowerCase();

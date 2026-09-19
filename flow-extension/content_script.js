@@ -189,16 +189,13 @@
 // ── Bulk AI WS Bridge (ISOLATED world) ───────────────────────────────────────
 // Bridges between MAIN world (window.postMessage) and extension background (chrome.runtime)
 (function bulkWsBridge() {
-  let _proxyTabId = null;
-
   // MAIN world → extension background
   window.addEventListener('message', (e) => {
     if (!e.data || typeof e.data !== 'object') return;
 
     if (e.data.__bulkWsConnect) {
-      // Ask background to open real WS to localhost:7789
       chrome.runtime.sendMessage(
-        { action: 'BULK_WS_OPEN', url: e.data.url, tabId: chrome._bulkProxyTabId },
+        { action: 'BULK_WS_OPEN', url: e.data.url },
         (resp) => {
           if (chrome.runtime.lastError) return;
           if (resp && resp.ok) {
@@ -213,6 +210,16 @@
     if (e.data.__bulkWsSend) {
       chrome.runtime.sendMessage({ action: 'BULK_WS_SEND', data: e.data.data });
     }
+
+    // Tool báo tất cả task xong → forward lên sidepanel
+    if (e.data.type === 'BULK_DONE') {
+      chrome.runtime.sendMessage({
+        action: 'BULK_TASKS_DONE',
+        completed: e.data.completed,
+        errors: e.data.errors,
+        total: e.data.total,
+      });
+    }
   });
 
   // Extension background → MAIN world
@@ -225,5 +232,6 @@
     }
   });
 
-  console.log('[BulkAI WS Bridge] content_script bridge ready');
+  console.log('[BulkAI Bridge] content_script bridge ready');
 })();
+
