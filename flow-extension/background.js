@@ -225,7 +225,12 @@ function handleMessage(req, sender, sendResponse) {
   }
 
   const handler = HANDLERS[req.action];
-  if (!handler) { sendResponse({ success: false, error: "Unknown: " + req.action }); return true; }
+  if (!handler) {
+    // Let dedicated listeners handle their own actions (e.g. BULK_WS_*)
+    if (req.action && req.action.startsWith('BULK_WS_')) return false;
+    sendResponse({ success: false, error: "Unknown: " + req.action });
+    return true;
+  }
   handler(req, sender)
     .then(r => { console.log("✅", r); sendResponse(r); })
     .catch(e => { console.error("❌", e); sendResponse({ success: false, error: e.message }); });
