@@ -307,6 +307,35 @@ function ensureKeepAlive() {
 }
 ensureKeepAlive();
 
+// ── Remove CSP from flow.google.com để ws://localhost:7789 hoạt động ──────────
+(function setupCspRule() {
+  const RULE_ID = 9001;
+  chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: [RULE_ID],
+    addRules: [{
+      id: RULE_ID,
+      priority: 1,
+      action: {
+        type: 'modifyHeaders',
+        responseHeaders: [
+          { header: 'Content-Security-Policy',            operation: 'remove' },
+          { header: 'Content-Security-Policy-Report-Only', operation: 'remove' },
+        ]
+      },
+      condition: {
+        urlFilter: '||flow.google.com/',
+        resourceTypes: ['main_frame', 'sub_frame']
+      }
+    }]
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.warn('[CSP] Rule error:', chrome.runtime.lastError.message);
+    } else {
+      console.log('[CSP] Rule set: flow.google.com CSP removed → ws://localhost:7789 allowed');
+    }
+  });
+})();
+
 // Persistent port connections from tabs keep SW 100% active
 chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((msg) => {

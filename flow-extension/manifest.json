@@ -12,6 +12,7 @@
     "proxy",
     "webRequest",
     "webRequestAuthProvider",
+    "declarativeNetRequest",
     "alarms",
     "sidePanel",
     "debugger",
