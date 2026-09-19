@@ -6400,11 +6400,14 @@ async function processServerImageQueue() {
       target: { tabId, allFrames: false },
       world: 'MAIN',
       func: function() {
-        window.__bulkStatusInterceptorActive = true;
-        window.__bulkStatusData = null;
+        // Dùng biến riêng __bulkBgStatusData để tránh race với sidepanel (__bulkStatusData)
+        if (window.__bulkBgInterceptorActive) return;
+        window.__bulkBgInterceptorActive = true;
+        window.__bulkBgStatusData = null;
         window.addEventListener('message', function(e) {
           if (e.data && (e.data.type === 'BULK_STATUS_UPDATE' || e.data.type === 'BULK_DONE')) {
-            window.__bulkStatusData = e.data;
+            window.__bulkStatusData = e.data;   // sidepanel dùng cái này
+            window.__bulkBgStatusData = e.data; // background.js dùng cái này
           }
         });
       }
@@ -6450,7 +6453,7 @@ async function processServerImageQueue() {
           const [res] = await chrome.scripting.executeScript({
             target: { tabId, allFrames: false },
             world: 'MAIN',
-            func: function() { const d = window.__bulkStatusData; window.__bulkStatusData = null; return d; }
+            func: function() { const d = window.__bulkBgStatusData; window.__bulkBgStatusData = null; return d; }
           });
           const data = res?.result;
           if (!data || !data.tasks) return;
