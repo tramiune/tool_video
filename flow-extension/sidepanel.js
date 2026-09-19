@@ -5452,7 +5452,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function findBulkTab() {
     const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
-    return tabs.find(t => t.url && t.url.includes('/tool/') && t.url.includes('mode=EDIT')) || null;
+    return tabs.find(t => t.url && t.url.includes('/tool/') && (t.url.includes('mode=EDIT') || t.url.includes('mode=APP'))) || null;
   }
 
   async function pasteAndRun(tabId, promptsText) {
