@@ -235,6 +235,66 @@ function handleMessage(req, sender, sendResponse) {
 chrome.runtime.onMessage.addListener(handleMessage);
 chrome.runtime.onMessageExternal.addListener(handleMessage);
 
+// ── Bulk AI WS Proxy (Service Worker) ─────────────────────────────────────────
+// Opens real ws://localhost:7789 from background (no CSP), relays to Flow tab
+let _bulkProxyWs = null;
+let _bulkProxyTabId = null;
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === 'BULK_WS_OPEN') {
+    _bulkProxyTabId = sender.tab?.id || _bulkProxyTabId;
+
+    // Close existing if any
+    try { if (_bulkProxyWs) _bulkProxyWs.close(); } catch (_) {}
+
+    try {
+      const ws = new WebSocket('ws://localhost:7789');
+
+      ws.onopen = () => {
+        _bulkProxyWs = ws;
+        logToBridge('[BulkAI WS Proxy] Connected to ws://localhost:7789');
+        sendResponse({ ok: true });
+      };
+
+      ws.onmessage = (e) => {
+        if (_bulkProxyTabId) {
+          chrome.tabs.sendMessage(_bulkProxyTabId, {
+            action: 'BULK_WS_MESSAGE',
+            data: typeof e.data === 'string' ? e.data : JSON.stringify(e.data)
+          }).catch(() => {});
+        }
+      };
+
+      ws.onclose = (e) => {
+        logToBridge('[BulkAI WS Proxy] WS closed: ' + e.code);
+        _bulkProxyWs = null;
+        if (_bulkProxyTabId) {
+          chrome.tabs.sendMessage(_bulkProxyTabId, { action: 'BULK_WS_CLOSED', code: e.code }).catch(() => {});
+        }
+      };
+
+      ws.onerror = (e) => {
+        logToBridge('[BulkAI WS Proxy] WS error');
+        sendResponse({ ok: false, error: 'WS connection failed' });
+      };
+
+    } catch (err) {
+      logToBridge('[BulkAI WS Proxy] Error: ' + err.message);
+      sendResponse({ ok: false, error: err.message });
+    }
+    return true; // async response
+  }
+
+  if (msg.action === 'BULK_WS_SEND') {
+    try {
+      if (_bulkProxyWs && _bulkProxyWs.readyState === 1) {
+        _bulkProxyWs.send(msg.data);
+      }
+    } catch (_) {}
+    return false;
+  }
+});
+
 // ── Service Worker Permanent Keep-Alive Engine (Never Sleep) ──
 let keepAliveTimer = null;
 function ensureKeepAlive() {
@@ -2894,66 +2954,50 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           return isPopoverOpen();
         };
 
-        // ── STEP 2+: Flow dựa vào có ảnh ref hay không ──
+        // ── STEP 2: Gõ prompt (Lấy chuẩn từ Bước 1 của Tab Test Từng Bước) ──
         if (!editor) return { success: false, error: "Không tìm thấy ô nhập prompt (Editor)" };
+        editor.focus();
+        await sleep(200);
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, promptText);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(300);
 
-        // Prep
-        const refList = Array.isArray(imagesToPaste) ? imagesToPaste.filter(Boolean) : [imagesToPaste].filter(Boolean);
-        const pastedCount = refList.length;
+        // ── STEP 3: Mở Settings Chip → Chọn Ratio (16:9 / 9:16 / 1:1) → Đóng popover ──
         let clickedRatio = false;
         let clickedDetail = 'none';
-        const chipName = settingsChip ? (settingsChip.textContent || '').trim().slice(0, 30) : 'none';
+        let chipName = settingsChip ? (settingsChip.textContent || '').trim().slice(0, 30) : 'none';
 
-        // Helper: gõ prompt
-        // Gõ prompt — dùng đúng code step 1 của testUiStep (đã test OK)
-        const typePrompt = async () => {
-          if (!editor) return;
-          editor.focus();
-          document.execCommand('selectAll', false, null);
-          document.execCommand('insertText', false, promptText);
-          editor.dispatchEvent(new Event('input', { bubbles: true }));
-          await sleep(300);
-        };
-
-        // Helper: xóa ref chips (click tất cả X)
-        const clearRefChips = async () => {
-          const xSels = [
-            'button[aria-label*="close" i]', 'button[aria-label*="remove" i]',
-            'button[aria-label*="xóa" i]', 'button[aria-label*="delete" i]',
-            '[data-testid*="close"]', '[data-testid*="remove"]',
-            'button[class*="close"]', 'button[class*="remove"]',
-            'button[class*="delete"]', 'button[class*="clear"]',
-          ];
-          const cRoot = document.querySelector('[class*="composer"], [class*="input-area"], [class*="prompt-area"]') || document.body;
-          let xBtns = [];
-          for (const sel of xSels) {
-            xBtns.push(...Array.from(cRoot.querySelectorAll(sel)).filter(el => {
-              const r = el.getBoundingClientRect();
-              return r.width > 0 && r.height > 0 && r.top > window.innerHeight * 0.4;
-            }));
-          }
-          xBtns = [...new Set(xBtns)];
-          for (const btn of xBtns) { try { btn.click(); } catch (_) {} }
-          console.log(`[MultiTab Image] Cleared ${xBtns.length} chip(s)`);
-        };
-
-        // Helper: config ratio
         const findRatioButton = (ratio) => {
+          // Lấy tất cả elements có thể là nút hoặc chứa text ratio
           const candidates = queryDeep("button, [role='tab'], [role='radio'], [role='button'], div, span").filter(el => {
             if (!isElemVisible(el)) return false;
             if (settingsChip && (el === settingsChip || settingsChip.contains(el))) return false;
             if (el.closest("[data-media-id], [data-workflow-id], [class*='card']")) return false;
+
             const t = (el.textContent || "").trim();
             const aria = (el.getAttribute("aria-label") || "").trim();
             const val = (el.getAttribute("value") || el.getAttribute("data-value") || "").trim();
+
+            // Loại trừ container chứa cả 16:9 và 9:16
             if (t.includes("16:9") && t.includes("9:16")) return false;
             if (t.length > 25) return false;
-            if (ratio === "16:9") return (t === "16:9" || t.includes("16:9") || aria.includes("16:9") || val.includes("16:9")) && !t.includes("9:16");
-            if (ratio === "9:16") return (t === "9:16" || t.includes("9:16") || aria.includes("9:16") || val.includes("9:16")) && !t.includes("16:9");
-            if (ratio === "1:1")  return (t === "1:1"  || t.includes("1:1")  || aria.includes("1:1")  || val.includes("1:1"));
+
+            if (ratio === "16:9") {
+              return (t === "16:9" || t.includes("16:9") || aria.includes("16:9") || val.includes("16:9")) && !t.includes("9:16");
+            }
+            if (ratio === "9:16") {
+              return (t === "9:16" || t.includes("9:16") || aria.includes("9:16") || val.includes("9:16")) && !t.includes("16:9");
+            }
+            if (ratio === "1:1") {
+              return (t === "1:1" || t.includes("1:1") || aria.includes("1:1") || val.includes("1:1"));
+            }
             return t.includes(ratio);
           });
+
           if (candidates.length === 0) return null;
+
+          // Sắp xếp: Ưu tiên button, tab, radio trước; ưu tiên text ngắn nhất (phần tử lá)
           candidates.sort((a, b) => {
             const isBtnA = a.matches("button, [role='tab'], [role='radio'], [role='button']");
             const isBtnB = b.matches("button, [role='tab'], [role='radio'], [role='button']");
@@ -2961,106 +3005,107 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
             if (!isBtnA && isBtnB) return 1;
             return (a.textContent || "").trim().length - (b.textContent || "").trim().length;
           });
+
           const best = candidates[0];
           return best.closest("button, [role='tab'], [role='radio'], [role='button']") || best;
         };
 
-        const doConfig = async () => {
-          if (!targetRatio) return;
+        if (targetRatio) {
           const opened = await ensurePopoverOpen();
-          if (!opened) return;
-          await sleep(600);
-          const imgTab = findImageTabElement();
-          if (imgTab) {
-            const isActive = imgTab.getAttribute("data-state") === "active" ||
-                             imgTab.getAttribute("aria-selected") === "true" ||
-                             imgTab.classList.contains("active");
-            if (!isActive) { triggerClick(imgTab); await sleep(400); }
-          }
-          const ratioBtn = findRatioButton(targetRatio);
-          if (ratioBtn) {
-            clickedDetail = `<${ratioBtn.tagName.toLowerCase()} role="${ratioBtn.getAttribute('role') || ''}"> "${(ratioBtn.textContent || '').trim()}"`;
-            triggerClick(ratioBtn); await sleep(200);
-            try { ratioBtn.click(); } catch (_) {}
-            await sleep(200);
-            const innerSpan = ratioBtn.querySelector("span, div");
-            if (innerSpan) { try { triggerClick(innerSpan); } catch (_) {} }
-            clickedRatio = true;
-            await sleep(500);
-          }
-          // Đóng popover
-          try { editor.click(); editor.focus(); } catch (_) {}
-          await sleep(400);
-          if (isPopoverOpen()) {
-            document.body.click();
-            await sleep(200);
-          }
-          if (isPopoverOpen()) {
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
-            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+          if (opened) {
+            await sleep(600); // Đợi popover render các options
+
+            // Đảm bảo tab Hình ảnh đang active nếu có tab bar
+            const imgTab = findImageTabElement();
+            if (imgTab) {
+              const isActive = imgTab.getAttribute("data-state") === "active" || 
+                               imgTab.getAttribute("aria-selected") === "true" ||
+                               imgTab.classList.contains("active");
+              if (!isActive) {
+                triggerClick(imgTab);
+                await sleep(400);
+              }
+            }
+
+            const ratioBtn = findRatioButton(targetRatio);
+            if (ratioBtn) {
+              clickedDetail = `<${ratioBtn.tagName.toLowerCase()} role="${ratioBtn.getAttribute('role')||''}"> "${(ratioBtn.textContent||'').trim()}"`;
+              
+              // 1. Dispatch đầy đủ chuỗi pointer + mouse events (cho Angular/Lit Web Components)
+              triggerClick(ratioBtn);
+              await sleep(200);
+
+              // 2. Click native nếu có
+              try { ratioBtn.click(); } catch (_) {}
+              await sleep(200);
+
+              // 3. Nếu bên trong có span, dispatch cả span con
+              const innerSpan = ratioBtn.querySelector("span, div");
+              if (innerSpan) {
+                try { triggerClick(innerSpan); } catch (_) {}
+              }
+
+              clickedRatio = true;
+              await sleep(500); // Chờ UI cập nhật giá trị
+            }
+
+            // Đóng popover bằng outside-click vào editor (chuẩn của Flow, không làm revert thiết lập)
+            try {
+              editor.click();
+              editor.focus();
+            } catch (_) {}
             await sleep(300);
+
+            // Nếu popover vẫn còn mở sau khi click editor, mới dùng phím Escape
+            if (isPopoverOpen()) {
+              window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+              document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+              await sleep(300);
+            }
           }
-        };
+        }
+        // ── STEP 4: Ctrl+V dán TẤT CẢ ảnh tham chiếu cùng một lúc trong 1 lần paste duy nhất ──
+        const refList = Array.isArray(imagesToPaste) ? imagesToPaste.filter(Boolean) : [imagesToPaste].filter(Boolean);
+        let pastedCount = refList.length;
 
-        // Helper: find & click submit
-        const doSubmit = async () => {
-          let btn = queryDeep("button, [role='button']").find(b => {
-            if (!isElemVisible(b)) return false;
-            const inner = (b.innerHTML || "").toLowerCase();
-            const t = (b.textContent || "").trim().toLowerCase();
-            const aria = (b.getAttribute("aria-label") || "").toLowerCase();
-            if (b.getAttribute("type") === "submit") return true;
-            if (b.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']")) return false;
-            const btnText = (b.innerText || b.textContent || "").trim().toLowerCase();
-            if (btnText === "cancel" || btnText === "hủy") return false;
-            if (aria === "bắt đầu tạo" || aria === "tạo" || aria === "generate" || aria === "send" || aria === "submit" || aria === "gửi" || aria === "bắt đầu") return true;
-            return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
-                   Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
-          }) || submitBtn;
-          if (!btn) return false;
-          btn.removeAttribute("disabled");
-          btn.setAttribute("aria-disabled", "false");
-          btn.style.pointerEvents = "auto";
-          btn.style.opacity = "1";
-          triggerClick(btn);
-          await sleep(500);
-          return true;
-        };
-
-        // ══════════════════════════════════════════════════════
-        // FLOW CÓ ẢNH THAM CHIẾU
-        // ══════════════════════════════════════════════════════
         if (pastedCount > 0) {
-          // 1. Paste lần 1
-          try { await pasteImages(editor, refList); } catch (e) { console.warn('[MultiTab Image] Paste 1 err:', e); }
-
-          // 2. Click X xóa sạch chips (cũ + vừa paste)
-          await clearRefChips();
-
-          // 3. Paste lần 2 (thực sự)
-          try { await pasteImages(editor, refList); } catch (e) { console.warn('[MultiTab Image] Paste 2 err:', e); }
-
-          // 4. Gõ prompt
-          await typePrompt();
-
-          // 5. Config ratio
-          await doConfig();
-
-          // 6. Chờ 13s cho ảnh upload
-          await sleep(13000);
-
-        } else {
-          // ══════════════════════════════════════════════════
-          // FLOW KHÔNG CÓ ẢNH THAM CHIẾU (giữ nguyên)
-          // ══════════════════════════════════════════════════
-          await typePrompt();
-          await doConfig();
+          try {
+            await pasteImages(editor, refList);
+          } catch (e) {
+            console.warn('[MultiTab Image] Paste images err:', e);
+          }
+          await sleep(2500);
         }
 
-        // Submit
-        const submitted = await doSubmit();
-        if (!submitted) return { success: false, error: "Không tìm thấy nút Submit (→)" };
+        // ── STEP 5: Chờ 15s cho ảnh upload (nếu có paste) ──
+        if (pastedCount > 0) {
+          await sleep(15000);
+        }
 
+        // ── STEP 6: Click Submit (y như testUiStep Step 3) ──
+        let currentSubmitBtn = queryDeep("button, [role='button']").find(b => {
+          if (!isElemVisible(b)) return false;
+          const inner = (b.innerHTML || "").toLowerCase();
+          const t = (b.textContent || "").trim().toLowerCase();
+          const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+          if (b.getAttribute("type") === "submit") return true;
+          // Exact aria match — avoid matching "Thành phần tạo hình ảnh"
+          if (b.closest("[data-media-id], [class*='card'], [class*='result'], [class*='generation']")) return false;
+          const btnText = (b.innerText || b.textContent || "").trim().toLowerCase();
+          if (btnText === "cancel" || btnText === "hủy") return false;
+          if (aria === "bắt đầu tạo" || aria === "tạo" || aria === "generate" || aria === "send" || aria === "submit" || aria === "gửi" || aria === "bắt đầu") return true;
+          return inner.includes("arrow_forward") || inner.includes("send") || t === "arrow_forward" || t === "send" ||
+                 Boolean(b.querySelector("svg.lucide-arrow-right, svg.lucide-send, svg.lucide-arrow-up, svg[data-icon='send'], svg[data-icon='arrow-right'], svg[data-icon='arrow-up']"));
+        }) || submitBtn;
+
+        if (!currentSubmitBtn) return { success: false, error: "Không tìm thấy nút Submit (→)" };
+
+        currentSubmitBtn.removeAttribute("disabled");
+        currentSubmitBtn.setAttribute("aria-disabled", "false");
+        currentSubmitBtn.style.pointerEvents = "auto";
+        currentSubmitBtn.style.opacity = "1";
+        triggerClick(currentSubmitBtn);
+        await sleep(500);
 
         return {
           success: true,
@@ -3068,7 +3113,7 @@ async function createImageMultiTab(prompt, tabId, aspectRatio = '9:16', referenc
           chipFound: !!settingsChip,
           chipName,
           pastedCount,
-          message: `Submit Tạo Ảnh OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN (' + clickedDetail + ')' : 'Chưa tìm thấy nút (chip: ' + chipName + ')'}]${pastedCount > 0 ? ' (' + pastedCount + ' ảnh tham chiếu, đã chờ 13s)' : ''}`
+          message: `Submit Tạo Ảnh OK! [Ratio ${targetRatio}: ${clickedRatio ? 'ĐÃ CHỌN (' + clickedDetail + ')' : 'Chưa tìm thấy nút (chip: ' + chipName + ')'}]${pastedCount > 0 ? ' (' + pastedCount + ' ảnh tham chiếu, đã chờ 15s)' : ''}`
         };
       }
     });

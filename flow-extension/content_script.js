@@ -185,3 +185,45 @@
 
   console.log("🔌 Flow Studio content script active with Keep-Alive (isolated world)");
 })();
+
+// ── Bulk AI WS Bridge (ISOLATED world) ───────────────────────────────────────
+// Bridges between MAIN world (window.postMessage) and extension background (chrome.runtime)
+(function bulkWsBridge() {
+  let _proxyTabId = null;
+
+  // MAIN world → extension background
+  window.addEventListener('message', (e) => {
+    if (!e.data || typeof e.data !== 'object') return;
+
+    if (e.data.__bulkWsConnect) {
+      // Ask background to open real WS to localhost:7789
+      chrome.runtime.sendMessage(
+        { action: 'BULK_WS_OPEN', url: e.data.url, tabId: chrome._bulkProxyTabId },
+        (resp) => {
+          if (chrome.runtime.lastError) return;
+          if (resp && resp.ok) {
+            window.postMessage({ __bulkWsOpen: true }, '*');
+          } else {
+            window.postMessage({ __bulkWsErr: true, msg: resp && resp.error }, '*');
+          }
+        }
+      );
+    }
+
+    if (e.data.__bulkWsSend) {
+      chrome.runtime.sendMessage({ action: 'BULK_WS_SEND', data: e.data.data });
+    }
+  });
+
+  // Extension background → MAIN world
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'BULK_WS_MESSAGE') {
+      window.postMessage({ __bulkWsMsg: true, data: msg.data }, '*');
+    }
+    if (msg.action === 'BULK_WS_CLOSED') {
+      window.postMessage({ __bulkWsClose: true, code: msg.code }, '*');
+    }
+  });
+
+  console.log('[BulkAI WS Bridge] content_script bridge ready');
+})();

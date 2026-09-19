@@ -369,3 +369,86 @@
 
   console.log('🔌 Flow auth & reCAPTCHA interceptor installed (MAIN world)');
 })();
+
+// ── Bulk AI WS Proxy Interceptor (MAIN world) ─────────────────────────────────
+// Patches window.WebSocket so ws://localhost:7789 goes through extension background
+// instead of being blocked by flow.google.com CSP.
+(function patchBulkAiWS() {
+  const _OrigWS = window.WebSocket;
+  const BULK_WS_HOST = 'localhost:7789';
+
+  function BulkAiProxyWS(url, protocols) {
+    if (!url || !url.includes(BULK_WS_HOST)) {
+      return protocols ? new _OrigWS(url, protocols) : new _OrigWS(url);
+    }
+
+    // Build a fake WebSocket object that mimics real WS API
+    const self = Object.create(_OrigWS.prototype);
+    self.url = url;
+    self.readyState = 0; // CONNECTING
+    self.bufferedAmount = 0;
+    self.extensions = '';
+    self.protocol = '';
+    self.binaryType = 'blob';
+    self.onopen = null; self.onmessage = null; self.onerror = null; self.onclose = null;
+
+    // Event listeners storage
+    const _listeners = {};
+    self.addEventListener = (type, fn) => {
+      if (!_listeners[type]) _listeners[type] = [];
+      _listeners[type].push(fn);
+    };
+    self.removeEventListener = (type, fn) => {
+      if (_listeners[type]) _listeners[type] = _listeners[type].filter(f => f !== fn);
+    };
+    const _dispatch = (type, evt) => {
+      if (self['on' + type]) self['on' + type](evt);
+      (_listeners[type] || []).forEach(f => f(evt));
+    };
+
+    self.send = (data) => {
+      window.postMessage({ __bulkWsSend: true, data: String(data) }, '*');
+    };
+
+    self.close = () => {
+      self.readyState = 3;
+      _dispatch('close', new CloseEvent('close', { code: 1000, wasClean: true }));
+    };
+
+    // Ask extension to open real WS
+    window.postMessage({ __bulkWsConnect: true, url }, '*');
+
+    // Listen for extension relay messages
+    const msgHandler = (e) => {
+      if (!e.data) return;
+      if (e.data.__bulkWsOpen) {
+        self.readyState = 1;
+        _dispatch('open', new Event('open'));
+      }
+      if (e.data.__bulkWsMsg) {
+        _dispatch('message', new MessageEvent('message', { data: e.data.data }));
+      }
+      if (e.data.__bulkWsClose) {
+        self.readyState = 3;
+        window.removeEventListener('message', msgHandler);
+        _dispatch('close', new CloseEvent('close', { code: e.data.code || 1000, wasClean: true }));
+      }
+      if (e.data.__bulkWsErr) {
+        _dispatch('error', new Event('error'));
+      }
+    };
+    window.addEventListener('message', msgHandler);
+
+    console.log('[BulkAI WS Proxy] Intercepted ws://localhost:7789 → routing via extension');
+    return self;
+  }
+
+  BulkAiProxyWS.CONNECTING = 0;
+  BulkAiProxyWS.OPEN = 1;
+  BulkAiProxyWS.CLOSING = 2;
+  BulkAiProxyWS.CLOSED = 3;
+  BulkAiProxyWS.prototype = _OrigWS.prototype;
+  window.WebSocket = BulkAiProxyWS;
+
+  console.log('[BulkAI WS Proxy] WebSocket patched — localhost:7789 will use extension bridge');
+})();
