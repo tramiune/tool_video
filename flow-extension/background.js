@@ -6327,13 +6327,28 @@ chrome.runtime.onMessage.addListener(function(msg) {
   // Sidepanel báo task xong → gửi IMAGE_RESULT về server
   if (msg?.action === 'SIDEPANEL_BULK_DONE') {
     const { taskId, stt, ok, error } = msg;
-    logToBridge(ok ? `✅ [BulkAI] Task ${taskId} (STT ${stt}) xong → IMAGE_RESULT` : `❌ [BulkAI] Task ${taskId} lỗi: ${error}`);
-    if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
-      _toolWs.send(JSON.stringify(ok
-        ? { type: 'IMAGE_RESULT', id: taskId, filePath: `${stt}.jpg`, ok: true }
-        : { type: 'IMAGE_RESULT', id: taskId, ok: false, error: error || 'Bulk AI error' }
-      ));
+    if (!ok) {
+      logToBridge(`❌ [BulkAI] Task ${taskId} lỗi: ${error}`);
+      if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
+        _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: taskId, ok: false, error: error || 'Bulk AI error' }));
+      return;
     }
+    // Tìm file thực tế vừa download — lấy đúng path + extension
+    chrome.downloads.search({
+      orderBy: ['-startTime'],
+      limit: 20
+    }, function(items) {
+      const ext = ['jpg','jpeg','png','webp'];
+      const match = items.find(function(it) {
+        if (!it.filename) return false;
+        const base = it.filename.split('/').pop().split('\\').pop();
+        return ext.some(e => base === `${stt}.${e}`) && it.state !== 'interrupted';
+      });
+      const filePath = match ? match.filename : `${stt}.jpg`;
+      logToBridge(`✅ [BulkAI] Task ${taskId} (STT ${stt}) xong → filePath: ${filePath}`);
+      if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
+        _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: taskId, filePath, ok: true }));
+    });
     return;
   }
   if (msg?.action !== 'BULK_STATUS_UPDATE' || !_bulkAiPendingTasks.size) return;
