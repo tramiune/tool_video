@@ -6055,9 +6055,12 @@ if (chrome.action && chrome.action.onClicked) {
 const TOOL_VIDEO_WS_URL = 'ws://localhost:7788';
 let _toolWs = null;
 let _toolServerConnected = false;
-let _toolServerPaused = false; // true = không nhận task
+let _toolServerPaused = false;
 const _serverVideoQueue = [];
 let _isProcessingServerQueue = false;
+
+// Queue IMAGE_RESULT khi _toolWs chưa kết nối — flush khi onopen
+const _pendingImageResults = [];
 
 function connectToolVideoBridge() {
   if (_toolWs && (_toolWs.readyState === WebSocket.OPEN || _toolWs.readyState === WebSocket.CONNECTING)) {
@@ -6095,6 +6098,11 @@ function connectToolVideoBridge() {
         _toolWs.send(JSON.stringify({ type: 'HELLO', profileId: 'fallback_' + Date.now() }));
       }
       chrome.runtime.sendMessage({ type: 'TOOL_SERVER_STATUS', connected: true }).catch(() => {});
+      // Flush các IMAGE_RESULT bị queue khi WS chưa kết nối
+      while (_pendingImageResults.length > 0) {
+        const msg = _pendingImageResults.shift();
+        try { _toolWs.send(JSON.stringify(msg)); logToBridge(`✅ [BulkAI] Flush IMAGE_RESULT: ${msg.id}`); } catch(_) {}
+      }
     };
 
     _toolWs.onmessage = async (event) => {
@@ -6346,8 +6354,15 @@ chrome.runtime.onMessage.addListener(function(msg) {
       });
       const filePath = match ? match.filename : `${stt}.jpg`;
       logToBridge(`✅ [BulkAI] Task ${taskId} (STT ${stt}) xong → filePath: ${filePath}`);
-      if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
-        _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: taskId, filePath, ok: true }));
+      const payload = { type: 'IMAGE_RESULT', id: taskId, filePath, ok: true };
+      if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
+        _toolWs.send(JSON.stringify(payload));
+      } else {
+        // WS chưa kết nối (service worker vừa wake up) — queue và reconnect
+        logToBridge(`⏳ WS chưa mở — queue IMAGE_RESULT ${taskId}, reconnect...`);
+        _pendingImageResults.push(payload);
+        connectToolVideoBridge();
+      }
     });
     return;
   }
