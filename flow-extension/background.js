@@ -6441,7 +6441,13 @@ async function processServerImageQueue() {
     }
 
     // Gửi sang sidepanel để chạy — sidepanel dùng code Bulk AI đã hoạt động
-    const sidepanelTasks = tasks.map(t => ({ id: t.id, stt: t._stt, prompt: t.prompt, ratio: t.aspectRatio || '9:16' }));
+    const sidepanelTasks = tasks.map(t => ({ 
+      id: t.id, 
+      stt: t._stt, 
+      prompt: t.prompt, 
+      ratio: t.aspectRatio || '9:16',
+      referenceImages: t.referenceImages || []
+    }));
     logToBridge(`[BulkAI] Gửi ${tasks.length} task sang sidepanel (SIDEPANEL_BULK_RUN)...`);
     chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_RUN', tasks: sidepanelTasks }).catch((err) => {
       // sendMessage reject có thể chỉ do sidepanel không gọi sendResponse — KHÔNG gửi IMAGE_RESULT lỗi

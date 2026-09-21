@@ -5588,7 +5588,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Đăng ký map stt → taskId
     serverTasks.forEach(t => _serverSttMap.set(t.stt, t.id));
     // Format prompts và chạy
-    const promptsText = serverTasks.map(t => `${t.ratio || '9:16'}|${t.prompt}`).join('\n');
+    const promptsText = serverTasks.map(t => {
+      let line = `${t.ratio || '9:16'}|${t.prompt}`;
+      if (t.referenceImages && t.referenceImages.length > 0) {
+        line += '|' + t.referenceImages.join('|');
+      }
+      return line;
+    }).join('\n');
     findBulkTab().then(async function(tab) {
       if (!tab) {
         serverTasks.forEach(t => {
