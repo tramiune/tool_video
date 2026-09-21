@@ -340,8 +340,8 @@ const extensionBridge = {
     const refBase64Array = [];
     for (const raw of rawRefs) {
       if (raw) {
-        const b64 = await imageInputToBase64(raw);
-        if (b64) refBase64Array.push(b64);
+        // Trả thẳng link raw thay vì convert base64 để tool Bulk AI xử lý link trực tiếp
+        refBase64Array.push(raw);
       }
     }
 
