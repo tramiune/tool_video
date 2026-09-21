@@ -168,7 +168,7 @@ function buildSumoImagePrompt(job, scene, idx, refs = []) {
   refs.forEach((url, i) => {
     const n = i + 1;
     if (url.includes('bin_character'))    refLines.push(`[Pasted image ${n}] = BIN character — copy EXACTLY: face, body, blue-orange-white striped t-shirt, blue shorts, chubby cheeks, black hair.`);
-    else if (url.includes('sumo_character')) refLines.push(`[Pasted image ${n}] = SUMO DEER character — copy EXACTLY: face, antlers, bright red superhero cape, red bow tie, tall neck, ALWAYS standing upright on TWO HIND LEGS only.`);
+    else if (url.includes('sumo_character')) refLines.push(`[Pasted image ${n}] = SUMO DEER character — copy EXACTLY: face, antlers, bright red superhero cape, red bow tie, stocky round body, thick short legs, wide torso, ALWAYS standing upright on TWO HIND LEGS only.`);
     else if (url.includes('mother_character')) refLines.push(`[Pasted image ${n}] = MOTHER character — copy EXACTLY: face, hair, clothing, warm expression.`);
     else if (url.includes('sumo_product')) refLines.push(`[Pasted image ${n}] = SUMO GẠC HƯƠU NON product packaging — reproduce the EXACT pouch design: same colors, logo text, layout, shape. This is a product prop in the scene, NOT a character.`);
   });
@@ -208,37 +208,37 @@ function buildSumoVideoPrompt(job, scene, idx) {
 async function generateSumoScript({ topic, episodeNumber = 1 } = {}) {
   const inputTopic = String(topic || '').trim();
   const themePrompt = inputTopic
-    ? `Hay sang tao mot kich ban phim hoat hinh 3D Pixar vui nhon, giao duc tre em ve chu de: "${inputTopic}".`
-    : 'Hay tu sang tao chu de kich ban hoat hinh giao duc tre em 3D Pixar ngau nhien (luoi an rau, uong nuoc, tieu hoa, vitamin, ngu du giac, van dong, an uong da dang...).';
+    ? `Hãy sáng tạo một kịch bản phim hoạt hình 3D Pixar vui nhộn, giáo dục trẻ em về chủ đề: "${inputTopic}". Toàn bộ lời thoại và mô tả phải viết bằng Tiếng Việt CÓ DẤU.`
+    : 'Hãy tự sáng tạo chủ đề kịch bản hoạt hình giáo dục trẻ em 3D Pixar ngẫu nhiên (lười ăn rau, uống nước, tiêu hóa, vitamin, ngủ đủ giấc, vận động, ăn uống đa dạng...). Toàn bộ lời thoại và mô tả phải viết bằng Tiếng Việt CÓ DẤU.';
 
-  const locationSeeds = ['bep ma thuat','khu vuon bi an','sieu thi rau cu khong lo','rung trai cay','vu tru dinh duong','camping trong rung','the gioi trong giac mo','cong vien nuoc','tiem banh phep thuat','tau vu tru'];
-  const moodSeeds = ['hai huoc bat ngo','phieu luu ky thu','bi an vui nhon','cuoc thi hao hung','tham tu dieu tra','le hoi dac biet','thu thach vuot chuong ngai'];
+  const locationSeeds = ['bếp ma thuật','khu vườn bí ẩn','siêu thị rau củ khổng lồ','rừng trái cây','vũ trụ dinh dưỡng','camping trong rừng','thế giới trong giấc mơ','công viên nước','tiệm bánh phép thuật','tàu vũ trụ'];
+  const moodSeeds = ['hài hước bất ngờ','phiêu lưu kỳ thú','bí ẩn vui nhộn','cuộc thi hào hứng','thám tử điều tra','lễ hội đặc biệt','thử thách vượt chướng ngại'];
   const randomLocation = locationSeeds[(episodeNumber + Math.floor(Math.random() * 3)) % locationSeeds.length];
   const randomMood = moodSeeds[Math.floor(Math.random() * moodSeeds.length)];
 
-  const system = 'Ban la nha bien kich phim hoat hinh 3D Pixar xuat chung, sang tao cho tre em Viet Nam 9:16. Tuan thu JSON schema chinh xac.';
+  const system = 'Bạn là nhà biên kịch phim hoạt hình 3D Pixar xuất chúng, sáng tạo cho trẻ em Việt Nam 9:16. Tuân thủ JSON schema chính xác và LUÔN LUÔN trả về Tiếng Việt CÓ DẤU (Accented Vietnamese).';
 
   const userLines = [
     themePrompt,
-    `DAY LA TAP ${episodeNumber}. Noi dung PHAI HOAN TOAN KHAC voi cac tap truoc. Boi canh goi y: "${randomLocation}". Phong cach: "${randomMood}". Khong lap lai tinh huong, dia diem, hay chi tiet hai huoc cua cac tap truoc.`,
-    'KICH BAN DAC BIET SANG TAO, DI DOM. Dung 3 nhan vat: be Bin (5 tuoi, ao ke soc xanh-cam-trang, quan dui xanh), chu huou Sumo (di 2 chan, ao choang do, that no do), nhan vat phu (Me HOAC ban hoc).',
-    'Boi canh da dang (khong rap khuon picnic): bep ma thuat, quay trai cay, rung rau cu, camping, the gioi mo...',
-    'Loi thoai hai huoc: vi da day nhu doan tau can nhien lieu nhieu mau, vitamin nhu sieu anh hung...',
-    'Canh 5 tuy chon: bai hoc giao duc HOAC gioi thieu san pham Gac Huou Non SUMO tu nhien.',
-    'CAU TRUC 6 CANH:',
-    '- Canh 1 (Hook): Bin lam gi ngo nghinh/luoi. Nhan vat phu ngac nhien. Sumo xuat hien.',
-    '- Canh 2 (Thac mac): Bin hoi ngay tho. Sumo giai thich bang vi von hai huoc.',
-    '- Canh 3 (Hau qua): Sumo mo ta hau qua kich tinh nhe (te bao dinh cong, bung keu cuu...).',
-    '- Canh 4 (Giai phap): Sumo to chuc tro choi/thu thach. Bin hao hung.',
-    '- Canh 5 (Bai hoc/SP): Giao duc hoac gioi thieu san pham tu nhien.',
-    '- Canh 6 (Ket + CTA): Bin pose cute cung Sumo, hoi khan gia cau vui de kich comment.',
-    'BO CUC DIEN ANH: KHONG dung hang ngang. Tu the da dang (ngoi/dung/tua). Chieu sau khung hinh. Camera tinh, khong cat canh. Khung don 9:16. Khong text/subtitle.',
-    'Sumo LUON di 2 chan. Moi canh co goc may KHAC NHAU (close-up/medium/wide).',
-    'QUAN TRONG - San pham: Khi canh co san pham Gac Huou Non SUMO, Sumo phai cam hoac dua GOI POUCH/TUI MEM (giong goi Bin uong bang ong hut), KHONG PHAI hu/jar/tub/hop tron. imagePrompt phai viet ro: Sumo holds a soft POUCH product bag.',
-    'imagePrompt PHAI ghi ro vi tri tung nhan vat: On the LEFT side..., On the RIGHT side..., in the CENTER.... Moi canh AI tu chon vi tri hop ly theo bo cuc.',
-    'videoPrompt: mo ta chuyen dong KHONG chua dialogue.',
-    `JSON khong markdown: {"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}`,
-    `Dung ${MAX_SUMO_SCENES} canh. dialogue: 1 cau/canh, 25-35 tu tieng Viet xap xi 8 giay.`,
+    `ĐÂY LÀ TẬP ${episodeNumber}. Nội dung PHẢI HOÀN TOÀN KHÁC với các tập trước. Bối cảnh gợi ý: "${randomLocation}". Phong cách: "${randomMood}". Không lặp lại tình huống, địa điểm, hay chi tiết hài hước của các tập trước.`,
+    'KỊCH BẢN ĐẶC BIỆT SÁNG TẠO, DÍ DỎM. Dùng 3 nhân vật: bé Bin (5 tuổi, áo kẻ sọc xanh-cam-trắng, quần đùi xanh), chú hươu Sumo (đi 2 chân, áo choàng đỏ, thắt nơ đỏ), nhân vật phụ (Mẹ HOẶC bạn học).',
+    'Bối cảnh đa dạng (không rập khuôn picnic): bếp ma thuật, quầy trái cây, rừng rau củ, camping, thế giới mơ...',
+    'Lời thoại hài hước: ví dạ dày như đoàn tàu cần nhiên liệu nhiều màu, vitamin như siêu anh hùng...',
+    'Cảnh 5 tùy chọn: bài học giáo dục HOẶC giới thiệu sản phẩm Gạc Hươu Non SUMO tự nhiên.',
+    'CẤU TRÚC 6 CẢNH:',
+    '- Cảnh 1 (Hook): Bin làm gì ngộ nghĩnh/lười. Nhân vật phụ ngạc nhiên. Sumo xuất hiện.',
+    '- Cảnh 2 (Thắc mắc): Bin hỏi ngây thơ. Sumo giải thích bằng ví von hài hước.',
+    '- Cảnh 3 (Hậu quả): Sumo mô tả hậu quả kịch tính nhẹ (tế bào đình công, bụng kêu cứu...).',
+    '- Cảnh 4 (Giải pháp): Sumo tổ chức trò chơi/thử thách. Bin hào hứng.',
+    '- Cảnh 5 (Bài học/SP): Giáo dục hoặc giới thiệu sản phẩm tự nhiên.',
+    '- Cảnh 6 (Kết + CTA): Bin pose cute cùng Sumo, hỏi khán giả câu vui để kích comment.',
+    'BỐ CỤC ĐIỆN ẢNH: KHÔNG đứng hàng ngang. Tư thế đa dạng (ngồi/đứng/tựa). Chiều sâu khung hình. Camera tĩnh, không cắt cảnh. Khung đơn 9:16. Không text/subtitle.',
+    'Sumo LUÔN đi 2 chân. Mỗi cảnh có góc máy KHÁC NHAU (close-up/medium/wide).',
+    'QUAN TRỌNG - Sản phẩm: Khi cảnh có sản phẩm Gạc Hươu Non SUMO, Sumo phải cầm hoặc đưa GÓI POUCH/TÚI MỀM (giống gói Bin uống bằng ống hút), KHÔNG PHẢI hũ/jar/tub/hộp tròn. imagePrompt phải viết rõ: Sumo holds a soft POUCH product bag.',
+    'imagePrompt PHẢI ghi rõ vị trí từng nhân vật: On the LEFT side..., On the RIGHT side..., in the CENTER.... Mỗi cảnh AI tự chọn vị trí hợp lý theo bố cục.',
+    'videoPrompt: mô tả chuyển động KHÔNG chứa dialogue.',
+    `JSON không markdown: {"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}`,
+    `Dùng ${MAX_SUMO_SCENES} cảnh. dialogue: PHẢI VIẾT BẰNG TIẾNG VIỆT CÓ DẤU, 1 câu/cảnh, 25-35 từ xấp xỉ 8 giây.`,
   ];
   const user = userLines.join('\n');
 
