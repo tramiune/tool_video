@@ -340,8 +340,12 @@ const extensionBridge = {
     const refBase64Array = [];
     for (const raw of rawRefs) {
       if (raw) {
-        const b64 = await imageInputToBase64(raw);
-        if (b64) refBase64Array.push(b64);
+        if (typeof raw === 'string' && raw.startsWith('http')) {
+          refBase64Array.push(raw);
+        } else {
+          const b64 = await imageInputToBase64(raw);
+          if (b64) refBase64Array.push(b64);
+        }
       }
     }
 
