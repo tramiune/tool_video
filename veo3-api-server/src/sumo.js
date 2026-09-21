@@ -178,13 +178,13 @@ function buildSumoImagePrompt(job, scene, idx, refs = []) {
     job.baseImagePrompt ? `Environment: ${job.baseImagePrompt}` : '',
     '3D Pixar animated film style, vibrant, expressive, cute, warm natural lighting.',
     refLines.length > 0
-      ? `REFERENCE IMAGES — use EACH pasted image as the EXACT design source:\n${refLines.join('\n')}\nDO NOT alter face shape, clothing colors, clothing pattern, body proportions, species, or product design of any item above.`
+      ? `REFERENCE IMAGES — use EACH pasted image as the EXACT design source: ${refLines.join(' ')} DO NOT alter face shape, clothing colors, clothing pattern, body proportions, species, or product design of any item above.`
       : 'CRITICAL: Characters must be IDENTICAL to their reference images in appearance, clothing, and proportions.',
     'Cinematic staging: natural varied postures with depth (foreground/midground/background). No stiff lineup.',
     'Single unified vertical 9:16 shot. Full-bleed. NO split screen, NO collage, NO panels, NO duplicate characters.',
     'No text, no subtitles, no name labels, no written words on screen.',
   ].filter(Boolean);
-  return `${seq} ${parts.join('\n')}`;
+  return `${seq} ${parts.join(' ')}`;
 }
 
 
@@ -200,7 +200,7 @@ function buildSumoVideoPrompt(job, scene, idx) {
     dlg.length ? `Dialogue (lip sync only the speaker above): ${dlg.map(l => `${l.speaker}: "${l.text}"`).join(' ')}` : '',
     'One coherent 8-second continuous vertical 9:16 clip. Locked static camera, no cuts, no split screen.',
   ].filter(Boolean);
-  return `${seq} ${parts.join('\n')}`;
+  return `${seq} ${parts.join(' ')}`;
 }
 
 

@@ -5589,7 +5589,8 @@ document.addEventListener('DOMContentLoaded', () => {
     serverTasks.forEach(t => _serverSttMap.set(t.stt, t.id));
     // Format prompts và chạy
     const promptsText = serverTasks.map(t => {
-      let line = `${t.ratio || '9:16'}|${t.prompt}`;
+      let safePrompt = (t.prompt || '').replace(/\r?\n/g, ' ').replace(/\|/g, '-');
+      let line = `${t.ratio || '9:16'}|${safePrompt}`;
       if (t.referenceImages && t.referenceImages.length > 0) {
         line += '|' + t.referenceImages.join('|');
       }
