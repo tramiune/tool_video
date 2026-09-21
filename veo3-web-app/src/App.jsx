@@ -6033,6 +6033,17 @@ function App() {
       return;
     }
 
+    const userActiveImageTasks = tasks.filter(t => 
+      t.userId === user.uid && 
+      t.type === 'image' &&
+      (t.status === 'pending' || t.status === 'processing' || t.status === 'queued')
+    ).length;
+
+    if (activeTab === 'image' && userActiveImageTasks >= 1) {
+      alert("Bạn chỉ được tạo 1 ảnh cùng lúc. Vui lòng chờ ảnh trước hoàn thành nhé!");
+      return;
+    }
+
     // Limit checking
     const limits = {
       free: { videos: Infinity, images: Infinity },

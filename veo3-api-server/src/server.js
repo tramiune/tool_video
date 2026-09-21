@@ -340,8 +340,8 @@ const extensionBridge = {
     const refBase64Array = [];
     for (const raw of rawRefs) {
       if (raw) {
-        // Trả thẳng link raw thay vì convert base64 để tool Bulk AI xử lý link trực tiếp
-        refBase64Array.push(raw);
+        const b64 = await imageInputToBase64(raw);
+        if (b64) refBase64Array.push(b64);
       }
     }
 
@@ -3208,17 +3208,49 @@ function startFirestoreListener() {
 // ─── IMAGE WORKER (concurrent) ──────────────────────────────────────────────
 
 function drainImageQueue() {
-  while (imageQueue.length > 0) {
-    const taskId = imageQueue[0];
-    const isAdmin = tasks[taskId]?.isAdmin === true;
-    // Admin tasks bypass the global concurrency cap
-    if (!isAdmin && activeImageWorkers >= IMAGE_CONCURRENCY) break;
-    imageQueue.shift();
-    if (!isAdmin) activeImageWorkers++;
+  // Determine which users currently have an active image task
+  const activeUsers = new Set();
+  for (const tid in tasks) {
+    const t = tasks[tid];
+    if (t.type === 'image' && t.status === 'processing' && !t.isAdmin && t.userId && t.userId !== 'anonymous') {
+      activeUsers.add(t.userId);
+    }
+  }
+
+  for (let i = 0; i < imageQueue.length; i++) {
+    const taskId = imageQueue[i];
+    const task = tasks[taskId];
+    if (!task) {
+      imageQueue.splice(i, 1);
+      i--;
+      continue;
+    }
+
+    const isAdmin = task.isAdmin === true;
+    if (!isAdmin && activeImageWorkers >= IMAGE_CONCURRENCY) {
+      return; // Global capacity reached
+    }
+
+    const userId = task.userId;
+    if (!isAdmin && userId && userId !== 'anonymous' && activeUsers.has(userId)) {
+      continue; // This user already has an active image task, skip to next in queue
+    }
+
+    // Found a runnable task
+    imageQueue.splice(i, 1);
+    
+    if (!isAdmin) {
+      activeImageWorkers++;
+      if (userId && userId !== 'anonymous') activeUsers.add(userId);
+    }
+
     runImageTask(taskId).finally(() => {
       if (!isAdmin) activeImageWorkers--;
-      drainImageQueue(); // pick next task when a slot frees up
+      drainImageQueue();
     });
+
+    // Reset loop to scan from the beginning now that queue changed
+    i = -1;
   }
 }
 
