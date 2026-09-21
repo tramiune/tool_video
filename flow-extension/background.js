@@ -6203,11 +6203,35 @@ function reportToolVideoResult(req) {
   return { success: false, error: "WebSocket to tool_video not connected" };
 }
 
-function enqueueServerVideoTask(task) {
+async function enqueueServerVideoTask(task) {
   logToBridge(`[Bridge] Chuyển task video ${task.id} vào hàng đợi Đa Tab trên Sidepanel...`);
-  const serverTask = { ...task, mediaType: 'video' };
+  
+  // Format STT cho video task
+  let prompt = (task.prompt || '').trim();
+    let seqStr = '';
+    const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
+    if (matchSeq) {
+      const num = parseInt(matchSeq[1], 10);
+      seqStr = String(num).padStart(3, '0') + '.';
+      prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
+    } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
+      const num = Number(task.sceneIndex) + 1;
+      seqStr = String(num).padStart(3, '0') + '.';
+      prompt = `${seqStr} ${prompt}`;
+      await updateMaxSeq(task.projectId, num, 'video');
+    } else {
+      const seqRes = await getMaxSeq(task.projectId, 'video');
+      const nextSeq = (seqRes?.maxSeq || 0) + 1;
+      await updateMaxSeq(task.projectId, nextSeq, 'video');
+      seqStr = String(nextSeq).padStart(3, '0') + '.';
+      prompt = `${seqStr} ${prompt}`;
+    }
+    task.prompt = prompt;
+    task.seq = seqStr;
 
-  chrome.runtime.sendMessage({
+    const serverTask = { ...task, mediaType: 'video' };
+
+    chrome.runtime.sendMessage({
     action: 'ADD_SERVER_TASK_TO_MULTI_TAB',
     task: serverTask
   }).then(res => {
