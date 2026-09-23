@@ -6056,11 +6056,11 @@ function App() {
     const usage = getTodayUsage();
 
     if (activeTab === 'video') {
-      // Free tier: chỉ được làm 1 video duy nhất toàn đời (all-time)
+      // Free tier: Không cho tạo thử nữa (limit = 0)
       if (activeUserTier === 'free') {
         const allTimeVideos = getAllTimeVideoCount();
-        if (allTimeVideos >= 1) {
-          setLimitError({ type: 'video', limit: 1, current: allTimeVideos, isAllTime: true });
+        if (allTimeVideos >= 0) {
+          setLimitError({ type: 'video', limit: 0, current: allTimeVideos, isAllTime: true });
           return;
         }
       } else if (usage.videos >= currentLimits.videos) {
@@ -6070,11 +6070,11 @@ function App() {
     }
 
     if (activeTab === 'image') {
-      // Free tier: chỉ được làm 1 ảnh duy nhất toàn đời (all-time)
+      // Free tier: Không cho tạo thử nữa (limit = 0)
       if (activeUserTier === 'free') {
         const allTimeImages = getAllTimeImageCount();
-        if (allTimeImages >= 1) {
-          setLimitError({ type: 'image', limit: 1, current: allTimeImages, isAllTime: true });
+        if (allTimeImages >= 0) {
+          setLimitError({ type: 'image', limit: 0, current: allTimeImages, isAllTime: true });
           return;
         }
       } else if (usage.images >= currentLimits.images) {
@@ -7369,7 +7369,7 @@ function App() {
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>Hết lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'}</h3>
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
               {limitError.isAllTime
-                ? <>Gói <strong>Free</strong> chỉ được tạo <strong>{limitError.limit} {limitError.type === 'video' ? 'video' : 'ảnh'}</strong> (trọn đời). Bạn đã dùng hết lượt thử miễn phí rồi. Nâng cấp để tiếp tục tạo {limitError.type === 'video' ? 'video' : 'ảnh'} nhé! 🎬</>
+                ? <>Tính năng tạo {limitError.type === 'video' ? 'video' : 'ảnh'} không hỗ trợ tài khoản <strong>Free</strong>. Vui lòng nâng cấp gói để trải nghiệm tính năng này nhé! 🎬</>
                 : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Basic' : userTier === 'standard_99k' ? 'Standard' : 'Premium'}</strong>.</>
               }
             </p>

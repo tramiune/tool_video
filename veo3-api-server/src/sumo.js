@@ -21,12 +21,12 @@ const FFMPEG_TIMEOUT_MS = Number(process.env.AUTOTOOL_FFMPEG_TIMEOUT_MS || 10 * 
 const activeJobs = new Set();
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed']);
 
-// ─── Character reference image URLs ──────────────────────────────────────────
+// ─── Character reference image URLs ──────────────────────────────────────────// --- Asset Links ---
 const CHAR_REFS = {
-  bin:     'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/bin_character.jpg',
-  sumo:    'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_character.jpg',
-  mother:  'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/mother_character.jpg',
-  product: 'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_product.png',
+  bin:     'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/bin_character.jpg',
+  sumo:    'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_character.jpg',
+  mother:  'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/mother_character.jpg',
+  product: 'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_product.png',
 };
 
 // Detect which character refs to attach based on scene prompt content

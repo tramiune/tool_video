@@ -3,6 +3,9 @@ const config = require('./config');
 const TELEGRAM_BOT_TOKEN = '8661695650:AAGk2wzokrrvBN7VMDjGl3OZsi4pfkVn7IE';
 const TELEGRAM_CHAT_ID = '6067707939';
 
+const PAYMENT_BOT_TOKEN = '8601160012:AAFJenKER22iHrfgwx_ueq1Hd2s1c7bxD6s';
+const PAYMENT_CHAT_ID = '-5323911444';
+
 const MAX_LEN = 3800;
 
 async function getTodayTotal() {
@@ -26,16 +29,16 @@ async function getTodayTotal() {
   }
 }
 
-async function sendMessage(text) {
+async function sendTelegramMessage(text, botToken, chatId) {
   const message = String(text).slice(0, MAX_LEN);
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
+        chat_id: chatId,
         text: message,
         parse_mode: 'HTML',
         disable_web_page_preview: true
@@ -53,6 +56,14 @@ async function sendMessage(text) {
     console.error('[Telegram] send failed:', e.message);
     return false;
   }
+}
+
+async function sendMessage(text) {
+  return sendTelegramMessage(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID);
+}
+
+async function sendPaymentMessage(text) {
+  return sendTelegramMessage(text, PAYMENT_BOT_TOKEN, PAYMENT_CHAT_ID);
 }
 
 function esc(text) {
@@ -73,7 +84,7 @@ async function notifyPayment(tx) {
     `🔢 Code: <code>${esc(tx.code || '-')}</code>`,
     `📊 Tổng hôm nay: <b>${Number(today.total).toLocaleString('vi-VN')}đ</b> (${today.count} giao dịch)`
   ];
-  await sendMessage(lines.join('\n'));
+  await sendPaymentMessage(lines.join('\n'));
 }
 
 async function notifyTaskFailed(task) {

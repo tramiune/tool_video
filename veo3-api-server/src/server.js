@@ -24,6 +24,13 @@ const drama = require('./drama');
 const sumo  = require('./sumo');
 const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
 
+process.on("uncaughtException", (err) => { 
+  logger.error(`[CRITICAL] Uncaught Exception: ${err.message}`); 
+  console.error(err); 
+}); 
+process.on("unhandledRejection", (reason, promise) => { 
+  logger.error(`[CRITICAL] Unhandled Rejection at: ${promise} reason: ${reason}`); 
+}); 
 const app = express();
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
@@ -2872,7 +2879,7 @@ app.post('/api/payment-webhook', async (req, res) => {
 // ─── AUDIO (AI DANCING VOICE CLONE) API ────────────────────────────────────
 // Daily usage quotas per tier (server-side enforcement)
 const AUDIO_LIMITS = {
-  free: 1,
+  free: 0,
   hocvien: 5,
   basic_69k: 5,
   standard_99k: 5,

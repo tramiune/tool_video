@@ -447,15 +447,15 @@ async function runDramaJob(jobId) {
             const referenceImages = [];
             if (job.channelType === 'sumo') {
               referenceImages.push(
-                'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/bin_character.jpg',
-                'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_character.jpg'
+                'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/bin_character.jpg',
+                'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_character.jpg'
               );
               const promptLower = String(scene.imagePrompt || '').toLowerCase();
               if (promptLower.includes('mother') || promptLower.includes('mom') || promptLower.includes('mẹ')) {
-                referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/mother_character.jpg');
+                referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/mother_character.jpg');
               }
               if (promptLower.includes('gac huou non sumo') || promptLower.includes('sumo non') || promptLower.includes('pouch') || promptLower.includes('product') || promptLower.includes('package')) {
-                referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_product.png');
+                referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_product.png');
               }
             }
 
@@ -929,15 +929,15 @@ async function generateSceneMedia({
       const referenceImages = [];
       if (script.channelType === 'sumo') {
         referenceImages.push(
-          'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/bin_character.jpg',
-          'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_character.jpg'
+          'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/bin_character.jpg',
+          'https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_character.jpg'
         );
         const promptLower = String(scene.imagePrompt || '').toLowerCase();
         if (promptLower.includes('mother') || promptLower.includes('mom') || promptLower.includes('mẹ')) {
-          referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/mother_character.jpg');
+          referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/mother_character.jpg');
         }
         if (promptLower.includes('gac huou non sumo') || promptLower.includes('sumo non') || promptLower.includes('pouch') || promptLower.includes('product') || promptLower.includes('package')) {
-          referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/meo3/assets/sumo_product.png');
+          referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_product.png');
         }
       }
 
