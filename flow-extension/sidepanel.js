@@ -71,17 +71,16 @@
       // Tool gửi trạng thái tasks real-time
       } else if (msg?.action === 'BULK_STATUS_UPDATE') {
         const tasks = msg.tasks || [];
-        const listEl = document.getElementById('bulkTaskList');
-        const summaryEl = document.getElementById('bulkTaskSummary');
-        const badge = document.getElementById('bulkAiStatusBadge');
-        if (!listEl) return;
+        renderTaskList(tasks);
+        return;
 
         const done = tasks.filter(t => t.status === 'completed').length;
         const err  = tasks.filter(t => t.status === 'error').length;
         const proc = tasks.filter(t => t.status === 'processing').length;
         const pend = tasks.filter(t => t.status === 'pending').length;
 
-        if (summaryEl) summaryEl.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
+        if (summaryEl1) summaryEl1.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
+    if (summaryEl2) summaryEl2.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
         if (badge) {
           if (proc > 0 || pend > 0) { badge.textContent = `⚙️ Đang chạy ${done}/${tasks.length}`; badge.style.background = 'rgba(99,102,241,0.2)'; badge.style.color = '#818cf8'; }
           else if (tasks.length > 0) { badge.textContent = `✅ Xong ${done}/${tasks.length}`; badge.style.background = 'rgba(16,185,129,0.2)'; badge.style.color = '#10b981'; }
@@ -2804,9 +2803,7 @@
         world: 'MAIN',
         args: [prompts],
         func: (prompts) => {
-          // 1) Gửi cho chính window (nếu tool là main frame)
-          window.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
-          // 2) Gửi cho tất cả iframes
+          // Gửi CHỈ cho iframes (tránh đúp do Flow relay)
           let iframeCount = 0;
           document.querySelectorAll('iframe').forEach(iframe => {
             try {
@@ -2814,6 +2811,7 @@
               iframeCount++;
             } catch (_) {}
           });
+          if (iframeCount === 0) window.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
           return { ok: true, prompts: prompts.length, iframes: iframeCount };
         },
       });
@@ -3168,11 +3166,21 @@
       return true;
     }
     if (msg.action === "ADD_SERVER_TASK_TO_MULTI_TAB") {
-      addServerTaskToMultiTab(msg.task).then(res => {
-        sendResponse(res);
-      }).catch(err => {
-        sendResponse({ success: false, error: err.message });
-      });
+      chrome.runtime.sendMessage(
+        { action: 'CLAIM_MULTI_TAB_TASK', serverTaskId: msg.task.id },
+        function(resp) {
+          if (chrome.runtime.lastError) {
+            addServerTaskToMultiTab(msg.task).then(r => sendResponse(r)).catch(e => sendResponse({ success: false, error: e.message }));
+            return;
+          }
+          if (resp && resp.claimed) {
+            addServerTaskToMultiTab(msg.task).then(r => sendResponse(r)).catch(e => sendResponse({ success: false, error: e.message }));
+          } else {
+            console.log('[MultiTab] Skipped duplicate task (claimed by another panel):', msg.task.id);
+            sendResponse({ success: true, skipped: true });
+          }
+        }
+      );
       return true;
     }
     if (msg.action === "ADD_SERVER_TASK_TO_UI_BATCH") {
@@ -3571,6 +3579,10 @@ function renderMultiTabServerTasksUI() {
 
 async function addServerTaskToMultiTab(task) {
   if (!task) return { success: false, error: "Task rỗng" };
+  // Deduplicate across multiple sidepanels
+  if (_multiTabServerTasks.some(t => t.serverTaskId === task.id)) {
+    return { success: true };
+  }
 
   const isVideo = task.mediaType === 'video' || (!task.mediaType && Boolean(task.duration || task.startImage || task.endImage));
   const mediaType = isVideo ? 'video' : 'image';
@@ -3678,147 +3690,171 @@ async function runMultiTabServerWorker(task, tab) {
     }
   };
 
-  const ts = Date.now().toString().slice(-4);
-  const fullPrompt = `${ts}. ${task.prompt}`;
+  // Format STT
+  const stt = task.seq ? task.seq.replace('.', '').trim() : Date.now().toString().slice(-4);
+  let prompt = (task.prompt || '').trim();
+  prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, '');
+  const fullPrompt = `${stt}. ${prompt}`;
   log(`🚀 Bắt đầu xử lý task #${task.id} (${task.mediaType === 'video' ? 'Video' : 'Ảnh'}): "${fullPrompt.slice(0, 40)}..."`);
 
   try {
+    task.statusDetail = 'Đang submit vào Custom UI...';
+    renderMultiTabServerTasksUI();
+
+    const ratio = task.aspectRatio || (task.mediaType === 'video' ? '9:16' : '1:1');
+    let refImages = [];
+    if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
+      refImages = task.referenceImages.filter(Boolean);
+    } else if (task.referenceImage) {
+      refImages = [task.referenceImage];
+    } else if (task.startImage) {
+      refImages = [task.startImage];
+      if (task.endImage) refImages.push(task.endImage);
+    }
+    
+    let line;
     if (task.mediaType === 'video') {
-      // 1. Submit Video
-      task.statusDetail = 'Đang submit...';
-      renderMultiTabServerTasksUI();
-
-      const createRes = await callExt('CREATE_VIDEO_MULTI_TAB', {
-        prompt: fullPrompt,
-        tabId: tab.tabId,
-        aspectRatio: task.aspectRatio || '9:16',
-        startImageDataUrl: task.startImage || null,
-        endImageDataUrl: task.endImage || null
-      });
-
-      if (!createRes?.success) {
-        throw new Error(createRes?.error || 'Lỗi khi tạo video trên tab');
-      }
-
-      // 2. Theo dõi render & Tải về
-      task.status = 'RENDERING';
-      task.statusDetail = '⏳ Đang render...';
-      renderMultiTabServerTasksUI();
-      log(`✅ Đã submit video. Bắt đầu theo dõi render...`);
-
-      // Báo server biết task đã submit → server reset timeout từ lúc này
-      if (task.serverTaskId) {
-        callExt('REPORT_TASK_STARTED', { id: task.serverTaskId }).catch(() => {});
-      }
-
-      const dlResult = await monitorAndDownloadMultiTab(
-        tab.tabId, ts, fullPrompt, tab.projectId, logEl
-      );
-
-      if (dlResult?.success) {
-        task.status = 'DONE';
-        const fullFilePath = dlResult.filePath || dlResult.filename || 'video.mp4';
-        task.filename = dlResult.filename || fullFilePath;
-        task.statusDetail = `✅ Xong: ${task.filename}`;
-        renderMultiTabServerTasksUI();
-        log(`🎉 Hoàn tất Video! File: ${task.filename}`);
-
-        // Báo kết quả về server tool_video
-        if (task.serverTaskId) {
-          callExt('REPORT_TOOL_VIDEO_RESULT', {
-            id: task.serverTaskId,
-            ok: true,
-            filePath: fullFilePath
-          }).catch(e => console.error('Lỗi gửi REPORT_TOOL_VIDEO_RESULT:', e));
-        }
-      } else {
-        throw new Error(dlResult?.error || 'Lỗi tải video');
-      }
-
+      line = `${ratio}|${fullPrompt}`;
+      if (refImages.length > 0) line += '|' + refImages.join('|');
     } else {
-      // Xử lý Ảnh
-      // 1. Chuẩn hóa referenceImages
-      let refImages = [];
-      if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
-        refImages = task.referenceImages.filter(Boolean);
-      } else if (task.referenceImage) {
-        refImages = [task.referenceImage];
-      } else if (task.startImage) {
-        refImages = [task.startImage];
+      line = fullPrompt;
+      if (refImages.length > 0) line += '|' + refImages.join('|');
+    }
+
+    // Inject status interceptor
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.tabId, allFrames: false },
+      world: 'MAIN',
+      func: function() {
+        if (!window.__bulkStatusInterceptorActive) {
+          window.__bulkStatusInterceptorActive = true;
+          window.__bulkStatusData = null;
+          window.addEventListener('message', function(e) {
+            if (e.data && (e.data.type === 'BULK_STATUS_UPDATE' || e.data.type === 'BULK_DONE')) {
+              window.__bulkStatusData = e.data;
+            }
+          });
+        }
       }
+    });
 
-      task.statusDetail = 'Đang submit ảnh...';
-      renderMultiTabServerTasksUI();
+    // Gửi task qua ĐÚNG hàm Bulk AI (giống y hệt khi user bấm tay trên Extension)
+    if (task.mediaType === 'video' && window._bulkPasteAndRunVideo) {
+      await window._bulkPasteAndRunVideo(tab.tabId, line);
+    } else if (window._bulkPasteAndRun) {
+      await window._bulkPasteAndRun(tab.tabId, line);
+    } else {
+      // Fallback nếu Bulk AI chưa init
+      const msgType = task.mediaType === 'video' ? 'BULK_ADD_VIDEO_TASKS' : 'BULK_ADD_TASKS';
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.tabId, allFrames: false },
+        world: 'MAIN',
+        args: [msgType, line],
+        func: function(msgType, line) {
+          var sent = false;
+          document.querySelectorAll('iframe').forEach(function(f) {
+            try { if (f.contentWindow) { f.contentWindow.postMessage({ type: msgType, prompts: [line] }, '*'); sent = true; } } catch(_) {}
+          });
+          if (!sent) window.postMessage({ type: msgType, prompts: [line] }, '*');
+        }
+      });
+    }
 
-      const createRes = await callExt('CREATE_IMAGE_MULTI_TAB', {
-        prompt: fullPrompt,
-        tabId: tab.tabId,
-        aspectRatio: task.aspectRatio || '16:9',
-        referenceImages: refImages
+    task.status = 'RENDERING';
+    task.statusDetail = '⏳ Đang render...';
+    renderMultiTabServerTasksUI();
+    log(`✅ Đã gửi lệnh. Chờ kết quả...`);
+
+    if (task.serverTaskId) {
+      chrome.runtime.sendMessage({ action: 'REPORT_TASK_STARTED', id: task.serverTaskId }).catch(() => {});
+    }
+
+    const startTime = Date.now();
+    const MAX_WAIT = (task.mediaType === 'video' ? 15 : 5) * 60 * 1000;
+    
+    let isDone = false;
+    let finalError = null;
+
+    while (Date.now() - startTime < MAX_WAIT) {
+      await new Promise(r => setTimeout(r, 2000));
+
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId: tab.tabId, allFrames: false },
+        world: 'MAIN',
+        func: function() { const d = window.__bulkStatusData; window.__bulkStatusData = null; return d; }
+      }).catch(() => [null]);
+
+      const data = res?.result;
+      if (!data || !data.tasks) continue;
+
+      const myToolTask = data.tasks.find(t => {
+        const tStt = (t.stt || '').split('.')[0]?.trim();
+        if (tStt === stt) return true;
+        // Fallback: match by prompt content if STT doesn't match
+        const tPrompt = (t.prompt || '').replace(/^\d{1,4}[\.\-_:\s]\s*/, '').trim().toLowerCase();
+        const myPrompt = prompt.toLowerCase();
+        return myPrompt && tPrompt && tPrompt.includes(myPrompt.slice(0, 30));
       });
 
-      if (!createRes?.success) {
-        throw new Error(createRes?.error || 'Lỗi khi tạo ảnh trên tab');
-      }
-
-      // 2. Theo dõi & Tải ảnh
-      task.status = 'RENDERING';
-      task.statusDetail = '⏳ Đang render ảnh...';
-      renderMultiTabServerTasksUI();
-      log(`✅ Đã submit ảnh. Bắt đầu theo dõi render...`);
-
-      // Báo server biết task đã submit → server reset timeout từ lúc này
-      if (task.serverTaskId) {
-        callExt('REPORT_TASK_STARTED', { id: task.serverTaskId }).catch(() => {});
-      }
-
-      const dlResult = await monitorAndDownloadImageMultiTab(
-        tab.tabId, ts, fullPrompt, tab.projectId, logEl
-      );
-
-      if (dlResult?.success) {
-        task.status = 'DONE';
-        const fullFilePath = dlResult.filePath || dlResult.filename || 'image.jpg';
-        task.filename = dlResult.filename || fullFilePath;
-        task.statusDetail = `✅ Xong: ${task.filename}`;
-        renderMultiTabServerTasksUI();
-        log(`🎉 Hoàn tất Ảnh! File: ${task.filename}`);
-
-        // Báo kết quả về server tool_video
-        if (task.serverTaskId) {
-          callExt('REPORT_TOOL_IMAGE_RESULT', {
-            id: task.serverTaskId,
-            ok: true,
-            filePath: fullFilePath
-          }).catch(e => console.error('Lỗi gửi REPORT_TOOL_IMAGE_RESULT:', e));
+      if (myToolTask) {
+        if (myToolTask.status === 'completed') {
+          isDone = true;
+          break;
+        } else if (myToolTask.status === 'error') {
+          finalError = myToolTask.error || 'Lỗi từ Custom UI';
+          break;
         }
-      } else {
-        throw new Error(dlResult?.error || 'Lỗi tải ảnh');
       }
     }
-  } catch (err) {
-    task.status = 'ERROR';
-    task.error = err.message;
-    task.statusDetail = `❌ ${err.message}`;
+
+    if (!isDone && !finalError) {
+      throw new Error(`Timeout sau ${MAX_WAIT / 60000} phút`);
+    }
+    if (finalError) {
+      throw new Error(finalError);
+    }
+
+    task.status = 'DONE';
+    const ext = task.mediaType === 'video' ? 'mp4' : 'jpg';
+    task.filename = `${stt}.${ext}`;
+    task.statusDetail = `✅ Xong: ${task.filename}`;
     renderMultiTabServerTasksUI();
-    log(`❌ Task #${task.id} thất bại: ${err.message}`);
+    log(`🎉 Hoàn tất! File: ${task.filename}`);
 
     if (task.serverTaskId) {
       const reportAction = task.mediaType === 'video' ? 'REPORT_TOOL_VIDEO_RESULT' : 'REPORT_TOOL_IMAGE_RESULT';
-      callExt(reportAction, {
+      chrome.runtime.sendMessage({
+        action: reportAction,
+        id: task.serverTaskId,
+        ok: true,
+        filePath: task.filename,
+        mediaType: task.mediaType
+      }).catch(e => console.error('Lỗi gửi kết quả:', e));
+    }
+
+  } catch (err) {
+    task.status = 'ERROR';
+    task.error = err.message || 'Lỗi không xác định';
+    task.statusDetail = '❌ Lỗi';
+    renderMultiTabServerTasksUI();
+    log(`❌ Thất bại: ${task.error}`);
+
+    if (task.serverTaskId) {
+      const reportAction = task.mediaType === 'video' ? 'REPORT_TOOL_VIDEO_RESULT' : 'REPORT_TOOL_IMAGE_RESULT';
+      chrome.runtime.sendMessage({
+        action: reportAction,
         id: task.serverTaskId,
         ok: false,
-        error: err.message
-      }).catch(e => console.error(`Lỗi gửi ${reportAction}:`, e));
+        error: task.error,
+        mediaType: task.mediaType
+      }).catch(() => {});
     }
   } finally {
-    // Delay 5s để Flow UI reset hoàn toàn trước khi nhận task tiếp theo
-    await new Promise(r => setTimeout(r, 5000));
-    // Giải phóng tab để tab này có thể nhận task tiếp theo!
     _busyMultiTabs.delete(tab.tabId);
-    triggerMultiTabServerQueueProcessing();
+    triggerMultiTabServerQueueProcessing(); 
   }
 }
+
 
 // Bind refresh button
 document.addEventListener('DOMContentLoaded', () => {
@@ -5582,9 +5618,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Nhận task từ background.js — chạy y hệt bấm nút Paste & Chạy
   chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
     if (msg.action !== 'SIDEPANEL_BULK_RUN') return;
-    sendResponse({ ok: true }); // Phải gọi ngay để background.js không reject Promise
     const serverTasks = msg.tasks || [];
-    if (!serverTasks.length) return;
+    if (!serverTasks.length) { sendResponse({ ok: true }); return; }
+    // Claim task — chỉ 1 sidepanel xử lý
+    const claimId = serverTasks.map(t => t.id).join(',');
+    chrome.runtime.sendMessage({ action: 'CLAIM_MULTI_TAB_TASK', serverTaskId: claimId }, function(resp) {
+      if (!resp || !resp.claimed) { return; }
+      sendResponse({ ok: true });
     // Đăng ký map stt → taskId
     serverTasks.forEach(t => _serverSttMap.set(t.stt, t.id));
     // Format prompts và chạy
@@ -5613,12 +5653,22 @@ document.addEventListener('DOMContentLoaded', () => {
         startStatusPolling(tab.id);
       }
     });
+    }); // end claim callback
+    return true; // async sendResponse
   });
 
   const logEl  = () => document.getElementById('bulkAiLog');
   const badge  = () => document.getElementById('bulkAiStatusBadge');
   const dlList = () => document.getElementById('bulkAiDownloadList');
 
+  function logVideo(msg) {
+    const el = document.getElementById('bulkVideoLog');
+    if (el) {
+      el.style.display = 'block';
+      el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+  }
   function log(msg) {
     const el = logEl();
     if (!el) return;
@@ -5637,11 +5687,45 @@ document.addEventListener('DOMContentLoaded', () => {
     return m ? m[1] : Date.now().toString().slice(-6);
   }
 
-  async function findBulkTab() {
+    async function findBulkTab() {
+    const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTabs[0] && activeTabs[0].url && activeTabs[0].url.includes('/tool/')) {
+      return activeTabs[0];
+    }
     const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+    const activeToolTab = tabs.find(t => t.active && t.url && t.url.includes('/tool/'));
+    if (activeToolTab) return activeToolTab;
     return tabs.find(t => t.url && t.url.includes('/tool/')) || null;
   }
 
+  
+  window._bulkPasteAndRunVideo = pasteAndRunVideo;
+  async function pasteAndRunVideo(tabOrTabs, promptsText) {
+    const prompts = promptsText.split('\n').map(l => l.trim()).filter(Boolean);
+    let tabs = Array.isArray(tabOrTabs) ? tabOrTabs : [tabOrTabs];
+    let lastRes = null;
+    for (const t of tabs) {
+      try {
+        const [res] = await chrome.scripting.executeScript({
+          target: { tabId: typeof t === 'object' ? t.id : t, allFrames: false },
+          world: 'MAIN',
+          args: [prompts],
+          func: function(prompts) {
+            var iframeCount = 0;
+            document.querySelectorAll('iframe').forEach(function(iframe) {
+              try { if (iframe.contentWindow) { iframe.contentWindow.postMessage({ type: 'BULK_ADD_VIDEO_TASKS', prompts: prompts }, '*'); iframeCount++; } } catch(_) {}
+            });
+            if (iframeCount === 0) window.postMessage({ type: 'BULK_ADD_VIDEO_TASKS', prompts: prompts }, '*');
+            return { ok: true, prompts: prompts.length, iframes: iframeCount };
+          },
+        });
+        if (res && res.result) lastRes = res.result;
+      } catch(e) {}
+    }
+    return lastRes;
+  }
+
+  window._bulkPasteAndRun = pasteAndRun;
   async function pasteAndRun(tabId, promptsText) {
     const prompts = promptsText.split('\n').map(l => l.trim()).filter(Boolean);
     const [res] = await chrome.scripting.executeScript({
@@ -5649,13 +5733,12 @@ document.addEventListener('DOMContentLoaded', () => {
       world: 'MAIN',
       args: [prompts],
       func: function(prompts) {
-        // Gửi cho chính window (nếu tool là main frame)
-        window.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
-        // Gửi cho tất cả iframes (tool thường nằm trong iframe)
+        // Gửi CHỈ cho iframes (tránh đúp do Flow relay)
         var iframeCount = 0;
         document.querySelectorAll('iframe').forEach(function(iframe) {
-          try { iframe.contentWindow && iframe.contentWindow.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*'); iframeCount++; } catch(_) {}
+          try { if (iframe.contentWindow) { iframe.contentWindow.postMessage({ type: 'BULK_ADD_TASKS', prompts: prompts }, '*'); iframeCount++; } } catch(_) {}
         });
+        if (iframeCount === 0) window.postMessage({ type: 'BULK_ADD_TASKS', prompts }, '*');
         return { ok: true, prompts: prompts.length, iframes: iframeCount };
       },
     });
@@ -5690,20 +5773,23 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function renderTaskList(tasks) {
-    const listEl = document.getElementById('bulkTaskList');
-    const summaryEl = document.getElementById('bulkTaskSummary');
-    if (!listEl || !tasks || !tasks.length) return;
+    const listEl1 = document.getElementById('bulkTaskList');
+    const listEl2 = document.getElementById('bulkVideoTaskList');
+    const summaryEl1 = document.getElementById('bulkTaskSummary');
+    const summaryEl2 = document.getElementById('bulkVideoTaskSummary');
+    if (!tasks || !tasks.length) return;
     const done = tasks.filter(t => t.status === 'completed').length;
     const err  = tasks.filter(t => t.status === 'error').length;
     const proc = tasks.filter(t => t.status === 'processing').length;
     const pend = tasks.filter(t => t.status === 'pending').length;
-    if (summaryEl) summaryEl.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
+    if (summaryEl1) summaryEl1.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
+    if (summaryEl2) summaryEl2.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
     const badgeEl = badge();
     if (badgeEl) {
       if (proc > 0 || pend > 0) { badgeEl.textContent = `⚙️ Đang chạy ${done}/${tasks.length}`; badgeEl.style.color = '#818cf8'; }
       else { badgeEl.textContent = `✅ Xong ${done}/${tasks.length}`; badgeEl.style.color = '#10b981'; }
     }
-    listEl.innerHTML = tasks.map(t => {
+    const html = tasks.map(t => {
       const cfg = STATUS_CFG[t.status] || STATUS_CFG.pending;
       return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:${cfg.bg};font-size:11px;">
         <span>${cfg.icon}</span>
@@ -5711,6 +5797,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <span style="font-size:9px;color:${cfg.color};background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:4px;flex-shrink:0;">${t.ratio||''}</span>
       </div>`;
     }).join('');
+    if (listEl1) listEl1.innerHTML = html;
+    if (listEl2) listEl2.innerHTML = html;
   }
 
   function startStatusPolling(tabId) {
@@ -5953,7 +6041,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       _bulkTabId = tab.id;
-      log('✅ Tab: ' + (tab.title || '').slice(0, 40));
+      const logEl = document.getElementById('bulkVideoLog'); if(logEl) { logEl.style.display='block'; logEl.textContent += '[Sys] Tab: ' + (tab.title||'').slice(0,40) + '\n'; } log('✅ Tab: ' + (tab.title || '').slice(0, 40));
       var res = await pasteAndRun(tab.id, prompts);
       if (!res || !res.ok) {
         log('❌ ' + ((res && res.error) || 'Lỗi không xác định'));
@@ -5961,6 +6049,35 @@ document.addEventListener('DOMContentLoaded', () => {
         log('⚠️ Không tìm thấy nút Chạy — bắt đầu monitor thôi...');
       } else {
         log('✅ Đã paste ' + _promptLines.length + ' prompt và click "' + res.btnText + '"');
+      }
+      // Inject interceptor và bắt đầu poll status từ tool
+      await injectStatusInterceptor(tab.id);
+      startStatusPolling(tab.id);
+      stopMonitor();
+      await startMonitor(tab.id, _promptLines);
+    });
+
+    document.getElementById('btnBulkVideoPasteRun') && document.getElementById('btnBulkVideoPasteRun').addEventListener('click', async function() {
+      var prompts = (document.getElementById('bulkVideoPrompts') || {}).value || '';
+      prompts = prompts.trim();
+      if (!prompts) { alert('Nhập danh sách prompt trước!'); return; }
+      _downloadedCards.clear();
+      _promptLines = prompts.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+      var tab = await findBulkTab();
+      if (!tab) {
+        logVideo('❌ Không tìm thấy tab Bulk Video Studio!\nHãy mở flow.google.com → Tool → Bulk Video Studio.');
+        setBadge('❌ Không có tab', '#f87171');
+        return;
+      }
+      _bulkTabId = tab.id;
+      const logEl = document.getElementById('bulkVideoLog'); if(logEl) { logEl.style.display='block'; logEl.textContent += '[Sys] Tab: ' + (tab.title||'').slice(0,40) + '\n'; } logVideo('✅ Tab: ' + (tab.title || '').slice(0, 40));
+      var res = await pasteAndRunVideo(tab.id, prompts);
+      if (!res || !res.ok) {
+        logVideo('❌ ' + ((res && res.error) || 'Lỗi không xác định'));
+        if (!res || !res.pasted) return;
+        logVideo('⚠️ Không tìm thấy nút Chạy — bắt đầu monitor thôi...');
+      } else {
+        logVideo('✅ Đã paste ' + _promptLines.length + ' prompt và click "' + res.btnText + '"');
       }
       // Inject interceptor và bắt đầu poll status từ tool
       await injectStatusInterceptor(tab.id);
@@ -5981,7 +6098,24 @@ document.addEventListener('DOMContentLoaded', () => {
       await startMonitor(tab.id, _promptLines);
     });
 
+    document.getElementById('btnBulkVideoMonitorOnly') && document.getElementById('btnBulkVideoMonitorOnly').addEventListener('click', async function() {
+      _downloadedCards.clear();
+      var prompts = ((document.getElementById('bulkVideoPrompts') || {}).value || '').trim();
+      _promptLines = prompts.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+      var tab = await findBulkTab();
+      if (!tab) { log('❌ Không tìm thấy tab Bulk AI Studio!'); return; }
+      _bulkTabId = tab.id;
+      log('🔍 Monitor-only: ' + (tab.title || '').slice(0, 40));
+      stopMonitor();
+      await startMonitor(tab.id, _promptLines);
+    });
+
     document.getElementById('btnBulkAiStop') && document.getElementById('btnBulkAiStop').addEventListener('click', function() {
+      stopMonitor();
+      stopStatusPolling();
+    });
+
+    document.getElementById('btnBulkVideoStop') && document.getElementById('btnBulkVideoStop').addEventListener('click', function() {
       stopMonitor();
       stopStatusPolling();
     });
@@ -5994,6 +6128,8 @@ document.addEventListener('DOMContentLoaded', () => {
       _downloadedCards.clear();
       setBadge('Chờ', 'var(--text2)');
     });
+
+    document.getElementById("btnBulkVideoClearLog")?.addEventListener("click", function() { document.getElementById("bulkVideoDownloadList").innerHTML = ""; document.getElementById("bulkVideoLog").textContent = ""; });
 
     // ── Test-step buttons (fallback: also register here) ──
     var elFocus = document.getElementById('btnTestBulkAiFocus');

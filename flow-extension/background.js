@@ -486,6 +486,13 @@ const HANDLERS = {
   REPORT_TOOL_VIDEO_RESULT: req => reportToolVideoResult(req),
   TOGGLE_TOOL_SERVER: req => { _toolServerPaused = req.paused; return { success: true, paused: _toolServerPaused }; },
   REPORT_TOOL_IMAGE_RESULT: req => reportToolImageResult(req),
+  CLAIM_MULTI_TAB_TASK: async (req) => {
+    const tid = req.serverTaskId;
+    if (_claimedMultiTabTasks.has(tid)) return { claimed: false };
+    _claimedMultiTabTasks.add(tid);
+    setTimeout(() => _claimedMultiTabTasks.delete(tid), 600000);
+    return { claimed: true };
+  },
   REPORT_TASK_STARTED: req => {
     // Báo server reset timeout từ lúc extension submit xong
     if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
@@ -6203,54 +6210,46 @@ function reportToolVideoResult(req) {
   return { success: false, error: "WebSocket to tool_video not connected" };
 }
 
-async function enqueueServerVideoTask(task) {
-  logToBridge(`[Bridge] Chuyển task video ${task.id} vào hàng đợi Đa Tab trên Sidepanel...`);
+const _recentBgTaskIds = new Set();
+const _recentBgPrompts = new Set();
+const _claimedMultiTabTasks = new Set();
+function enqueueServerVideoTask(task) {
+  const p = (task.prompt || '').trim();
+  if (_recentBgTaskIds.has(task.id) || _recentBgPrompts.has(p)) {
+    console.warn('[DEDUP] ⛔ BLOCKED duplicate video task:', task.id);
+    logToBridge('[Bridge] ⛔ BLOCKED trùng lặp task video ' + task.id);
+    return;
+  }
+  console.log('[DEDUP] ✅ PASSED video task:', task.id);
+  _recentBgTaskIds.add(task.id);
+  _recentBgPrompts.add(p);
+  setTimeout(() => { _recentBgTaskIds.delete(task.id); _recentBgPrompts.delete(p); }, 10000); // 10s cooldown
+
+  logToBridge(`[Bridge] Chuyển task video ${task.id} vào hàng đợi Đa Tab...`);
   
-  // Format STT cho video task
   let prompt = (task.prompt || '').trim();
-    let seqStr = '';
-    const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
-    if (matchSeq) {
-      const num = parseInt(matchSeq[1], 10);
-      seqStr = String(num).padStart(3, '0') + '.';
-      prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
-    } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
-      const num = Number(task.sceneIndex) + 1;
-      seqStr = String(num).padStart(3, '0') + '.';
-      prompt = `${seqStr} ${prompt}`;
-      await updateMaxSeq(task.projectId, num, 'video');
-    } else {
-      const seqRes = await getMaxSeq(task.projectId, 'video');
-      const nextSeq = (seqRes?.maxSeq || 0) + 1;
-      await updateMaxSeq(task.projectId, nextSeq, 'video');
-      seqStr = String(nextSeq).padStart(3, '0') + '.';
-      prompt = `${seqStr} ${prompt}`;
-    }
-    task.prompt = prompt;
-    task.seq = seqStr;
+  let seqStr = '';
+  const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
+  if (matchSeq) {
+    const num = parseInt(matchSeq[1], 10);
+    seqStr = String(num).padStart(3, '0') + '.';
+    prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
+  } else {
+    seqStr = Date.now().toString().slice(-4) + '.';
+    prompt = `${seqStr} ${prompt}`;
+  }
+  task.prompt = prompt;
+  task.seq = seqStr;
 
-    const serverTask = { ...task, mediaType: 'video' };
+  const serverTask = { ...task, mediaType: 'video' };
 
-    chrome.runtime.sendMessage({
+  chrome.runtime.sendMessage({
     action: 'ADD_SERVER_TASK_TO_MULTI_TAB',
     task: serverTask
-  }).then(res => {
-    if (!res?.success) {
-      _pendingMultiTabServerTasks.push(serverTask);
-    }
-  }).catch(() => {
-    _pendingMultiTabServerTasks.push(serverTask);
-  });
-
-  // Tự động mở Sidepanel nếu có thể
-  if (chrome.sidePanel && chrome.sidePanel.open) {
-    chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(tabs => {
-      if (tabs.length && tabs[0].windowId) {
-        chrome.sidePanel.open({ windowId: tabs[0].windowId }).catch(() => {});
-      }
-    }).catch(() => {});
-  }
+  }).catch(() => {});
 }
+
+
 
 const _recentBridgeLogs = [];
 
@@ -6277,81 +6276,7 @@ function logToBridge(msg) {
   }).catch(() => {});
 }
 
-async function processServerVideoQueue() {
-  if (_isProcessingServerQueue || !_serverVideoQueue.length) return;
-  _isProcessingServerQueue = true;
-
-  while (_serverVideoQueue.length > 0) {
-    const task = _serverVideoQueue.shift();
-    try {
-      // ĐẢM BẢO ĐÁNH SỐ THỨ TỰ 001., 002. ĐẦU PROMPT
-      let prompt = (task.prompt || '').trim();
-      let seqStr = "";
-      const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
-      if (matchSeq) {
-        const num = parseInt(matchSeq[1], 10);
-        seqStr = String(num).padStart(3, '0') + ".";
-        prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
-      } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
-        const num = Number(task.sceneIndex) + 1;
-        seqStr = String(num).padStart(3, '0') + ".";
-        prompt = `${seqStr} ${prompt}`;
-        await updateMaxSeq(task.projectId, num);
-      } else {
-        const seqRes = await getMaxSeq(task.projectId);
-        const nextSeq = (seqRes?.maxSeq || 0) + 1;
-        await updateMaxSeq(task.projectId, nextSeq);
-        seqStr = String(nextSeq).padStart(3, '0') + ".";
-        prompt = `${seqStr} ${prompt}`;
-      }
-      task.prompt = prompt;
-      task.seq = seqStr;
-
-      logToBridge(`Bắt đầu xử lý task video cho tool_video: ${task.id} (prompt: "${(task.prompt || '').slice(0, 30)}...")`);
-      
-      const hasFrames = Boolean(task.startImage || task.endImage || task.isFrames);
-      const config = {
-        aspectRatio: task.aspectRatio || '9:16',
-        duration: task.duration || '8s',
-        count: task.count || 'x1',
-        model: task.model || 'veo_3_1_lite_low_priority',
-        isFrames: hasFrames,
-        hasBothFrames: Boolean(task.startImage && task.endImage),
-        startImage: task.startImage || null,
-        endImage: task.endImage || null
-      };
-
-      // Thực thi Pure Auto Click UI (chọn tab Video/Khung hình, cấu hình thông số, dán ảnh, gõ prompt, submit)
-      logToBridge(`[Video Engine] Thực thi Pure Auto Click UI cho task ${task.id}...`);
-      const res = await createVideoUI(task.prompt, task.projectId, config);
-      if (!res?.success) {
-        throw new Error(res?.error || 'Không thể click tạo video trên UI Flow');
-      }
-
-      const newVideo = res.newVideo;
-      const mediaId = newVideo?.mediaId || null;
-      logToBridge(`Task ${task.id} đã click submit thành công trên Flow! ${mediaId ? 'Media ID: ' + mediaId : 'Tiến hành theo dõi trạng thái qua prompt & thư viện...'}`);
-
-      // 2. Spawn async poll & download worker for this task in parallel (chuyển cả prompt để fallback)
-      pollAndDeliverVideo(task.id, mediaId, task.projectId || newVideo?.projectId, task.prompt);
-
-      // Stagger delay 4s before taking next task from queue
-      await new Promise(r => setTimeout(r, 4000));
-    } catch (err) {
-      logToBridge(`Task ${task.id} lỗi khi click: ${err.message}`);
-      if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
-        _toolWs.send(JSON.stringify({
-          type: 'VIDEO_RESULT',
-          id: task.id,
-          ok: false,
-          error: err.message
-        }));
-      }
-    }
-  }
-
-  _isProcessingServerQueue = false;
-}
+/* OLD DOM PROCESS VIDEO QUEUE REMOVED */
 
 const _serverImageQueue = [];
 let _isProcessingServerImageQueue = false;
@@ -6425,70 +6350,49 @@ chrome.runtime.onMessage.addListener(function(msg) {
 });
 
 function enqueueServerImageTask(task) {
-  logToBridge(`[BulkAI] Nhận task ảnh ${task.id} — đẩy vào queue Bulk AI Studio...`);
-  _serverImageQueue.push(task);
-  processServerImageQueue();
-}
-
-async function processServerImageQueue() {
-  if (_isProcessingServerImageQueue || !_serverImageQueue.length) return;
-  _isProcessingServerImageQueue = true;
-
-  const tasks = [];
-  while (_serverImageQueue.length > 0) tasks.push(_serverImageQueue.shift());
-
-  try {
-    // Format STT cho mỗi task
-    for (const task of tasks) {
-      let prompt = (task.prompt || '').trim();
-      let seqStr = '';
-      const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
-      if (matchSeq) {
-        const num = parseInt(matchSeq[1], 10);
-        seqStr = String(num).padStart(3, '0') + '.';
-        prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
-      } else if (task.sceneIndex !== undefined && task.sceneIndex !== null && !isNaN(Number(task.sceneIndex))) {
-        const num = Number(task.sceneIndex) + 1;
-        seqStr = String(num).padStart(3, '0') + '.';
-        prompt = `${seqStr} ${prompt}`;
-        await updateMaxSeq(task.projectId, num, 'image');
-      } else {
-        const seqRes = await getMaxSeq(task.projectId, 'image');
-        const nextSeq = (seqRes?.maxSeq || 0) + 1;
-        await updateMaxSeq(task.projectId, nextSeq, 'image');
-        seqStr = String(nextSeq).padStart(3, '0') + '.';
-        prompt = `${seqStr} ${prompt}`;
-      }
-      task.prompt = prompt;
-      task.seq = seqStr;
-      task._stt = seqStr.replace('.', '').trim();
-    }
-
-    // Gửi sang sidepanel để chạy — sidepanel dùng code Bulk AI đã hoạt động
-    const sidepanelTasks = tasks.map(t => ({ 
-      id: t.id, 
-      stt: t._stt, 
-      prompt: t.prompt, 
-      ratio: t.aspectRatio || '9:16',
-      referenceImages: t.referenceImages || []
-    }));
-    logToBridge(`[BulkAI] Gửi ${tasks.length} task sang sidepanel (SIDEPANEL_BULK_RUN)...`);
-    chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_RUN', tasks: sidepanelTasks }).catch((err) => {
-      // sendMessage reject có thể chỉ do sidepanel không gọi sendResponse — KHÔNG gửi IMAGE_RESULT lỗi
-      // vì sidepanel VẪN nhận và xử lý message bình thường
-      logToBridge(`⚠️ SIDEPANEL_BULK_RUN sendMessage warning: ${err?.message || err}`);
-    });
-
-  } catch (err) {
-    logToBridge(`❌ processServerImageQueue lỗi: ${err.message}`);
-    tasks.forEach(t => {
-      if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
-        _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: t.id, ok: false, error: err.message }));
-    });
+  const p = (task.prompt || '').trim();
+  if (_recentBgTaskIds.has(task.id) || _recentBgPrompts.has(p)) {
+    console.warn('[DEDUP] ⛔ BLOCKED duplicate image task:', task.id);
+    logToBridge('[Bridge] ⛔ BLOCKED trùng lặp task ảnh ' + task.id);
+    return;
   }
+  console.log('[DEDUP] ✅ PASSED image task:', task.id);
+  _recentBgTaskIds.add(task.id);
+  _recentBgPrompts.add(p);
+  setTimeout(() => { _recentBgTaskIds.delete(task.id); _recentBgPrompts.delete(p); }, 10000); // 10s cooldown
 
-  _isProcessingServerImageQueue = false;
+  logToBridge(`[Bridge] Chuyển task ảnh ${task.id} vào hàng đợi Đa Tab...`);
+  
+  let prompt = (task.prompt || '').trim();
+  let seqStr = '';
+  const matchSeq = prompt.match(/^(\d{1,4})[\.\-_:\s]/);
+  if (matchSeq) {
+    const num = parseInt(matchSeq[1], 10);
+    seqStr = String(num).padStart(3, '0') + '.';
+    prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, `${seqStr} `);
+  } else {
+    seqStr = Date.now().toString().slice(-4) + '.';
+    prompt = `${seqStr} ${prompt}`;
+  }
+  task.prompt = prompt;
+  task.seq = seqStr;
+
+  const stt = seqStr.replace('.', '').trim();
+
+  logToBridge(`[Bridge] Chuyển task ảnh ${task.id} → Bulk AI (STT: ${stt})...`);
+
+  chrome.runtime.sendMessage({
+    action: 'SIDEPANEL_BULK_RUN',
+    tasks: [{
+      id: task.id,
+      stt: stt,
+      prompt: prompt,
+      ratio: task.aspectRatio || '1:1',
+      referenceImages: task.referenceImages || []
+    }]
+  }).catch(() => {});
 }
+
 
 async function pollAndDeliverImage(taskId, mediaId, projectId) {
   logToBridge(`Bắt đầu theo dõi ảnh: task ${taskId}, mediaId: ${mediaId}`);
