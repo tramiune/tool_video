@@ -5612,7 +5612,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let _monitorTimer = null;
   let _downloadedCards = new Set();
   let _promptLines = [];
-  let _bulkTabId = null;
+  let _bulkImageTabId = null;
+  let _bulkVideoTabId = null;
   // stt → taskId — map các task server đang chờ kết quả từ Bulk AI
   const _serverSttMap = new Map();
 
@@ -5645,13 +5646,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         return;
       }
-      _bulkTabId = tab.id;
+      _bulkImageTabId = tab.id;
       log(`[Server] Nhận ${serverTasks.length} task từ tool_video → Bulk AI...`);
       await pasteAndRun(tab.id, promptsText);
       await injectStatusInterceptor(tab.id);
-      // Chỉ start polling nếu chưa chạy — tránh stop polling làm mất task trước
-      if (!_pollTimer) {
-        startStatusPolling(tab.id);
+      if (!_imagePollTimer) {
+        startStatusPolling(tab.id, 'image');
       }
     });
     }); // end claim callback
@@ -5688,14 +5688,12 @@ document.addEventListener('DOMContentLoaded', () => {
           });
           return;
         }
-        _bulkTabId = tab.id;
+        _bulkVideoTabId = tab.id;
         logVideo(`[Server] Nhận ${serverTasks.length} task video từ tool_video → Bulk Video...`);
-        console.log('[BULK_VIDEO_RUN] calling pasteAndRunVideo, tabId:', tab.id, 'prompts:', promptsText.slice(0, 80));
         const res = await pasteAndRunVideo(tab.id, promptsText);
-        console.log('[BULK_VIDEO_RUN] pasteAndRunVideo result:', JSON.stringify(res));
         await injectStatusInterceptor(tab.id);
-        if (!_pollTimer) {
-          startStatusPolling(tab.id);
+        if (!_videoPollTimer) {
+          startStatusPolling(tab.id, 'video');
         }
       }).catch(err => console.error('[BULK_VIDEO_RUN] ERROR:', err));
     });
@@ -5834,7 +5832,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  let _pollTimer = null;
+  let _imagePollTimer = null;
+  let _videoPollTimer = null;
   const STATUS_CFG = {
     pending:    { icon: '⏳', color: '#64748b', bg: 'rgba(100,116,139,0.12)' },
     processing: { icon: '⚙️', color: '#818cf8', bg: 'rgba(99,102,241,0.15)' },
@@ -5842,18 +5841,22 @@ document.addEventListener('DOMContentLoaded', () => {
     error:      { icon: '❌', color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
   };
 
-  function renderTaskList(tasks) {
-    const listEl1 = document.getElementById('bulkTaskList');
-    const listEl2 = document.getElementById('bulkVideoTaskList');
-    const summaryEl1 = document.getElementById('bulkTaskSummary');
-    const summaryEl2 = document.getElementById('bulkVideoTaskSummary');
+  function renderTaskList(tasks, taskListId, summaryId) {
     if (!tasks || !tasks.length) return;
     const done = tasks.filter(t => t.status === 'completed').length;
     const err  = tasks.filter(t => t.status === 'error').length;
     const proc = tasks.filter(t => t.status === 'processing').length;
     const pend = tasks.filter(t => t.status === 'pending').length;
-    if (summaryEl1) summaryEl1.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
-    if (summaryEl2) summaryEl2.textContent = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
+    const summaryText = `✅${done} ⚙️${proc} ⏳${pend} ❌${err}`;
+    if (summaryId) {
+      const el = document.getElementById(summaryId);
+      if (el) el.textContent = summaryText;
+    } else {
+      const s1 = document.getElementById('bulkTaskSummary');
+      const s2 = document.getElementById('bulkVideoTaskSummary');
+      if (s1) s1.textContent = summaryText;
+      if (s2) s2.textContent = summaryText;
+    }
     const badgeEl = badge();
     if (badgeEl) {
       if (proc > 0 || pend > 0) { badgeEl.textContent = `⚙️ Đang chạy ${done}/${tasks.length}`; badgeEl.style.color = '#818cf8'; }
@@ -5867,20 +5870,34 @@ document.addEventListener('DOMContentLoaded', () => {
         <span style="font-size:9px;color:${cfg.color};background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:4px;flex-shrink:0;">${t.ratio||''}</span>
       </div>`;
     }).join('');
-    if (listEl1) listEl1.innerHTML = html;
-    if (listEl2) listEl2.innerHTML = html;
+    if (taskListId) {
+      const el = document.getElementById(taskListId);
+      if (el) el.innerHTML = html;
+    } else {
+      const l1 = document.getElementById('bulkTaskList');
+      const l2 = document.getElementById('bulkVideoTaskList');
+      if (l1) l1.innerHTML = html;
+      if (l2) l2.innerHTML = html;
+    }
   }
 
-  function startStatusPolling(tabId) {
-    stopStatusPolling();
-    _pollTimer = setInterval(async () => {
+  function startStatusPolling(tabId, mediaType) {
+    const isVideo = mediaType === 'video';
+    const logFn = isVideo ? logVideo : log;
+    const taskListId = isVideo ? 'bulkVideoTaskList' : 'bulkTaskList';
+    const summaryId = isVideo ? 'bulkVideoTaskSummary' : 'bulkTaskSummary';
+
+    // Stop chỉ timer cùng loại
+    if (isVideo) { stopStatusPolling('video'); } else { stopStatusPolling('image'); }
+
+    const timer = setInterval(async () => {
       try {
         const [res] = await chrome.scripting.executeScript({
           target: { tabId, allFrames: false },
           world: 'MAIN',
           func: function() {
             const q = window.__bulkStatusQueue || [];
-            window.__bulkStatusQueue = []; // consume all
+            window.__bulkStatusQueue = [];
             return q;
           }
         });
@@ -5889,53 +5906,58 @@ document.addEventListener('DOMContentLoaded', () => {
         
         for (const data of queue) {
           if (data.type === 'BULK_STATUS_UPDATE' && data.tasks) {
-            renderTaskList(data.tasks);
-            // Gửi kết quả về background.js cho các task từ server
+            renderTaskList(data.tasks, taskListId, summaryId);
             if (_serverSttMap.size > 0) {
               data.tasks.forEach(function(t) {
                 var stt = (t.stt || '').split('.')[0]?.trim();
                 if (!stt || !_serverSttMap.has(stt)) return;
                 var entry = _serverSttMap.get(stt);
                 var taskId = typeof entry === 'object' ? entry.id : entry;
-                var mediaType = typeof entry === 'object' ? entry.mediaType : 'image';
+                var mt = typeof entry === 'object' ? entry.mediaType : 'image';
                 if (t.status === 'completed') {
                   _serverSttMap.delete(stt);
-                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mediaType, ok: true });
-                  log(`✅ [Server] Task STT ${stt} (${mediaType}) xong — báo về tool_video`);
+                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mt, ok: true });
+                  logFn(`✅ [Server] Task STT ${stt} (${mt}) xong — báo về tool_video`);
                 } else if (t.status === 'error') {
                   _serverSttMap.delete(stt);
-                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mediaType, ok: false, error: t.error || 'error' });
+                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mt, ok: false, error: t.error || 'error' });
                 }
               });
             }
           }
           if (data.type === 'BULK_DONE') {
             const { completed = 0, errors = 0, total = 0 } = data;
-          log(`🎉 Xong! ✅${completed} ❌${errors} / ${total} tasks`);
-          setBadge(`✅ Xong ${completed}/${total}`, '#10b981');
-          // Cập nhật task list UI — mark tất cả task đang processing → completed
-          const listEl = document.getElementById('bulkTaskList');
-          if (listEl) {
-            listEl.querySelectorAll('div').forEach(function(row) {
-              var icon = row.querySelector('span:first-child');
-              if (icon && icon.textContent === '⚙️') {
-                icon.textContent = '✅';
-                row.style.background = 'rgba(16,185,129,0.12)';
-              }
-            });
+            logFn(`🎉 Xong! ✅${completed} ❌${errors} / ${total} tasks`);
+            setBadge(`✅ Xong ${completed}/${total}`, '#10b981');
+            const listEl = document.getElementById(taskListId);
+            if (listEl) {
+              listEl.querySelectorAll('div').forEach(function(row) {
+                var icon = row.querySelector('span:first-child');
+                if (icon && icon.textContent === '⚙️') {
+                  icon.textContent = '✅';
+                  row.style.background = 'rgba(16,185,129,0.12)';
+                }
+              });
+            }
+            const summaryEl = document.getElementById(summaryId);
+            if (summaryEl) summaryEl.textContent = `✅${completed} ⚙️0 ⏳0 ❌${errors}`;
+            stopStatusPolling(mediaType);
           }
-          const summaryEl = document.getElementById('bulkTaskSummary');
-          if (summaryEl) summaryEl.textContent = `✅${completed} ⚙️0 ⏳0 ❌${errors}`;
-          stopStatusPolling();
         }
-        } // close for loop
       } catch (err) { console.error('Poll error:', err); }
     }, 2000);
-    log('📡 Bắt đầu poll trạng thái mỗi 2s...');
+
+    if (isVideo) { _videoPollTimer = timer; } else { _imagePollTimer = timer; }
+    logFn('📡 Bắt đầu poll trạng thái mỗi 2s...');
   }
 
-  function stopStatusPolling() {
-    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  function stopStatusPolling(mediaType) {
+    if (!mediaType || mediaType === 'image') {
+      if (_imagePollTimer) { clearInterval(_imagePollTimer); _imagePollTimer = null; }
+    }
+    if (!mediaType || mediaType === 'video') {
+      if (_videoPollTimer) { clearInterval(_videoPollTimer); _videoPollTimer = null; }
+    }
   }
 
   async function scanCards(tabId) {
@@ -6111,7 +6133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setBadge('❌ Không có tab', '#f87171');
         return;
       }
-      _bulkTabId = tab.id;
+      _bulkImageTabId = tab.id;
       const logEl = document.getElementById('bulkVideoLog'); if(logEl) { logEl.style.display='block'; logEl.textContent += '[Sys] Tab: ' + (tab.title||'').slice(0,40) + '\n'; } log('✅ Tab: ' + (tab.title || '').slice(0, 40));
       var res = await pasteAndRun(tab.id, prompts);
       if (!res || !res.ok) {
@@ -6123,7 +6145,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       // Inject interceptor và bắt đầu poll status từ tool
       await injectStatusInterceptor(tab.id);
-      startStatusPolling(tab.id);
+      startStatusPolling(tab.id, 'image');
       stopMonitor();
       await startMonitor(tab.id, _promptLines);
     });
@@ -6140,7 +6162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setBadge('❌ Không có tab', '#f87171');
         return;
       }
-      _bulkTabId = tab.id;
+      _bulkVideoTabId = tab.id;
       const logEl = document.getElementById('bulkVideoLog'); if(logEl) { logEl.style.display='block'; logEl.textContent += '[Sys] Tab: ' + (tab.title||'').slice(0,40) + '\n'; } logVideo('✅ Tab: ' + (tab.title || '').slice(0, 40));
       var res = await pasteAndRunVideo(tab.id, prompts);
       if (!res || !res.ok) {
@@ -6152,7 +6174,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       // Inject interceptor và bắt đầu poll status từ tool
       await injectStatusInterceptor(tab.id);
-      startStatusPolling(tab.id);
+      startStatusPolling(tab.id, 'video');
       stopMonitor();
       await startMonitor(tab.id, _promptLines);
     });
@@ -6163,7 +6185,7 @@ document.addEventListener('DOMContentLoaded', () => {
       _promptLines = prompts.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
       var tab = await findBulkTab();
       if (!tab) { log('❌ Không tìm thấy tab Bulk AI Studio!'); return; }
-      _bulkTabId = tab.id;
+      _bulkImageTabId = tab.id;
       log('🔍 Monitor-only: ' + (tab.title || '').slice(0, 40));
       stopMonitor();
       await startMonitor(tab.id, _promptLines);
@@ -6175,7 +6197,7 @@ document.addEventListener('DOMContentLoaded', () => {
       _promptLines = prompts.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
       var tab = await findBulkVideoTab();
       if (!tab) { logVideo('❌ Không tìm thấy tab Bulk Video Studio!'); return; }
-      _bulkTabId = tab.id;
+      _bulkVideoTabId = tab.id;
       logVideo('🔍 Monitor-only: ' + (tab.title || '').slice(0, 40));
       stopMonitor();
       await startMonitor(tab.id, _promptLines);
@@ -6183,12 +6205,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btnBulkAiStop') && document.getElementById('btnBulkAiStop').addEventListener('click', function() {
       stopMonitor();
-      stopStatusPolling();
+      stopStatusPolling('image');
     });
 
     document.getElementById('btnBulkVideoStop') && document.getElementById('btnBulkVideoStop').addEventListener('click', function() {
       stopMonitor();
-      stopStatusPolling();
+      stopStatusPolling('video');
     });
 
     document.getElementById('btnBulkAiClearLog') && document.getElementById('btnBulkAiClearLog').addEventListener('click', function() {
