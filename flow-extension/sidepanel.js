@@ -5658,6 +5658,67 @@ document.addEventListener('DOMContentLoaded', () => {
     return true; // async sendResponse
   });
 
+  // Nhận task VIDEO từ background.js — chạy qua Bulk Video
+  chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
+    if (msg.action !== 'SIDEPANEL_BULK_VIDEO_RUN') return;
+    const serverTasks = msg.tasks || [];
+    if (!serverTasks.length) { sendResponse({ ok: true }); return; }
+    const claimId = serverTasks.map(t => t.id).join(',');
+    chrome.runtime.sendMessage({ action: 'CLAIM_MULTI_TAB_TASK', serverTaskId: claimId }, function(resp) {
+      if (!resp || !resp.claimed) { return; }
+      sendResponse({ ok: true });
+      serverTasks.forEach(t => _serverSttMap.set(t.stt, t.id));
+      const promptsText = serverTasks.map(t => {
+        let safePrompt = (t.prompt || '').replace(/\r?\n/g, ' ').replace(/\|/g, '-');
+        let line = `${t.ratio || '9:16'}|${safePrompt}`;
+        if (t.referenceImages && t.referenceImages.length > 0) {
+          line += '|' + t.referenceImages.join('|');
+        } else if (t.startImage) {
+          line += '|' + t.startImage;
+          if (t.endImage) line += '|' + t.endImage;
+        }
+        return line;
+      }).join('\n');
+      findBulkVideoTab().then(async function(tab) {
+        console.log('[BULK_VIDEO_RUN] findBulkVideoTab result:', tab ? `id=${tab.id} url=${tab.url?.slice(0,60)}` : 'NULL');
+        if (!tab) {
+          serverTasks.forEach(t => {
+            chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: t.id, ok: false, error: 'Không tìm thấy tab Bulk Video' });
+            _serverSttMap.delete(t.stt);
+          });
+          return;
+        }
+        _bulkTabId = tab.id;
+        logVideo(`[Server] Nhận ${serverTasks.length} task video từ tool_video → Bulk Video...`);
+        console.log('[BULK_VIDEO_RUN] calling pasteAndRunVideo, tabId:', tab.id, 'prompts:', promptsText.slice(0, 80));
+        const res = await pasteAndRunVideo(tab.id, promptsText);
+        console.log('[BULK_VIDEO_RUN] pasteAndRunVideo result:', JSON.stringify(res));
+        await injectStatusInterceptor(tab.id);
+        if (!_pollTimer) {
+          startStatusPolling(tab.id);
+        }
+      }).catch(err => console.error('[BULK_VIDEO_RUN] ERROR:', err));
+    });
+    return true;
+  });
+
+  // Tìm tab Video từ storage roles
+  async function findBulkVideoTab() {
+    try {
+      const data = await chrome.storage.local.get('multiTabRoles');
+      const roles = data.multiTabRoles || {};
+      const videoTabIds = Object.entries(roles)
+        .filter(([, role]) => role === 'video')
+        .map(([id]) => parseInt(id, 10));
+      for (const tabId of videoTabIds) {
+        const tab = await chrome.tabs.get(tabId).catch(() => null);
+        if (tab && tab.url && tab.url.includes('flow.google.com')) return tab;
+      }
+    } catch (_) {}
+    const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+    return tabs.find(t => t.url && t.url.includes('/tool/')) || null;
+  }
+
   const logEl  = () => document.getElementById('bulkAiLog');
   const badge  = () => document.getElementById('bulkAiStatusBadge');
   const dlList = () => document.getElementById('bulkAiDownloadList');
@@ -5722,9 +5783,9 @@ document.addEventListener('DOMContentLoaded', () => {
           func: function(prompts) {
             var iframeCount = 0;
             document.querySelectorAll('iframe').forEach(function(iframe) {
-              try { if (iframe.contentWindow) { iframe.contentWindow.postMessage({ type: 'BULK_ADD_VIDEO_TASKS', prompts: prompts }, '*'); iframeCount++; } } catch(_) {}
+              try { if (iframe.contentWindow) { iframe.contentWindow.postMessage({ type: 'BULK_ADD_TASKS', prompts: prompts }, '*'); iframeCount++; } } catch(_) {}
             });
-            if (iframeCount === 0) window.postMessage({ type: 'BULK_ADD_VIDEO_TASKS', prompts: prompts }, '*');
+            if (iframeCount === 0) window.postMessage({ type: 'BULK_ADD_TASKS', prompts: prompts }, '*');
             return { ok: true, prompts: prompts.length, iframes: iframeCount };
           },
         });
@@ -6072,7 +6133,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!prompts) { alert('Nhập danh sách prompt trước!'); return; }
       _downloadedCards.clear();
       _promptLines = prompts.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
-      var tab = await findBulkTab();
+      var tab = await findBulkVideoTab();
       if (!tab) {
         logVideo('❌ Không tìm thấy tab Bulk Video Studio!\nHãy mở flow.google.com → Tool → Bulk Video Studio.');
         setBadge('❌ Không có tab', '#f87171');
@@ -6111,10 +6172,10 @@ document.addEventListener('DOMContentLoaded', () => {
       _downloadedCards.clear();
       var prompts = ((document.getElementById('bulkVideoPrompts') || {}).value || '').trim();
       _promptLines = prompts.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
-      var tab = await findBulkTab();
-      if (!tab) { log('❌ Không tìm thấy tab Bulk AI Studio!'); return; }
+      var tab = await findBulkVideoTab();
+      if (!tab) { logVideo('❌ Không tìm thấy tab Bulk Video Studio!'); return; }
       _bulkTabId = tab.id;
-      log('🔍 Monitor-only: ' + (tab.title || '').slice(0, 40));
+      logVideo('🔍 Monitor-only: ' + (tab.title || '').slice(0, 40));
       stopMonitor();
       await startMonitor(tab.id, _promptLines);
     });

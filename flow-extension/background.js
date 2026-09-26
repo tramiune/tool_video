@@ -6241,11 +6241,21 @@ function enqueueServerVideoTask(task) {
   task.prompt = prompt;
   task.seq = seqStr;
 
-  const serverTask = { ...task, mediaType: 'video' };
+  const stt = seqStr.replace('.', '').trim();
+
+  logToBridge(`[Bridge] Chuyển task video ${task.id} → Bulk Video (STT: ${stt})...`);
 
   chrome.runtime.sendMessage({
-    action: 'ADD_SERVER_TASK_TO_MULTI_TAB',
-    task: serverTask
+    action: 'SIDEPANEL_BULK_VIDEO_RUN',
+    tasks: [{
+      id: task.id,
+      stt: stt,
+      prompt: prompt,
+      ratio: task.aspectRatio || '9:16',
+      referenceImages: task.referenceImages || [],
+      startImage: task.startImage || null,
+      endImage: task.endImage || null
+    }]
   }).catch(() => {});
 }
 
