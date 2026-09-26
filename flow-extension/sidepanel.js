@@ -3197,6 +3197,7 @@
 // MULTI-TAB MANAGER
 // ══════════════════════════════════════════════════════════════
 const _multiTabRegistry = []; // { tabId, role: 'video'|'image', title, url, projectId, index }
+window._multiTabRegistry = _multiTabRegistry;
 
 async function loadMultiTabRoles() {
   try {
@@ -5688,13 +5689,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
     async function findBulkTab() {
-    const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (activeTabs[0] && activeTabs[0].url && activeTabs[0].url.includes('/tool/')) {
-      return activeTabs[0];
-    }
+    // Đọc roles từ chrome.storage.local (shared giữa mọi sidepanel)
+    try {
+      const data = await chrome.storage.local.get('multiTabRoles');
+      const roles = data.multiTabRoles || {};
+      // Tìm tabId có role = 'image'
+      const imageTabIds = Object.entries(roles)
+        .filter(([, role]) => role === 'image')
+        .map(([id]) => parseInt(id, 10));
+      for (const tabId of imageTabIds) {
+        const tab = await chrome.tabs.get(tabId).catch(() => null);
+        if (tab && tab.url && tab.url.includes('flow.google.com')) return tab;
+      }
+    } catch (_) {}
+    // Fallback: tìm tab Flow có /tool/
     const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
-    const activeToolTab = tabs.find(t => t.active && t.url && t.url.includes('/tool/'));
-    if (activeToolTab) return activeToolTab;
     return tabs.find(t => t.url && t.url.includes('/tool/')) || null;
   }
 
