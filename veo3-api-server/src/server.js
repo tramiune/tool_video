@@ -2882,8 +2882,10 @@ const AUDIO_LIMITS = {
   free: 0,
   hocvien: 5,
   basic_69k: 5,
-  standard_99k: 5,
-  premium_169k: 50
+  standard_99k: 7,
+  premium_169k: 30,
+  pro_299k: Infinity,
+  master_499k: Infinity
 };
 
 function audioLimitFor(tier) {

@@ -653,7 +653,7 @@ function App() {
         setUserExpiryDate(data.expiryDate || null);
         setPendingPayment(nextPendingPayment);
          setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
-        setCurrentUserHasDramaAccess(data.hasDramaAccess || data.isAdmin || emailIsAdmin || false);
+        setCurrentUserHasDramaAccess(data.tier === 'master_499k' || data.hasDramaAccess || data.isAdmin || emailIsAdmin || false);
       } else {
         previousPendingPaymentRef.current = null;
         setUserTier('free');
@@ -705,7 +705,7 @@ function App() {
         if (userProfileLoaded && !currentUserHasDramaAccess) {
           window.location.hash = '';
           setIsDramaView(false);
-          alert("Tài khoản của bạn chưa được cấp quyền truy cập Công cụ AI này!");
+          alert("Tài khoản của bạn cần nâng cấp lên Gói Đặc Quyền (499k) hoặc được cấp quyền để truy cập Công cụ AI này!");
           return;
         }
         const targetChannel = isHashSumo ? 'sumo' : 'drama';
@@ -1075,7 +1075,9 @@ function App() {
       free: 0,
       basic_69k: 69000,
       standard_99k: 99000,
-      premium_169k: 199000
+      premium_169k: 199000,
+      pro_299k: 299000,
+      master_499k: 499000
     };
 
     const currentPrice = prices[userTier] || 0;
@@ -1822,7 +1824,10 @@ function App() {
                 >
                   <option value="30000">30,000đ (Bù Basic)</option>
                   <option value="69000">69,000đ (Gói Cơ bản)</option>
+                  <option value="99000">99,000đ (Gói Tiêu Chuẩn)</option>
                   <option value="199000">199,000đ (Gói Premium)</option>
+                  <option value="299000">299,000đ (Gói VIP/Pro)</option>
+                  <option value="499000">499,000đ (Gói Đặc Quyền)</option>
                   <option value="230000">230,000đ (Bù Basic &rarr; Premium)</option>
                 </select>
               </div>
@@ -2994,7 +2999,7 @@ function App() {
                     marginTop: '10px'
                   }}
                 >
-                  Trải nghiệm ngay
+                  {currentUserHasDramaAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói Đặc Quyền'}
                 </button>
               </div>
             </div>
@@ -3057,7 +3062,7 @@ function App() {
                     marginTop: '10px'
                   }}
                 >
-                  Trải nghiệm ngay
+                  {currentUserHasDramaAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói Đặc Quyền'}
                 </button>
               </div>
             </div>
@@ -4442,8 +4447,10 @@ function App() {
       free: { videos: 0, images: 0 },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 5, images: 10 },
-      standard_99k: { videos: 20, images: 40 },
-      premium_169k: { videos: Infinity, images: Infinity }
+      standard_99k: { videos: 7, images: 7 },
+      premium_169k: { videos: 30, images: 60 },
+      pro_299k: { videos: Infinity, images: Infinity },
+      master_499k: { videos: Infinity, images: Infinity }
     };
     const currentLimits = limits[userTier] || limits.free;
     if (usage.images >= currentLimits.images) {
@@ -6035,11 +6042,13 @@ function App() {
 
     // Limit checking
     const limits = {
-      free: { videos: Infinity, images: Infinity },
+      free: { videos: 0, images: 0 },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 5, images: 10 },
-      standard_99k: { videos: 20, images: 40 },
-      premium_169k: { videos: Infinity, images: Infinity }
+      standard_99k: { videos: 7, images: 7 },
+      premium_169k: { videos: 30, images: 60 },
+      pro_299k: { videos: Infinity, images: Infinity },
+      master_499k: { videos: Infinity, images: Infinity }
     };
 
     const isExpired = userTier !== 'free' && userExpiryDate && userExpiryDate < Date.now();
@@ -7370,7 +7379,7 @@ function App() {
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
               {limitError.isAllTime
                 ? <>Tính năng tạo {limitError.type === 'video' ? 'video' : 'ảnh'} không hỗ trợ tài khoản <strong>Free</strong>. Vui lòng nâng cấp gói để trải nghiệm tính năng này nhé! 🎬</>
-                : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Basic' : userTier === 'standard_99k' ? 'Standard' : 'Premium'}</strong>.</>
+                : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'standard_99k' ? 'Tiêu Chuẩn' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'Đặc Quyền' : userTier}</strong>.</>
               }
             </p>
             <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
@@ -7437,7 +7446,7 @@ function App() {
                 <span style={{ fontSize: '1.2rem' }}>⚠️</span>
                 <div>
                   <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'standard_99k' ? 'Standard' : userTier === 'premium_169k' ? 'Premium' : userTier} của bạn đã hết hạn
+                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'standard_99k' ? 'Tiêu Chuẩn' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'Đặc Quyền' : userTier} của bạn đã hết hạn
                   </div>
                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', marginTop: '2px' }}>
                     Gia hạn hoặc nâng cấp để tiếp tục tạo nội dung
@@ -7487,7 +7496,7 @@ function App() {
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 5 Video / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 10 Ảnh / ngày</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 5 lượt tạo giọng nói / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 5 giọng nói / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ chọn ảnh thư viện</li>
                 </ul>
                 <button
@@ -7506,7 +7515,51 @@ function App() {
                   }}
                 >
                   {userTier === 'basic_69k' ? 'Gói hiện tại' : 
-                   (userTier === 'standard_99k' || userTier === 'premium_169k') ? 'Gói thấp hơn' : `Nâng cấp ${getUpgradeCost('basic_69k') / 1000}k`}
+                   (userTier === 'standard_99k' || userTier === 'premium_169k' || userTier === 'pro_299k' || userTier === 'master_499k') ? 'Gói thấp hơn' : `Nâng cấp ${getUpgradeCost('basic_69k') / 1000}k`}
+                </button>
+              </div>
+
+              {/* Standard Plan */}
+              <div style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: userTier === 'standard_99k' ? '2px solid #10b981' : '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '16px',
+                padding: '24px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                position: 'relative'
+              }}>
+                {userTier === 'standard_99k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#10b981', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Tiêu Chuẩn</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#10b981' }}>99k</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
+                </div>
+                <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 7 Video / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 7 Ảnh / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 7 giọng nói / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Chọn ảnh thư viện</li>
+                </ul>
+                <button
+                  onClick={() => handleSelectTierForPay('standard_99k')}
+                  disabled={false}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#10b981',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {userTier === 'standard_99k' ? 'Gói hiện tại' : 
+                   (userTier === 'premium_169k' || userTier === 'pro_299k' || userTier === 'master_499k') ? 'Gói thấp hơn' : `Nâng cấp +${getUpgradeCost('standard_99k') / 1000}k`}
                 </button>
               </div>
 
@@ -7530,10 +7583,10 @@ function App() {
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '600' }}>✓ Không giới hạn Video</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '600' }}>✓ Không giới hạn Ảnh</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 50 lượt tạo giọng nói / ngày</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ kỹ thuật 24/7</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '600' }}>✓ 30 Video / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '600' }}>✓ 60 Ảnh / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 30 giọng nói / ngày</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ ưu tiên</li>
                 </ul>
                 <button
                   onClick={() => handleSelectTierForPay('premium_169k')}
@@ -7550,11 +7603,100 @@ function App() {
                     cursor: 'pointer'
                   }}
                 >
-                  {userTier === 'premium_169k' ? 'Gói hiện tại' : `Nâng cấp +${getUpgradeCost('premium_169k') / 1000}k`}
+                  {userTier === 'premium_169k' ? 'Gói hiện tại' : 
+                   (userTier === 'pro_299k' || userTier === 'master_499k') ? 'Gói thấp hơn' : `Nâng cấp +${getUpgradeCost('premium_169k') / 1000}k`}
                 </button>
               </div>
 
-            </div>
+              {/* Pro Plan */}
+              <div style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: userTier === 'pro_299k' ? '2px solid #a855f7' : '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '16px',
+                padding: '24px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                position: 'relative',
+                boxShadow: '0 8px 30px rgba(168, 85, 247, 0.15)'
+              }}>
+                {userTier === 'pro_299k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#a855f7', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói VIP (Pro)</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#a855f7' }}>299k</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
+                </div>
+                <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#a855f7', fontWeight: '600' }}>✓ Không giới hạn Video</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#a855f7', fontWeight: '600' }}>✓ Không giới hạn Ảnh</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#a855f7', fontWeight: '600' }}>✓ Không giới hạn Giọng nói</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ kỹ thuật 24/7</li>
+                </ul>
+                <button
+                  onClick={() => handleSelectTierForPay('pro_299k')}
+                  disabled={false}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {userTier === 'pro_299k' ? 'Gói hiện tại' : 
+                   (userTier === 'master_499k') ? 'Gói thấp hơn' : `Nâng cấp +${getUpgradeCost('pro_299k') / 1000}k`}
+                </button>
+              </div>
+
+              {/* Master Plan */}
+              <div style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: userTier === 'master_499k' ? '2px solid #ef4444' : '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '16px',
+                padding: '24px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                position: 'relative',
+                boxShadow: '0 8px 30px rgba(239, 68, 68, 0.2)'
+              }}>
+                {userTier === 'master_499k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#ef4444', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Đặc Quyền</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#ef4444' }}>499k</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
+                </div>
+                <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#ef4444', fontWeight: '600' }}>✓ Vô cực Video / Ảnh</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#ef4444', fontWeight: '600' }}>✓ Vô cực Giọng nói</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#ef4444', fontWeight: '800' }}>✓ Mở khóa Full Kênh AI</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#ef4444', fontWeight: '800' }}>✓ Toàn quyền cao nhất</li>
+                </ul>
+                <button
+                  onClick={() => handleSelectTierForPay('master_499k')}
+                  disabled={false}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {userTier === 'master_499k' ? 'Gói hiện tại' : `Nâng cấp +${getUpgradeCost('master_499k') / 1000}k`}
+                </button>
+              </div>
+</div>
           </div>
         </div>
       )}
