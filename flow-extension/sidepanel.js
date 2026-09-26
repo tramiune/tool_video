@@ -5627,7 +5627,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!resp || !resp.claimed) { return; }
       sendResponse({ ok: true });
     // Đăng ký map stt → taskId
-    serverTasks.forEach(t => _serverSttMap.set(t.stt, t.id));
+    serverTasks.forEach(t => _serverSttMap.set(t.stt, { id: t.id, mediaType: 'image' }));
     // Format prompts và chạy
     const promptsText = serverTasks.map(t => {
       let safePrompt = (t.prompt || '').replace(/\r?\n/g, ' ').replace(/\|/g, '-');
@@ -5667,7 +5667,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.runtime.sendMessage({ action: 'CLAIM_MULTI_TAB_TASK', serverTaskId: claimId }, function(resp) {
       if (!resp || !resp.claimed) { return; }
       sendResponse({ ok: true });
-      serverTasks.forEach(t => _serverSttMap.set(t.stt, t.id));
+      serverTasks.forEach(t => _serverSttMap.set(t.stt, { id: t.id, mediaType: 'video' }));
       const promptsText = serverTasks.map(t => {
         let safePrompt = (t.prompt || '').replace(/\r?\n/g, ' ').replace(/\|/g, '-');
         let line = `${t.ratio || '9:16'}|${safePrompt}`;
@@ -5895,15 +5895,16 @@ document.addEventListener('DOMContentLoaded', () => {
               data.tasks.forEach(function(t) {
                 var stt = (t.stt || '').split('.')[0]?.trim();
                 if (!stt || !_serverSttMap.has(stt)) return;
+                var entry = _serverSttMap.get(stt);
+                var taskId = typeof entry === 'object' ? entry.id : entry;
+                var mediaType = typeof entry === 'object' ? entry.mediaType : 'image';
                 if (t.status === 'completed') {
-                  var taskId = _serverSttMap.get(stt);
                   _serverSttMap.delete(stt);
-                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, ok: true });
-                  log(`✅ [Server] Task STT ${stt} xong — báo về tool_video`);
+                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mediaType, ok: true });
+                  log(`✅ [Server] Task STT ${stt} (${mediaType}) xong — báo về tool_video`);
                 } else if (t.status === 'error') {
-                  var taskId = _serverSttMap.get(stt);
                   _serverSttMap.delete(stt);
-                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, ok: false, error: t.error || 'error' });
+                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mediaType, ok: false, error: t.error || 'error' });
                 }
               });
             }

@@ -6296,15 +6296,17 @@ const _bulkAiPendingTasks = new Map();
 
 // Lắng nghe kết quả từ sidepanel (SIDEPANEL_BULK_DONE) và BULK_STATUS_UPDATE từ content_script
 chrome.runtime.onMessage.addListener(function(msg) {
-  // Sidepanel báo task xong → gửi IMAGE_RESULT về server
+  // Sidepanel báo task xong → gửi IMAGE_RESULT hoặc VIDEO_RESULT về server
   if (msg?.action === 'SIDEPANEL_BULK_DONE') {
-    const { taskId, stt, ok, error } = msg;
+    const { taskId, stt, ok, error, mediaType } = msg;
+    const isVideo = mediaType === 'video';
+    const resultType = isVideo ? 'VIDEO_RESULT' : 'IMAGE_RESULT';
     const wsState = _toolWs ? ['CONNECTING','OPEN','CLOSING','CLOSED'][_toolWs.readyState] : 'NULL';
-    logToBridge(`[BulkAI] SIDEPANEL_BULK_DONE nhận được — task: ${taskId}, WS: ${wsState}`);
+    logToBridge(`[Bulk] SIDEPANEL_BULK_DONE nhận được — task: ${taskId}, type: ${resultType}, WS: ${wsState}`);
     if (!ok) {
-      logToBridge(`❌ [BulkAI] Task ${taskId} lỗi: ${error}`);
+      logToBridge(`❌ [Bulk] Task ${taskId} lỗi: ${error}`);
       if (_toolWs && _toolWs.readyState === WebSocket.OPEN)
-        _toolWs.send(JSON.stringify({ type: 'IMAGE_RESULT', id: taskId, ok: false, error: error || 'Bulk AI error' }));
+        _toolWs.send(JSON.stringify({ type: resultType, id: taskId, ok: false, error: error || 'Bulk error' }));
       return;
     }
     // Tìm file thực tế vừa download — lấy đúng path + extension
@@ -6312,20 +6314,20 @@ chrome.runtime.onMessage.addListener(function(msg) {
       orderBy: ['-startTime'],
       limit: 20
     }, function(items) {
-      const ext = ['jpg','jpeg','png','webp'];
+      const ext = isVideo ? ['mp4','webm','mov'] : ['jpg','jpeg','png','webp'];
       const match = items.find(function(it) {
         if (!it.filename) return false;
         const base = it.filename.split('/').pop().split('\\').pop();
         return ext.some(e => base === `${stt}.${e}`) && it.state !== 'interrupted';
       });
-      const filePath = match ? match.filename : `${stt}.jpg`;
-      logToBridge(`✅ [BulkAI] Task ${taskId} (STT ${stt}) xong → filePath: ${filePath}`);
-      const payload = { type: 'IMAGE_RESULT', id: taskId, filePath, ok: true };
+      const defaultExt = isVideo ? 'mp4' : 'jpg';
+      const filePath = match ? match.filename : `${stt}.${defaultExt}`;
+      logToBridge(`✅ [Bulk] Task ${taskId} (STT ${stt}, ${mediaType}) xong → filePath: ${filePath}`);
+      const payload = { type: resultType, id: taskId, filePath, ok: true };
       if (_toolWs && _toolWs.readyState === WebSocket.OPEN) {
         _toolWs.send(JSON.stringify(payload));
       } else {
-        // WS chưa kết nối (service worker vừa wake up) — lưu vào storage.session và reconnect
-        logToBridge(`⏳ WS chưa mở — lưu IMAGE_RESULT ${taskId} vào storage, reconnect...`);
+        logToBridge(`⏳ WS chưa mở — lưu ${resultType} ${taskId} vào storage, reconnect...`);
         chrome.storage.session.get('pendingImageResults', function(data) {
           const arr = data.pendingImageResults || [];
           arr.push(payload);
