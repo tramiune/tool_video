@@ -5627,15 +5627,13 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.runtime.sendMessage({ action: 'CLAIM_MULTI_TAB_TASK', serverTaskId: claimId }, function(resp) {
       if (!resp || !resp.claimed) { return; }
       sendResponse({ ok: true });
-    // Đăng ký map stt → taskId
-    serverTasks.forEach(t => _serverSttMap.set(t.stt, { id: t.id, mediaType: 'image' }));
-    // Format prompts và chạy
     const promptsText = serverTasks.map(t => {
       let safePrompt = (t.prompt || '').replace(/\r?\n/g, ' ').replace(/\|/g, '-');
       let line = `${t.ratio || '9:16'}|${safePrompt}`;
       if (t.referenceImages && t.referenceImages.length > 0) {
         line += '|' + t.referenceImages.join('|');
       }
+      _serverSttMap.set(t.stt, { id: t.id, mediaType: 'image', originalLine: line });
       return line;
     }).join('\n');
     findBulkTab().then(async function(tab) {
@@ -5667,7 +5665,6 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.runtime.sendMessage({ action: 'CLAIM_MULTI_TAB_TASK', serverTaskId: claimId }, function(resp) {
       if (!resp || !resp.claimed) { return; }
       sendResponse({ ok: true });
-      serverTasks.forEach(t => _serverSttMap.set(t.stt, { id: t.id, mediaType: 'video' }));
       const promptsText = serverTasks.map(t => {
         let safePrompt = (t.prompt || '').replace(/\r?\n/g, ' ').replace(/\|/g, '-');
         let line = `${t.ratio || '9:16'}|${safePrompt}`;
@@ -5677,6 +5674,7 @@ document.addEventListener('DOMContentLoaded', () => {
           line += '|' + t.startImage;
           if (t.endImage) line += '|' + t.endImage;
         }
+        _serverSttMap.set(t.stt, { id: t.id, mediaType: 'video', originalLine: line });
         return line;
       }).join('\n');
       findBulkVideoTab().then(async function(tab) {
@@ -5919,8 +5917,10 @@ document.addEventListener('DOMContentLoaded', () => {
                   chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mt, ok: true });
                   logFn(`✅ [Server] Task STT ${stt} (${mt}) xong — báo về tool_video`);
                 } else if (t.status === 'error') {
+                  const promptLine = entry.originalLine || 'Không rõ';
+                  logFn(`❌ [Server] Task STT ${stt} (${mt}) lỗi: ${t.error || 'error'}\n   👉 Prompt: ${promptLine}`);
                   _serverSttMap.delete(stt);
-                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mt, ok: false, error: t.error || 'error' });
+                  chrome.runtime.sendMessage({ action: 'SIDEPANEL_BULK_DONE', taskId: taskId, stt: stt, mediaType: mt, ok: false, error: `${t.error || 'error'} (Prompt: ${promptLine})` });
                 }
               });
             }
