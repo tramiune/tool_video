@@ -2,7 +2,7 @@ const VIDEO_LIMITS_BY_TIER = Object.freeze({
   free: 1,
   hocvien: 1,
   basic_69k: 1,
-  standard_99k: 1,
+
   premium_169k: 1,
   premium_199k: 1,
   pro_299k: 1,
