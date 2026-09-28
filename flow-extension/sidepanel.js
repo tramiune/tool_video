@@ -3691,154 +3691,126 @@ async function runMultiTabServerWorker(task, tab) {
     }
   };
 
-  // Format STT
-  const stt = task.seq ? task.seq.replace('.', '').trim() : Date.now().toString().slice(-4);
-  let prompt = (task.prompt || '').trim();
-  prompt = prompt.replace(/^(\d{1,4})[\.\-_:\s]\s*/, '');
-  const fullPrompt = `${stt}. ${prompt}`;
+  const ts = Date.now().toString().slice(-4);
+  const fullPrompt = `${ts}. ${task.prompt}`;
   log(`🚀 Bắt đầu xử lý task #${task.id} (${task.mediaType === 'video' ? 'Video' : 'Ảnh'}): "${fullPrompt.slice(0, 40)}..."`);
 
   try {
-    task.statusDetail = 'Đang submit vào Custom UI...';
-    renderMultiTabServerTasksUI();
-
-    const ratio = task.aspectRatio || (task.mediaType === 'video' ? '9:16' : '1:1');
-    let refImages = [];
-    if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
-      refImages = task.referenceImages.filter(Boolean);
-    } else if (task.referenceImage) {
-      refImages = [task.referenceImage];
-    } else if (task.startImage) {
-      refImages = [task.startImage];
-      if (task.endImage) refImages.push(task.endImage);
-    }
-    
-    let line;
     if (task.mediaType === 'video') {
-      line = `${ratio}|${fullPrompt}`;
-      if (refImages.length > 0) line += '|' + refImages.join('|');
-    } else {
-      line = fullPrompt;
-      if (refImages.length > 0) line += '|' + refImages.join('|');
-    }
+      // 1. Submit Video
+      task.statusDetail = 'Đang submit...';
+      renderMultiTabServerTasksUI();
 
-    // Inject status interceptor
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.tabId, allFrames: false },
-      world: 'MAIN',
-      func: function() {
-        if (!window.__bulkStatusInterceptorActive) {
-          window.__bulkStatusInterceptorActive = true;
-          window.__bulkStatusData = null;
-          window.addEventListener('message', function(e) {
-            if (e.data && (e.data.type === 'BULK_STATUS_UPDATE' || e.data.type === 'BULK_DONE')) {
-              window.__bulkStatusData = e.data;
-            }
-          });
-        }
-      }
-    });
-
-    // Gửi task qua ĐÚNG hàm Bulk AI (giống y hệt khi user bấm tay trên Extension)
-    if (task.mediaType === 'video' && window._bulkPasteAndRunVideo) {
-      await window._bulkPasteAndRunVideo(tab.tabId, line);
-    } else if (window._bulkPasteAndRun) {
-      await window._bulkPasteAndRun(tab.tabId, line);
-    } else {
-      // Fallback nếu Bulk AI chưa init
-      const msgType = task.mediaType === 'video' ? 'BULK_ADD_VIDEO_TASKS' : 'BULK_ADD_TASKS';
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.tabId, allFrames: false },
-        world: 'MAIN',
-        args: [msgType, line],
-        func: function(msgType, line) {
-          var sent = false;
-          document.querySelectorAll('iframe').forEach(function(f) {
-            try { if (f.contentWindow) { f.contentWindow.postMessage({ type: msgType, prompts: [line] }, '*'); sent = true; } } catch(_) {}
-          });
-          if (!sent) window.postMessage({ type: msgType, prompts: [line] }, '*');
-        }
-      });
-    }
-
-    task.status = 'RENDERING';
-    task.statusDetail = '⏳ Đang render...';
-    renderMultiTabServerTasksUI();
-    log(`✅ Đã gửi lệnh. Chờ kết quả...`);
-
-    if (task.serverTaskId) {
-      chrome.runtime.sendMessage({ action: 'REPORT_TASK_STARTED', id: task.serverTaskId }).catch(() => {});
-    }
-
-    const startTime = Date.now();
-    const MAX_WAIT = (task.mediaType === 'video' ? 15 : 5) * 60 * 1000;
-    
-    let isDone = false;
-    let finalError = null;
-
-    while (Date.now() - startTime < MAX_WAIT) {
-      await new Promise(r => setTimeout(r, 2000));
-
-      const [res] = await chrome.scripting.executeScript({
-        target: { tabId: tab.tabId, allFrames: false },
-        world: 'MAIN',
-        func: function() { const d = window.__bulkStatusData; window.__bulkStatusData = null; return d; }
-      }).catch(() => [null]);
-
-      const data = res?.result;
-      if (!data || !data.tasks) continue;
-
-      const myToolTask = data.tasks.find(t => {
-        const tStt = (t.stt || '').split('.')[0]?.trim();
-        if (tStt === stt) return true;
-        // Fallback: match by prompt content if STT doesn't match
-        const tPrompt = (t.prompt || '').replace(/^\d{1,4}[\.\-_:\s]\s*/, '').trim().toLowerCase();
-        const myPrompt = prompt.toLowerCase();
-        return myPrompt && tPrompt && tPrompt.includes(myPrompt.slice(0, 30));
+      const createRes = await callExt('CREATE_VIDEO_MULTI_TAB', {
+        prompt: fullPrompt,
+        tabId: tab.tabId,
+        aspectRatio: task.aspectRatio || '9:16',
+        startImageDataUrl: task.startImage || null,
+        endImageDataUrl: task.endImage || null
       });
 
-      if (myToolTask) {
-        if (myToolTask.status === 'completed') {
-          isDone = true;
-          break;
-        } else if (myToolTask.status === 'error') {
-          finalError = myToolTask.error || 'Lỗi từ Custom UI';
-          break;
+      if (!createRes?.success) {
+        throw new Error(createRes?.error || 'Lỗi khi tạo video trên tab');
+      }
+
+      // 2. Theo dõi render & Tải về
+      task.status = 'RENDERING';
+      task.statusDetail = '⏳ Đang render...';
+      renderMultiTabServerTasksUI();
+      log(`✅ Đã submit video. Bắt đầu theo dõi render...`);
+
+      if (task.serverTaskId) {
+        chrome.runtime.sendMessage({ action: 'REPORT_TASK_STARTED', id: task.serverTaskId }).catch(() => {});
+      }
+
+      const dlResult = await monitorAndDownloadMultiTab(
+        tab.tabId, ts, fullPrompt, task.projectId, logEl
+      );
+
+      if (dlResult?.success) {
+        task.status = 'DONE';
+        const fullFilePath = dlResult.filePath || dlResult.filename || 'video.mp4';
+        task.filename = dlResult.filename || fullFilePath;
+        task.statusDetail = `✅ Xong: ${task.filename}`;
+        renderMultiTabServerTasksUI();
+        log(`🎉 Hoàn tất Video! File: ${task.filename}`);
+
+        if (task.serverTaskId) {
+          chrome.runtime.sendMessage({
+            action: 'REPORT_TOOL_VIDEO_RESULT',
+            id: task.serverTaskId,
+            ok: true,
+            filePath: fullFilePath
+          }).catch(e => console.error('Lỗi gửi REPORT_TOOL_VIDEO_RESULT:', e));
         }
+      } else {
+        throw new Error(dlResult?.error || 'Lỗi tải video');
+      }
+
+    } else {
+      // Xử lý Ảnh
+      let refImages = [];
+      if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
+        refImages = task.referenceImages.filter(Boolean);
+      } else if (task.referenceImage) {
+        refImages = [task.referenceImage];
+      } else if (task.startImage) {
+        refImages = [task.startImage];
+      }
+
+      task.statusDetail = 'Đang submit ảnh...';
+      renderMultiTabServerTasksUI();
+
+      const createRes = await callExt('CREATE_IMAGE_MULTI_TAB', {
+        prompt: fullPrompt,
+        tabId: tab.tabId,
+        aspectRatio: task.aspectRatio || '16:9',
+        referenceImages: refImages
+      });
+
+      if (!createRes?.success) {
+        throw new Error(createRes?.error || 'Lỗi khi tạo ảnh trên tab');
+      }
+
+      task.status = 'RENDERING';
+      task.statusDetail = '⏳ Đang render ảnh...';
+      renderMultiTabServerTasksUI();
+      log(`✅ Đã submit ảnh. Bắt đầu theo dõi render...`);
+
+      if (task.serverTaskId) {
+        chrome.runtime.sendMessage({ action: 'REPORT_TASK_STARTED', id: task.serverTaskId }).catch(() => {});
+      }
+
+      const dlResult = await monitorAndDownloadImageMultiTab(
+        tab.tabId, ts, fullPrompt, task.projectId, logEl
+      );
+
+      if (dlResult?.success) {
+        task.status = 'DONE';
+        const fullFilePath = dlResult.filePath || dlResult.filename || 'image.jpg';
+        task.filename = dlResult.filename || fullFilePath;
+        task.statusDetail = `✅ Xong: ${task.filename}`;
+        renderMultiTabServerTasksUI();
+        log(`🎉 Hoàn tất Ảnh! File: ${task.filename}`);
+
+        if (task.serverTaskId) {
+          chrome.runtime.sendMessage({
+            action: 'REPORT_TOOL_IMAGE_RESULT',
+            id: task.serverTaskId,
+            ok: true,
+            filePath: fullFilePath
+          }).catch(e => console.error('Lỗi gửi REPORT_TOOL_IMAGE_RESULT:', e));
+        }
+      } else {
+        throw new Error(dlResult?.error || 'Lỗi tải ảnh');
       }
     }
-
-    if (!isDone && !finalError) {
-      throw new Error(`Timeout sau ${MAX_WAIT / 60000} phút`);
-    }
-    if (finalError) {
-      throw new Error(finalError);
-    }
-
-    task.status = 'DONE';
-    const ext = task.mediaType === 'video' ? 'mp4' : 'jpg';
-    task.filename = `${stt}.${ext}`;
-    task.statusDetail = `✅ Xong: ${task.filename}`;
-    renderMultiTabServerTasksUI();
-    log(`🎉 Hoàn tất! File: ${task.filename}`);
-
-    if (task.serverTaskId) {
-      const reportAction = task.mediaType === 'video' ? 'REPORT_TOOL_VIDEO_RESULT' : 'REPORT_TOOL_IMAGE_RESULT';
-      chrome.runtime.sendMessage({
-        action: reportAction,
-        id: task.serverTaskId,
-        ok: true,
-        filePath: task.filename,
-        mediaType: task.mediaType
-      }).catch(e => console.error('Lỗi gửi kết quả:', e));
-    }
-
   } catch (err) {
     task.status = 'ERROR';
-    task.error = err.message || 'Lỗi không xác định';
-    task.statusDetail = '❌ Lỗi';
+    task.error = err.message;
+    task.statusDetail = `❌ ${err.message}`;
     renderMultiTabServerTasksUI();
-    log(`❌ Thất bại: ${task.error}`);
+    log(`❌ Task #${task.id} thất bại: ${err.message}`);
 
     if (task.serverTaskId) {
       const reportAction = task.mediaType === 'video' ? 'REPORT_TOOL_VIDEO_RESULT' : 'REPORT_TOOL_IMAGE_RESULT';
@@ -3846,15 +3818,16 @@ async function runMultiTabServerWorker(task, tab) {
         action: reportAction,
         id: task.serverTaskId,
         ok: false,
-        error: task.error,
-        mediaType: task.mediaType
-      }).catch(() => {});
+        error: err.message
+      }).catch(e => console.error(`Lỗi gửi ${reportAction}:`, e));
     }
   } finally {
+    await new Promise(r => setTimeout(r, 5000));
     _busyMultiTabs.delete(tab.tabId);
-    triggerMultiTabServerQueueProcessing(); 
+    triggerMultiTabServerQueueProcessing();
   }
 }
+
 
 
 // Bind refresh button
