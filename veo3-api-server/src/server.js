@@ -23,6 +23,7 @@ const { processAutoToolJob, resumeAutoToolJobs, generateProjectIdea, generateCha
 const drama = require('./drama');
 const sumo  = require('./sumo');
 const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
+const { generateVideoViaAutoClick } = require('./autoclick_video_service');
 
 process.on("uncaughtException", (err) => { 
   logger.error(`[CRITICAL] Uncaught Exception: ${err.message}`); 
@@ -305,31 +306,9 @@ const extensionBridge = {
 
   get clientCount() { return _extClients.size; },
 
-  async generateVideo(task, timeoutMs = 660000) {
-    const client = pickBestClient();
-    if (!client) return Promise.reject(new Error('Flow Extension chưa kết nối'));
-    const id = task.id || `vid_${Date.now()}`;
-    const startImgB64 = await imageInputToBase64(task.startImage || task.referenceImages?.[0] || null);
-    const endImgB64 = await imageInputToBase64(task.endImage || task.referenceImages?.[1] || null);
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        _extPending.delete(id);
-        reject(new Error('Extension video generation timeout (10 phút)'));
-      }, timeoutMs);
-      _extPending.set(id, { resolve, reject, timer, clientId: client.clientId });
-      logger.info(`[Bridge] Route vid task ${id} → ${client.clientId}`);
-      client.ws.send(JSON.stringify({
-        type: 'TASK_GENERATE_VIDEO',
-        id,
-        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
-        prompt: task.prompt,
-        model: task.model || 'veo_3_1_t2v_lite_low_priority',
-        aspectRatio: task.aspectRatio || '9:16',
-        startImage: startImgB64,
-        endImage: endImgB64,
-        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null
-      }));
-    });
+  async generateVideo(task, timeoutMs = 330000) {
+    logger.info(`[Bridge] Chạy video task ${task.id} qua AutoClick Video Runner (PyAutoGUI)...`);
+    return generateVideoViaAutoClick(task);
   },
 
   async generateImage(task, timeoutMs = 600000) {
@@ -3573,47 +3552,44 @@ async function runVideoTask(taskId) {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
 
-    // Ưu tiên chạy qua Flow Extension Bridge (100% Chrome cá nhân, không dùng CDP/Puppeteer)
-    if (extensionBridge.connected) {
-      logger.info(`[Video] Dispatching task ${taskId} to Flow Extension Bridge (model: veo_3_1_t2v_lite_low_priority)...`);
-      try {
-        const result = await extensionBridge.generateVideo({
-          id: taskId,
-          prompt: task.prompt,
-          model: 'veo_3_1_t2v_lite_low_priority',
-          aspectRatio: task.aspectRatio || '9:16',
-          startImage: task.startImage,
-          endImage: task.endImage,
-          sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
-          projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
-        });
+    // Cơ chế AutoClick Video mới (PyAutoGUI + Poll Downloads 5 phút + Upload R2 + Xóa file)
+    logger.info(`[Video] Dispatching task ${taskId} to AutoClick Video Runner (PyAutoGUI)...`);
+    try {
+      const result = await generateVideoViaAutoClick({
+        id: taskId,
+        prompt: task.prompt,
+        model: 'veo_3_1_t2v_lite_low_priority',
+        aspectRatio: task.aspectRatio || '9:16',
+        startImage: task.startImage,
+        endImage: task.endImage,
+        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
+        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
+      });
 
-        const fileName = `meo3/videos/${taskId}_${Date.now()}.mp4`;
-        const r2Url = await uploadToR2(result.buffer, fileName, 'video/mp4');
-        logger.success(`[Video] Task ${taskId} completed via Extension Bridge → ${r2Url}`);
+      const r2Url = result.r2Url;
+      logger.success(`[Video] Task ${taskId} completed via AutoClick Video Runner → ${r2Url}`);
 
-        const finalMedia = [{ mediaId: result.mediaId || taskId, status: 'success', url: r2Url }];
-        await task.docRef.update({
-          status: 'completed',
-          mediaUrl: r2Url,
-          media: finalMedia,
-          progress: '100%',
-          completedAt: Date.now(),
-          error: null,
-          errorCode: null
-        });
-        task.status = 'completed';
-        task.mediaUrl = r2Url;
-        task.media = finalMedia;
+      const finalMedia = [{ mediaId: result.mediaId || taskId, status: 'success', url: r2Url }];
+      await task.docRef.update({
+        status: 'completed',
+        mediaUrl: r2Url,
+        media: finalMedia,
+        progress: '100%',
+        completedAt: Date.now(),
+        error: null,
+        errorCode: null
+      });
+      task.status = 'completed';
+      task.mediaUrl = r2Url;
+      task.media = finalMedia;
+      return;
+    } catch (e) {
+      if (e.message?.includes('cancel') || e.message?.includes('deleted')) {
+        logger.info(`[Video] Task ${taskId} cancelled cleanly.`);
         return;
-      } catch (e) {
-        if (e.message?.includes('cancel') || e.message?.includes('deleted')) {
-          logger.info(`[Video] Task ${taskId} cancelled cleanly.`);
-          return;
-        }
-        logger.error(`[Video] Extension Bridge failed for ${taskId}: ${e.message}`);
-        throw e;
       }
+      logger.error(`[Video] AutoClick Video Runner failed for ${taskId}: ${e.message}`);
+      throw e;
     }
 
     const vc = nextVideoClient();
