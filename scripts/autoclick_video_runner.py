@@ -116,6 +116,20 @@ def activate_chrome():
     except Exception:
         pass
 
+def set_clipboard(text):
+    """Copy text vào clipboard mà không để xclip giữ pipe stdout/stderr của tiến trình cha."""
+    try:
+        proc = subprocess.Popen(
+            ['xclip', '-selection', 'clipboard'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True
+        )
+        proc.communicate(text.encode('utf-8'), timeout=5)
+    except Exception:
+        pyperclip.copy(text)
+
 def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y_btn=733):
     """Thao tác chuột nhập prompt và bấm Chạy thủ công."""
     mod_key = "command" if sys.platform == "darwin" else "ctrl"
@@ -137,7 +151,7 @@ def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y
             time.sleep(0.1)
             
             # 2. Copy prompt vào clipboard và dán (Ctrl + V hoặc Cmd + V)
-            pyperclip.copy(full_prompt)
+            set_clipboard(full_prompt)
             time.sleep(0.3)
             pyautogui.hotkey(mod_key, "v")
             time.sleep(0.8)
@@ -313,6 +327,7 @@ def main():
             "elapsed": round(time.time() - submitted_at, 1)
         }
         print(json.dumps(result, ensure_ascii=False))
+        sys.stdout.flush()
         sys.exit(0)
     else:
         result = {
@@ -322,6 +337,7 @@ def main():
             "elapsed": round(time.time() - submitted_at, 1)
         }
         print(json.dumps(result, ensure_ascii=False))
+        sys.stdout.flush()
         sys.exit(1)
 
 if __name__ == "__main__":
