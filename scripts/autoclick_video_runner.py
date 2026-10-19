@@ -14,12 +14,18 @@ Cơ chế tự động tạo Video qua Auto Click và giám sát tải về:
 
 import os
 import sys
+
+# Ensure DISPLAY is set on Linux BEFORE importing pyautogui/mouseinfo
+if sys.platform != "darwin" and "DISPLAY" not in os.environ:
+    os.environ["DISPLAY"] = ":10"
+
 import time
 import json
 import argparse
 import subprocess
 import fcntl
 import pyautogui
+import pyperclip
 
 pyautogui.FAILSAFE = True
 
@@ -70,45 +76,82 @@ def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
             
     return full_line
 
+def load_preset_coords():
+    """Tự động đọc tọa độ từ video_.json nếu có."""
+    preset_paths = [
+        os.path.expanduser("~/auto_click/presets/video_.json"),
+        "/home/vpsuser/auto_click/presets/video_.json",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "auto_click/presets/video_.json"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "auto_click/presets/video_.json")
+    ]
+    for p in preset_paths:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    x_in, y_in = None, None
+                    x_btn, y_btn = None, None
+                    for act in data:
+                        t = act.get("type")
+                        if t in ("doubleclick", "click") and x_in is None:
+                            x_in = act.get("x")
+                            y_in = act.get("y")
+                        elif t in ("click", "doubleclick") and (act.get("x") != x_in or act.get("y") != y_in):
+                            x_btn = act.get("x")
+                            y_btn = act.get("y")
+                    if x_in is not None and x_btn is not None:
+                        return x_in, y_in, x_btn, y_btn
+            except Exception:
+                pass
+    return None
+
 def activate_chrome():
     """Kích hoạt cửa sổ Google Chrome nổi lên trước."""
     try:
-        subprocess.run(["osascript", "-e", 'tell application "Google Chrome" to activate'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if sys.platform == "darwin":
+            subprocess.run(["osascript", "-e", 'tell application "Google Chrome" to activate'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run(["xdotool", "search", "--onlyvisible", "--class", "google-chrome", "windowactivate"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(0.5)
     except Exception:
         pass
 
-def perform_click_and_submit(full_prompt, x_input=439, y_input=578, x_btn=440, y_btn=729):
+def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y_btn=733):
     """Thao tác chuột nhập prompt và bấm Chạy thủ công."""
+    mod_key = "command" if sys.platform == "darwin" else "ctrl"
     # Khóa chuột để tránh 2 task chạy đè lên nhau
     with open(LOCK_FILE, "w") as lock_f:
         fcntl.flock(lock_f, fcntl.LOCK_EX)
         try:
-            sys.stderr.write(f"[AutoClick] Đã nhận mouse lock. Bắt đầu submit prompt...\n")
-            activate_chrome()
+            sys.stderr.write(f"[AutoClick] Đã nhận mouse lock. Bắt đầu submit prompt vào ({x_input}, {y_input}) và bấm ({x_btn}, {y_btn})...\n")
             
-            # 1. Double Click vào ô textarea
-            pyautogui.moveTo(x_input, y_input, duration=0.2)
-            time.sleep(0.1)
-            pyautogui.doubleClick(x_input, y_input)
+            # 1. Focus ô textarea (click 2 lần có delay để cửa sổ nhận focus và con trỏ chuột đặt vào ô)
+            pyautogui.moveTo(x_input, y_input, duration=0.3)
+            pyautogui.click(x_input, y_input)
             time.sleep(0.3)
+            pyautogui.click(x_input, y_input)
+            time.sleep(0.2)
             
-            # Xóa text cũ (Cmd + A)
-            pyautogui.hotkey("command", "a")
+            # Xóa text cũ (Ctrl + A hoặc Cmd + A)
+            pyautogui.hotkey(mod_key, "a")
             time.sleep(0.1)
             
-            # 2. Copy prompt vào clipboard và dán (Cmd + V)
-            proc = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
-            proc.communicate(full_prompt.encode("utf-8"))
-            time.sleep(0.2)
-            pyautogui.hotkey("command", "v")
+            # 2. Copy prompt vào clipboard và dán (Ctrl + V hoặc Cmd + V)
+            pyperclip.copy(full_prompt)
+            time.sleep(0.3)
+            pyautogui.hotkey(mod_key, "v")
             time.sleep(0.8)
             
             # 3. Click nút "Chạy thủ công"
-            pyautogui.moveTo(x_btn, y_btn, duration=0.2)
-            time.sleep(0.1)
+            pyautogui.moveTo(x_btn, y_btn, duration=0.3)
             pyautogui.click(x_btn, y_btn)
-            time.sleep(0.5)
+            time.sleep(1.0)
+            
+            # 4. Chụp ảnh màn hình để lưu bằng chứng submit
+            try:
+                os.system("scrot /tmp/last_video_submit.png 2>/dev/null")
+            except Exception:
+                pass
             
             sys.stderr.write(f"[AutoClick] Submit thành công. Giải phóng mouse lock.\n")
         finally:
@@ -214,6 +257,20 @@ def main():
     if not os.path.exists(downloads_dir):
         os.makedirs(downloads_dir, exist_ok=True)
 
+    # Tự động đọc tọa độ từ video_.json nếu có
+    preset_coords = load_preset_coords()
+    x_in = args.x_input
+    y_in = args.y_input
+    x_btn = args.x_btn
+    y_btn = args.y_btn
+    if preset_coords:
+        px_in, py_in, px_btn, py_btn = preset_coords
+        if args.x_input == 439 and args.y_input == 578:
+            x_in, y_in = px_in, py_in
+        if args.x_btn == 440 and args.y_btn == 729:
+            x_btn, y_btn = px_btn, py_btn
+        sys.stderr.write(f"[AutoClick] Đã áp dụng tọa độ từ preset video_.json: Input=({x_in}, {y_in}), Submit=({x_btn}, {y_btn})\n")
+
     # 1. Snapshot danh sách file hiện có
     initial_files = get_downloads_files(downloads_dir)
     
@@ -230,10 +287,10 @@ def main():
     submitted_at = time.time()
     perform_click_and_submit(
         full_prompt=full_prompt,
-        x_input=args.x_input,
-        y_input=args.y_input,
-        x_btn=args.x_btn,
-        y_btn=args.y_btn
+        x_input=x_in,
+        y_input=y_in,
+        x_btn=x_btn,
+        y_btn=y_btn
     )
     
     # 4. Chờ 30s và poll trong máy tính tối đa 5 phút

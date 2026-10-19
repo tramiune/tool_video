@@ -1,7 +1,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const logger = require('./logger');
+const { logger } = require('./utils');
 const { uploadToR2 } = require('./s3_uploader');
 
 // Đường dẫn script Python
@@ -42,7 +42,11 @@ async function generateVideoViaAutoClick(task) {
 
   return new Promise((resolve, reject) => {
     logger.info(`[AutoClick Video] Spawning: python3 ${args.join(' ')}`);
-    const proc = spawn('python3', args);
+    const env = {
+      ...process.env,
+      DISPLAY: process.env.DISPLAY || ':10'
+    };
+    const proc = spawn('python3', args, { env });
 
     let stdout = '';
     let stderr = '';
