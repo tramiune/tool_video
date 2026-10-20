@@ -3279,12 +3279,39 @@ async function runImageTask(taskId) {
     if (extensionBridge.connected) {
       logger.info(`[Image] Dispatching task ${taskId} to Flow Extension Bridge...`);
       try {
+        // Chuyển đổi các ảnh reference dạng Base64/Data URL lên R2 để có link HTTP công khai
+        let resolvedRefs = [];
+        const rawRefs = task.referenceImages || (task.referenceImage ? [task.referenceImage] : []);
+        for (let i = 0; i < rawRefs.length; i++) {
+          const refItem = rawRefs[i];
+          if (typeof refItem === 'string' && refItem.startsWith('data:image')) {
+            try {
+              const base64Data = refItem.split(',')[1] || refItem;
+              const buffer = Buffer.from(base64Data, 'base64');
+              const ext = refItem.includes('png') ? '.png' : '.jpg';
+              const r2Key = `meo3/inputs/${taskId}_ref_${i}_${Date.now()}${ext}`;
+              const r2Url = await uploadToR2(buffer, r2Key, ext === '.png' ? 'image/png' : 'image/jpeg');
+              logger.info(`[Image Task] Uploaded Base64 ref image ${i} to R2: ${r2Url}`);
+              resolvedRefs.push(r2Url);
+            } catch (r2Err) {
+              logger.error(`[Image Task] Failed to upload Base64 ref to R2: ${r2Err.message}`);
+              resolvedRefs.push(refItem);
+            }
+          } else {
+            resolvedRefs.push(refItem);
+          }
+        }
+        task.referenceImages = resolvedRefs;
+        if (task.docRef) {
+          task.docRef.update({ referenceImages: resolvedRefs }).catch(() => {});
+        }
+
         const result = await extensionBridge.generateImage({
           id: taskId,
           prompt: task.prompt,
           model: task.model || 'nano_banana_pro',
           aspectRatio: task.aspectRatio || '1:1',
-          referenceImages: task.referenceImages || (task.referenceImage ? [task.referenceImage] : []),
+          referenceImages: resolvedRefs,
           sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
           projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
         });

@@ -4429,8 +4429,44 @@ function App() {
   const tryonPersonInputRef = useRef(null);
   const tryonGarmentInputRef = useRef(null);
 
+  const compressImageFile = (file, maxDim = 1024, quality = 0.82) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Không thể đọc file ảnh'));
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('File ảnh không hợp lệ'));
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleTryOnSubmit = async (e) => {
     if (e) e.preventDefault();
+    if (!user) {
+      alert("Bạn ơi, vui lòng đăng nhập để sử dụng công cụ nhé! 😊");
+      return;
+    }
     if (!tryonPersonFile) {
       alert("Bạn ơi, vui lòng chọn Ảnh gốc (người mẫu) trước nhé! 😊");
       return;
@@ -4460,33 +4496,57 @@ function App() {
 
     setTryonIsSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.append('personImage', tryonPersonFile);
+      // 1. Nén ảnh sang Base64 (~80-120KB) để lưu vào Firestore an toàn
+      const personDataUrl = await compressImageFile(tryonPersonFile);
+      let garmentDataUrl = null;
       if (tryonGarmentFile) {
-        formData.append('garmentImage', tryonGarmentFile);
+        garmentDataUrl = await compressImageFile(tryonGarmentFile);
       }
-      formData.append('userId', user.uid);
-      formData.append('description', tryonDescription);
-      formData.append('model', tryonModel);
-      formData.append('aspectRatio', tryonAspectRatio);
-      formData.append('preserve', tryonPreserveBody);
-      formData.append('toolType', tryonToolType);
-      formData.append('bgPreset', tryonSelectedBgPreset);
-      formData.append('bgCustom', tryonCustomBgDescription);
 
-      const res = await fetch(`${API_BASE}/api/try-on`, {
-        method: 'POST',
-        headers: { 'X-API-Key': import.meta.env.VITE_TRY_ON_API_KEY || 'meo3_tryon_k7p2m4x9' },
-        body: formData
+      // 2. Xây dựng prompt & tỉ lệ khung hình cho từng công cụ
+      let promptText = '';
+      let finalAspectRatio = tryonAspectRatio || '9:16';
+      let refImages = [personDataUrl];
+
+      if (tryonToolType === 'clean_916') {
+        promptText = `Extend this image to a clean 9:16 vertical portrait. Keep the same person, face, hairstyle, body proportions, pose, dress, lighting, camera angle, and interior exactly as the original. Preserve the original composition and photorealistic quality. Remove all UI overlays, including text, logos, search bar, captions, hashtags, buttons, profile picture, like/comment/share icons, watermark, and any app interface. Naturally reconstruct the hidden background behind the removed elements, matching the surrounding wall panels, furniture, lighting, shadows, and perspective seamlessly. Do not change the woman's appearance, expression, makeup, clothing, or body shape. Do not add or remove objects except those hidden by the overlays. Ultra realistic, DSLR photography, high detail, sharp focus, soft natural skin texture, clean luxury interior, 8K.`;
+        finalAspectRatio = '9:16';
+      } else if (tryonToolType === 'swap_face') {
+        promptText = `Keep the same hairstyle, makeup style, skin tone, age range, body proportions, pose, dress, lighting, camera angle, and luxury interior. Transform the face into a completely new fictional East Asian woman with a unique identity. Change all facial features, including eye shape, eyebrow shape, nose, lips, jawline, cheekbones, face contour, forehead, and facial proportions. Ensure she does not resemble the original person while maintaining the same beauty level and natural appearance. Keep the expression soft and elegant. Preserve the overall fashion vibe and aesthetic, but create a fresh, original identity. Ultra photorealistic, DSLR, 85mm lens, natural skin texture, high detail, realistic pores, soft lighting, 8K.`;
+      } else if (tryonToolType === 'change_bg') {
+        const bgDescription = (tryonCustomBgDescription && tryonCustomBgDescription.trim()) ? tryonCustomBgDescription.trim() : (tryonSelectedBgPreset || 'a luxurious modern bedroom');
+        promptText = `Edit Image A.\n\nImage A is the original reference and the direct edit target.\n\nKeep the same person exactly as in Image A:\n- same face\n- same hairstyle\n- same makeup\n- same glasses and accessories\n- same skin tone\n- same body proportions\n- same pose\n- same clothing\n- same camera angle\n- same framing\n- same lighting direction\n- same image quality and realism\n\nReplace ONLY the background.\n\nCreate a new background: ${bgDescription}.\n\nThe new background must blend naturally with the subject using realistic perspective, shadows, reflections, color matching, and depth. Preserve the subject perfectly and do not change any facial features, expression, body shape, clothing details, or pose.\n\nDo not modify the woman in any way. Do not change her identity. Do not add extra people. Do not alter her hands, arms, hair, outfit, or proportions. Only change the environment behind her.\n\nMaintain an ultra-photorealistic DSLR look, natural skin texture, high detail, shallow depth of field, realistic indoor lighting, clean composition, and premium aesthetic. 8K.`;
+      } else if (tryonToolType === 'brighten_skin') {
+        promptText = `Edit ONLY the skin tone of the person.\n\nIncrease the skin brightness significantly to achieve a fair, porcelain, Korean-style complexion while keeping it completely natural and realistic.\n\nThe skin should appear smooth, luminous, healthy, and evenly toned, with natural highlights and realistic skin texture. Avoid an overexposed, gray, plastic, or AI-generated look.\n\nDo NOT modify anything else.\n\nKeep exactly the same:\n- Face and identity (highest priority)\n- Facial proportions\n- Eyes\n- Nose\n- Lips\n- Eyebrows\n- Hairstyle\n- Hair color\n- Makeup\n- Facial expression\n- Body shape and proportions\n- Pose\n- Hands and fingers\n- Clothing\n- Accessories\n- Background\n- Camera angle\n- Framing\n- Lighting direction\n- Shadows\n- Image composition\n- Fabric texture\n- Colors of all objects\n\nDo not apply beauty filters, face reshaping, skin smoothing, body slimming, or any enhancement other than making the skin tone much fairer.\n\nThe final image should look exactly like the original photo, with the only visible difference being significantly fairer, brighter, naturally radiant skin.\n\nUltra photorealistic.\nNatural skin texture.\nDSLR quality.\n8K.\nIdentity preservation is the highest priority.`;
+      } else {
+        // tryon
+        const clothDesc = tryonDescription ? tryonDescription.trim() : 'clothing';
+        const shouldPreserve = tryonPreserveBody === 'true' || tryonPreserveBody === true;
+        if (shouldPreserve) {
+          promptText = `A photo of the exact same person from the first reference image in the exact same pose, expression, hair and background, but wearing the exact ${clothDesc} shown in the second reference image. The clothing shape, fabric, and style must match the second reference image exactly. Do NOT transfer any text, watermarks, labels, logos, tags, brand names, or written characters from the second reference image onto the person or anywhere in the image. The person's face, hair, skin, hands, and body must remain exactly as in the first reference image. Photorealistic, high quality.`;
+        } else {
+          promptText = `A professional studio photo of the person in the first reference image wearing the exact ${clothDesc} from the second reference image. The clothing shape, fabric, and style must match the second reference image exactly. Do NOT transfer any text, watermarks, labels, logos, tags, brand names, or written characters from the second reference image onto the person or anywhere in the image. The person's face, hair, and body proportions must remain exactly as in the first reference image. Photorealistic, high quality.`;
+        }
+        if (garmentDataUrl) refImages.push(garmentDataUrl);
+      }
+
+      // 3. Ghi trực tiếp task vào Firestore (hoàn toàn qua Firebase, không cần server API trung gian)
+      const docRef = await addDoc(collection(db, 'tasks'), {
+        userId: user.uid,
+        userEmail: user.email || 'guest@meo3.cloud',
+        prompt: promptText,
+        type: 'image',
+        status: 'pending',
+        mediaUrl: null,
+        error: null,
+        model: tryonModel || 'nano_banana_pro',
+        aspectRatio: finalAspectRatio,
+        referenceImages: refImages,
+        toolType: tryonToolType,
+        createdAt: Date.now()
       });
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || `Server returned code ${res.status}`);
-      }
-
-      const data = await res.json();
-      console.log("VTON Task created:", data);
+      console.log("VTON Task created directly in Firestore:", docRef.id);
       trackTikTokEvent('generate_tryon', { toolType: tryonToolType });
       
       // Reset files & description
@@ -4500,7 +4560,7 @@ function App() {
       setIsTryOnView(false);
     } catch (err) {
       console.error(err);
-      alert(`Rất tiếc, hệ thống chưa thể bắt đầu thay đồ lúc này: ${err.message}. Cậu thử lại sau nhé! 🥺`);
+      alert(`Rất tiếc, hệ thống chưa thể bắt đầu: ${err.message}. Cậu thử lại sau nhé! 🥺`);
     } finally {
       setTryonIsSubmitting(false);
     }
