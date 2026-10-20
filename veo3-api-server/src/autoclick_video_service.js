@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { logger } = require('./utils');
 const { uploadToR2 } = require('./s3_uploader');
+const { ensureActiveVideoProfileHasCredits, deductVideoCreditAndRotateIfNeeded } = require('./chrome_profile_manager');
 
 // Đường dẫn script Python
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/autoclick_video_runner.py');
@@ -47,6 +48,13 @@ async function generateVideoViaAutoClick(task) {
   const prompt = String(task.prompt || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
   const ratio = task.aspectRatio || '9:16';
   const stt = task.seq || (prompt.match(/^(\d{1,4})[\.\-_:\s]/)?.[1] || Date.now().toString().slice(-4));
+
+  // Đảm bảo Chrome Profile đang mở làm Video còn đủ >= 10 credit (nếu hết tự động bật profile tiếp theo)
+  try {
+    await ensureActiveVideoProfileHasCredits();
+  } catch (profErr) {
+    logger.warn(`[AutoClick Video] Không thể kiểm tra/chuyển profile trước khi chạy: ${profErr.message}`);
+  }
 
   logger.info(`[AutoClick Video] 🚀 Khởi chạy task ${taskId} (STT: ${stt}): "${prompt.slice(0, 40)}..."`);
 
@@ -129,6 +137,13 @@ async function generateVideoViaAutoClick(task) {
           logger.info(`[AutoClick Video] 🗑️ Đã xóa file video tạm trên máy: ${filePath}`);
         } catch (delErr) {
           logger.warn(`[AutoClick Video] Không thể xoá file tạm: ${delErr.message}`);
+        }
+
+        // 4. Trừ 10 credit của Chrome Profile Video hiện tại & tự động đổi sang profile mới nếu hết credit
+        try {
+          await deductVideoCreditAndRotateIfNeeded(10);
+        } catch (rotErr) {
+          logger.warn(`[AutoClick Video] Lỗi trừ credit / chuyển profile: ${rotErr.message}`);
         }
 
         resolve({

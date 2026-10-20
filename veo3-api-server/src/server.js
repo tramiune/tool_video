@@ -24,6 +24,7 @@ const drama = require('./drama');
 const sumo  = require('./sumo');
 const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
 const { generateVideoViaAutoClick } = require('./autoclick_video_service');
+const chromeProfileManager = require('./chrome_profile_manager');
 
 process.on("uncaughtException", (err) => { 
   logger.error(`[CRITICAL] Uncaught Exception: ${err.message}`); 
@@ -961,6 +962,40 @@ app.get('/api/bulk-status', (req, res) => {
     wsUrl: `ws://localhost:${BULK_AI_WS_PORT}`,
     connectedClients: _bulkAiClients.size,
   });
+});
+
+// ── Admin Chrome Profiles Management API ──────────────────────────────────────
+app.get('/api/admin/chrome-profiles', (req, res) => {
+  try {
+    const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    const state = refresh
+      ? chromeProfileManager.scanChromeProfiles()
+      : chromeProfileManager.getProfilesState();
+    const openWindows = chromeProfileManager.getOpenChromeWindows();
+    res.json({ ok: true, ...state, openWindows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/chrome-profiles/refresh', (req, res) => {
+  try {
+    const state = chromeProfileManager.scanChromeProfiles();
+    const openWindows = chromeProfileManager.getOpenChromeWindows();
+    res.json({ ok: true, ...state, openWindows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/chrome-profiles/update', async (req, res) => {
+  try {
+    const state = await chromeProfileManager.updateProfileConfig(req.body || {});
+    const openWindows = chromeProfileManager.getOpenChromeWindows();
+    res.json({ ok: true, ...state, openWindows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 app.get('/api/user-info', async (req, res) => {
