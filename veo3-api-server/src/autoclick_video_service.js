@@ -8,6 +8,31 @@ const { uploadToR2 } = require('./s3_uploader');
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/autoclick_video_runner.py');
 
 /**
+ * Đảm bảo URL ảnh đầu vào có CORS header (nếu khác bucket meo3 R2 thì tải về và đẩy sang R2 của meo3)
+ */
+async function ensureCorsImageUrl(imgUrl, taskId, tag = 'start') {
+  if (!imgUrl || typeof imgUrl !== 'string') return imgUrl;
+  const r2PublicBase = process.env.R2_PUBLIC_URL || 'https://pub-6d69dc0dc47542f4ad0de11f34132785.r2.dev';
+  if (imgUrl.startsWith(r2PublicBase)) return imgUrl;
+  if (!imgUrl.startsWith('http')) return imgUrl;
+  try {
+    const res = await fetch(imgUrl);
+    if (!res.ok) return imgUrl;
+    const ab = await res.arrayBuffer();
+    const buf = Buffer.from(ab);
+    const ct = res.headers.get('content-type') || 'image/jpeg';
+    const ext = ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : 'jpg';
+    const key = `meo3/inputs/${taskId}_${tag}_${Date.now()}.${ext}`;
+    const newUrl = await uploadToR2(buf, key, ct);
+    logger.info(`[AutoClick Video] Đã đồng bộ ảnh ${tag} sang R2 CORS: ${newUrl}`);
+    return newUrl;
+  } catch (e) {
+    logger.warn(`[AutoClick Video] Không thể chuyển ảnh ${tag} sang R2 CORS (${e.message}), giữ nguyên URL cũ.`);
+    return imgUrl;
+  }
+}
+
+/**
  * Tạo video tự động qua Python PyAutoGUI:
  * 1. Double Click (439, 578) -> Gõ prompt -> Click (440, 729)
  * 2. Đợi 30s
@@ -19,7 +44,7 @@ const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/autoclick_video_runne
  */
 async function generateVideoViaAutoClick(task) {
   const taskId = task.id || `vid_${Date.now()}`;
-  const prompt = task.prompt || '';
+  const prompt = String(task.prompt || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
   const ratio = task.aspectRatio || '9:16';
   const stt = task.seq || (prompt.match(/^(\d{1,4})[\.\-_:\s]/)?.[1] || Date.now().toString().slice(-4));
 
@@ -34,10 +59,12 @@ async function generateVideoViaAutoClick(task) {
   ];
 
   if (task.startImage) {
-    args.push('--start-image', task.startImage);
+    const safeStart = await ensureCorsImageUrl(task.startImage, taskId, 'start');
+    args.push('--start-image', safeStart);
   }
   if (task.endImage) {
-    args.push('--end-image', task.endImage);
+    const safeEnd = await ensureCorsImageUrl(task.endImage, taskId, 'end');
+    args.push('--end-image', safeEnd);
   }
 
   return new Promise((resolve, reject) => {

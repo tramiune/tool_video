@@ -50,8 +50,8 @@ def get_downloads_files(downloads_dir):
     return files_map
 
 def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
-    """Đảm bảo format đúng dạng: ratio|stt. prompt|image_urls..."""
-    prompt = raw_prompt.strip()
+    """Đảm bảo format đúng dạng: ratio|stt. prompt|image_urls... (luôn trên 1 dòng duy nhất)"""
+    prompt = " ".join(str(raw_prompt or "").splitlines()).strip()
     
     # Kiểm tra xem prompt đã có STT chưa
     clean_stt = str(stt).strip()
