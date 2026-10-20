@@ -191,8 +191,8 @@ _extWss.on('connection', (ws) => {
                 }
               }
 
-              // Fallback: nếu đường dẫn chưa thấy hoặc 0 bytes, tìm file .mp4 / .webm / ảnh mới nhất trong Downloads (trong 90s)
-              if (!fs.existsSync(targetPath) || (fs.existsSync(targetPath) && fs.statSync(targetPath).size === 0)) {
+              // Chỉ fallback quét file mới nhất nếu đã chờ quá 6s (attempt >= 12) mà vẫn chưa thấy đúng tên file
+              if (attempt >= 12 && (!fs.existsSync(targetPath) || (fs.existsSync(targetPath) && fs.statSync(targetPath).size === 0))) {
                 try {
                   const files = fs.readdirSync(downloadsDir)
                     .filter(f => !f.endsWith('.crdownload') && (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')))
@@ -203,7 +203,7 @@ _extWss.on('connection', (ws) => {
                         return { name: f, path: fullF, time: st.mtimeMs, size: st.size };
                       } catch { return null; }
                     })
-                    .filter(f => f && (Date.now() - f.time < 90000) && f.size > 0)
+                    .filter(f => f && (Date.now() - f.time < 20000) && f.size > 0)
                     .sort((a, b) => b.time - a.time);
 
                   if (files.length > 0) {
@@ -808,6 +808,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'x-session-token', 'x-api-key']
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // ─── LOCAL-ONLY GUARD ────────────────────────────────────────────────────────
 // Sensitive endpoints that can modify Google sessions, burn credits, or upload
@@ -1622,6 +1623,18 @@ async function requireAdmin(req, res, next) {
 
 async function requireDramaAccess(req, res, next) {
   try {
+    const aquaUid = req.headers['x-aqua-user-id'];
+    if (aquaUid) {
+      const hasSub = req.headers['x-aqua-drama-sub'] === '1';
+      req.authUser = {
+        uid: String(aquaUid),
+        email: String(req.headers['x-aqua-user-email'] || 'aqua@aquaai.vn'),
+        isAdmin: false,
+        isSuperAdmin: false,
+        hasDramaVideoAccess: hasSub
+      };
+      return next();
+    }
     const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
     if (!match) return res.status(401).json({ error: 'Missing Firebase ID token' });
     const decoded = await auth.verifyIdToken(match[1]);
@@ -1630,14 +1643,28 @@ async function requireDramaAccess(req, res, next) {
     const email = String(decoded.email || userData.email || '').toLowerCase();
     const ADMIN_EMAILS = ['traderfinn0312@gmail.com'];
     const isAdmin = userData.isAdmin === true || ADMIN_EMAILS.includes(email);
-    if (!isAdmin && userData.hasDramaAccess !== true) {
-      return res.status(403).json({ error: 'Drama access authorization required' });
-    }
-    req.authUser = { uid: decoded.uid, email: decoded.email || userData.email || null, isAdmin };
+    const isActiveDramaTier =
+      (userData.tier === 'drama_500k' || userData.tier === 'master_499k') &&
+      (!userData.expiryDate || Number(userData.expiryDate) > Date.now());
+    const hasDramaVideoAccess = isAdmin || userData.hasDramaAccess === true || isActiveDramaTier;
+    req.authUser = {
+      uid: decoded.uid,
+      email: decoded.email || userData.email || null,
+      isAdmin,
+      isSuperAdmin: isAdmin,
+      hasDramaVideoAccess
+    };
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Invalid Firebase ID token' });
   }
+}
+
+function getStartOfDayVnMs() {
+  const vnOffsetMs = 7 * 60 * 60 * 1000;
+  const nowVn = new Date(Date.now() + vnOffsetMs);
+  nowVn.setUTCHours(0, 0, 0, 0);
+  return nowVn.getTime() - vnOffsetMs;
 }
 
 app.get('/api/autotool/profile', requireAdmin, async (req, res) => {
@@ -2157,7 +2184,7 @@ app.get('/api/drama/scripts', requireDramaAccess, async (req, res) => {
     }));
 
     const hasSumo = scripts.some(s => s.channelType === 'sumo');
-    if (!hasSumo) {
+    if (!hasSumo && !String(req.authUser.uid || '').startsWith('aqua_')) {
       const ref = db.collection('drama_scripts').doc();
       const now = Date.now();
       const defaultSumoScript = {
@@ -2383,11 +2410,34 @@ app.delete('/api/drama/scripts/:id', requireDramaAccess, async (req, res) => {
 // Drama video job: creates an episode from an approved script.
 app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => {
   try {
+    if (!req.authUser.hasDramaVideoAccess) {
+      return res.status(402).json({
+        error: 'Vui lòng đăng ký Gói Mẹ Chồng Nàng Dâu (500k/tháng) để tạo video!',
+        code: 'DRAMA_SUBSCRIPTION_REQUIRED'
+      });
+    }
+
     const scriptRef = db.collection('drama_scripts').doc(req.params.id);
     const snapshot = await scriptRef.get();
     if (!snapshot.exists) return res.status(404).json({ error: 'Drama script not found' });
     const scriptData = snapshot.data();
     if (scriptData.userId !== req.authUser.uid && !req.authUser.isAdmin) return res.status(403).json({ error: 'Forbidden' });
+
+    // Enforce max 2 episodes per day (GMT+7)
+    if (!req.authUser.isSuperAdmin) {
+      const startOfDayMs = getStartOfDayVnMs();
+      const jobsSnap = await db.collection('drama_jobs').where('userId', '==', req.authUser.uid).get();
+      const todayEpisodes = jobsSnap.docs.filter(d => {
+        const jd = d.data();
+        return Number(jd.createdAt || 0) >= startOfDayMs && jd.status !== 'failed';
+      }).length;
+      if (todayEpisodes >= 2) {
+        return res.status(429).json({
+          error: 'Bạn đã tạo đủ 2/2 tập phim hôm nay (gói 500k/tháng tối đa 2 tập/ngày). Vui lòng quay lại vào ngày mai nhé!',
+          code: 'DRAMA_DAILY_LIMIT'
+        });
+      }
+    }
 
     const script = scriptData.channelType === 'sumo'
       ? sumo.normalizeSumoScript(scriptData)
@@ -2459,6 +2509,13 @@ app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => 
 // result (imageUrl / videoUrl + task status) back onto the script scene doc.
 app.post('/api/drama/scripts/:id/scenes/:sceneIndex/:mediaType', requireDramaAccess, async (req, res) => {
   try {
+    if (!req.authUser.hasDramaVideoAccess) {
+      return res.status(402).json({
+        error: 'Vui lòng đăng ký Gói Mẹ Chồng Nàng Dâu (500k/tháng) để tạo ảnh/video cho kịch bản!',
+        code: 'DRAMA_SUBSCRIPTION_REQUIRED'
+      });
+    }
+
     const sceneIndex = Number(req.params.sceneIndex);
     const mediaType = String(req.params.mediaType || '').toLowerCase();
     const validMediaTypes = ['image', 'startimage', 'start_image', 'endimage', 'end_image', 'video'];
@@ -3131,17 +3188,22 @@ async function rehydrateTasks() {
       .where('status', 'in', ['processing', 'pending'])
       .get();
     let vid = 0, img = 0;
+    const now = Date.now();
     for (const doc of snap.docs) {
       const taskData = doc.data();
       const taskId = doc.id;
       if (tasks[taskId]) continue;
+      if (taskData.createdAt && now - taskData.createdAt > 30 * 60 * 1000) {
+        doc.ref.update({ status: 'failed', error: 'Task expired on server restart' }).catch(() => {});
+        continue;
+      }
       tasks[taskId] = {
         id: taskId,
         docRef: doc.ref,
-        status: taskData.status,
         media: [],
         error: null,
-        ...taskData
+        ...taskData,
+        status: 'queued',
       };
       if (taskData.type === 'video') {
         videoScheduler.enqueue(taskId);
@@ -3175,10 +3237,10 @@ function startFirestoreListener() {
             tasks[taskId] = {
               id: taskId,
               docRef: doc.ref,
-              status: 'queued',
               media: [],
               error: null,
-              ...taskData
+              ...taskData,
+              status: 'queued',
             };
 
             if (taskData.type === 'video') {
@@ -3217,11 +3279,16 @@ function startFirestoreListener() {
 // ─── IMAGE WORKER (concurrent) ──────────────────────────────────────────────
 
 function drainImageQueue() {
+  const maxConcurrentImages = Math.max(1, extensionBridge.clientCount || 1);
+  if (activeImageWorkers >= maxConcurrentImages) {
+    return;
+  }
+
   // Determine which users currently have an active image task
   const activeUsers = new Set();
   for (const tid in tasks) {
     const t = tasks[tid];
-    if (t.type === 'image' && t.status === 'processing' && !t.isAdmin && t.userId && t.userId !== 'anonymous') {
+    if (t.type === 'image' && t.status === 'generating' && !t.isAdmin && t.userId && t.userId !== 'anonymous') {
       activeUsers.add(t.userId);
     }
   }
@@ -3235,11 +3302,11 @@ function drainImageQueue() {
       continue;
     }
 
-    const isAdmin = task.isAdmin === true;
-    if (!isAdmin && activeImageWorkers >= IMAGE_CONCURRENCY) {
-      return; // Global capacity reached
+    if (activeImageWorkers >= maxConcurrentImages) {
+      return; // Global extension capacity reached
     }
 
+    const isAdmin = task.isAdmin === true;
     const userId = task.userId;
     if (!isAdmin && userId && userId !== 'anonymous' && activeUsers.has(userId)) {
       continue; // This user already has an active image task, skip to next in queue
@@ -3247,14 +3314,13 @@ function drainImageQueue() {
 
     // Found a runnable task
     imageQueue.splice(i, 1);
-    
-    if (!isAdmin) {
-      activeImageWorkers++;
-      if (userId && userId !== 'anonymous') activeUsers.add(userId);
+    activeImageWorkers++;
+    if (!isAdmin && userId && userId !== 'anonymous') {
+      activeUsers.add(userId);
     }
 
     runImageTask(taskId).finally(() => {
-      if (!isAdmin) activeImageWorkers--;
+      activeImageWorkers = Math.max(0, activeImageWorkers - 1);
       drainImageQueue();
     });
 
@@ -3296,7 +3362,7 @@ async function runImageTask(taskId) {
     if (extensionBridge.connected) {
       logger.info(`[Image] Dispatching task ${taskId} to Flow Extension Bridge...`);
       try {
-        // Chuyển đổi các ảnh reference dạng Base64/Data URL lên R2 để có link HTTP công khai
+        // Chuyển đổi các ảnh reference dạng Base64/Data URL hoặc HTTP ngoài domain meo3 R2 lên R2 có CORS
         let resolvedRefs = [];
         const rawRefs = task.referenceImages || (task.referenceImage ? [task.referenceImage] : []);
         for (let i = 0; i < rawRefs.length; i++) {
@@ -3312,6 +3378,22 @@ async function runImageTask(taskId) {
               resolvedRefs.push(r2Url);
             } catch (r2Err) {
               logger.error(`[Image Task] Failed to upload Base64 ref to R2: ${r2Err.message}`);
+              resolvedRefs.push(refItem);
+            }
+          } else if (typeof refItem === 'string' && refItem.startsWith('http') && !refItem.includes('pub-6d69dc0dc47542f4ad0de11f34132785.r2.dev')) {
+            try {
+              const fetchRes = await fetch(refItem);
+              if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status}`);
+              const arrBuf = await fetchRes.arrayBuffer();
+              const buffer = Buffer.from(arrBuf);
+              const contentType = fetchRes.headers.get('content-type') || 'image/jpeg';
+              const ext = contentType.includes('png') ? '.png' : '.jpg';
+              const r2Key = `meo3/inputs/${taskId}_ref_${i}_${Date.now()}${ext}`;
+              const r2Url = await uploadToR2(buffer, r2Key, contentType);
+              logger.info(`[Image Task] Re-uploaded external ref image ${i} to CORS R2: ${r2Url}`);
+              resolvedRefs.push(r2Url);
+            } catch (r2Err) {
+              logger.error(`[Image Task] Failed to re-upload external ref to R2: ${r2Err.message}`);
               resolvedRefs.push(refItem);
             }
           } else {
