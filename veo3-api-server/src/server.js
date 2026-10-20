@@ -1408,11 +1408,11 @@ app.post('/api/generate-video', upload.fields([{ name: 'startImage', maxCount: 1
     const prompt = String(req.body.prompt || '').trim();
     if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
 
-    const startImage = req.files?.startImage?.[0]?.path || null;
-    const endImage = req.files?.endImage?.[0]?.path || null;
+    const startImage = req.files?.startImage?.[0]?.path || req.body.startImage || null;
+    const endImage = req.files?.endImage?.[0]?.path || req.body.endImage || null;
 
     const taskData = {
-      userId: 'anonymous',
+      userId: req.body.userId || 'aquaai',
       type: 'video',
       status: 'pending',
       prompt,
@@ -1439,17 +1439,32 @@ app.post('/api/generate-image', upload.single('referenceImage'), async (req, res
     const prompt = String(req.body.prompt || '').trim();
     if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
 
-    const referenceImage = req.file?.path || null;
+    const referenceImage = req.file?.path || req.body.referenceImage || null;
+    let referenceImages = [];
+    if (Array.isArray(req.body.referenceImages)) {
+      referenceImages = req.body.referenceImages.filter(Boolean);
+    } else if (typeof req.body.referenceImages === 'string' && req.body.referenceImages.trim()) {
+      try {
+        const parsed = JSON.parse(req.body.referenceImages);
+        if (Array.isArray(parsed)) referenceImages = parsed.filter(Boolean);
+        else referenceImages = [req.body.referenceImages.trim()];
+      } catch {
+        referenceImages = [req.body.referenceImages.trim()];
+      }
+    }
+    if (referenceImage && !referenceImages.includes(referenceImage)) {
+      referenceImages.unshift(referenceImage);
+    }
 
     const taskData = {
-      userId: 'anonymous',
+      userId: req.body.userId || 'aquaai',
       type: 'image',
       status: 'pending',
       prompt,
       aspectRatio: String(req.body.aspectRatio || '1:1'),
       model: String(req.body.model || 'nano_banana_pro'),
       count: parseInt(req.body.count, 10) || 1,
-      referenceImages: referenceImage ? [referenceImage] : [],
+      referenceImages,
       createdAt: Date.now()
     };
 
