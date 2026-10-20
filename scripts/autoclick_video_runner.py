@@ -130,6 +130,45 @@ def set_clipboard(text):
     except Exception:
         pyperclip.copy(text)
 
+def wait_until_submit_button_ready(x_btn=273, y_btn=733, max_wait_sec=30):
+    """Đợi cho tới khi nút 'CHẠY THỦ CÔNG' (màu trắng sáng) đã hiện trên màn hình (tránh bấm lúc trang đang load)."""
+    if sys.platform == "darwin":
+        return True
+    try:
+        from PIL import Image
+    except ImportError:
+        return True
+
+    start_t = time.time()
+    check_pts = [(180, y_btn), (x_btn, y_btn - 13), (x_btn, y_btn + 9), (350, y_btn)]
+    logged_wait = False
+
+    while (time.time() - start_t) < max_wait_sec:
+        try:
+            subprocess.run(["scrot", "-o", "/tmp/autoclick_ready_check.png"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            im = Image.open("/tmp/autoclick_ready_check.png").convert("RGB")
+            bright = 0
+            for (px, py) in check_pts:
+                if 0 <= px < im.width and 0 <= py < im.height:
+                    r, g, b = im.getpixel((px, py))
+                    if r > 190 and g > 190 and b > 190:
+                        bright += 1
+            if bright >= 2:
+                if logged_wait:
+                    sys.stderr.write(f"[AutoClick] ✅ Giao diện Flow đã READY (sau {round(time.time() - start_t, 1)}s)!\n")
+                    time.sleep(1.0)
+                return True
+        except Exception:
+            pass
+
+        if not logged_wait:
+            sys.stderr.write("[AutoClick] ⏳ Trang Flow đang tải, chờ nút 'CHẠY THỦ CÔNG' xuất hiện...\n")
+            logged_wait = True
+        time.sleep(1.5)
+
+    sys.stderr.write("[AutoClick] ⚠️ Đã chờ tối đa 30s, tiếp tục thực hiện click...\n")
+    return False
+
 def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y_btn=733):
     """Thao tác chuột nhập prompt và bấm Chạy thủ công."""
     mod_key = "command" if sys.platform == "darwin" else "ctrl"
@@ -137,6 +176,7 @@ def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y
     with open(LOCK_FILE, "w") as lock_f:
         fcntl.flock(lock_f, fcntl.LOCK_EX)
         try:
+            wait_until_submit_button_ready(x_btn, y_btn, max_wait_sec=30)
             sys.stderr.write(f"[AutoClick] Đã nhận mouse lock. Bắt đầu submit prompt vào ({x_input}, {y_input}) và bấm ({x_btn}, {y_btn})...\n")
             
             # 1. Focus ô textarea (click 2 lần có delay để cửa sổ nhận focus và con trỏ chuột đặt vào ô)

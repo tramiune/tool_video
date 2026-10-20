@@ -26,6 +26,30 @@ const VIDEO_WIN_Y = 27;
 const VIDEO_WIN_W = 508;
 const VIDEO_WIN_H = 906;
 
+// Khoá toàn cục khi đang chuyển đổi Chrome Box để các task video sau phải chờ mở xong & ready 100%
+let _switchingPromise = null;
+
+/**
+ * Kiểm tra trên màn hình DISPLAY=:10 xem nút "CHẠY THỦ CÔNG" màu trắng sáng tại (180, 733) / (273, 720) đã hiện lên chưa
+ */
+function isFlowBulkToolReadyOnScreen() {
+  try {
+    const pyCode = [
+      'import subprocess, sys',
+      'from PIL import Image',
+      'subprocess.run(["scrot", "-o", "/tmp/check_flow_ready.png"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)',
+      'im = Image.open("/tmp/check_flow_ready.png").convert("RGB")',
+      'pts = [(180, 733), (273, 720), (273, 742), (350, 733)]',
+      'bright = sum(1 for (x, y) in pts if x < im.width and y < im.height and all(c > 190 for c in im.getpixel((x, y))))',
+      'print("READY" if bright >= 2 else "WAIT")'
+    ].join('; ');
+    const out = execSync(`DISPLAY=:10 python3 -c '${pyCode}'`, { encoding: 'utf8', timeout: 4000 }).trim();
+    return out === 'READY';
+  } catch (_) {
+    return false;
+  }
+}
+
 // Cấu hình mặc định cho các profile ban đầu khi migrate sang thư mục độc lập
 const LEGACY_MIGRATION_MAP = [
   {
@@ -402,6 +426,18 @@ function enforceBoxWindowPlacement(boxDir) {
  * Sau đó bật Chrome Box mới với --user-data-dir riêng tại đúng vị trí 002 (-4, 27, 508x906)
  */
 async function switchVideoChromeWindow(targetProfile) {
+  if (_switchingPromise) {
+    try { await _switchingPromise; } catch (_) {}
+  }
+  _switchingPromise = _doSwitchVideoChromeWindow(targetProfile);
+  try {
+    return await _switchingPromise;
+  } finally {
+    _switchingPromise = null;
+  }
+}
+
+async function _doSwitchVideoChromeWindow(targetProfile) {
   if (!targetProfile || !targetProfile.profileDir) {
     throw new Error('Target profile không hợp lệ');
   }
@@ -489,7 +525,22 @@ async function switchVideoChromeWindow(targetProfile) {
   }
   saveState(state);
 
-  await new Promise(r => setTimeout(r, 3500));
+  // 7. Chờ giao diện Flow & nút "CHẠY THỦ CÔNG" thật sự hiển thị READY trên màn hình (tối đa 35s)
+  logger.info(`[ProfileManager] ⏳ Đang chờ giao diện Flow Tool của "${targetProfile.name}" tải xong (READY)...`);
+  let ready = false;
+  for (let attempt = 1; attempt <= 24; attempt++) {
+    await new Promise(r => setTimeout(r, 1500));
+    if (isFlowBulkToolReadyOnScreen()) {
+      ready = true;
+      logger.success(`[ProfileManager] 🎉 Giao diện Flow Tool của "${targetProfile.name}" đã READY (sau ${attempt * 1.5}s)!`);
+      break;
+    }
+  }
+  if (!ready) {
+    logger.warn(`[ProfileManager] ⚠️ Đã chờ 36s nhưng chưa thấy nút CHẠY THỦ CÔNG sáng lên, tiếp tục...`);
+  } else {
+    await new Promise(r => setTimeout(r, 1500));
+  }
   return state;
 }
 
@@ -564,6 +615,12 @@ async function createChromeBox({ name, credits = 500, role = 'video', flowUrl = 
 }
 
 async function ensureActiveVideoProfileHasCredits() {
+  // Nếu đang trong quá trình chuyển đổi Chrome Box thì bắt buộc chờ chuyển & load trang READY xong
+  if (_switchingPromise) {
+    logger.info('[ProfileManager] ⏳ Đang chờ quá trình chuyển đổi Chrome Box hoàn tất...');
+    try { await _switchingPromise; } catch (_) {}
+  }
+
   const state = getProfilesState();
   let active = state.profiles.find(p => p.role === 'video' && p.isActiveVideo);
 
