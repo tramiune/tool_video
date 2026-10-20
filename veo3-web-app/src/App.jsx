@@ -24,7 +24,8 @@ const safeSetSessionStorage = (key, value) => {
 };
 
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3456';
+const _RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://api.aquaai.vn/meo3';
+const API_BASE = _RAW_API_BASE.includes('api.meo3.cloud') ? 'https://api.aquaai.vn/meo3' : _RAW_API_BASE;
 
 const trackTikTokEvent = (eventName, metadata = {}) => {
   if (safeGetSessionStorage('is_from_tiktok') === 'true') {
@@ -5919,19 +5920,32 @@ function App() {
     }
   };
 
-  const handleDownload = (url, filename) => {
+  const handleDownload = async (url, filename) => {
     try {
-      // Use backend proxy endpoint to enforce attachment headers for mobile download support (mechanics from ai_web3)
-      const downloadUrl = `${API_BASE}/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = downloadUrl;
+      link.href = blobUrl;
+      link.download = filename || 'meo3_media';
       link.rel = 'noopener';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
     } catch (e) {
-      console.error("Download failed, opening URL in new tab as fallback:", e);
-      window.open(url, '_blank');
+      try {
+        const downloadUrl = `${API_BASE}/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (err) {
+        window.open(url, '_blank');
+      }
     }
   };
 

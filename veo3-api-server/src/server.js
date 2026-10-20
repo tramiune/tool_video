@@ -2699,7 +2699,9 @@ app.post('/api/video/merge', upload.array('videos', 15), async (req, res) => {
 // Only allows media from our own R2 bucket / audio upstream (prevents SSRF).
 const ALLOWED_DOWNLOAD_HOSTS = [
   'pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev',
-  'audio.aidancing.net'
+  'pub-6d69dc0dc47542f4ad0de11f34132785.r2.dev',
+  'audio.aidancing.net',
+  'storage.googleapis.com'
 ];
 app.get('/api/download', async (req, res) => {
   const fileUrl = req.query.url;
@@ -2711,7 +2713,7 @@ app.get('/api/download', async (req, res) => {
   } catch {
     return res.status(400).send('Invalid url');
   }
-  if (!ALLOWED_DOWNLOAD_HOSTS.includes(host)) {
+  if (!ALLOWED_DOWNLOAD_HOSTS.includes(host) && !host.endsWith('.r2.dev')) {
     return res.status(403).send('Forbidden: url host not allowed');
   }
   try {
