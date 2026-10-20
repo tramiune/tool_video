@@ -388,6 +388,8 @@ function App() {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [userTier, setUserTier] = useState('free');
   const [userExpiryDate, setUserExpiryDate] = useState(null);
+  const [userTrialVideoUsed, setUserTrialVideoUsed] = useState(false);
+  const [userTrialImageUsed, setUserTrialImageUsed] = useState(false);
   const [pendingPayment, setPendingPayment] = useState(null);
   const [currentUserIsAdmin, setCurrentUserIsAdmin] = useState(false);
   const [currentUserHasDramaAccess, setCurrentUserHasDramaAccess] = useState(false);
@@ -652,6 +654,8 @@ function App() {
         previousPendingPaymentRef.current = nextPendingPayment;
         setUserTier(data.tier || 'free');
         setUserExpiryDate(data.expiryDate || null);
+        setUserTrialVideoUsed(Boolean(data.trialVideoUsed));
+        setUserTrialImageUsed(Boolean(data.trialImageUsed));
         setPendingPayment(nextPendingPayment);
          setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
         setCurrentUserHasDramaAccess(data.tier === 'master_499k' || data.hasDramaAccess || data.isAdmin || emailIsAdmin || false);
@@ -659,6 +663,8 @@ function App() {
         previousPendingPaymentRef.current = null;
         setUserTier('free');
         setUserExpiryDate(null);
+        setUserTrialVideoUsed(false);
+        setUserTrialImageUsed(false);
         setPendingPayment(null);
         setCurrentUserIsAdmin(emailIsAdmin || false);
         setCurrentUserHasDramaAccess(emailIsAdmin || false);
@@ -1113,14 +1119,16 @@ function App() {
            'Đang xử lý';
   };
 
-  // Đếm tổng số video đã tạo từ trước đến nay (all-time), dùng để giới hạn free tier
+  // Đếm tổng số video đã tạo từ trước đến nay (all-time), dùng để giới hạn free tier (1 lần duy nhất)
   const getAllTimeVideoCount = () => {
-    return tasks.filter(t => t.type === 'video' && t.status !== 'failed').length;
+    const count = tasks.filter(t => t.type === 'video' && t.status !== 'failed').length;
+    return userTrialVideoUsed ? Math.max(1, count) : count;
   };
 
-  // Đếm tổng số ảnh đã tạo từ trước đến nay (all-time), dùng để giới hạn free tier
+  // Đếm tổng số ảnh đã tạo từ trước đến nay (all-time), dùng để giới hạn free tier (1 lần duy nhất)
   const getAllTimeImageCount = () => {
-    return tasks.filter(t => t.type === 'image' && t.status !== 'failed').length;
+    const count = tasks.filter(t => t.type === 'image' && t.status !== 'failed').length;
+    return userTrialImageUsed ? Math.max(1, count) : count;
   };
 
   const handleUpgradeTier = async (newTier) => {
@@ -4480,7 +4488,7 @@ function App() {
     // Limits check
     const usage = getTodayUsage();
     const limits = {
-      free: { videos: 0, images: 0 },
+      free: { videos: 1, images: 1 },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 5, images: 10 },
       
@@ -4488,10 +4496,17 @@ function App() {
       pro_299k: { videos: Infinity, images: Infinity },
       master_499k: { videos: Infinity, images: Infinity }
     };
-    const currentLimits = limits[userTier] || limits.free;
-    if (usage.images >= currentLimits.images) {
-      setLimitError(`Bạn đã dùng hết hạn mức tạo ảnh trong ngày (${currentLimits.images} ảnh/ngày). Vui lòng nâng cấp gói cước!`);
-      setShowPricingModal(true);
+    const isExpired = userTier !== 'free' && userExpiryDate && userExpiryDate < Date.now();
+    const activeUserTier = isExpired ? 'free' : userTier;
+    const currentLimits = limits[activeUserTier] || limits.free;
+    if (activeUserTier === 'free') {
+      const allTimeImages = getAllTimeImageCount();
+      if (allTimeImages >= 1) {
+        setLimitError({ type: 'image', limit: 1, current: allTimeImages, isAllTime: true });
+        return;
+      }
+    } else if (usage.images >= currentLimits.images) {
+      setLimitError({ type: 'image', limit: currentLimits.images, current: usage.images });
       return;
     }
 
@@ -4548,6 +4563,10 @@ function App() {
       });
 
       console.log("VTON Task created directly in Firestore:", docRef.id);
+      if (activeUserTier === 'free') {
+        setUserTrialImageUsed(true);
+        setDoc(doc(db, 'users', user.uid), { trialImageUsed: true }, { merge: true }).catch(() => {});
+      }
       trackTikTokEvent('generate_tryon', { toolType: tryonToolType });
       
       // Reset files & description
@@ -5897,6 +5916,13 @@ function App() {
 
   const handleDeleteTask = async (taskId) => {
     try {
+      const taskToDelete = tasks.find(t => t.id === taskId);
+      if (user && taskToDelete && taskToDelete.status !== 'failed') {
+        const trialField = taskToDelete.type === 'video' ? { trialVideoUsed: true } : taskToDelete.type === 'image' ? { trialImageUsed: true } : null;
+        if (trialField) {
+          await setDoc(doc(db, 'users', user.uid), trialField, { merge: true }).catch(() => {});
+        }
+      }
       await deleteDoc(doc(db, 'tasks', taskId));
     } catch (e) {
       console.error("Error deleting task:", e);
@@ -6115,7 +6141,7 @@ function App() {
 
     // Limit checking
     const limits = {
-      free: { videos: 0, images: 0 },
+      free: { videos: 1, images: 1 },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 5, images: 10 },
       
@@ -6138,11 +6164,11 @@ function App() {
     const usage = getTodayUsage();
 
     if (activeTab === 'video') {
-      // Free tier: Không cho tạo thử nữa (limit = 0)
+      // Free tier: chỉ được làm 1 video duy nhất toàn đời (all-time)
       if (activeUserTier === 'free') {
         const allTimeVideos = getAllTimeVideoCount();
-        if (allTimeVideos >= 0) {
-          setLimitError({ type: 'video', limit: 0, current: allTimeVideos, isAllTime: true });
+        if (allTimeVideos >= 1) {
+          setLimitError({ type: 'video', limit: 1, current: allTimeVideos, isAllTime: true });
           return;
         }
       } else if (usage.videos >= currentLimits.videos) {
@@ -6152,11 +6178,11 @@ function App() {
     }
 
     if (activeTab === 'image') {
-      // Free tier: Không cho tạo thử nữa (limit = 0)
+      // Free tier: chỉ được làm 1 ảnh duy nhất toàn đời (all-time)
       if (activeUserTier === 'free') {
         const allTimeImages = getAllTimeImageCount();
-        if (allTimeImages >= 0) {
-          setLimitError({ type: 'image', limit: 0, current: allTimeImages, isAllTime: true });
+        if (allTimeImages >= 1) {
+          setLimitError({ type: 'image', limit: 1, current: allTimeImages, isAllTime: true });
           return;
         }
       } else if (usage.images >= currentLimits.images) {
@@ -6236,6 +6262,15 @@ function App() {
         createdAt: Date.now()
       });
       console.log("Task successfully written to Firestore! Doc ID:", docRef.id);
+      if (activeUserTier === 'free') {
+        if (activeTab === 'video') {
+          setUserTrialVideoUsed(true);
+          setDoc(doc(db, 'users', user.uid), { trialVideoUsed: true }, { merge: true }).catch(() => {});
+        } else if (activeTab === 'image') {
+          setUserTrialImageUsed(true);
+          setDoc(doc(db, 'users', user.uid), { trialImageUsed: true }, { merge: true }).catch(() => {});
+        }
+      }
       trackTikTokEvent(activeTab === 'video' ? 'generate_video' : 'generate_image', { prompt: currentPrompt.trim() });
 
       // Clear form (keep start/end frames so user can send again)
@@ -7451,7 +7486,7 @@ function App() {
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>Hết lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'}</h3>
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
               {limitError.isAllTime
-                ? <>Tính năng tạo {limitError.type === 'video' ? 'video' : 'ảnh'} không hỗ trợ tài khoản <strong>Free</strong>. Vui lòng nâng cấp gói để trải nghiệm tính năng này nhé! 🎬</>
+                ? <>Gói <strong>Free</strong> chỉ được dùng thử <strong>{limitError.limit} {limitError.type === 'video' ? 'video' : 'ảnh'} duy nhất</strong>. Bạn đã dùng hết lượt thử miễn phí rồi. Nâng cấp gói để tiếp tục tạo {limitError.type === 'video' ? 'video' : 'ảnh'} nhé! 🎬</>
                 : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'Đặc Quyền' : userTier}</strong>.</>
               }
             </p>
