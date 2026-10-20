@@ -194,13 +194,15 @@ function readBoxAccountInfo(boxDir, boxId) {
   let email = '';
   let gaiaName = '';
 
+  const isGenericName = (n) => !n || ['Person 1', 'Bạn', 'Your Chrome', 'Default'].includes(String(n).trim());
+
   // 1. Đọc từ Local State của box
   const lsPath = path.join(boxDir, 'Local State');
   try {
     if (fs.existsSync(lsPath)) {
       const ls = JSON.parse(fs.readFileSync(lsPath, 'utf8'));
       const defInfo = ls?.profile?.info_cache?.Default || {};
-      if (defInfo.name && defInfo.name !== 'Person 1' && defInfo.name !== 'Bạn') {
+      if (!isGenericName(defInfo.name)) {
         name = defInfo.name;
       }
       email = defInfo.user_name || '';
@@ -220,7 +222,7 @@ function readBoxAccountInfo(boxDir, boxId) {
         if (!gaiaName && acc.full_name) gaiaName = acc.full_name;
       }
       const profName = pref?.profile?.name;
-      if (name === boxId && profName && profName !== 'Person 1' && profName !== 'Bạn') {
+      if (name === boxId && !isGenericName(profName)) {
         name = profName;
       }
     }
