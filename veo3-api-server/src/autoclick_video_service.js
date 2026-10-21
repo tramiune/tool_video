@@ -76,10 +76,11 @@ async function generateVideoViaAutoClick(task) {
   }
 
   return new Promise((resolve, reject) => {
-    logger.info(`[AutoClick Video] Spawning: python3 ${args.join(' ')}`);
+    const activeDisp = chromeProfileManager.getActiveDisplay ? chromeProfileManager.getActiveDisplay() : ':10';
+    logger.info(`[AutoClick Video] Spawning on DISPLAY=${activeDisp}: python3 ${args.join(' ')}`);
     const env = {
       ...process.env,
-      DISPLAY: process.env.DISPLAY || ':10'
+      DISPLAY: activeDisp
     };
     const proc = spawn('python3', args, { env });
 

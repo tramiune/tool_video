@@ -17,7 +17,20 @@ import sys
 
 # Ensure DISPLAY is set on Linux BEFORE importing pyautogui/mouseinfo
 if sys.platform != "darwin" and "DISPLAY" not in os.environ:
-    os.environ["DISPLAY"] = ":10"
+    detected_disp = ":10"
+    try:
+        sock_dir = "/run/xrdp/sockdir"
+        if os.path.isdir(sock_dir):
+            nums = [
+                int(f.split("_")[-1])
+                for f in os.listdir(sock_dir)
+                if f.startswith("xrdp_display_") and f.split("_")[-1].isdigit()
+            ]
+            if nums:
+                detected_disp = f":{max(nums)}"
+    except Exception:
+        pass
+    os.environ["DISPLAY"] = detected_disp
 
 import time
 import json

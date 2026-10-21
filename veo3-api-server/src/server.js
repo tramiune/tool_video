@@ -1008,6 +1008,16 @@ app.post('/api/admin/chrome-profiles/create', async (req, res) => {
   }
 });
 
+app.post('/api/admin/chrome-profiles/delete', async (req, res) => {
+  try {
+    const state = await chromeProfileManager.deleteChromeBox(req.body || {});
+    const openWindows = chromeProfileManager.getOpenChromeWindows();
+    res.json({ ok: true, ...state, openWindows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.get('/api/user-info', async (req, res) => {
   try {
     const projectId = await apiClient.ensureProject();

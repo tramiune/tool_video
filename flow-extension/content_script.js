@@ -3,6 +3,42 @@
 
 (function() {
   "use strict";
+
+  // VPS Anti-Lag: tắt toàn bộ hiệu ứng blur/transition/animation và tự pause các video lặp trên trang Flow để giảm 90% CPU
+  try {
+    const injectPerfStyle = () => {
+      if (document.getElementById("__vps_perf_style")) return;
+      const st = document.createElement("style");
+      st.id = "__vps_perf_style";
+      st.textContent = `
+        *, *::before, *::after {
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          transition-duration: 0s !important;
+          animation-duration: 0s !important;
+          scroll-behavior: auto !important;
+          box-shadow: none !important;
+        }
+      `;
+      (document.head || document.documentElement).appendChild(st);
+    };
+    injectPerfStyle();
+    document.addEventListener("DOMContentLoaded", injectPerfStyle, { once: true });
+
+    setInterval(() => {
+      const vids = document.querySelectorAll("video");
+      for (const v of vids) {
+        if (!v.paused && !v.matches(":hover")) {
+          try {
+            v.autoplay = false;
+            v.loop = false;
+            v.pause();
+          } catch (_) {}
+        }
+      }
+    }, 1500);
+  } catch (_) {}
+
   // Forward auth token captured in MAIN world to background service worker
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data) return;

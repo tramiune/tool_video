@@ -30,10 +30,48 @@ const VIDEO_WIN_H = 906;
 let _switchingPromise = null;
 
 /**
- * Kiểm tra trên màn hình DISPLAY=:10 xem nút "CHẠY THỦ CÔNG" màu trắng sáng tại (180, 733) / (273, 720) đã hiện lên chưa
+ * Tự động phát hiện màn hình XRDP đang hoạt động (:10, :11, ...)
+ */
+function getActiveDisplay() {
+  try {
+    const sockDir = '/run/xrdp/sockdir';
+    if (fs.existsSync(sockDir)) {
+      const files = fs.readdirSync(sockDir);
+      const dispNums = files
+        .map(f => {
+          const m = f.match(/^xrdp_display_(\d+)$/);
+          return m ? parseInt(m[1], 10) : null;
+        })
+        .filter(n => n !== null)
+        .sort((a, b) => b - a);
+      if (dispNums.length > 0) {
+        return `:${dispNums[0]}`;
+      }
+    }
+    const x11Dir = '/tmp/.X11-unix';
+    if (fs.existsSync(x11Dir)) {
+      const files = fs.readdirSync(x11Dir);
+      const dispNums = files
+        .map(f => {
+          const m = f.match(/^X(\d+)$/);
+          return m ? parseInt(m[1], 10) : null;
+        })
+        .filter(n => n !== null && n >= 10)
+        .sort((a, b) => b - a);
+      if (dispNums.length > 0) {
+        return `:${dispNums[0]}`;
+      }
+    }
+  } catch (_) {}
+  return ':10';
+}
+
+/**
+ * Kiểm tra trên màn hình XRDP đang hoạt động xem nút "CHẠY THỦ CÔNG" màu trắng sáng tại (180, 733) / (273, 720) đã hiện lên chưa
  */
 function isFlowBulkToolReadyOnScreen() {
   try {
+    const disp = getActiveDisplay();
     const pyCode = [
       'import subprocess, sys',
       'from PIL import Image',
@@ -43,7 +81,7 @@ function isFlowBulkToolReadyOnScreen() {
       'bright = sum(1 for (x, y) in pts if x < im.width and y < im.height and all(c > 190 for c in im.getpixel((x, y))))',
       'print("READY" if bright >= 2 else "WAIT")'
     ].join('; ');
-    const out = execSync(`DISPLAY=:10 python3 -c '${pyCode}'`, { encoding: 'utf8', timeout: 4000 }).trim();
+    const out = execSync(`DISPLAY=${disp} python3 -c '${pyCode}'`, { encoding: 'utf8', timeout: 4000 }).trim();
     return out === 'READY';
   } catch (_) {
     return false;
@@ -93,6 +131,13 @@ function ensureBoxesDir() {
  */
 function ensureInitialBoxesMigrated() {
   ensureBoxesDir();
+  const migratedMarker = path.join(CHROME_BOXES_DIR, '.migrated_done');
+  if (fs.existsSync(migratedMarker)) {
+    return;
+  }
+  const saved = loadSavedState();
+  const deletedSet = new Set(Array.isArray(saved?.deletedBoxes) ? saved.deletedBoxes : []);
+
   let mainLocalState = {};
   const mainLocalStatePath = path.join(CHROME_MAIN_DIR, 'Local State');
   try {
@@ -106,6 +151,9 @@ function ensureInitialBoxesMigrated() {
   const infoCache = mainLocalState?.profile?.info_cache || {};
 
   for (const item of LEGACY_MIGRATION_MAP) {
+    if (deletedSet.has(item.boxId)) {
+      continue;
+    }
     const srcProfileDir = path.join(CHROME_MAIN_DIR, item.legacyDir);
     const destBoxDir = path.join(CHROME_BOXES_DIR, item.boxId);
     const destDefaultDir = path.join(destBoxDir, 'Default');
@@ -350,6 +398,7 @@ function scanChromeProfiles() {
 
   const newState = {
     profiles,
+    deletedBoxes: Array.isArray(existingState?.deletedBoxes) ? existingState.deletedBoxes : [],
     updatedAt: new Date().toISOString()
   };
   saveState(newState);
@@ -366,11 +415,12 @@ function getProfilesState() {
 }
 
 /**
- * Lấy danh sách cửa sổ Chrome đang mở trên DISPLAY=:10
+ * Lấy danh sách cửa sổ Chrome đang mở trên màn hình XRDP đang hoạt động
  */
 function getOpenChromeWindows() {
   try {
-    const out = execSync('DISPLAY=:10 wmctrl -lG', { encoding: 'utf8', timeout: 3000 });
+    const disp = getActiveDisplay();
+    const out = execSync(`DISPLAY=${disp} wmctrl -lG`, { encoding: 'utf8', timeout: 3000 });
     const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
     const wins = [];
     for (const line of lines) {
@@ -442,11 +492,12 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
     throw new Error('Target profile không hợp lệ');
   }
 
+  const disp = getActiveDisplay();
   const boxId = targetProfile.profileDir;
   const boxDir = targetProfile.userDataDir || path.join(CHROME_BOXES_DIR, boxId);
   const flowUrl = (targetProfile.flowUrl || 'https://flow.google.com/').trim();
 
-  logger.info(`[ProfileManager] 🔄 Đang chuyển sang Chrome Box độc lập "${targetProfile.name}" (${boxDir}) → ${flowUrl}`);
+  logger.info(`[ProfileManager] 🔄 Đang chuyển sang Chrome Box độc lập "${targetProfile.name}" (${boxDir}) trên DISPLAY=${disp} → ${flowUrl}`);
 
   // 1. Đóng cửa sổ Chrome bên trái (x < 250) nếu đang mở
   const beforeWins = getOpenChromeWindows();
@@ -456,7 +507,7 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
     if (win.x < 250) {
       try {
         logger.info(`[ProfileManager] 🗑️ Đóng cửa sổ Video cũ: ${win.winId} (${win.title}) tại x=${win.x}, y=${win.y}`);
-        execSync(`DISPLAY=:10 wmctrl -ic ${win.winId}`, { timeout: 3000 });
+        execSync(`DISPLAY=${disp} wmctrl -ic ${win.winId}`, { timeout: 3000 });
       } catch (_) {}
     } else {
       imageWinIds.add(win.winId);
@@ -476,18 +527,23 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
   }
   enforceBoxWindowPlacement(boxDir);
 
-  // 4. Khởi chạy Chrome với --user-data-dir độc lập hoàn toàn
+  // 4. Khởi chạy Chrome với --user-data-dir độc lập hoàn toàn + cờ tối ưu chống lag trên VPS
   const args = [
     `--user-data-dir=${boxDir}`,
     '--no-first-run',
     '--no-default-browser-check',
+    '--disable-smooth-scrolling',
+    '--wm-window-animations-disabled',
+    '--animation-duration-scale=0',
+    '--disable-gpu-vsync',
+    '--disable-features=Translate,OptimizationHints,MediaRouter',
     `--window-position=${VIDEO_WIN_X},${VIDEO_WIN_Y}`,
     `--window-size=${VIDEO_WIN_W},${VIDEO_WIN_H}`,
     flowUrl
   ];
 
   const child = spawn('/opt/google/chrome/chrome', args, {
-    env: { ...process.env, DISPLAY: ':10' },
+    env: { ...process.env, DISPLAY: disp },
     detached: true,
     stdio: 'ignore'
   });
@@ -504,9 +560,9 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
 
   if (newWin) {
     try {
-      execSync(`DISPLAY=:10 wmctrl -ir ${newWin.winId} -b remove,maximized_vert,maximized_horz`, { timeout: 3000 });
-      execSync(`DISPLAY=:10 wmctrl -ir ${newWin.winId} -e 0,${VIDEO_WIN_X},${VIDEO_WIN_Y},${VIDEO_WIN_W},${VIDEO_WIN_H}`, { timeout: 3000 });
-      execSync(`DISPLAY=:10 xdotool windowActivate ${newWin.winId}`, { timeout: 3000 });
+      execSync(`DISPLAY=${disp} wmctrl -ir ${newWin.winId} -b remove,maximized_vert,maximized_horz`, { timeout: 3000 });
+      execSync(`DISPLAY=${disp} wmctrl -ir ${newWin.winId} -e 0,${VIDEO_WIN_X},${VIDEO_WIN_Y},${VIDEO_WIN_W},${VIDEO_WIN_H}`, { timeout: 3000 });
+      execSync(`DISPLAY=${disp} xdotool windowActivate ${newWin.winId}`, { timeout: 3000 });
       logger.success(`[ProfileManager] ✅ Đã mở Chrome Box "${targetProfile.name}" (${newWin.winId}) tại đúng vị trí 002 (${VIDEO_WIN_X}, ${VIDEO_WIN_Y}, ${VIDEO_WIN_W}x${VIDEO_WIN_H})`);
     } catch (e) {
       logger.warn(`[ProfileManager] Không thể resize cửa sổ mới ${newWin.winId}: ${e.message}`);
@@ -722,11 +778,82 @@ async function updateProfileConfig({ profileDir, role, credits, flowUrl, activat
   return state;
 }
 
+/**
+ * Xoá 1 Chrome Box độc lập khỏi hệ thống & ổ cứng VPS
+ */
+async function deleteChromeBox({ profileDir }) {
+  const cleanId = String(profileDir || '').trim();
+  if (!cleanId) {
+    throw new Error('Thiếu tên thư mục profile cần xoá');
+  }
+  if (cleanId === 'Profile 6' || cleanId.includes('..') || cleanId.includes('/')) {
+    throw new Error('Không thể xoá Profile Làm Ảnh cố định (Profile 6)!');
+  }
+
+  const state = getProfilesState();
+  const target = state.profiles.find(p => p.profileDir === cleanId);
+  const wasActiveVideo = Boolean(target && target.isActiveVideo);
+  const boxDir = path.join(CHROME_BOXES_DIR, cleanId);
+
+  logger.info(`[ProfileManager] 🗑️ Đang xoá Chrome Box "${cleanId}" (${boxDir})...`);
+
+  // 1. Tắt tiến trình Chrome của box này nếu đang mở
+  try {
+    execSync(`pkill -f "${boxDir}" 2>/dev/null || true`, { timeout: 3000 });
+  } catch (_) {}
+
+  await new Promise(r => setTimeout(r, 500));
+
+  // 2. Xoá thư mục trên ổ cứng
+  try {
+    if (fs.existsSync(boxDir)) {
+      fs.rmSync(boxDir, { recursive: true, force: true });
+    }
+  } catch (err) {
+    logger.warn(`[ProfileManager] Lỗi xoá thư mục ${boxDir}: ${err.message}`);
+  }
+
+  // 3. Đánh dấu đã migrate để không tự copy lại các box mặc định cũ
+  try {
+    fs.writeFileSync(path.join(CHROME_BOXES_DIR, '.migrated_done'), new Date().toISOString(), 'utf8');
+  } catch (_) {}
+
+  // 4. Cập nhật state
+  const deletedBoxes = Array.isArray(state.deletedBoxes) ? state.deletedBoxes : [];
+  if (!deletedSetContains(deletedBoxes, cleanId)) {
+    deletedBoxes.push(cleanId);
+  }
+  state.deletedBoxes = deletedBoxes;
+  state.profiles = state.profiles.filter(p => p.profileDir !== cleanId);
+  saveState(state);
+
+  // 5. Nếu vừa xoá đúng nick đang mở làm Video, tự động bật nick Video tiếp theo
+  if (wasActiveVideo) {
+    const nextVideo = state.profiles.find(p => p.role === 'video' && p.credits >= 10)
+                   || state.profiles.find(p => p.role === 'video');
+    if (nextVideo) {
+      try {
+        return await switchVideoChromeWindow(nextVideo);
+      } catch (err) {
+        logger.warn(`[ProfileManager] Không thể tự bật nick Video kế tiếp sau khi xoá: ${err.message}`);
+      }
+    }
+  }
+
+  return scanChromeProfiles();
+}
+
+function deletedSetContains(arr, id) {
+  return Array.isArray(arr) && arr.includes(id);
+}
+
 module.exports = {
+  getActiveDisplay,
   scanChromeProfiles,
   getProfilesState,
   updateProfileConfig,
   createChromeBox,
+  deleteChromeBox,
   switchVideoChromeWindow,
   ensureActiveVideoProfileHasCredits,
   deductVideoCreditAndRotateIfNeeded,
