@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { logger } = require('./utils');
 const { uploadToR2 } = require('./s3_uploader');
-const { ensureActiveVideoProfileHasCredits, deductVideoCreditAndRotateIfNeeded } = require('./chrome_profile_manager');
+const { getActiveDisplay, ensureActiveVideoProfileHasCredits, deductVideoCreditAndRotateIfNeeded } = require('./chrome_profile_manager');
 
 // Đường dẫn script Python
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/autoclick_video_runner.py');
@@ -76,7 +76,7 @@ async function generateVideoViaAutoClick(task) {
   }
 
   return new Promise((resolve, reject) => {
-    const activeDisp = chromeProfileManager.getActiveDisplay ? chromeProfileManager.getActiveDisplay() : ':10';
+    const activeDisp = typeof getActiveDisplay === 'function' ? getActiveDisplay() : ':10';
     logger.info(`[AutoClick Video] Spawning on DISPLAY=${activeDisp}: python3 ${args.join(' ')}`);
     const env = {
       ...process.env,
