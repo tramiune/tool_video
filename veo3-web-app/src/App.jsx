@@ -420,7 +420,7 @@ function App() {
   const [audioSelectedVoice, setAudioSelectedVoice] = useState(null);
   const [audioText, setAudioText] = useState('');
   const [audioJobs, setAudioJobs] = useState([]);
-  const [audioUsage, setAudioUsage] = useState({ used: 0, limit: 1, tier: 'free' });
+  const [audioUsage, setAudioUsage] = useState({ used: 0, limit: 0, tier: 'free' });
   const [audioGenerating, setAudioGenerating] = useState(false);
   const [audioLoadingVoices, setAudioLoadingVoices] = useState(false);
   const [audioMsg, setAudioMsg] = useState(null);
@@ -712,7 +712,7 @@ function App() {
         if (userProfileLoaded && !currentUserHasDramaAccess) {
           window.location.hash = '';
           setIsDramaView(false);
-          alert("Tài khoản của bạn cần nâng cấp lên Gói Đặc Quyền (499k) hoặc được cấp quyền để truy cập Công cụ AI này!");
+          alert("Tài khoản của bạn cần nâng cấp lên Gói Đặc Quyền (899k) hoặc được cấp quyền để truy cập Công cụ AI này!");
           return;
         }
         const targetChannel = isHashSumo ? 'sumo' : 'drama';
@@ -1083,8 +1083,8 @@ function App() {
       basic_69k: 69000,
       
       premium_169k: 199000,
-      pro_299k: 299000,
-      master_499k: 499000
+      pro_299k: 499000,
+      master_499k: 899000
     };
 
     const currentPrice = prices[userTier] || 0;
@@ -1708,6 +1708,8 @@ function App() {
                               <option value="hocvien">Học viên (30 ảnh/ngày)</option>
                               <option value="basic_69k">Basic (69k)</option>
                               <option value="premium_169k">Premium (199k)</option>
+                              <option value="pro_299k">VIP / Pro (499k)</option>
+                              <option value="master_499k">Đặc Quyền (899k)</option>
                             </select>
                           </td>
                           <td data-label="Hạn dùng" style={{ padding: '10px 8px' }}>
@@ -1834,8 +1836,8 @@ function App() {
                   <option value="30000">30,000đ (Bù Basic)</option>
                   <option value="69000">69,000đ (Gói Cơ bản)</option>
                   <option value="199000">199,000đ (Gói Premium)</option>
-                  <option value="299000">299,000đ (Gói VIP/Pro)</option>
-                  <option value="499000">499,000đ (Gói Đặc Quyền)</option>
+                  <option value="499000">499,000đ (Gói VIP/Pro)</option>
+                  <option value="899000">899,000đ (Gói Đặc Quyền)</option>
                   <option value="230000">230,000đ (Bù Basic &rarr; Premium)</option>
                 </select>
               </div>
@@ -4488,7 +4490,7 @@ function App() {
     // Limits check
     const usage = getTodayUsage();
     const limits = {
-      free: { videos: 1, images: 1 },
+      free: { videos: 0, images: 0 },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 5, images: 10 },
       
@@ -4500,11 +4502,8 @@ function App() {
     const activeUserTier = isExpired ? 'free' : userTier;
     const currentLimits = limits[activeUserTier] || limits.free;
     if (activeUserTier === 'free') {
-      const allTimeImages = getAllTimeImageCount();
-      if (allTimeImages >= 1) {
-        setLimitError({ type: 'image', limit: 1, current: allTimeImages, isAllTime: true });
-        return;
-      }
+      setLimitError({ type: 'image', limit: 0, current: 0, isAllTime: true });
+      return;
     } else if (usage.images >= currentLimits.images) {
       setLimitError({ type: 'image', limit: currentLimits.images, current: usage.images });
       return;
@@ -6141,7 +6140,7 @@ function App() {
 
     // Limit checking
     const limits = {
-      free: { videos: 1, images: 1 },
+      free: { videos: 0, images: 0 },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 5, images: 10 },
       
@@ -6163,29 +6162,20 @@ function App() {
     const currentLimits = limits[activeUserTier] || limits.free;
     const usage = getTodayUsage();
 
+    if (activeUserTier === 'free') {
+      setLimitError({ type: activeTab === 'video' ? 'video' : 'image', limit: 0, current: 0, isAllTime: true });
+      return;
+    }
+
     if (activeTab === 'video') {
-      // Free tier: chỉ được làm 1 video duy nhất toàn đời (all-time)
-      if (activeUserTier === 'free') {
-        const allTimeVideos = getAllTimeVideoCount();
-        if (allTimeVideos >= 1) {
-          setLimitError({ type: 'video', limit: 1, current: allTimeVideos, isAllTime: true });
-          return;
-        }
-      } else if (usage.videos >= currentLimits.videos) {
+      if (usage.videos >= currentLimits.videos) {
         setLimitError({ type: 'video', limit: currentLimits.videos, current: usage.videos });
         return;
       }
     }
 
     if (activeTab === 'image') {
-      // Free tier: chỉ được làm 1 ảnh duy nhất toàn đời (all-time)
-      if (activeUserTier === 'free') {
-        const allTimeImages = getAllTimeImageCount();
-        if (allTimeImages >= 1) {
-          setLimitError({ type: 'image', limit: 1, current: allTimeImages, isAllTime: true });
-          return;
-        }
-      } else if (usage.images >= currentLimits.images) {
+      if (usage.images >= currentLimits.images) {
         setLimitError({ type: 'image', limit: currentLimits.images, current: usage.images });
         return;
       }
@@ -6655,9 +6645,9 @@ function App() {
                     <span style={{ color: 'var(--text-secondary)' }}>Gói cước:</span>
                     <span style={{
                       fontWeight: '700',
-                      color: userTier === 'premium_169k' ? '#fbbf24' : userTier === 'basic_69k' ? '#3b82f6' : userTier === 'hocvien' ? '#10b981' : 'var(--text-secondary)'
+                      color: userTier === 'master_499k' ? '#ef4444' : userTier === 'pro_299k' ? '#a855f7' : userTier === 'premium_169k' ? '#fbbf24' : userTier === 'basic_69k' ? '#3b82f6' : userTier === 'hocvien' ? '#10b981' : 'var(--text-secondary)'
                     }}>
-                      {userTier === 'premium_169k' ? '👑 Premium' : userTier === 'basic_69k' ? '⚡ Basic' : userTier === 'hocvien' ? '🎓 Học viên' : 'Free'}
+                      {userTier === 'master_499k' ? '🔥 Đặc Quyền' : userTier === 'pro_299k' ? '💎 VIP (Pro)' : userTier === 'premium_169k' ? '👑 Premium' : userTier === 'basic_69k' ? '⚡ Basic' : userTier === 'hocvien' ? '🎓 Học viên' : 'Chưa nâng cấp'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -6672,7 +6662,7 @@ function App() {
                       </span>
                     ) : (
                       <span style={{ color: userTier === 'free' ? 'var(--text-secondary)' : '#10b981', fontWeight: '600' }}>
-                        {userTier === 'free' ? 'Dùng thử' : 'Vĩnh viễn'}
+                        {userTier === 'free' ? 'Cần nâng cấp' : 'Vĩnh viễn'}
                       </span>
                     )}
                   </div>
@@ -7483,10 +7473,12 @@ function App() {
                 <AlertCircle size={24} color="#ef4444" />
               </div>
             </div>
-            <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>Hết lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'}</h3>
+            <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>
+              {limitError.isAllTime ? 'Yêu cầu nâng cấp gói cước' : `Hết lượt tạo ${limitError.type === 'video' ? 'Video' : 'Ảnh'}`}
+            </h3>
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
               {limitError.isAllTime
-                ? <>Gói <strong>Free</strong> chỉ được dùng thử <strong>{limitError.limit} {limitError.type === 'video' ? 'video' : 'ảnh'} duy nhất</strong>. Bạn đã dùng hết lượt thử miễn phí rồi. Nâng cấp gói để tiếp tục tạo {limitError.type === 'video' ? 'video' : 'ảnh'} nhé! 🎬</>
+                ? <>Tính năng tạo {limitError.type === 'video' ? 'video' : 'ảnh'} không hỗ trợ tài khoản <strong>Free</strong>. Vui lòng nâng cấp gói để trải nghiệm tính năng này nhé! 🎬</>
                 : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'Đặc Quyền' : userTier}</strong>.</>
               }
             </p>
@@ -7687,7 +7679,7 @@ function App() {
                 {userTier === 'pro_299k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#a855f7', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
                 <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói VIP (Pro)</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#a855f7' }}>299k</span>
+                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#a855f7' }}>499k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
@@ -7732,7 +7724,7 @@ function App() {
                 {userTier === 'master_499k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#ef4444', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
                 <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Đặc Quyền</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#ef4444' }}>499k</span>
+                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#ef4444' }}>899k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
