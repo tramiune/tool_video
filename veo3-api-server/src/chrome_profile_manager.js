@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const net = require('net');
+const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const { execSync, spawn } = require('child_process');
 const { logger } = require('./utils');
@@ -8,6 +11,320 @@ const { logger } = require('./utils');
 const CHROME_MAIN_DIR = path.join(os.homedir(), '.config', 'google-chrome');
 const CHROME_BOXES_DIR = path.join(os.homedir(), 'chrome_boxes');
 const PROFILES_STATE_FILE = path.join(__dirname, '../chrome_profiles.json');
+
+// ── Cấu hình Proxy Xoay cho Chrome Box Làm Video (ThueCloud DCVN1) ──────────
+const LOCAL_PROXY_HOST = '127.0.0.1';
+const LOCAL_PROXY_PORT = 18888;
+const VIDEO_PROXY_CONFIG = {
+  enabled: true,
+  resourceId: 'TC15489_51980',
+  host: 'vnr-tc15489-51980.thuecloud.com',
+  fallbackHost: '117.1.88.26',
+  port: 20377,
+  socks5Port: 24550,
+  username: 'hmzeb_trade',
+  password: 'g1VymWN6',
+  apiKey: 'j2h015f3tcw540f3da8dfb067591228859b147e3da77735dc9f58d1',
+  rotateUrl: 'https://api.thuecloud.com/getip/9250d6c3c62c09f45e8ffcc2989af94c7b1bfafb',
+  cooldownSeconds: 240
+};
+
+let _localProxyServer = null;
+let _proxyRuntimeState = {
+  currentIp: '',
+  lastRotatedAt: 0,
+  nextRotateAllowedAt: 0,
+  lastRotatedForBox: ''
+};
+
+function getProxyAuthHeader() {
+  const token = Buffer.from(`${VIDEO_PROXY_CONFIG.username}:${VIDEO_PROXY_CONFIG.password}`).toString('base64');
+  return `Basic ${token}`;
+}
+
+/**
+ * Khởi chạy Local Proxy Forwarder tại 127.0.0.1:18888
+ * Tự động gắn Proxy-Authorization Basic Auth vào mọi kết nối HTTPS CONNECT & HTTP
+ * để Chrome Video không bao giờ hiện popup hỏi tài khoản/mật khẩu proxy.
+ */
+function ensureLocalProxyServer() {
+  if (_localProxyServer) {
+    return Promise.resolve(_localProxyServer);
+  }
+
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const authHeader = getProxyAuthHeader();
+      const options = {
+        host: VIDEO_PROXY_CONFIG.host,
+        port: VIDEO_PROXY_CONFIG.port,
+        method: req.method,
+        path: req.url,
+        headers: {
+          ...req.headers,
+          'Proxy-Authorization': authHeader
+        }
+      };
+
+      const proxyReq = http.request(options, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.on('error', () => {
+        try {
+          res.writeHead(502, { 'Content-Type': 'text/plain' });
+          res.end('Proxy Bad Gateway');
+        } catch (_) {}
+      });
+
+      req.pipe(proxyReq);
+    });
+
+    server.on('connect', (req, clientSocket, head) => {
+      clientSocket.on('error', () => {});
+      clientSocket.setNoDelay(true);
+
+      const authHeader = getProxyAuthHeader();
+      const targetUrl = req.url;
+
+      const connectUpstream = (hostToUse, isRetry = false) => {
+        const proxySocket = net.connect(VIDEO_PROXY_CONFIG.port, hostToUse);
+        let settled = false;
+
+        proxySocket.setNoDelay(true);
+        proxySocket.setTimeout(15000);
+
+        const cleanupOnFail = () => {
+          if (settled) return;
+          settled = true;
+          try { proxySocket.destroy(); } catch (_) {}
+          if (!isRetry) {
+            setTimeout(() => connectUpstream(VIDEO_PROXY_CONFIG.fallbackHost, true), 600);
+          } else {
+            try {
+              clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+              clientSocket.destroy();
+            } catch (_) {}
+          }
+        };
+
+        proxySocket.on('error', cleanupOnFail);
+        proxySocket.on('timeout', cleanupOnFail);
+
+        proxySocket.on('connect', () => {
+          const connectMsg =
+            `CONNECT ${targetUrl} HTTP/1.1\r\n` +
+            `Host: ${targetUrl}\r\n` +
+            `Proxy-Authorization: ${authHeader}\r\n` +
+            `Proxy-Connection: keep-alive\r\n\r\n`;
+          proxySocket.write(connectMsg);
+        });
+
+        let headerBuf = Buffer.alloc(0);
+        const onData = (chunk) => {
+          headerBuf = Buffer.concat([headerBuf, chunk]);
+          const endIdx = headerBuf.indexOf('\r\n\r\n');
+          if (endIdx === -1) return;
+
+          proxySocket.removeListener('data', onData);
+          proxySocket.setTimeout(0);
+          settled = true;
+
+          const statusLine = (headerBuf.slice(0, endIdx).toString('latin1').split('\r\n')[0] || '');
+          if (statusLine.includes(' 200 ')) {
+            try {
+              clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+              const leftover = headerBuf.slice(endIdx + 4);
+              if (leftover.length > 0) clientSocket.write(leftover);
+              if (head && head.length > 0) proxySocket.write(head);
+              proxySocket.pipe(clientSocket);
+              clientSocket.pipe(proxySocket);
+            } catch (_) {
+              try { proxySocket.destroy(); } catch (_) {}
+              try { clientSocket.destroy(); } catch (_) {}
+            }
+          } else {
+            try { proxySocket.destroy(); } catch (_) {}
+            if (!isRetry) {
+              setTimeout(() => connectUpstream(VIDEO_PROXY_CONFIG.fallbackHost, true), 800);
+            } else {
+              try {
+                clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+                clientSocket.destroy();
+              } catch (_) {}
+            }
+          }
+        };
+
+        proxySocket.on('data', onData);
+      };
+
+      connectUpstream(VIDEO_PROXY_CONFIG.host, false);
+    });
+
+    server.on('error', (err) => {
+      logger.warn(`[VideoProxy] Local proxy forwarder error (${LOCAL_PROXY_HOST}:${LOCAL_PROXY_PORT}): ${err.message}`);
+      resolve(null);
+    });
+
+    server.listen(LOCAL_PROXY_PORT, LOCAL_PROXY_HOST, () => {
+      _localProxyServer = server;
+      logger.success(`[VideoProxy] 🌐 Local Proxy Forwarder đã sẵn sàng tại http://${LOCAL_PROXY_HOST}:${LOCAL_PROXY_PORT} → ${VIDEO_PROXY_CONFIG.host}:${VIDEO_PROXY_CONFIG.port}`);
+      resolve(server);
+    });
+  });
+}
+
+function fetchJsonUrl(urlStr, timeoutMs = 12000) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(urlStr, { timeout: timeoutMs }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c.toString('utf8'); });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (_) {
+          resolve({ raw: body });
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error('Request timeout'));
+    });
+  });
+}
+
+function checkCurrentProxyIp() {
+  try {
+    const authUrl = `http://${VIDEO_PROXY_CONFIG.username}:${VIDEO_PROXY_CONFIG.password}@${VIDEO_PROXY_CONFIG.host}:${VIDEO_PROXY_CONFIG.port}`;
+    const out = execSync(`curl -s --max-time 6 -x "${authUrl}" "https://api.ipify.org?format=json"`, {
+      encoding: 'utf8',
+      timeout: 7500
+    }).trim();
+    const parsed = JSON.parse(out);
+    if (parsed && parsed.ip) {
+      _proxyRuntimeState.currentIp = parsed.ip;
+      return parsed.ip;
+    }
+  } catch (_) {}
+  return '';
+}
+
+async function waitForProxyReadyAndGetIp(maxAttempts = 6) {
+  for (let i = 1; i <= maxAttempts; i++) {
+    const ip = checkCurrentProxyIp();
+    if (ip) return ip;
+    await new Promise(r => setTimeout(r, 1800));
+  }
+  return _proxyRuntimeState.currentIp || '';
+}
+
+/**
+ * Xoay IP Proxy trước khi mở Chrome Box làm Video.
+ * Tự động tuân thủ thời gian chờ 240s của ThueCloud để tuyệt đối không bị khoá tài khoản vì spam.
+ */
+async function rotateVideoProxyIp(boxId = '') {
+  if (!VIDEO_PROXY_CONFIG.enabled) {
+    return { rotated: false, ip: '' };
+  }
+
+  await ensureLocalProxyServer();
+
+  // Đọc trạng thái cooldown đã lưu từ chrome_profiles.json nếu vừa khởi động lại server
+  try {
+    const saved = loadSavedState();
+    if (saved && saved.proxyState) {
+      if (saved.proxyState.nextRotateAllowedAt > _proxyRuntimeState.nextRotateAllowedAt) {
+        _proxyRuntimeState.nextRotateAllowedAt = saved.proxyState.nextRotateAllowedAt;
+      }
+      if (saved.proxyState.lastRotatedAt > _proxyRuntimeState.lastRotatedAt) {
+        _proxyRuntimeState.lastRotatedAt = saved.proxyState.lastRotatedAt;
+      }
+      if (!_proxyRuntimeState.currentIp && saved.proxyState.currentIp) {
+        _proxyRuntimeState.currentIp = saved.proxyState.currentIp;
+      }
+    }
+  } catch (_) {}
+
+  const now = Date.now();
+  if (now < _proxyRuntimeState.nextRotateAllowedAt) {
+    const remainSec = Math.ceil((_proxyRuntimeState.nextRotateAllowedAt - now) / 1000);
+    if (remainSec <= 12) {
+      logger.info(`[VideoProxy] ⏳ Chờ nốt ${remainSec}s cooldown để xoay IP mới cho "${boxId}"...`);
+      await new Promise(r => setTimeout(r, (remainSec + 1) * 1000));
+    } else {
+      const currentIp = await waitForProxyReadyAndGetIp(2);
+      logger.info(`[VideoProxy] 🛡️ Proxy vừa xoay IP gần đây (còn ${remainSec}s cooldown chống spam ThueCloud). Dùng IP Proxy hiện tại: ${currentIp || 'đang kết nối'} cho "${boxId}"`);
+      return { rotated: false, ip: currentIp, cooldownRemainingSec: remainSec };
+    }
+  }
+
+  try {
+    logger.info(`[VideoProxy] 🔄 Đang gọi API xoay IP Proxy ThueCloud cho Chrome Box "${boxId}"...`);
+    const res = await fetchJsonUrl(VIDEO_PROXY_CONFIG.rotateUrl, 12000);
+
+    if (res && res.proxy) {
+      if (res.proxy.portHttp) VIDEO_PROXY_CONFIG.port = Number(res.proxy.portHttp) || VIDEO_PROXY_CONFIG.port;
+      if (res.proxy.username) VIDEO_PROXY_CONFIG.username = res.proxy.username;
+      if (res.proxy.password) VIDEO_PROXY_CONFIG.password = res.proxy.password;
+      if (res.proxy.hostIp) VIDEO_PROXY_CONFIG.fallbackHost = res.proxy.hostIp;
+    }
+
+    if (res && (res.status === 'success' || res.statusCode === 200)) {
+      const cooldownSec = Number(res?.proxy?.timeChangeAllowInSeconds) || VIDEO_PROXY_CONFIG.cooldownSeconds || 240;
+      _proxyRuntimeState.lastRotatedAt = Date.now();
+      _proxyRuntimeState.nextRotateAllowedAt = Date.now() + (cooldownSec + 3) * 1000;
+      _proxyRuntimeState.lastRotatedForBox = boxId;
+
+      // Sau khi gọi đổi IP thành công, đợi mạng PPPoE của proxy kết nối lại (khoảng 3-6s) rồi lấy IP mới
+      await new Promise(r => setTimeout(r, 3000));
+      const newIp = await waitForProxyReadyAndGetIp(6);
+      logger.success(`[VideoProxy] ✅ Đổi IP Proxy thành công cho "${boxId}" → IP mới: ${newIp || 'OK'} (${res.message || ''})`);
+      return { rotated: true, ip: newIp, cooldownRemainingSec: cooldownSec };
+    }
+
+    // Nếu nhà mạng báo cần đợi thêm X giây
+    const errMsg = String(res?.error || res?.message || '');
+    const waitMatch = errMsg.match(/đợi\s+(\d+)\s+giây/i);
+    if (waitMatch) {
+      const waitSec = parseInt(waitMatch[1], 10);
+      _proxyRuntimeState.nextRotateAllowedAt = Date.now() + (waitSec + 3) * 1000;
+
+      if (waitSec <= 12) {
+        logger.info(`[VideoProxy] ⏳ Đợi nốt ${waitSec}s theo yêu cầu ThueCloud rồi xoay IP...`);
+        await new Promise(r => setTimeout(r, (waitSec + 2) * 1000));
+        const retryRes = await fetchJsonUrl(VIDEO_PROXY_CONFIG.rotateUrl, 12000);
+        if (retryRes && (retryRes.status === 'success' || retryRes.statusCode === 200)) {
+          const cd = Number(retryRes?.proxy?.timeChangeAllowInSeconds) || 240;
+          _proxyRuntimeState.lastRotatedAt = Date.now();
+          _proxyRuntimeState.nextRotateAllowedAt = Date.now() + (cd + 3) * 1000;
+          _proxyRuntimeState.lastRotatedForBox = boxId;
+          await new Promise(r => setTimeout(r, 3000));
+          const newIp = await waitForProxyReadyAndGetIp(6);
+          logger.success(`[VideoProxy] ✅ Đổi IP Proxy thành công cho "${boxId}" → IP mới: ${newIp || 'OK'}`);
+          return { rotated: true, ip: newIp, cooldownRemainingSec: cd };
+        }
+      }
+
+      const currentIp = await waitForProxyReadyAndGetIp(2);
+      logger.info(`[VideoProxy] ⏳ Proxy đang trong thời gian chờ ${waitSec}s của ThueCloud, dùng IP Proxy hiện tại: ${currentIp || 'OK'}`);
+      return { rotated: false, ip: currentIp, cooldownRemainingSec: waitSec };
+    }
+
+    const fallbackIp = await waitForProxyReadyAndGetIp(2);
+    logger.warn(`[VideoProxy] ⚠️ Phản hồi xoay IP: ${JSON.stringify(res).slice(0, 200)} | IP hiện tại: ${fallbackIp}`);
+    return { rotated: false, ip: fallbackIp };
+  } catch (err) {
+    const fallbackIp = await waitForProxyReadyAndGetIp(2);
+    logger.warn(`[VideoProxy] ⚠️ Không thể gọi API xoay IP (${err.message}), dùng IP Proxy hiện tại: ${fallbackIp}`);
+    return { rotated: false, ip: fallbackIp };
+  }
+}
+
+// Khởi động sẵn Local Proxy Forwarder ngay khi nạp module
+ensureLocalProxyServer().catch(() => {});
 
 // Tọa độ chuẩn của cửa sổ Video (y hệt veo3_002 hiện tại)
 const VIDEO_WINDOW_PLACEMENT = {
@@ -349,6 +666,7 @@ function scanChromeProfiles() {
       role: prev?.role || seed.role || 'video',
       credits: typeof prev?.credits === 'number' ? prev.credits : (typeof seed.credits === 'number' ? seed.credits : 500),
       flowUrl,
+      proxyIp: prev?.proxyIp || '',
       isActiveVideo: Boolean(prev ? prev.isActiveVideo : seed.isActiveVideo),
       lastUsedAt: prev?.lastUsedAt || null
     });
@@ -399,6 +717,14 @@ function scanChromeProfiles() {
   const newState = {
     profiles,
     deletedBoxes: Array.isArray(existingState?.deletedBoxes) ? existingState.deletedBoxes : [],
+    proxyState: {
+      ...(existingState?.proxyState || {}),
+      ..._proxyRuntimeState,
+      currentIp: _proxyRuntimeState.currentIp || existingState?.proxyState?.currentIp || '',
+      resourceId: VIDEO_PROXY_CONFIG.resourceId,
+      host: VIDEO_PROXY_CONFIG.host,
+      port: VIDEO_PROXY_CONFIG.port
+    },
     updatedAt: new Date().toISOString()
   };
   saveState(newState);
@@ -527,7 +853,10 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
   }
   enforceBoxWindowPlacement(boxDir);
 
-  // 4. Khởi chạy Chrome với --user-data-dir độc lập hoàn toàn + cờ tối ưu chống lag trên VPS
+  // 3.5. Xoay IP Proxy ThueCloud & đảm bảo Local Proxy Forwarder (127.0.0.1:18888) đang chạy
+  const proxyResult = await rotateVideoProxyIp(boxId);
+
+  // 4. Khởi chạy Chrome với --user-data-dir độc lập + Proxy Xoay + cờ tối ưu chống lag trên VPS
   const args = [
     `--user-data-dir=${boxDir}`,
     '--no-first-run',
@@ -538,9 +867,15 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
     '--disable-gpu-vsync',
     '--disable-features=Translate,OptimizationHints,MediaRouter',
     `--window-position=${VIDEO_WIN_X},${VIDEO_WIN_Y}`,
-    `--window-size=${VIDEO_WIN_W},${VIDEO_WIN_H}`,
-    flowUrl
+    `--window-size=${VIDEO_WIN_W},${VIDEO_WIN_H}`
   ];
+
+  if (VIDEO_PROXY_CONFIG.enabled) {
+    args.push(`--proxy-server=http://${LOCAL_PROXY_HOST}:${LOCAL_PROXY_PORT}`);
+    args.push('--proxy-bypass-list=127.0.0.1;localhost;<local>');
+  }
+
+  args.push(flowUrl);
 
   const child = spawn('/opt/google/chrome/chrome', args, {
     env: { ...process.env, DISPLAY: disp },
@@ -563,7 +898,7 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
       execSync(`DISPLAY=${disp} wmctrl -ir ${newWin.winId} -b remove,maximized_vert,maximized_horz`, { timeout: 3000 });
       execSync(`DISPLAY=${disp} wmctrl -ir ${newWin.winId} -e 0,${VIDEO_WIN_X},${VIDEO_WIN_Y},${VIDEO_WIN_W},${VIDEO_WIN_H}`, { timeout: 3000 });
       execSync(`DISPLAY=${disp} xdotool windowActivate ${newWin.winId}`, { timeout: 3000 });
-      logger.success(`[ProfileManager] ✅ Đã mở Chrome Box "${targetProfile.name}" (${newWin.winId}) tại đúng vị trí 002 (${VIDEO_WIN_X}, ${VIDEO_WIN_Y}, ${VIDEO_WIN_W}x${VIDEO_WIN_H})`);
+      logger.success(`[ProfileManager] ✅ Đã mở Chrome Box "${targetProfile.name}" (${newWin.winId}) qua Proxy IP ${proxyResult.ip || _proxyRuntimeState.currentIp || 'Active'} tại đúng vị trí 002 (${VIDEO_WIN_X}, ${VIDEO_WIN_Y}, ${VIDEO_WIN_W}x${VIDEO_WIN_H})`);
     } catch (e) {
       logger.warn(`[ProfileManager] Không thể resize cửa sổ mới ${newWin.winId}: ${e.message}`);
     }
@@ -571,14 +906,25 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
     logger.warn(`[ProfileManager] ⚠️ Không tìm thấy winId mới sau khi bật Chrome Box ${boxId}`);
   }
 
-  // 6. Cập nhật trạng thái isActiveVideo
+  // 6. Cập nhật trạng thái isActiveVideo & IP Proxy hiện tại
   const state = getProfilesState();
   for (const p of state.profiles) {
     p.isActiveVideo = (p.profileDir === boxId);
     if (p.isActiveVideo) {
       p.lastUsedAt = new Date().toISOString();
+      if (proxyResult.ip || _proxyRuntimeState.currentIp) {
+        p.proxyIp = proxyResult.ip || _proxyRuntimeState.currentIp;
+      }
     }
   }
+  state.proxyState = {
+    ...(state.proxyState || {}),
+    ..._proxyRuntimeState,
+    currentIp: proxyResult.ip || _proxyRuntimeState.currentIp || state?.proxyState?.currentIp || '',
+    resourceId: VIDEO_PROXY_CONFIG.resourceId,
+    host: VIDEO_PROXY_CONFIG.host,
+    port: VIDEO_PROXY_CONFIG.port
+  };
   saveState(state);
 
   // 7. Chờ giao diện Flow & nút "CHẠY THỦ CÔNG" thật sự hiển thị READY trên màn hình (tối đa 35s)
