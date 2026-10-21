@@ -681,6 +681,13 @@ async function ensureActiveVideoProfileHasCredits() {
   let active = state.profiles.find(p => p.role === 'video' && p.isActiveVideo);
 
   if (active && active.credits >= 10) {
+    // Kiểm tra xem cửa sổ Video bên trái (x < 250) có đang thực sự mở trên màn hình không
+    const openWins = getOpenChromeWindows();
+    const hasVideoWinOpen = openWins.some(w => w.x < 250);
+    if (!hasVideoWinOpen) {
+      logger.info(`[ProfileManager] 🖥️ Không thấy cửa sổ Chrome Video bên trái trên màn hình, tự động bật lại "${active.name}"...`);
+      await switchVideoChromeWindow(active);
+    }
     return active;
   }
 
