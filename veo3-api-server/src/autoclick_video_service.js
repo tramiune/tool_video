@@ -8,6 +8,17 @@ const { getActiveDisplay, ensureActiveVideoProfileHasCredits, deductVideoCreditA
 // Đường dẫn script Python
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/autoclick_video_runner.py');
 
+// Hàng đợi tuần tự (FIFO) để đảm bảo tại 1 thời điểm chỉ có duy nhất 1 task Video thao tác trên cửa sổ Flow Bulk Tool
+// Tránh tuyệt đối việc 2 task (Meo3 & Aqua) đè prompt lên nhau hoặc lấy nhầm file .mp4 của nhau
+let _videoQueueChain = Promise.resolve();
+let _waitingVideoCount = 0;
+let _sttCounter = Math.floor(1000 + Math.random() * 8000);
+
+function nextUniqueVideoStt() {
+  _sttCounter = ((_sttCounter - 1000 + 1) % 8999) + 1000;
+  return String(_sttCounter);
+}
+
 /**
  * Đảm bảo URL ảnh đầu vào có CORS header (nếu khác bucket meo3 R2 thì tải về và đẩy sang R2 của meo3)
  */
@@ -45,9 +56,39 @@ async function ensureCorsImageUrl(imgUrl, taskId, tag = 'start') {
  */
 async function generateVideoViaAutoClick(task) {
   const taskId = task.id || `vid_${Date.now()}`;
+  _waitingVideoCount++;
+  const queuePos = _waitingVideoCount;
+  if (queuePos > 1) {
+    logger.info(`[AutoClick Video] ⏳ Task ${taskId} đang xếp hàng chờ tới lượt (vị trí #${queuePos} trong hàng đợi Video)...`);
+  }
+
+  const runPromise = _videoQueueChain.then(
+    () => _executeSingleVideoViaAutoClick(task, taskId),
+    () => _executeSingleVideoViaAutoClick(task, taskId)
+  );
+
+  // Giữ chuỗi queue liên tục bất kể task trước thành công hay lỗi
+  _videoQueueChain = runPromise.then(
+    () => { _waitingVideoCount = Math.max(0, _waitingVideoCount - 1); },
+    () => { _waitingVideoCount = Math.max(0, _waitingVideoCount - 1); }
+  );
+
+  return runPromise;
+}
+
+async function _executeSingleVideoViaAutoClick(task, taskId) {
   const prompt = String(task.prompt || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
   const ratio = task.aspectRatio || '9:16';
-  const stt = task.seq || (prompt.match(/^(\d{1,4})[\.\-_:\s]/)?.[1] || Date.now().toString().slice(-4));
+  const stt = String(task.seq || nextUniqueVideoStt());
+
+  // Xoá trước file trùng tên <stt>.mp4 cũ trong ~/Downloads nếu còn sót lại
+  try {
+    const dlDir = path.join(require('os').homedir(), 'Downloads');
+    const oldFile = path.join(dlDir, `${stt}.mp4`);
+    if (fs.existsSync(oldFile)) {
+      fs.unlinkSync(oldFile);
+    }
+  } catch (_) {}
 
   // Đảm bảo Chrome Profile đang mở làm Video còn đủ >= 10 credit (nếu hết tự động bật profile tiếp theo)
   try {

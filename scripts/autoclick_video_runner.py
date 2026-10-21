@@ -64,29 +64,30 @@ def get_downloads_files(downloads_dir):
 
 def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
     """Đảm bảo format đúng dạng: ratio|stt. prompt|image_urls... (luôn trên 1 dòng duy nhất)"""
+    import re
     prompt = " ".join(str(raw_prompt or "").splitlines()).strip()
-    
-    # Kiểm tra xem prompt đã có STT chưa
-    clean_stt = str(stt).strip()
-    if clean_stt and not prompt.startswith(clean_stt):
-        # Tránh lặp stt nếu prompt bắt đầu bằng số
-        if not prompt.split('.')[0].strip().isdigit():
-            prompt = f"{clean_stt}. {prompt}"
-            
-    # Kiểm tra xem prompt đã có ratio chưa
+
+    # Nếu đã có prefix ratio| ở đầu thì tách ra để chuẩn hóa STT
     if "|" in prompt:
         parts = prompt.split("|")
-        # Giữ nguyên nếu đã có format pipe
-        full_line = prompt
-    else:
-        full_line = f"{ratio}|{prompt}"
-        
+        if parts[0].strip() in ("9:16", "16:9", "1:1"):
+            ratio = parts[0].strip()
+            prompt = "|".join(parts[1:]).strip()
+
+    # Luôn gắn chính xác mã STT của task vào đầu prompt để file tải về luôn mang tên <stt>.mp4
+    clean_stt = str(stt).strip()
+    if clean_stt:
+        prompt = re.sub(r"^\d{1,6}[\.\-_:\s]+", "", prompt).strip()
+        prompt = f"{clean_stt}. {prompt}"
+
+    full_line = f"{ratio}|{prompt}"
+
     # Thêm ảnh nếu có
     if start_img and start_img not in full_line:
         full_line += f"|{start_img}"
         if end_img and end_img not in full_line:
             full_line += f"|{end_img}"
-            
+
     return full_line
 
 def load_preset_coords():
@@ -269,19 +270,25 @@ def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", t
                     
             # Tìm file phù hợp nhất
             matched_file = None
-            
-            # Ưu tiên 1: Tên file chứa đúng STT (ví dụ 001.mp4, 001 (1).mp4)
+
+            # BẮT BUỘC khớp đúng mã STT của task (ví dụ 6458.mp4, 6458 (1).mp4) để tuyệt đối không lấy nhầm video của task khác (Meo3 vs Aqua)
             if clean_stt:
                 for c in candidates:
-                    if clean_stt in c["name"]:
+                    base_name = os.path.splitext(c["name"])[0].strip()
+                    if (
+                        base_name == clean_stt
+                        or base_name.startswith(f"{clean_stt} ")
+                        or base_name.startswith(f"{clean_stt}(")
+                        or base_name.startswith(f"{clean_stt}_")
+                        or base_name.startswith(f"{clean_stt}-")
+                        or base_name.startswith(f"{clean_stt}.")
+                    ):
                         matched_file = c
                         break
-                        
-            # Ưu tiên 2: File mới hoàn toàn không có trong danh sách ban đầu
-            if not matched_file:
+            else:
+                # Chỉ dùng fallback file mới khi task không truyền mã STT
                 new_files = [c for c in candidates if c["name"] not in initial_files]
                 if new_files:
-                    # Lấy file mới nhất
                     new_files.sort(key=lambda x: x["mtime"], reverse=True)
                     matched_file = new_files[0]
                     
