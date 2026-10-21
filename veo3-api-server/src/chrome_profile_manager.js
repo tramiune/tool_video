@@ -12,11 +12,11 @@ const CHROME_MAIN_DIR = path.join(os.homedir(), '.config', 'google-chrome');
 const CHROME_BOXES_DIR = path.join(os.homedir(), 'chrome_boxes');
 const PROFILES_STATE_FILE = path.join(__dirname, '../chrome_profiles.json');
 
-// ── Cấu hình Proxy Xoay cho Chrome Box Làm Video (ThueCloud DCVN1) ──────────
+// ── Cấu hình Proxy Xoay cho Chrome Box Làm Video (Đã tắt theo yêu cầu) ──────────
 const LOCAL_PROXY_HOST = '127.0.0.1';
 const LOCAL_PROXY_PORT = 18888;
 const VIDEO_PROXY_CONFIG = {
-  enabled: true,
+  enabled: false,
   resourceId: 'TC15489_51980',
   host: 'vnr-tc15489-51980.thuecloud.com',
   fallbackHost: '117.1.88.26',
@@ -323,8 +323,10 @@ async function rotateVideoProxyIp(boxId = '') {
   }
 }
 
-// Khởi động sẵn Local Proxy Forwarder ngay khi nạp module
-ensureLocalProxyServer().catch(() => {});
+// Chỉ khởi động Local Proxy Forwarder nếu bật VIDEO_PROXY_CONFIG.enabled
+if (VIDEO_PROXY_CONFIG.enabled) {
+  ensureLocalProxyServer().catch(() => {});
+}
 
 // Tọa độ chuẩn của cửa sổ Video (y hệt veo3_002 hiện tại)
 const VIDEO_WINDOW_PLACEMENT = {
@@ -877,12 +879,13 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
 
   args.push(flowUrl);
 
-  const child = spawn('/opt/google/chrome/chrome', args, {
+  // Dùng double-fork qua sh -c "... &" + setsid để Chrome được gán PPID = 1 (systemd)
+  // Nhờ đó khi pm2 restart veo3-server, PM2 treekill sẽ KHÔNG BAO GIỜ tắt cửa sổ Chrome Video!
+  const escapedArgs = args.map(a => `'${String(a).replace(/'/g, `'\\''`)}'`).join(' ');
+  execSync(`DISPLAY=${disp} sh -c "setsid /opt/google/chrome/chrome ${escapedArgs} >/dev/null 2>&1 < /dev/null &"`, {
     env: { ...process.env, DISPLAY: disp },
-    detached: true,
-    stdio: 'ignore'
+    timeout: 5000
   });
-  child.unref();
 
   // 5. Chờ cửa sổ mới xuất hiện và đặt chính xác vào (-4, 27, 508x906)
   let newWin = null;
@@ -1199,6 +1202,11 @@ async function deleteChromeBox({ profileDir }) {
 function deletedSetContains(arr, id) {
   return Array.isArray(arr) && arr.includes(id);
 }
+
+// Tự động kiểm tra ngay khi khởi động server: nếu cửa sổ Chrome Video bên trái đang đóng thì tự bật lại ngay
+setTimeout(() => {
+  ensureActiveVideoProfileHasCredits().catch(() => {});
+}, 2000);
 
 module.exports = {
   getActiveDisplay,
