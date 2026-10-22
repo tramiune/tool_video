@@ -6149,7 +6149,7 @@ function App() {
       master_499k: { videos: Infinity, images: Infinity }
     };
 
-    const isExpired = userTier !== 'free' && userExpiryDate && userExpiryDate < Date.now();
+    const isExpired = !currentUserIsAdmin && userTier !== 'free' && userExpiryDate && userExpiryDate < Date.now();
 
     // Hết hạn gói → mở bảng giá ngay, không cho bỏ qua
     if (isExpired) {
@@ -6158,11 +6158,11 @@ function App() {
       return;
     }
 
-    const activeUserTier = isExpired ? 'free' : userTier;
+    const activeUserTier = currentUserIsAdmin ? 'master_499k' : (isExpired ? 'free' : userTier);
     const currentLimits = limits[activeUserTier] || limits.free;
     const usage = getTodayUsage();
 
-    if (activeUserTier === 'free') {
+    if (activeUserTier === 'free' && !currentUserIsAdmin) {
       setLimitError({ type: activeTab === 'video' ? 'video' : 'image', limit: 0, current: 0, isAllTime: true });
       return;
     }

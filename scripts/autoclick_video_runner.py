@@ -217,7 +217,7 @@ def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y
             
             # 4. Chụp ảnh màn hình để lưu bằng chứng submit
             try:
-                os.system("scrot /tmp/last_video_submit.png 2>/dev/null")
+                os.system("scrot -o /tmp/last_video_submit.png 2>/dev/null")
             except Exception:
                 pass
             
