@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { logger } = require('./utils');
@@ -20,23 +20,74 @@ function nextUniqueVideoStt() {
 }
 
 /**
- * Đảm bảo URL ảnh đầu vào có CORS header (nếu khác bucket meo3 R2 thì tải về và đẩy sang R2 của meo3)
+ * Chuẩn hóa buffer ảnh về đúng kích thước tỉ lệ mục tiêu (1280x720 cho 16:9 hoặc 720x1280 cho 9:16)
+ * giúp Google Flow Video SDK không bị lỗi khi người dùng truyền ảnh dọc cho video ngang (hoặc ngược lại).
  */
-async function ensureCorsImageUrl(imgUrl, taskId, tag = 'start') {
+function normalizeImageBufferForRatio(inputBuf, targetRatio = '9:16') {
+  const isLandscape = String(targetRatio).includes('16:9') || String(targetRatio).toLowerCase().includes('wide');
+  const tw = isLandscape ? 1280 : 720;
+  const th = isLandscape ? 720 : 1280;
+  const pyCode = `
+import sys, io
+from PIL import Image, ImageOps, ImageFilter, ImageEnhance
+
+raw = sys.stdin.buffer.read()
+im = Image.open(io.BytesIO(raw))
+im = ImageOps.exif_transpose(im).convert("RGB")
+w, h = im.size
+tw, th = ${tw}, ${th}
+src_ratio = w / float(h)
+dst_ratio = tw / float(th)
+
+# Nếu cùng chiều (ngang/dọc) và tỉ lệ chênh lệch <= 22% thì crop/fit nhẹ vào khung chuẩn
+if abs(src_ratio - dst_ratio) / dst_ratio <= 0.22:
+    out = ImageOps.fit(im, (tw, th), method=Image.Resampling.LANCZOS)
+else:
+    # Khác chiều (VD: ảnh dọc 9:16 tạo video ngang 16:9 hoặc ảnh vuông 1:1):
+    # Tạo nền blur phủ kín khung chuẩn + đặt ảnh gốc sắc nét ở chính giữa để không mất chi tiết nhân vật
+    bg = ImageOps.fit(im, (tw, th), method=Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(28))
+    bg = ImageEnhance.Brightness(bg).enhance(0.85)
+    fg = ImageOps.contain(im, (tw, th), method=Image.Resampling.LANCZOS)
+    bg.paste(fg, ((tw - fg.width) // 2, (th - fg.height) // 2))
+    out = bg
+
+buf = io.BytesIO()
+out.save(buf, format="JPEG", quality=92)
+sys.stdout.buffer.write(buf.getvalue())
+`;
+  const res = spawnSync('python3', ['-c', pyCode], {
+    input: inputBuf,
+    maxBuffer: 25 * 1024 * 1024,
+    timeout: 15000
+  });
+  if (res.status === 0 && res.stdout && res.stdout.length > 0) {
+    return res.stdout;
+  }
+  const errText = res.stderr ? res.stderr.toString().trim() : `exit ${res.status}`;
+  logger.warn(`[AutoClick Video] Không thể chuẩn hóa kích thước ảnh qua PIL (${errText}), dùng buffer gốc.`);
+  return null;
+}
+
+/**
+ * Đảm bảo URL ảnh đầu vào có CORS header và đúng tỉ lệ khung hình (16:9 / 9:16) tương ứng với video
+ */
+async function ensureCorsImageUrl(imgUrl, taskId, tag = 'start', targetRatio = '9:16') {
   if (!imgUrl || typeof imgUrl !== 'string') return imgUrl;
-  const r2PublicBase = process.env.R2_PUBLIC_URL || 'https://pub-6d69dc0dc47542f4ad0de11f34132785.r2.dev';
-  if (imgUrl.startsWith(r2PublicBase)) return imgUrl;
   if (!imgUrl.startsWith('http')) return imgUrl;
   try {
-    const res = await fetch(imgUrl);
+    const res = await fetch(imgUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
     if (!res.ok) return imgUrl;
     const ab = await res.arrayBuffer();
-    const buf = Buffer.from(ab);
-    const ct = res.headers.get('content-type') || 'image/jpeg';
-    const ext = ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : 'jpg';
+    const rawBuf = Buffer.from(ab);
+    const normalizedBuf = normalizeImageBufferForRatio(rawBuf, targetRatio);
+    const finalBuf = normalizedBuf || rawBuf;
+    const ct = normalizedBuf ? 'image/jpeg' : (res.headers.get('content-type') || 'image/jpeg');
+    const ext = normalizedBuf ? 'jpg' : (ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : 'jpg');
     const key = `meo3/inputs/${taskId}_${tag}_${Date.now()}.${ext}`;
-    const newUrl = await uploadToR2(buf, key, ct);
-    logger.info(`[AutoClick Video] Đã đồng bộ ảnh ${tag} sang R2 CORS: ${newUrl}`);
+    const newUrl = await uploadToR2(finalBuf, key, ct);
+    logger.info(`[AutoClick Video] Đã chuẩn hóa & đồng bộ ảnh ${tag} (${targetRatio}) sang R2 CORS: ${newUrl}`);
     return newUrl;
   } catch (e) {
     logger.warn(`[AutoClick Video] Không thể chuyển ảnh ${tag} sang R2 CORS (${e.message}), giữ nguyên URL cũ.`);
@@ -77,8 +128,13 @@ async function generateVideoViaAutoClick(task) {
 }
 
 async function _executeSingleVideoViaAutoClick(task, taskId) {
-  const prompt = String(task.prompt || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-  const ratio = task.aspectRatio || '9:16';
+  const prompt = String(task.prompt || '')
+    .replace(/\|+/g, ' - ')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const rawRatio = String(task.aspectRatio || '9:16').trim();
+  const ratio = (rawRatio.includes('16:9') || rawRatio.toLowerCase().includes('wide')) ? '16:9' : '9:16';
   const stt = String(task.seq || nextUniqueVideoStt());
 
   // Xoá trước file trùng tên <stt>.mp4 cũ trong ~/Downloads nếu còn sót lại
@@ -97,7 +153,7 @@ async function _executeSingleVideoViaAutoClick(task, taskId) {
     logger.warn(`[AutoClick Video] Không thể kiểm tra/chuyển profile trước khi chạy: ${profErr.message}`);
   }
 
-  logger.info(`[AutoClick Video] 🚀 Khởi chạy task ${taskId} (STT: ${stt}): "${prompt.slice(0, 40)}..."`);
+  logger.info(`[AutoClick Video] 🚀 Khởi chạy task ${taskId} (STT: ${stt}, Ratio: ${ratio}): "${prompt.slice(0, 40)}..."`);
 
   const args = [
     SCRIPT_PATH,
@@ -108,11 +164,11 @@ async function _executeSingleVideoViaAutoClick(task, taskId) {
   ];
 
   if (task.startImage) {
-    const safeStart = await ensureCorsImageUrl(task.startImage, taskId, 'start');
+    const safeStart = await ensureCorsImageUrl(task.startImage, taskId, 'start', ratio);
     args.push('--start-image', safeStart);
   }
   if (task.endImage) {
-    const safeEnd = await ensureCorsImageUrl(task.endImage, taskId, 'end');
+    const safeEnd = await ensureCorsImageUrl(task.endImage, taskId, 'end', ratio);
     args.push('--end-image', safeEnd);
   }
 

@@ -74,11 +74,23 @@ def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
             ratio = parts[0].strip()
             prompt = "|".join(parts[1:]).strip()
 
+    # Loại bỏ ký tự '|' trong nội dung prompt để không làm lệch split('|') của Flow Tool
+    prompt = prompt.replace("|", " - ")
+    prompt = re.sub(r"\s+", " ", prompt).strip()
+
+    # Video SDK chỉ hỗ trợ 16:9 và 9:16
+    ratio_str = str(ratio or "9:16").strip()
+    ratio = "16:9" if ("16:9" in ratio_str or "wide" in ratio_str.lower()) else "9:16"
+
     # Luôn gắn chính xác mã STT của task vào đầu prompt để file tải về luôn mang tên <stt>.mp4
     clean_stt = str(stt).strip()
     if clean_stt:
         prompt = re.sub(r"^\d{1,6}[\.\-_:\s]+", "", prompt).strip()
+        if not prompt or prompt in (".", "-", "_"):
+            prompt = "Cinematic movement, high quality"
         prompt = f"{clean_stt}. {prompt}"
+    elif not prompt:
+        prompt = "Cinematic movement, high quality"
 
     full_line = f"{ratio}|{prompt}"
 
