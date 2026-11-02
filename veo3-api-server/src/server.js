@@ -2991,7 +2991,7 @@ const AUDIO_LIMITS = {
   hocvien: 5,
   basic_69k: 5,
 
-  premium_169k: 30,
+  premium_169k: Infinity,
   pro_299k: Infinity,
   master_499k: Infinity
 };
