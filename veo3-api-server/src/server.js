@@ -3288,6 +3288,13 @@ function startFirestoreListener() {
           const taskId = doc.id;
           
           if (!tasks[taskId] || tasks[taskId].status === 'failed') {
+            const rawPromptLen = String(taskData.prompt || '').trim().length;
+            if (rawPromptLen > 3500) {
+              const errMsg = `Câu lệnh (Prompt) của bạn quá dài (${rawPromptLen}/3500 ký tự). Vui lòng rút gọn xuống dưới 3500 ký tự để tạo video không bị lỗi!`;
+              logger.warn(`[Task] Rejected overly long prompt (${rawPromptLen} chars) for task ${taskId}`);
+              doc.ref.update({ status: 'failed', error: errMsg }).catch(() => {});
+              return;
+            }
             // Register local task
             tasks[taskId] = {
               id: taskId,

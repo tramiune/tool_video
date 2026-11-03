@@ -6127,6 +6127,11 @@ function App() {
     if (e) e.preventDefault();
     if (!prompt.trim() || !user || isSubmitting) return;
 
+    if (prompt.trim().length > 3500) {
+      alert(`Câu lệnh (Prompt) của bạn quá dài (${prompt.trim().length}/3500 ký tự). Vui lòng rút gọn xuống dưới 3500 ký tự để tạo video không bị lỗi nhé!`);
+      return;
+    }
+
     // Giới hạn số lượng task đang chờ của 1 user (tối đa 10)
     const userActiveTasks = tasks.filter(t => 
       t.userId === user.uid && 
