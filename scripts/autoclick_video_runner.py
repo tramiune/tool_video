@@ -256,11 +256,37 @@ def is_flow_currently_running(im=None):
         return False
 
 
+def is_chrome_overlay_menu_open(im=None):
+    """
+    Phát hiện xem popup danh sách Downloads màu trắng của Chrome (x=119..474, y=137..574)
+    hoặc menu tràn '>>' (Forward / Downloads / Profile ở x=195..310, y=120..265) có đang mở đè lên cửa sổ trái hay không.
+    """
+    try:
+        if im is None:
+            im = capture_screen_rgb(max_age_sec=0.0)
+        if im is None:
+            return False
+        white_count = 0
+        for py in range(145, 575, 15):
+            for px in range(140, 450, 20):
+                if 0 <= px < im.width and 0 <= py < im.height:
+                    r, g, b = im.getpixel((px, py))
+                    if r > 235 and g > 235 and b > 235:
+                        white_count += 1
+                        if white_count >= 18:
+                            return True
+        return False
+    except Exception:
+        return False
+
+
 def has_pasted_text_in_textarea(im=None):
     """
-    Kiểm tra xem trong ô textarea NHẬP THỦ CÔNG (x=55..440, y=505..680) đã có chữ trắng sáng (r>170, g>170, b>170) hay chưa.
+    Kiểm tra xem trong ô textarea NHẬP THỦ CÔNG (x=50..440, y=505..680) đã có chữ trắng sáng (r>170, g>170, b>170)
+    trên nền tối (#0e1420) hay chưa.
+    - Nếu popup Downloads màu trắng của Chrome đang mở đè lên vùng này -> trả về False ngay (tránh nhận nhầm nền trắng popup là chữ).
     - Khi ô trống (chỉ có chữ placeholder 'tỷ lệ|mô tả|link_ảnh...' màu xám tối RGB ~ 66,76,111): số điểm sáng = 0.
-    - Khi đã dán prompt: chữ trắng #f1f5f9 tạo ra hàng trăm điểm sáng > 170.
+    - Khi đã dán prompt: chữ trắng #f1f5f9 tạo ra hàng trăm điểm sáng > 170 trên nền tối.
     - Ngay khi bấm 'CHẠY THỦ CÔNG' thành công: Bulk AI Studio Pro lập tức xoá trắng ô textarea về 0 điểm sáng.
     """
     try:
@@ -268,16 +294,19 @@ def has_pasted_text_in_textarea(im=None):
             im = capture_screen_rgb(max_age_sec=0.0)
         if im is None:
             return False
+        if is_chrome_overlay_menu_open(im):
+            return False
         bright_pixels = 0
+        dark_bg_pixels = 0
         for py in range(505, 680, 2):
-            for px in range(55, 440, 2):
+            for px in range(50, 440, 2):
                 if 0 <= px < im.width and 0 <= py < im.height:
                     r, g, b = im.getpixel((px, py))
-                    if r > 170 and g > 170 and b > 170:
+                    if r < 40 and g < 45 and b < 65:
+                        dark_bg_pixels += 1
+                    elif r > 170 and g > 170 and b > 170:
                         bright_pixels += 1
-                        if bright_pixels >= 12:
-                            return True
-        return False
+        return bright_pixels >= 12 and dark_bg_pixels >= 500
     except Exception:
         return False
 
@@ -311,7 +340,7 @@ def check_and_dismiss_chrome_popups(im=None, holds_lock=False):
                         pyautogui.moveTo(350, 224, duration=0.2)
                         pyautogui.click(350, 224)
                         time.sleep(0.6)
-                        pyautogui.click(248, 546)
+                        pyautogui.click(75, 650)
                         time.sleep(0.2)
                     finally:
                         fcntl.flock(lf, fcntl.LOCK_UN)
@@ -322,9 +351,17 @@ def check_and_dismiss_chrome_popups(im=None, holds_lock=False):
                 pyautogui.moveTo(350, 224, duration=0.2)
                 pyautogui.click(350, 224)
                 time.sleep(0.6)
-                pyautogui.click(248, 546)
+                pyautogui.click(75, 650)
                 time.sleep(0.2)
                 return True
+        # Nếu popup danh sách Downloads màu trắng (x=119..474, y=137..574) đang mở đè lên ô input (248, 546)
+        # -> Click vào góc dưới-trái của ô textarea (75, 650) (nằm ngoài hoàn toàn popup Downloads) để đóng popup an toàn!
+        if holds_lock and is_chrome_overlay_menu_open(im):
+            sys.stderr.write("[AutoClick] 🛡️ Phát hiện popup danh sách Downloads đang che ô input! Click (75, 650) để đóng popup...\n")
+            pyautogui.moveTo(75, 650, duration=0.12)
+            pyautogui.click(75, 650)
+            time.sleep(0.35)
+            return True
     except Exception:
         pass
     return False
@@ -416,10 +453,13 @@ def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y
                 set_clipboard(full_prompt)
                 activate_chrome()
 
-                # 1. Click 2 lần cách nhau 0.45s vào giữa ô textarea (248, 546):
-                #    - Click 1: kích hoạt focus vào iframe Bulk AI Studio Pro
-                #    - Click 2 (sau 0.45s, ngoài ngưỡng double-click 400ms của X11): đặt con trỏ trực tiếp vào ô <textarea>
-                pyautogui.moveTo(x_input, y_input, duration=0.15)
+                # 1. Click vào (75, 650) (góc dưới-trái bên trong ô textarea, nằm NGOÀI hoàn toàn vùng popup Downloads x=119..474, y=137..574):
+                #    - Nếu popup Downloads của Chrome đang mở đè lên (248, 546), cú click (75, 650) sẽ đóng popup ngay mà KHÔNG bấm nhầm vào file video trong danh sách!
+                #    - Nếu không có popup, (75, 650) vẫn nằm gọn trong ô <textarea> nên sẽ kích hoạt focus cho iframe.
+                pyautogui.moveTo(75, 650, duration=0.12)
+                pyautogui.click(75, 650)
+                time.sleep(0.35)
+                pyautogui.moveTo(x_input, y_input, duration=0.12)
                 pyautogui.click(x_input, y_input)
                 time.sleep(0.45)
                 pyautogui.click(x_input, y_input)
@@ -442,8 +482,10 @@ def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y
                 if sys.platform != "darwin":
                     im_paste = capture_screen_rgb(max_age_sec=0.0)
                     if im_paste is not None and not has_pasted_text_in_textarea(im_paste):
-                        sys.stderr.write(f"[AutoClick] ⚠️ Lần {attempt}: Chưa thấy chữ trong ô input sau Ctrl+V, focus lại ({x_input}, {y_input}) và dán lại...\n")
+                        sys.stderr.write(f"[AutoClick] ⚠️ Lần {attempt}: Chưa thấy chữ trong ô input sau Ctrl+V, đóng popup (75, 650), focus lại ({x_input}, {y_input}) và dán lại...\n")
                         check_and_dismiss_chrome_popups(im_paste, holds_lock=True)
+                        pyautogui.click(75, 650)
+                        time.sleep(0.35)
                         pyautogui.click(x_input, y_input)
                         time.sleep(0.45)
                         pyautogui.click(x_input, y_input)
