@@ -8,15 +8,39 @@ const { getActiveDisplay, ensureActiveVideoProfileHasCredits, deductVideoCreditA
 // Đường dẫn script Python
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/autoclick_video_runner.py');
 
-// Hàng đợi tuần tự (FIFO) để đảm bảo tại 1 thời điểm chỉ có duy nhất 1 task Video thao tác trên cửa sổ Flow Bulk Tool
-// Tránh tuyệt đối việc 2 task (Meo3 & Aqua) đè prompt lên nhau hoặc lấy nhầm file .mp4 của nhau
-let _videoQueueChain = Promise.resolve();
-let _waitingVideoCount = 0;
+// Hỗ trợ chạy song song tối đa 10 tác vụ Video cùng lúc (khớp với SONG SONG: 10 tác vụ trên Bulk AI Studio Pro).
+// Bước click chuột & dán prompt (~4s) được khóa tuần tự qua /tmp/autoclick_video.lock trong autoclick_video_runner.py,
+// còn bước chờ render & quét file <stt>.mp4 chạy song song hoàn toàn để 20 user submit liên tục không bị nghẽn!
+const MAX_PARALLEL_VIDEO_TASKS = parseInt(process.env.VIDEO_CONCURRENCY || '10', 10);
+let _activeVideoCount = 0;
+const _videoWaitQueue = [];
+let _consecutiveFlowErrors = 0;
 let _sttCounter = Math.floor(1000 + Math.random() * 8000);
 
 function nextUniqueVideoStt() {
   _sttCounter = ((_sttCounter - 1000 + 1) % 8999) + 1000;
   return String(_sttCounter);
+}
+
+function _acquireVideoParallelSlot(taskId) {
+  if (_activeVideoCount < MAX_PARALLEL_VIDEO_TASKS) {
+    _activeVideoCount++;
+    return Promise.resolve();
+  }
+  const waitPos = _videoWaitQueue.length + 1;
+  logger.info(`[AutoClick Video] ⏳ Đang chạy đầy ${MAX_PARALLEL_VIDEO_TASKS} luồng song song, task ${taskId} chờ slot trống (hàng chờ #${waitPos})...`);
+  return new Promise((resolve) => {
+    _videoWaitQueue.push(resolve);
+  });
+}
+
+function _releaseVideoParallelSlot() {
+  if (_videoWaitQueue.length > 0) {
+    const nextResolve = _videoWaitQueue.shift();
+    nextResolve();
+  } else {
+    _activeVideoCount = Math.max(0, _activeVideoCount - 1);
+  }
 }
 
 /**
@@ -107,24 +131,12 @@ async function ensureCorsImageUrl(imgUrl, taskId, tag = 'start', targetRatio = '
  */
 async function generateVideoViaAutoClick(task) {
   const taskId = task.id || `vid_${Date.now()}`;
-  _waitingVideoCount++;
-  const queuePos = _waitingVideoCount;
-  if (queuePos > 1) {
-    logger.info(`[AutoClick Video] ⏳ Task ${taskId} đang xếp hàng chờ tới lượt (vị trí #${queuePos} trong hàng đợi Video)...`);
+  await _acquireVideoParallelSlot(taskId);
+  try {
+    return await _executeSingleVideoViaAutoClick(task, taskId);
+  } finally {
+    _releaseVideoParallelSlot();
   }
-
-  const runPromise = _videoQueueChain.then(
-    () => _executeSingleVideoViaAutoClick(task, taskId),
-    () => _executeSingleVideoViaAutoClick(task, taskId)
-  );
-
-  // Giữ chuỗi queue liên tục bất kể task trước thành công hay lỗi
-  _videoQueueChain = runPromise.then(
-    () => { _waitingVideoCount = Math.max(0, _waitingVideoCount - 1); },
-    () => { _waitingVideoCount = Math.max(0, _waitingVideoCount - 1); }
-  );
-
-  return runPromise;
 }
 
 async function _executeSingleVideoViaAutoClick(task, taskId) {
@@ -146,14 +158,14 @@ async function _executeSingleVideoViaAutoClick(task, taskId) {
     }
   } catch (_) {}
 
-  // Đảm bảo Chrome Profile đang mở làm Video còn đủ >= 10 credit (nếu hết tự động bật profile tiếp theo)
+  // Đảm bảo Chrome Profile đang mở làm Video còn đủ >= 10 credit (nếu hết tự động bật profile tiếp theo khi không có task khác đang chạy dở)
   try {
-    await ensureActiveVideoProfileHasCredits();
+    await ensureActiveVideoProfileHasCredits({ allowWindowSwitch: _activeVideoCount <= 1 });
   } catch (profErr) {
     logger.warn(`[AutoClick Video] Không thể kiểm tra/chuyển profile trước khi chạy: ${profErr.message}`);
   }
 
-  logger.info(`[AutoClick Video] 🚀 Khởi chạy task ${taskId} (STT: ${stt}, Ratio: ${ratio}): "${prompt.slice(0, 40)}..."`);
+  logger.info(`[AutoClick Video] 🚀 Khởi chạy task ${taskId} (STT: ${stt}, Ratio: ${ratio}, Active: ${_activeVideoCount}/${MAX_PARALLEL_VIDEO_TASKS}): "${prompt.slice(0, 40)}..."`);
 
   const args = [
     SCRIPT_PATH,
@@ -206,6 +218,19 @@ async function _executeSingleVideoViaAutoClick(task, taskId) {
           if (stderr) errMsg += `: ${stderr.slice(-300)}`;
         }
         logger.error(`[AutoClick Video] ❌ Task ${taskId} thất bại: ${errMsg}`);
+        if (code === 2 || errMsg.includes('FLOW_TASK_ERROR')) {
+          _consecutiveFlowErrors += 1;
+          logger.warn(`[AutoClick Video] ⚠️ Liên tiếp ${_consecutiveFlowErrors}/2 task bị báo LỖI trực tiếp trên Google Flow.`);
+          if (_consecutiveFlowErrors >= 2 && _activeVideoCount <= 1) {
+            _consecutiveFlowErrors = 0;
+            logger.info(`[AutoClick Video] 🔍 Kiểm tra lại số dư Flow thực tế trên Google One xem nick có thực sự hết credit không...`);
+            try {
+              await deductVideoCreditAndRotateIfNeeded(0, { allowWindowSwitch: _activeVideoCount <= 1 });
+            } catch (rotErr) {
+              logger.error(`[AutoClick Video] Lỗi kiểm tra/xoay Chrome Box: ${rotErr.message}`);
+            }
+          }
+        }
         return reject(new Error(errMsg));
       }
 
@@ -238,8 +263,9 @@ async function _executeSingleVideoViaAutoClick(task, taskId) {
         }
 
         // 4. Trừ 10 credit của Chrome Profile Video hiện tại & tự động đổi sang profile mới nếu hết credit
+        _consecutiveFlowErrors = 0;
         try {
-          await deductVideoCreditAndRotateIfNeeded(10);
+          await deductVideoCreditAndRotateIfNeeded(10, { allowWindowSwitch: _activeVideoCount <= 1 });
         } catch (rotErr) {
           logger.warn(`[AutoClick Video] Lỗi trừ credit / chuyển profile: ${rotErr.message}`);
         }

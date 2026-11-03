@@ -670,6 +670,7 @@ function scanChromeProfiles() {
       flowUrl,
       proxyIp: prev?.proxyIp || '',
       isActiveVideo: Boolean(prev ? prev.isActiveVideo : seed.isActiveVideo),
+      flowCreditsDetail: prev?.flowCreditsDetail || null,
       lastUsedAt: prev?.lastUsedAt || null
     });
   }
@@ -697,6 +698,7 @@ function scanChromeProfiles() {
       credits: typeof prevImg?.credits === 'number' ? prevImg.credits : 500,
       flowUrl: prevImg?.flowUrl || 'https://flow.google.com/project/4a4d000c-94ca-435d-911d-36d060f55222',
       isActiveVideo: false,
+      flowCreditsDetail: prevImg?.flowCreditsDetail || null,
       lastUsedAt: prevImg?.lastUsedAt || null
     });
   }
@@ -1019,18 +1021,187 @@ async function createChromeBox({ name, credits = 500, role = 'video', flowUrl = 
   return state;
 }
 
-async function ensureActiveVideoProfileHasCredits() {
-  // Nếu đang trong quá trình chuyển đổi Chrome Box thì bắt buộc chờ chuyển & load trang READY xong
+
+const GOOGLE_ONE_FLOW_CREDITS_URL = "https://one.google.com/ai/activity?utm_source=flow&utm_medium=web&utm_campaign=flow_ai_credits_page&pli=1&g1_landing_page=0";
+const CHROME_V10_KEY = crypto.pbkdf2Sync("peanuts", "saltysalt", 1, 16, "sha1");
+
+function decryptChromeLinuxCookie(encBuf) {
+  if (!encBuf || encBuf.length <= 3) return "";
+  const prefix = encBuf.subarray(0, 3).toString("utf8");
+  if (prefix !== "v10") return encBuf.toString("utf8");
+  const data = encBuf.subarray(3);
+  const iv = Buffer.alloc(16, 0x20);
+  const decipher = crypto.createDecipheriv("aes-128-cbc", CHROME_V10_KEY, iv);
+  decipher.setAutoPadding(true);
+  const dec = Buffer.concat([decipher.update(data), decipher.final()]);
+  if (dec.length > 32) {
+    return dec.subarray(32).toString("utf8");
+  }
+  return dec.toString("utf8");
+}
+
+const _creditFetchCache = new Map();
+const _creditFetchInFlight = new Map();
+
+async function fetchRealFlowCreditsForProfile(profile, { force = false } = {}) {
+  if (!profile) return { ok: false, reason: "missing_profile" };
+  const cacheKey = String(profile.profileDir || profile.name || "default");
+  const now = Date.now();
+  if (!force) {
+    const cached = _creditFetchCache.get(cacheKey);
+    if (cached && (now - cached.at) < 15000 && cached.detail?.ok) {
+      profile.credits = cached.credits;
+      profile.flowCreditsDetail = cached.detail;
+      return cached.detail;
+    }
+  }
+  if (_creditFetchInFlight.has(cacheKey)) {
+    const sharedDetail = await _creditFetchInFlight.get(cacheKey);
+    if (sharedDetail && typeof sharedDetail.total === "number") {
+      profile.credits = sharedDetail.total;
+      profile.flowCreditsDetail = sharedDetail;
+    }
+    return sharedDetail;
+  }
+
+  const p = _doFetchRealFlowCreditsForProfile(profile, cacheKey);
+  _creditFetchInFlight.set(cacheKey, p);
+  try {
+    return await p;
+  } finally {
+    _creditFetchInFlight.delete(cacheKey);
+  }
+}
+
+async function _doFetchRealFlowCreditsForProfile(profile, cacheKey) {
+  const cookiesPath = profile.isIsolatedBox
+    ? path.join(profile.userDataDir, "Default", "Cookies")
+    : path.join(profile.userDataDir, profile.profileDir, "Cookies");
+
+  if (!fs.existsSync(cookiesPath)) {
+    profile.flowCreditsDetail = { ok: false, reason: "Chưa có dữ liệu đăng nhập", checkedAt: new Date().toISOString() };
+    return profile.flowCreditsDetail;
+  }
+
+  const safeId = String(profile.profileDir || "prof").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const tmpBase = `/tmp/flow_cookies_${safeId}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.sqlite`;
+  let cookieHeader = "";
+
+  try {
+    fs.copyFileSync(cookiesPath, tmpBase);
+    if (fs.existsSync(cookiesPath + "-wal")) fs.copyFileSync(cookiesPath + "-wal", tmpBase + "-wal");
+    if (fs.existsSync(cookiesPath + "-shm")) fs.copyFileSync(cookiesPath + "-shm", tmpBase + "-shm");
+
+    const { DatabaseSync } = require("node:sqlite");
+    const db = new DatabaseSync(tmpBase, { open: true, readOnly: true });
+    const rows = db.prepare("SELECT name, value, encrypted_value FROM cookies WHERE host_key LIKE '%google.com'").all();
+    db.close();
+
+    const map = new Map();
+    for (const r of rows) {
+      let val = r.value || "";
+      if (!val && r.encrypted_value) {
+        try { val = decryptChromeLinuxCookie(Buffer.from(r.encrypted_value)); } catch (_) {}
+      }
+      if (val && !map.has(r.name)) map.set(r.name, val);
+    }
+
+    if (!map.has("SID") && !map.has("__Secure-1PSID")) {
+      profile.flowCreditsDetail = { ok: false, reason: "Chưa đăng nhập Google", checkedAt: new Date().toISOString() };
+      return profile.flowCreditsDetail;
+    }
+
+    cookieHeader = Array.from(map.entries()).map(([k, v]) => `${k}=${v}`).join("; ");
+  } catch (err) {
+    logger.warn(`[ProfileManager] Lỗi đọc Cookies của "${profile.name}": ${err.message}`);
+    profile.flowCreditsDetail = { ok: false, reason: err.message, checkedAt: new Date().toISOString() };
+    return profile.flowCreditsDetail;
+  } finally {
+    for (const ext of ["", "-wal", "-shm"]) {
+      try { if (fs.existsSync(tmpBase + ext)) fs.unlinkSync(tmpBase + ext); } catch (_) {}
+    }
+  }
+
+  try {
+    const res = await fetch(GOOGLE_ONE_FLOW_CREDITS_URL, {
+      headers: {
+        "Cookie": cookieHeader,
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7"
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000)
+    });
+
+    const html = await res.text();
+    const ds0Match = html.match(/AF_initDataCallback\(\{key:\s*'ds:0'[\s\S]*?data:(\[[\s\S]*?\]),\s*sideChannel:/);
+    if (!ds0Match) {
+      profile.flowCreditsDetail = { ok: false, reason: "Phiên Google hết hạn hoặc chưa kích hoạt Flow", checkedAt: new Date().toISOString() };
+      return profile.flowCreditsDetail;
+    }
+
+    const parsed = JSON.parse(ds0Match[1]);
+    const buckets = parsed?.[0] || [];
+    const monthlyRemaining = Number(buckets?.[0]?.[0]) || 0;
+    const monthlyLimit = Number(buckets?.[0]?.[3]) || 0;
+    const topupRemaining = Number(buckets?.[1]?.[0]) || 0;
+    const dailyRemaining = Number(buckets?.[2]?.[0]) || 0;
+    const dailyLimit = Number(buckets?.[2]?.[3]) || 0;
+    const total = monthlyRemaining + topupRemaining + dailyRemaining;
+
+    if (!profile.email) {
+      const emailMatch = html.match(/[a-zA-Z0-9._%+-]+@gmail\.com/);
+      if (emailMatch) profile.email = emailMatch[0];
+    }
+
+    profile.credits = total;
+    profile.flowCreditsDetail = {
+      ok: true,
+      total,
+      monthlyRemaining,
+      monthlyLimit,
+      dailyRemaining,
+      dailyLimit,
+      topupRemaining,
+      checkedAt: new Date().toISOString()
+    };
+    _creditFetchCache.set(cacheKey, {
+      at: Date.now(),
+      credits: total,
+      detail: profile.flowCreditsDetail
+    });
+    logger.info(`[ProfileManager] 🔄 Đồng bộ Flow thực tế "${profile.name}" (${profile.profileDir}): ${total} credit (Tháng: ${monthlyRemaining}/${monthlyLimit}, Ngày: ${dailyRemaining}/${dailyLimit})`);
+    return profile.flowCreditsDetail;
+  } catch (err) {
+    logger.warn(`[ProfileManager] Không thể lấy Flow credit từ Google One cho "${profile.name}": ${err.message}`);
+    profile.flowCreditsDetail = { ok: false, reason: err.message, checkedAt: new Date().toISOString() };
+    return profile.flowCreditsDetail;
+  }
+}
+
+async function syncAllProfilesFlowCredits(stateInput = null) {
+  const state = stateInput || getProfilesState();
+  await Promise.all((state.profiles || []).map(p => fetchRealFlowCreditsForProfile(p)));
+  saveState(state);
+  return state;
+}
+
+async function ensureActiveVideoProfileHasCredits({ allowWindowSwitch = true } = {}) {
   if (_switchingPromise) {
-    logger.info('[ProfileManager] ⏳ Đang chờ quá trình chuyển đổi Chrome Box hoàn tất...');
+    logger.info("[ProfileManager] ⏳ Đang chờ quá trình chuyển đổi Chrome Box hoàn tất...");
     try { await _switchingPromise; } catch (_) {}
   }
 
   const state = getProfilesState();
-  let active = state.profiles.find(p => p.role === 'video' && p.isActiveVideo);
+  let active = state.profiles.find(p => p.role === "video" && p.isActiveVideo);
+
+  if (active) {
+    await fetchRealFlowCreditsForProfile(active);
+    saveState(state);
+  }
 
   if (active && active.credits >= 10) {
-    // Kiểm tra xem cửa sổ Video bên trái (x < 250) có đang thực sự mở trên màn hình không
     const openWins = getOpenChromeWindows();
     const hasVideoWinOpen = openWins.some(w => w.x < 250);
     if (!hasVideoWinOpen) {
@@ -1040,38 +1211,58 @@ async function ensureActiveVideoProfileHasCredits() {
     return active;
   }
 
+  if (!allowWindowSwitch) {
+    return active || null;
+  }
+
+  // Nếu nick hiện tại < 10 credit trên Google One, đồng bộ toàn bộ nick Video để chọn nick thực sự còn >= 10 credit
+  await syncAllProfilesFlowCredits(state);
+
   const nextProfile = state.profiles.find(
-    p => p.role === 'video' && p.credits >= 10 && (!active || p.profileDir !== active.profileDir)
-  ) || state.profiles.find(p => p.role === 'video' && p.credits >= 10);
+    p => p.role === "video" && p.credits >= 10 && (!active || p.profileDir !== active.profileDir)
+  ) || state.profiles.find(p => p.role === "video" && p.credits >= 10);
 
   if (!nextProfile) {
-    logger.warn('[ProfileManager] ⚠️ Không còn Chrome Box làm Video nào có đủ >= 10 credit!');
+    logger.warn("[ProfileManager] ⚠️ Không còn Chrome Box làm Video nào có đủ >= 10 Flow credit thực tế!");
     return active || null;
   }
 
   if (!active || active.profileDir !== nextProfile.profileDir) {
+    logger.info(`[ProfileManager] 🔄 Tự động chuyển từ "${active ? active.name : "none"}" (${active ? active.credits : 0} credit) sang "${nextProfile.name}" (${nextProfile.credits} Flow credit thực tế)...`);
     await switchVideoChromeWindow(nextProfile);
   }
   return nextProfile;
 }
 
-async function deductVideoCreditAndRotateIfNeeded(cost = 10) {
+async function deductVideoCreditAndRotateIfNeeded(cost = 10, { allowWindowSwitch = true } = {}) {
   const state = getProfilesState();
-  let active = state.profiles.find(p => p.role === 'video' && p.isActiveVideo)
-            || state.profiles.find(p => p.role === 'video');
+  let active = state.profiles.find(p => p.role === "video" && p.isActiveVideo)
+            || state.profiles.find(p => p.role === "video");
 
   if (!active) return null;
 
-  const oldCredits = typeof active.credits === 'number' ? active.credits : 0;
-  active.credits = Math.max(0, oldCredits - cost);
+  const oldCredits = typeof active.credits === "number" ? active.credits : 0;
+  if (cost >= 99999) {
+    active.credits = 0;
+  } else {
+    active.credits = Math.max(0, oldCredits - cost);
+    const synced = await fetchRealFlowCreditsForProfile(active);
+    if (!synced || !synced.ok) {
+      active.credits = Math.max(0, oldCredits - cost);
+    }
+  }
   active.lastUsedAt = new Date().toISOString();
   saveState(state);
 
-  logger.info(`[ProfileManager] 💳 Đã trừ ${cost} credit của Chrome Box "${active.name}" (${active.profileDir}): ${oldCredits} → ${active.credits}`);
+  logger.info(`[ProfileManager] 💳 Cập nhật credit Chrome Box "${active.name}" (${active.profileDir}): ${oldCredits} → ${active.credits}`);
 
-  if (active.credits < 10) {
+  if (active.credits < 10 && allowWindowSwitch) {
+    await syncAllProfilesFlowCredits(state);
+    if (cost >= 99999) active.credits = 0;
+    saveState(state);
+
     const nextCandidate = state.profiles.find(
-      p => p.role === 'video' && p.profileDir !== active.profileDir && p.credits >= 10
+      p => p.role === "video" && p.profileDir !== active.profileDir && p.credits >= 10
     );
     if (nextCandidate) {
       logger.info(`[ProfileManager] 🔄 Chrome Box "${active.name}" đã hết credit (${active.credits} < 10). Tự động chuyển sang "${nextCandidate.name}" (${nextCandidate.credits} credits)...`);
@@ -1218,5 +1409,7 @@ module.exports = {
   switchVideoChromeWindow,
   ensureActiveVideoProfileHasCredits,
   deductVideoCreditAndRotateIfNeeded,
+  fetchRealFlowCreditsForProfile,
+  syncAllProfilesFlowCredits,
   getOpenChromeWindows
 };

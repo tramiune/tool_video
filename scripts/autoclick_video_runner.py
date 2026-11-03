@@ -2,14 +2,13 @@
 """
 autoclick_video_runner.py
 =========================
-Cơ chế tự động tạo Video qua Auto Click và giám sát tải về:
-1. Double Click tọa độ (439, 578) vào ô nhập prompt
-2. Paste prompt theo định dạng (ratio|stt. prompt|urls...)
-3. Click tọa độ (440, 729) nút "Chạy thủ công"
-4. Chờ 30s
-5. Poll thư mục Downloads tìm file .mp4 mới tải về
-6. Sau 5 phút (300s) không thấy file -> Báo FAIL
-7. Khi thấy file -> Trả về JSON {"status": "success", "file_path": "..."}
+Cơ chế tự động tạo Video qua Auto Click và giám sát tải về (hỗ trợ chạy song song 10 tác vụ):
+1. Khóa chuột (/tmp/autoclick_video.lock) chỉ trong ~4s thao tác click & paste
+2. Click (38, 546) + Click đúp (248, 546) lấy focus chuẩn vào <textarea> trong iframe Flow
+3. Paste prompt theo định dạng (ratio|stt. prompt|urls...) & kiểm tra pixel xác nhận chữ đã vào ô
+4. Click tọa độ (273, 733) nút "Chạy thủ công" & xác nhận ô input đã xoá trắng + • ĐANG CHẠY bật
+5. Nhả khóa chuột ngay để task tiếp theo submit liên tục (SONG SONG: 10 tác vụ)
+6. Poll thư mục Downloads tìm đúng file <stt>.mp4 mới tải về (tối đa 5 phút tính từ lúc task này bấm chạy)
 """
 
 import os
@@ -43,6 +42,56 @@ import pyperclip
 pyautogui.FAILSAFE = True
 
 LOCK_FILE = "/tmp/autoclick_video.lock"
+SHARED_SCREEN_PATH = "/tmp/autoclick_shared_screen.png"
+
+
+def capture_screen_rgb(max_age_sec=0.0, save_copy_path=None):
+    """
+    Chụp màn hình an toàn đa tiến trình (atomic os.replace qua file tạm gắn PID).
+    Nếu max_age_sec > 0 và ảnh chung mới chụp trong khoảng max_age_sec thì tái sử dụng ngay,
+    tránh 10 tiến trình gọi scrot dồn dập cùng lúc.
+    """
+    if sys.platform == "darwin":
+        return None
+    try:
+        from PIL import Image
+        if max_age_sec > 0 and os.path.exists(SHARED_SCREEN_PATH):
+            try:
+                age = time.time() - os.path.getmtime(SHARED_SCREEN_PATH)
+                if 0 <= age <= max_age_sec:
+                    return Image.open(SHARED_SCREEN_PATH).convert("RGB")
+            except Exception:
+                pass
+
+        tmp_path = f"/tmp/autoclick_cap_{os.getpid()}.png"
+        try:
+            subprocess.run(
+                ["scrot", "-o", tmp_path],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5
+            )
+            im = Image.open(tmp_path).convert("RGB")
+            try:
+                if save_copy_path:
+                    im.save(save_copy_path)
+            except Exception:
+                pass
+            try:
+                os.replace(tmp_path, SHARED_SCREEN_PATH)
+            except Exception:
+                pass
+            return im
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+    except Exception:
+        return None
+
 
 def get_downloads_files(downloads_dir):
     """Lấy danh sách các file .mp4 hiện có trong Downloads kèm mtime và size."""
@@ -61,6 +110,7 @@ def get_downloads_files(downloads_dir):
     except Exception as e:
         sys.stderr.write(f"[AutoClick] Lỗi đọc thư mục {downloads_dir}: {e}\n")
     return files_map
+
 
 def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
     """Đảm bảo format đúng dạng: ratio|stt. prompt|image_urls... (luôn trên 1 dòng duy nhất)"""
@@ -102,6 +152,7 @@ def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
 
     return full_line
 
+
 def load_preset_coords():
     """Tự động đọc tọa độ từ video_.json nếu có."""
     preset_paths = [
@@ -131,16 +182,43 @@ def load_preset_coords():
                 pass
     return None
 
+
 def activate_chrome():
-    """Kích hoạt cửa sổ Google Chrome nổi lên trước."""
+    """Kích hoạt cửa sổ Google Chrome Video bên trái (x < 350) nổi lên trước và tự động căn chỉnh lại đúng tọa độ chuẩn (-4, 27, 508x906) nếu bị kéo lệch."""
     try:
         if sys.platform == "darwin":
             subprocess.run(["osascript", "-e", 'tell application "Google Chrome" to activate'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
-            subprocess.run(["xdotool", "search", "--onlyvisible", "--class", "google-chrome", "windowactivate"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(0.5)
+            out = subprocess.check_output(["wmctrl", "-lG"], text=True, stderr=subprocess.DEVNULL)
+            left_wid = None
+            cur_geom = None
+            for line in out.splitlines():
+                if "google chrome" in line.lower():
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        try:
+                            x_pos, y_pos, w_sz, h_sz = int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
+                            if x_pos < 350:
+                                left_wid = parts[0]
+                                cur_geom = (x_pos, y_pos, w_sz, h_sz)
+                                break
+                        except ValueError:
+                            pass
+            if left_wid:
+                if cur_geom:
+                    cx, cy, cw, ch = cur_geom
+                    if abs(cx - (-4)) > 10 or abs(cy - 27) > 30 or abs(cw - 508) > 15 or abs(ch - 906) > 20:
+                        sys.stderr.write(f"[AutoClick] 🔧 Phát hiện cửa sổ Video bị lệch ({cx},{cy} {cw}x{ch}), tự động đưa về vị trí chuẩn (-4,27 508x906)...\n")
+                        subprocess.run(["wmctrl", "-ir", left_wid, "-b", "remove,maximized_vert,maximized_horz"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        subprocess.run(["wmctrl", "-ir", left_wid, "-e", "0,-4,27,508,906"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        time.sleep(0.3)
+                subprocess.run(["xdotool", "windowactivate", left_wid], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.run(["xdotool", "search", "--onlyvisible", "--class", "google-chrome", "windowactivate"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.25)
     except Exception:
         pass
+
 
 def set_clipboard(text):
     """Copy text vào clipboard mà không để xclip giữ pipe stdout/stderr của tiến trình cha."""
@@ -156,13 +234,134 @@ def set_clipboard(text):
     except Exception:
         pyperclip.copy(text)
 
-def wait_until_submit_button_ready(x_btn=273, y_btn=733, max_wait_sec=30):
-    """Đợi cho tới khi nút 'CHẠY THỦ CÔNG' (màu trắng sáng) đã hiện trên màn hình (tránh bấm lúc trang đang load)."""
-    if sys.platform == "darwin":
-        return True
+
+def is_flow_currently_running(im=None):
+    """Quét vùng góc trên bên phải khung CẤU HÌNH STUDIO (x=385..475, y=190..255) tìm huy hiệu '• ĐANG CHẠY' màu xanh tím."""
     try:
-        from PIL import Image
-    except ImportError:
+        if im is None:
+            im = capture_screen_rgb(max_age_sec=0.0)
+        if im is None:
+            return False
+        blue_hits = 0
+        for py in range(190, 256, 2):
+            for px in range(385, 476, 3):
+                if 0 <= px < im.width and 0 <= py < im.height:
+                    r, g, b = im.getpixel((px, py))
+                    if b >= 52 and (b - r) >= 24:
+                        blue_hits += 1
+                        if blue_hits >= 15:
+                            return True
+        return False
+    except Exception:
+        return False
+
+
+def has_pasted_text_in_textarea(im=None):
+    """
+    Kiểm tra xem trong ô textarea NHẬP THỦ CÔNG (x=55..440, y=505..680) đã có chữ trắng sáng (r>170, g>170, b>170) hay chưa.
+    - Khi ô trống (chỉ có chữ placeholder 'tỷ lệ|mô tả|link_ảnh...' màu xám tối RGB ~ 66,76,111): số điểm sáng = 0.
+    - Khi đã dán prompt: chữ trắng #f1f5f9 tạo ra hàng trăm điểm sáng > 170.
+    - Ngay khi bấm 'CHẠY THỦ CÔNG' thành công: Bulk AI Studio Pro lập tức xoá trắng ô textarea về 0 điểm sáng.
+    """
+    try:
+        if im is None:
+            im = capture_screen_rgb(max_age_sec=0.0)
+        if im is None:
+            return False
+        bright_pixels = 0
+        for py in range(505, 680, 2):
+            for px in range(55, 440, 2):
+                if 0 <= px < im.width and 0 <= py < im.height:
+                    r, g, b = im.getpixel((px, py))
+                    if r > 170 and g > 170 and b > 170:
+                        bright_pixels += 1
+                        if bright_pixels >= 12:
+                            return True
+        return False
+    except Exception:
+        return False
+
+
+def check_and_dismiss_chrome_popups(im=None, holds_lock=False):
+    """Tự động phát hiện và bấm Allow nếu Chrome hiện popup 'Download multiple files' ở cửa sổ trái."""
+    if sys.platform == "darwin":
+        return False
+    try:
+        if im is None:
+            im = capture_screen_rgb(max_age_sec=1.0)
+        if im is None:
+            return False
+        white_pts = [(150, 150), (180, 170), (210, 190)]
+        white_hits = sum(
+            1 for (x, y) in white_pts
+            if im.getpixel((x, y))[0] > 240 and im.getpixel((x, y))[1] > 240 and im.getpixel((x, y))[2] > 240
+        )
+        r_btn, g_btn, b_btn = im.getpixel((340, 224))
+        if white_hits >= 3 and r_btn > 235 and g_btn > 190 and b_btn > 190:
+            if not holds_lock:
+                # Chỉ thao tác chuột nếu lấy được lock (không tranh chuột với tiến trình đang submit)
+                with open(LOCK_FILE, "a+") as lf:
+                    try:
+                        fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        return False
+                    try:
+                        sys.stderr.write("[AutoClick] 🛡️ Phát hiện popup 'Download multiple files' của Chrome! Tự động bấm Allow (350, 224)...\n")
+                        activate_chrome()
+                        pyautogui.moveTo(350, 224, duration=0.2)
+                        pyautogui.click(350, 224)
+                        time.sleep(0.6)
+                        pyautogui.click(248, 546)
+                        time.sleep(0.2)
+                    finally:
+                        fcntl.flock(lf, fcntl.LOCK_UN)
+                return True
+            else:
+                sys.stderr.write("[AutoClick] 🛡️ Phát hiện popup 'Download multiple files' của Chrome! Tự động bấm Allow (350, 224)...\n")
+                activate_chrome()
+                pyautogui.moveTo(350, 224, duration=0.2)
+                pyautogui.click(350, 224)
+                time.sleep(0.6)
+                pyautogui.click(248, 546)
+                time.sleep(0.2)
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def maybe_reload_video_tab_if_bloated():
+    """Nếu tiến trình renderer của veo3_002 ngốn > 1.6GB RAM VÀ hiện tại đang IDLE (không có task nào ĐANG CHẠY), tự động Ctrl+R làm mới."""
+    if sys.platform == "darwin":
+        return
+    try:
+        out = subprocess.check_output(["ps", "-eo", "rss,args"], text=True, stderr=subprocess.DEVNULL)
+        max_rss_kb = 0
+        for line in out.splitlines():
+            if "chrome_boxes/" in line and "--type=renderer" in line:
+                parts = line.strip().split(None, 1)
+                if parts and parts[0].isdigit():
+                    max_rss_kb = max(max_rss_kb, int(parts[0]))
+        if max_rss_kb > 1600000:
+            if is_flow_currently_running():
+                return
+            sys.stderr.write(f"[AutoClick] 🧹 Tab Video đang chiếm {max_rss_kb // 1024}MB RAM (>1600MB) lúc IDLE, tự động Ctrl+R giải phóng bộ nhớ...\n")
+            activate_chrome()
+            pyautogui.click(120, 240)
+            time.sleep(0.2)
+            pyautogui.hotkey("ctrl", "r")
+            time.sleep(9.0)
+    except Exception:
+        pass
+
+
+def wait_until_submit_button_ready(x_btn=273, y_btn=733, max_wait_sec=25):
+    """
+    Đợi cho tới khi nút 'CHẠY THỦ CÔNG' (màu trắng sáng) hiển thị trên màn hình.
+    Hỗ trợ chạy SONG SONG 10 tác vụ: KHÔNG bắt chờ task trước tắt '• ĐANG CHẠY',
+    vì Bulk AI Studio Pro cho phép nạp liên tiếp các task vào VIDEO PIPELINE khi đang chạy.
+    """
+    if sys.platform == "darwin":
         return True
 
     start_t = time.time()
@@ -171,119 +370,180 @@ def wait_until_submit_button_ready(x_btn=273, y_btn=733, max_wait_sec=30):
 
     while (time.time() - start_t) < max_wait_sec:
         try:
-            subprocess.run(["scrot", "-o", "/tmp/autoclick_ready_check.png"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            im = Image.open("/tmp/autoclick_ready_check.png").convert("RGB")
-            bright = 0
-            for (px, py) in check_pts:
-                if 0 <= px < im.width and 0 <= py < im.height:
-                    r, g, b = im.getpixel((px, py))
-                    if r > 190 and g > 190 and b > 190:
-                        bright += 1
-            if bright >= 2:
-                if logged_wait:
-                    sys.stderr.write(f"[AutoClick] ✅ Giao diện Flow đã READY (sau {round(time.time() - start_t, 1)}s)!\n")
-                    time.sleep(1.0)
-                return True
+            im = capture_screen_rgb(max_age_sec=0.0)
+            if im is not None:
+                check_and_dismiss_chrome_popups(im, holds_lock=True)
+                bright = 0
+                for (px, py) in check_pts:
+                    if 0 <= px < im.width and 0 <= py < im.height:
+                        r, g, b = im.getpixel((px, py))
+                        if r > 190 and g > 190 and b > 190:
+                            bright += 1
+                if bright >= 2:
+                    if logged_wait:
+                        sys.stderr.write(f"[AutoClick] ✅ Nút CHẠY THỦ CÔNG đã READY (sau {round(time.time() - start_t, 1)}s)!\n")
+                        time.sleep(0.5)
+                    return True
         except Exception:
             pass
 
         if not logged_wait:
-            sys.stderr.write("[AutoClick] ⏳ Trang Flow đang tải, chờ nút 'CHẠY THỦ CÔNG' xuất hiện...\n")
+            sys.stderr.write("[AutoClick] ⏳ Đang chờ nút 'CHẠY THỦ CÔNG' xuất hiện...\n")
             logged_wait = True
-        time.sleep(1.5)
+        time.sleep(1.2)
 
-    sys.stderr.write("[AutoClick] ⚠️ Đã chờ tối đa 30s, tiếp tục thực hiện click...\n")
+    sys.stderr.write(f"[AutoClick] ⚠️ Đã chờ tối đa {max_wait_sec}s, tiếp tục thực hiện click...\n")
     return False
 
+
 def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y_btn=733):
-    """Thao tác chuột nhập prompt và bấm Chạy thủ công."""
+    """
+    Thao tác chuột nhập prompt, xác nhận chữ đã dán vào ô textarea, bấm Chạy thủ công
+    và xác nhận ô textarea đã được xoá trắng + trạng thái • ĐANG CHẠY đã bật.
+    Trả về timestamp submitted_at ngay thời điểm bấm nút chạy thành công.
+    """
     mod_key = "command" if sys.platform == "darwin" else "ctrl"
-    # Khóa chuột để tránh 2 task chạy đè lên nhau
-    with open(LOCK_FILE, "w") as lock_f:
+    with open(LOCK_FILE, "a+") as lock_f:
         fcntl.flock(lock_f, fcntl.LOCK_EX)
         try:
-            wait_until_submit_button_ready(x_btn, y_btn, max_wait_sec=30)
+            wait_until_submit_button_ready(x_btn, y_btn, max_wait_sec=25)
+            maybe_reload_video_tab_if_bloated()
             sys.stderr.write(f"[AutoClick] Đã nhận mouse lock. Bắt đầu submit prompt vào ({x_input}, {y_input}) và bấm ({x_btn}, {y_btn})...\n")
-            
-            # 1. Focus ô textarea (click 2 lần có delay để cửa sổ nhận focus và con trỏ chuột đặt vào ô)
-            pyautogui.moveTo(x_input, y_input, duration=0.3)
-            pyautogui.click(x_input, y_input)
-            time.sleep(0.3)
-            pyautogui.click(x_input, y_input)
-            time.sleep(0.2)
-            
-            # Xóa text cũ (Ctrl + A hoặc Cmd + A)
-            pyautogui.hotkey(mod_key, "a")
-            time.sleep(0.1)
-            
-            # 2. Copy prompt vào clipboard và dán (Ctrl + V hoặc Cmd + V)
-            set_clipboard(full_prompt)
-            time.sleep(0.3)
-            pyautogui.hotkey(mod_key, "v")
-            time.sleep(0.8)
-            
-            # 3. Click nút "Chạy thủ công"
-            pyautogui.moveTo(x_btn, y_btn, duration=0.3)
-            pyautogui.click(x_btn, y_btn)
-            time.sleep(1.0)
-            
-            # 4. Chụp ảnh màn hình để lưu bằng chứng submit
-            try:
-                os.system("scrot -o /tmp/last_video_submit.png 2>/dev/null")
-            except Exception:
-                pass
-            
-            sys.stderr.write(f"[AutoClick] Submit thành công. Giải phóng mouse lock.\n")
+
+            submitted_at = time.time()
+
+            for attempt in range(1, 4):
+                set_clipboard(full_prompt)
+                activate_chrome()
+
+                # 1. Click 2 lần cách nhau 0.45s vào giữa ô textarea (248, 546):
+                #    - Click 1: kích hoạt focus vào iframe Bulk AI Studio Pro
+                #    - Click 2 (sau 0.45s, ngoài ngưỡng double-click 400ms của X11): đặt con trỏ trực tiếp vào ô <textarea>
+                pyautogui.moveTo(x_input, y_input, duration=0.15)
+                pyautogui.click(x_input, y_input)
+                time.sleep(0.45)
+                pyautogui.click(x_input, y_input)
+                time.sleep(0.3)
+
+                # Chỉ xóa text cũ nếu trong ô thực sự đang còn chữ trắng từ lần trước
+                if sys.platform != "darwin" and has_pasted_text_in_textarea():
+                    pyautogui.hotkey(mod_key, "a")
+                    time.sleep(0.15)
+                    pyautogui.press("backspace")
+                    time.sleep(0.2)
+                    pyautogui.click(x_input, y_input)
+                    time.sleep(0.25)
+
+                # 2. Dán prompt từ clipboard (Ctrl + V)
+                pyautogui.hotkey(mod_key, "v")
+                time.sleep(0.65)
+
+                # 2.5. Kiểm tra chắc chắn chữ trắng đã được dán vào ô textarea trước khi bấm nút chạy
+                if sys.platform != "darwin":
+                    im_paste = capture_screen_rgb(max_age_sec=0.0)
+                    if im_paste is not None and not has_pasted_text_in_textarea(im_paste):
+                        sys.stderr.write(f"[AutoClick] ⚠️ Lần {attempt}: Chưa thấy chữ trong ô input sau Ctrl+V, focus lại ({x_input}, {y_input}) và dán lại...\n")
+                        check_and_dismiss_chrome_popups(im_paste, holds_lock=True)
+                        pyautogui.click(x_input, y_input)
+                        time.sleep(0.45)
+                        pyautogui.click(x_input, y_input)
+                        time.sleep(0.25)
+                        set_clipboard(full_prompt)
+                        time.sleep(0.25)
+                        pyautogui.hotkey(mod_key, "v")
+                        time.sleep(0.7)
+
+                # 3. Click nút "Chạy thủ công"
+                submitted_at = time.time()
+                pyautogui.moveTo(x_btn, y_btn, duration=0.2)
+                pyautogui.click(x_btn, y_btn)
+
+                # 4. Chờ tối đa 6.0s (5 lần x 1.2s) để xác nhận:
+                #    - Ô textarea đã xoá hết chữ trắng (Bulk AI Studio Pro đã nuốt lệnh)
+                #    - Huy hiệu • ĐANG CHẠY đang bật
+                started_ok = True
+                try:
+                    if sys.platform != "darwin":
+                        started_ok = False
+                        for _sub_chk in range(5):
+                            time.sleep(1.1)
+                            im_sub = capture_screen_rgb(max_age_sec=0.0, save_copy_path="/tmp/last_video_submit.png")
+                            if im_sub is None:
+                                continue
+                            check_and_dismiss_chrome_popups(im_sub, holds_lock=True)
+                            running_now = is_flow_currently_running(im_sub)
+                            text_still_in_box = has_pasted_text_in_textarea(im_sub)
+                            if running_now and not text_still_in_box:
+                                started_ok = True
+                                break
+                            # Nếu chữ vẫn còn nguyên trong ô input nghĩa là cú click nút Chạy chưa ăn -> bấm lại nút Chạy ngay
+                            if text_still_in_box and _sub_chk >= 1:
+                                pyautogui.moveTo(x_btn, y_btn, duration=0.15)
+                                pyautogui.click(x_btn, y_btn)
+                except Exception:
+                    started_ok = True
+
+                if started_ok:
+                    sys.stderr.write(f"[AutoClick] ✅ Submit thành công (đã xác nhận ô input đã nạp & • ĐANG CHẠY ở lần {attempt}). Giải phóng mouse lock.\n")
+                    time.sleep(0.4)
+                    break
+                else:
+                    if attempt < 3:
+                        sys.stderr.write(f"[AutoClick] ⚠️ Chưa xác nhận được trạng thái nạp ở lần {attempt}/3, chờ 1.5s rồi thử lại...\n")
+                        time.sleep(1.5)
+                    else:
+                        sys.stderr.write("[AutoClick] ⚠️ Đã thử submit 3 lần. Giải phóng mouse lock.\n")
+
+            return submitted_at
         finally:
             fcntl.flock(lock_f, fcntl.LOCK_UN)
+
 
 def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", timeout_sec=300, poll_interval=3):
     """
     Sau khi submit:
-    - Chờ 30s
-    - Poll thư mục Downloads tìm file .mp4 mới
-    - Sau 5 phút (timeout_sec) báo fail
+    - Chờ 25s
+    - Poll thư mục Downloads tìm đúng file <stt>.mp4 mới
+    - Sau 5 phút (timeout_sec tính từ lúc task này submit) báo fail
     """
-    # 1. Chờ 30 giây trước khi bắt đầu poll
-    sys.stderr.write(f"[AutoClick] Chờ 30 giây trước khi bắt đầu quét file Downloads...\n")
-    time.sleep(30)
-    
+    wait_initial = max(5.0, min(25.0, 25.0 - (time.time() - submitted_at)))
+    sys.stderr.write(f"[AutoClick] Chờ {round(wait_initial, 1)} giây trước khi bắt đầu quét file Downloads...\n")
+    time.sleep(wait_initial)
+
     clean_stt = str(stt).strip()
     sys.stderr.write(f"[AutoClick] Bắt đầu quét file Downloads (STT: {clean_stt}, timeout: {timeout_sec}s)...\n")
-    
+
+    poll_count = 0
+    not_running_streak = 0
     while (time.time() - submitted_at) < timeout_sec:
         current_time = time.time()
         elapsed = round(current_time - submitted_at, 1)
-        
+        poll_count += 1
+
         try:
             candidates = []
             for f in os.listdir(downloads_dir):
                 if not f.endswith(".mp4"):
                     continue
-                # Bỏ qua file tải dở
                 if f.endswith(".crdownload") or f.endswith(".tmp"):
                     continue
-                    
+
                 full_path = os.path.join(downloads_dir, f)
                 try:
                     st = os.stat(full_path)
-                    # Điều kiện 1: File mới được tạo/sửa sau khi submit (cho phép trừ hao 10s)
-                    if st.st_mtime >= (submitted_at - 10):
-                        # Điều kiện 2: File có size > 0
-                        if st.st_size > 0:
-                            candidates.append({
-                                "name": f,
-                                "path": full_path,
-                                "mtime": st.st_mtime,
-                                "size": st.st_size
-                            })
+                    if st.st_mtime >= (submitted_at - 15) and st.st_size > 0:
+                        candidates.append({
+                            "name": f,
+                            "path": full_path,
+                            "mtime": st.st_mtime,
+                            "size": st.st_size
+                        })
                 except OSError:
                     continue
-                    
-            # Tìm file phù hợp nhất
+
             matched_file = None
 
-            # BẮT BUỘC khớp đúng mã STT của task (ví dụ 6458.mp4, 6458 (1).mp4) để tuyệt đối không lấy nhầm video của task khác (Meo3 vs Aqua)
+            # BẮT BUỘC khớp đúng mã STT của task (ví dụ 6458.mp4, 6458 (1).mp4) để tuyệt đối không lấy nhầm video của task khác
             if clean_stt:
                 for c in candidates:
                     base_name = os.path.splitext(c["name"])[0].strip()
@@ -298,31 +558,49 @@ def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", t
                         matched_file = c
                         break
             else:
-                # Chỉ dùng fallback file mới khi task không truyền mã STT
                 new_files = [c for c in candidates if c["name"] not in initial_files]
                 if new_files:
                     new_files.sort(key=lambda x: x["mtime"], reverse=True)
                     matched_file = new_files[0]
-                    
+
             if matched_file:
-                # Kiểm tra file đã tải xong hẳn chưa (size không đổi sau 1s)
                 p = matched_file["path"]
                 sz1 = matched_file["size"]
                 time.sleep(1.0)
                 try:
                     sz2 = os.path.getsize(p)
-                    if sz2 == sz1 and sz2 > 1024: # Lớn hơn 1KB
+                    if sz2 == sz1 and sz2 > 1024:
                         sys.stderr.write(f"[AutoClick] 🎉 Đã tìm thấy file hoàn chỉnh: {p} ({sz2 / 1024 / 1024:.2f} MB, sau {elapsed}s)\n")
                         return matched_file
                 except OSError:
                     pass
-                    
+
+            # Kiểm tra popup chặn tải file và kiểm tra nếu toàn bộ Flow đã tắt • ĐANG CHẠY liên tiếp 6 lần (18s)
+            has_downloading = any(f.endswith(".crdownload") or f.endswith(".tmp") for f in os.listdir(downloads_dir))
+            if not has_downloading and elapsed >= 40:
+                im_poll = capture_screen_rgb(max_age_sec=1.5)
+                if check_and_dismiss_chrome_popups(im_poll, holds_lock=False):
+                    not_running_streak = 0
+                    time.sleep(2.0)
+                    continue
+                if im_poll is not None and not is_flow_currently_running(im_poll):
+                    not_running_streak += 1
+                    sys.stderr.write(f"[AutoClick] ⚠️ Huy hiệu • ĐANG CHẠY đã tắt ({not_running_streak}/6) tại {elapsed}s mà chưa thấy file {clean_stt}.mp4...\n")
+                    if not_running_streak >= 6:
+                        sys.stderr.write(f"[AutoClick] ❌ FLOW_TASK_ERROR: Google Flow đã dừng chạy (báo LỖI trên Flow) sau {elapsed}s mà không xuất file video.\n")
+                        return {
+                            "error_fast_fail": f"FLOW_TASK_ERROR: Google Flow từ chối tạo video này (ảnh hoặc nội dung câu lệnh có thể vi phạm chính sách an toàn của Google Veo) sau {elapsed}s."
+                        }
+                else:
+                    not_running_streak = 0
+
         except Exception as e:
             sys.stderr.write(f"[AutoClick] Lỗi khi quét thư mục: {e}\n")
-            
+
         time.sleep(poll_interval)
-        
+
     return None
+
 
 def main():
     parser = argparse.ArgumentParser(description="AutoClick Video Runner for Google Flow")
@@ -343,7 +621,6 @@ def main():
     if not os.path.exists(downloads_dir):
         os.makedirs(downloads_dir, exist_ok=True)
 
-    # Tự động đọc tọa độ từ video_.json nếu có
     preset_coords = load_preset_coords()
     x_in = args.x_input
     y_in = args.y_input
@@ -359,7 +636,7 @@ def main():
 
     # 1. Snapshot danh sách file hiện có
     initial_files = get_downloads_files(downloads_dir)
-    
+
     # 2. Format prompt chuẩn
     full_prompt = format_prompt(
         raw_prompt=args.prompt,
@@ -368,18 +645,17 @@ def main():
         start_img=args.start_image,
         end_img=args.end_image
     )
-    
-    # 3. Submit bằng Auto Click
-    submitted_at = time.time()
-    perform_click_and_submit(
+
+    # 3. Submit bằng Auto Click (trả về mốc thời gian thực sự bấm nút Chạy)
+    submitted_at = perform_click_and_submit(
         full_prompt=full_prompt,
         x_input=x_in,
         y_input=y_in,
         x_btn=x_btn,
         y_btn=y_btn
     )
-    
-    # 4. Chờ 30s và poll trong máy tính tối đa 5 phút
+
+    # 4. Poll trong máy tính tối đa 5 phút tính từ lúc task này đã bấm nút Chạy
     matched = wait_for_file_download(
         downloads_dir=downloads_dir,
         initial_files=initial_files,
@@ -388,8 +664,18 @@ def main():
         timeout_sec=args.timeout,
         poll_interval=3
     )
-    
-    if matched:
+
+    if matched and matched.get("error_fast_fail"):
+        result = {
+            "status": "error",
+            "error": matched["error_fast_fail"],
+            "submitted_at": submitted_at,
+            "elapsed": round(time.time() - submitted_at, 1)
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        sys.stdout.flush()
+        sys.exit(2)
+    elif matched:
         result = {
             "status": "success",
             "file_path": matched["path"],
@@ -411,6 +697,7 @@ def main():
         print(json.dumps(result, ensure_ascii=False))
         sys.stdout.flush()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

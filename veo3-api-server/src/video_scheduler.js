@@ -76,7 +76,7 @@ class UserVideoLimitProvider {
 }
 
 class PerUserVideoScheduler {
-  constructor({ globalLimit, getUserId, getUserLimit, runTask, onError = () => {}, delayMs = 15000 }) {
+  constructor({ globalLimit, getUserId, getUserLimit, runTask, onError = () => {}, delayMs = 1000 }) {
     this.globalLimit = Math.max(1, Number(globalLimit) || 1);
     this.getUserId = getUserId;
     this.getUserLimit = getUserLimit;
@@ -89,6 +89,7 @@ class PerUserVideoScheduler {
     this.rerunIds = new Set();
     this.activeByUser = new Map();
     this.draining = false;
+    this.pendingDrain = false;
   }
 
   get activeCount() {
@@ -116,43 +117,53 @@ class PerUserVideoScheduler {
   }
 
   scheduleDrain() {
+    if (this.draining) {
+      this.pendingDrain = true;
+      return;
+    }
     void this.drain().catch(error => this.onError(error, null));
   }
 
   async drain() {
-    if (this.draining) return;
+    if (this.draining) {
+      this.pendingDrain = true;
+      return;
+    }
     this.draining = true;
     try {
-      while (this.activeCount < this.globalLimit && this.queue.length > 0) {
-        const selection = await this.findEligibleTask();
-        if (!selection) break;
+      do {
+        this.pendingDrain = false;
+        while (this.activeCount < this.globalLimit && this.queue.length > 0) {
+          const selection = await this.findEligibleTask();
+          if (!selection) break;
 
-        const [taskId] = this.queue.splice(selection.index, 1);
-        this.queuedIds.delete(taskId);
-        this.activeIds.add(taskId);
-        this.activeByUser.set(selection.userId, this.activeForUser(selection.userId) + 1);
+          const [taskId] = this.queue.splice(selection.index, 1);
+          this.queuedIds.delete(taskId);
+          this.activeIds.add(taskId);
+          this.activeByUser.set(selection.userId, this.activeForUser(selection.userId) + 1);
 
-        // Run the task concurrently
-        Promise.resolve()
-          .then(() => this.runTask(taskId))
-          .catch(error => this.onError(error, taskId))
-          .finally(() => {
-            this.activeIds.delete(taskId);
-            const remaining = this.activeForUser(selection.userId) - 1;
-            if (remaining > 0) this.activeByUser.set(selection.userId, remaining);
-            else this.activeByUser.delete(selection.userId);
-            if (this.rerunIds.delete(taskId) && !this.queuedIds.has(taskId)) {
-              this.queue.push(taskId);
-              this.queuedIds.add(taskId);
-            }
-            this.scheduleDrain();
-          });
+          // Run the task concurrently
+          Promise.resolve()
+            .then(() => this.runTask(taskId))
+            .catch(error => this.onError(error, taskId))
+            .finally(() => {
+              this.activeIds.delete(taskId);
+              const remaining = this.activeForUser(selection.userId) - 1;
+              if (remaining > 0) this.activeByUser.set(selection.userId, remaining);
+              else this.activeByUser.delete(selection.userId);
+              if (this.rerunIds.delete(taskId) && !this.queuedIds.has(taskId)) {
+                this.queue.push(taskId);
+                this.queuedIds.add(taskId);
+              }
+              this.scheduleDrain();
+            });
 
-        // Delay between dispatches (like a conveyor belt) to avoid API spam/403
-        if (this.delayMs > 0 && (this.queue.length > 0 || this.activeCount < this.globalLimit)) {
-          await new Promise(resolve => setTimeout(resolve, this.delayMs));
+          // Small stagger between dispatches when more tasks are waiting
+          if (this.delayMs > 0 && this.queue.length > 0 && this.activeCount < this.globalLimit) {
+            await new Promise(resolve => setTimeout(resolve, this.delayMs));
+          }
         }
-      }
+      } while (this.pendingDrain && this.activeCount < this.globalLimit && this.queue.length > 0);
     } finally {
       this.draining = false;
     }
