@@ -112,6 +112,48 @@ def get_downloads_files(downloads_dir):
     return files_map
 
 
+def image_to_data_uri(img_ref):
+    """
+    Chuyển URL ảnh (https://...) hoặc đường dẫn file cục bộ sang chuỗi data:image/jpeg;base64,...
+    để vượt qua Content-Security-Policy (img-src data: blob:) của Google Flow iframe.
+    """
+    if not img_ref:
+        return None
+    s = str(img_ref).strip()
+    if s.startswith("data:image"):
+        return s
+    try:
+        import base64
+        import io
+        import urllib.request
+        from PIL import Image
+
+        raw_bytes = None
+        if s.startswith("http://") or s.startswith("https://"):
+            req = urllib.request.Request(s, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw_bytes = resp.read()
+        elif os.path.exists(s):
+            with open(s, "rb") as f:
+                raw_bytes = f.read()
+
+        if raw_bytes:
+            im = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+            max_dim = 1024
+            if max(im.width, im.height) > max_dim:
+                resample = getattr(Image, "Resampling", Image).LANCZOS
+                scale = max_dim / float(max(im.width, im.height))
+                im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))), resample)
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=85, optimize=True)
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            sys.stderr.write(f"[AutoClick] 🖼️ Đã chuyển ảnh sang data:image/jpeg ({len(b64) // 1024} KB base64) vượt CSP Flow.\n")
+            return f"data:image/jpeg;base64,{b64}"
+    except Exception as e:
+        sys.stderr.write(f"[AutoClick] ⚠️ Lỗi chuyển ảnh sang data URI ({e}), giữ nguyên link gốc...\n")
+    return s
+
+
 def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
     """Đảm bảo format đúng dạng: ratio|stt. prompt|image_urls... (luôn trên 1 dòng duy nhất)"""
     import re
@@ -144,11 +186,15 @@ def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
 
     full_line = f"{ratio}|{prompt}"
 
-    # Thêm ảnh nếu có
-    if start_img and start_img not in full_line:
-        full_line += f"|{start_img}"
-        if end_img and end_img not in full_line:
-            full_line += f"|{end_img}"
+    # Thêm ảnh nếu có (chuyển sang data:image/jpeg;base64,... để không bị CSP của Google Flow chặn)
+    if start_img:
+        start_uri = image_to_data_uri(start_img)
+        if start_uri and start_uri not in full_line:
+            full_line += f"|{start_uri}"
+            if end_img:
+                end_uri = image_to_data_uri(end_img)
+                if end_uri and end_uri not in full_line:
+                    full_line += f"|{end_uri}"
 
     return full_line
 
@@ -435,8 +481,8 @@ def wait_until_submit_button_ready(x_btn=273, y_btn=733, max_wait_sec=25):
 
 def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y_btn=733):
     """
-    Thao tác chuột nhập prompt, xác nhận chữ đã dán vào ô textarea, bấm Chạy thủ công
-    và xác nhận ô textarea đã được xoá trắng + trạng thái • ĐANG CHẠY đã bật.
+    Thao tác chuột nhập prompt, xoá sạch chữ cũ (Ctrl+A -> BackSpace), dán prompt 1 lần duy nhất,
+    bấm Chạy thủ công và xác nhận trạng thái • ĐANG CHẠY đã bật.
     Trả về timestamp submitted_at ngay thời điểm bấm nút chạy thành công.
     """
     mod_key = "command" if sys.platform == "darwin" else "ctrl"
@@ -458,51 +504,31 @@ def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y
                 #    - Nếu không có popup, (75, 650) vẫn nằm gọn trong ô <textarea> nên sẽ kích hoạt focus cho iframe.
                 pyautogui.moveTo(75, 650, duration=0.12)
                 pyautogui.click(75, 650)
-                time.sleep(0.35)
+                time.sleep(0.3)
                 pyautogui.moveTo(x_input, y_input, duration=0.12)
                 pyautogui.click(x_input, y_input)
-                time.sleep(0.45)
+                time.sleep(0.35)
                 pyautogui.click(x_input, y_input)
-                time.sleep(0.3)
+                time.sleep(0.25)
 
-                # Chỉ xóa text cũ nếu trong ô thực sự đang còn chữ trắng từ lần trước
-                if sys.platform != "darwin" and has_pasted_text_in_textarea():
-                    pyautogui.hotkey(mod_key, "a")
-                    time.sleep(0.15)
-                    pyautogui.press("backspace")
-                    time.sleep(0.2)
-                    pyautogui.click(x_input, y_input)
-                    time.sleep(0.25)
+                # 2. Luôn Ctrl+A + BackSpace để đảm bảo ô textarea sạch 100% trước khi dán (tránh nối chồng 2 prompt làm hỏng link --start-image)
+                pyautogui.hotkey(mod_key, "a")
+                time.sleep(0.15)
+                pyautogui.press("backspace")
+                time.sleep(0.2)
 
-                # 2. Dán prompt từ clipboard (Ctrl + V)
+                # 3. Dán prompt từ clipboard (Ctrl + V) đúng 1 lần
+                set_clipboard(full_prompt)
+                time.sleep(0.25)
                 pyautogui.hotkey(mod_key, "v")
-                time.sleep(0.65)
+                time.sleep(0.95 if len(full_prompt) > 2000 else 0.65)
 
-                # 2.5. Kiểm tra chắc chắn chữ trắng đã được dán vào ô textarea trước khi bấm nút chạy
-                if sys.platform != "darwin":
-                    im_paste = capture_screen_rgb(max_age_sec=0.0)
-                    if im_paste is not None and not has_pasted_text_in_textarea(im_paste):
-                        sys.stderr.write(f"[AutoClick] ⚠️ Lần {attempt}: Chưa thấy chữ trong ô input sau Ctrl+V, đóng popup (75, 650), focus lại ({x_input}, {y_input}) và dán lại...\n")
-                        check_and_dismiss_chrome_popups(im_paste, holds_lock=True)
-                        pyautogui.click(75, 650)
-                        time.sleep(0.35)
-                        pyautogui.click(x_input, y_input)
-                        time.sleep(0.45)
-                        pyautogui.click(x_input, y_input)
-                        time.sleep(0.25)
-                        set_clipboard(full_prompt)
-                        time.sleep(0.25)
-                        pyautogui.hotkey(mod_key, "v")
-                        time.sleep(0.7)
-
-                # 3. Click nút "Chạy thủ công"
+                # 4. Click nút "Chạy thủ công"
                 submitted_at = time.time()
                 pyautogui.moveTo(x_btn, y_btn, duration=0.2)
                 pyautogui.click(x_btn, y_btn)
 
-                # 4. Chờ tối đa 6.0s (5 lần x 1.2s) để xác nhận:
-                #    - Ô textarea đã xoá hết chữ trắng (Bulk AI Studio Pro đã nuốt lệnh)
-                #    - Huy hiệu • ĐANG CHẠY đang bật
+                # 5. Chờ tối đa 5.5s (5 lần x 1.1s) để xác nhận huy hiệu • ĐANG CHẠY đã bật
                 started_ok = True
                 try:
                     if sys.platform != "darwin":
@@ -513,20 +539,14 @@ def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y
                             if im_sub is None:
                                 continue
                             check_and_dismiss_chrome_popups(im_sub, holds_lock=True)
-                            running_now = is_flow_currently_running(im_sub)
-                            text_still_in_box = has_pasted_text_in_textarea(im_sub)
-                            if running_now and not text_still_in_box:
+                            if is_flow_currently_running(im_sub):
                                 started_ok = True
                                 break
-                            # Nếu chữ vẫn còn nguyên trong ô input nghĩa là cú click nút Chạy chưa ăn -> bấm lại nút Chạy ngay
-                            if text_still_in_box and _sub_chk >= 1:
-                                pyautogui.moveTo(x_btn, y_btn, duration=0.15)
-                                pyautogui.click(x_btn, y_btn)
                 except Exception:
                     started_ok = True
 
                 if started_ok:
-                    sys.stderr.write(f"[AutoClick] ✅ Submit thành công (đã xác nhận ô input đã nạp & • ĐANG CHẠY ở lần {attempt}). Giải phóng mouse lock.\n")
+                    sys.stderr.write(f"[AutoClick] ✅ Submit thành công (đã xác nhận • ĐANG CHẠY ở lần {attempt}). Giải phóng mouse lock.\n")
                     time.sleep(0.4)
                     break
                 else:
