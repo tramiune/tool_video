@@ -139,15 +139,19 @@ def image_to_data_uri(img_ref):
 
         if raw_bytes:
             im = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-            max_dim = 1024
+            max_dim = 768
             if max(im.width, im.height) > max_dim:
                 resample = getattr(Image, "Resampling", Image).LANCZOS
                 scale = max_dim / float(max(im.width, im.height))
                 im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))), resample)
             buf = io.BytesIO()
-            im.save(buf, format="JPEG", quality=85, optimize=True)
+            im.save(buf, format="JPEG", quality=80, optimize=True)
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            sys.stderr.write(f"[AutoClick] 🖼️ Đã chuyển ảnh sang data:image/jpeg ({len(b64) // 1024} KB base64) vượt CSP Flow.\n")
+            if len(b64) > 90000:
+                buf = io.BytesIO()
+                im.save(buf, format="JPEG", quality=72, optimize=True)
+                b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            sys.stderr.write(f"[AutoClick] 🖼️ Đã chuyển ảnh sang data:image/jpeg ({len(b64) // 1024} KB base64, {im.width}x{im.height}) vượt CSP Flow.\n")
             return f"data:image/jpeg;base64,{b64}"
     except Exception as e:
         sys.stderr.write(f"[AutoClick] ⚠️ Lỗi chuyển ảnh sang data URI ({e}), giữ nguyên link gốc...\n")
@@ -186,7 +190,7 @@ def format_prompt(raw_prompt, stt, ratio, start_img=None, end_img=None):
 
     full_line = f"{ratio}|{prompt}"
 
-    # Thêm ảnh nếu có (chuyển sang data:image/jpeg;base64,... để không bị CSP của Google Flow chặn)
+    # Thêm ảnh nếu có (chuyển sang data:image/jpeg;base64,... gọn nhẹ 768px vượt CSP của Google Flow)
     if start_img:
         start_uri = image_to_data_uri(start_img)
         if start_uri and start_uri not in full_line:
@@ -521,7 +525,7 @@ def perform_click_and_submit(full_prompt, x_input=248, y_input=546, x_btn=273, y
                 set_clipboard(full_prompt)
                 time.sleep(0.25)
                 pyautogui.hotkey(mod_key, "v")
-                time.sleep(0.95 if len(full_prompt) > 2000 else 0.65)
+                time.sleep(1.25 if len(full_prompt) > 90000 else (1.0 if len(full_prompt) > 2000 else 0.65))
 
                 # 4. Click nút "Chạy thủ công"
                 submitted_at = time.time()

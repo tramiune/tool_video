@@ -359,8 +359,68 @@ const BG_PRESETS = [
   }
 ];
 
+const MEO_COMPOSER_TOOLS = [
+  {
+    id: 'text-to-video',
+    emoji: '🎬',
+    label: 'Video/Ảnh tự do',
+    videoPlaceholder: 'Mô tả video bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)',
+    imagePlaceholder: 'Mô tả hình ảnh bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)',
+    promptPrefix: '',
+    badgeText: '',
+  },
+  {
+    id: 'mother-in-law',
+    emoji: '👵',
+    label: 'Mẹ chồng nàng dâu',
+    videoPlaceholder: 'Nhập tình huống Mẹ chồng nàng dâu... (VD: Mẹ chồng lườm con dâu khi đang ăn cơm)',
+    imagePlaceholder: 'Mô tả nhân vật / bối cảnh Mẹ chồng nàng dâu muốn tạo ảnh...',
+    promptPrefix: 'Phong cách phim truyền hình Việt Nam, góc máy cận mặt căng thẳng: ',
+    badgeText: 'Chế độ Drama gia đình Việt Nam',
+  },
+  {
+    id: 'food-review',
+    emoji: '🍜',
+    label: 'Review đồ ăn',
+    videoPlaceholder: 'Nhập món ăn muốn review... (VD: Cận cảnh bát phở bò bốc khói nghi ngút, nước dùng sóng sánh)',
+    imagePlaceholder: 'Mô tả món ăn muốn tạo ảnh... (VD: Bàn tiệc nướng BBQ Hàn Quốc xèo xèo hấp dẫn)',
+    promptPrefix: 'Phong cách food review TikTok, góc máy macro, slow motion, màu sắc rực rỡ, hấp dẫn: ',
+    badgeText: 'Chế độ Food Review cận cảnh hấp dẫn',
+  },
+  {
+    id: 'fashion',
+    emoji: '👗',
+    label: 'Thời trang',
+    videoPlaceholder: 'Nhập trang phục & người mẫu... (VD: Người mẫu nữ mặc váy dạ hội đỏ bước đi trên sàn catwalk)',
+    imagePlaceholder: 'Mô tả bộ trang phục / lookbook thời trang muốn tạo ảnh...',
+    promptPrefix: 'Phong cách fashion lookbook, ánh sáng studio mờ ảo, người mẫu chuyên nghiệp: ',
+    badgeText: 'Chế độ Lookbook Thời trang Studio',
+  },
+  {
+    id: 'product-ad',
+    emoji: '🛍️',
+    label: 'Quảng cáo SP',
+    videoPlaceholder: 'Nhập sản phẩm cần làm TVC... (VD: Chai nước hoa đặt trên mặt đá, tia nước bắn chậm sang trọng)',
+    imagePlaceholder: 'Mô tả sản phẩm & bối cảnh studio muốn tạo ảnh quảng cáo...',
+    promptPrefix: 'Phong cách TVC quảng cáo sản phẩm thương mại cao cấp, góc quay điện ảnh, ánh sáng studio sang trọng: ',
+    badgeText: 'Chế độ TVC Quảng cáo sản phẩm',
+  },
+  {
+    id: 'pixar-3d',
+    emoji: '🧸',
+    label: 'Hoạt hình 3D',
+    videoPlaceholder: 'Nhập cảnh hoạt hình 3D... (VD: Chú mèo con mặc áo siêu nhân bay trên bầu trời)',
+    imagePlaceholder: 'Mô tả nhân vật hoạt hình 3D Pixar dễ thương...',
+    promptPrefix: 'Phong cách hoạt hình 3D Pixar Disney chất lượng cao, nhân vật biểu cảm dễ thương sống động, ánh sáng rực rỡ 4K: ',
+    badgeText: 'Chế độ Hoạt hình 3D Pixar',
+  },
+];
+
 function App() {
   const [activeTab, setActiveTab] = useState(() => safeGetLocalStorage('activeTab') || 'video');
+  const [activeComposerToolId, setActiveComposerToolId] = useState('text-to-video');
+  const composerToolsScrollRef = useRef(null);
+  const activeComposerTool = MEO_COMPOSER_TOOLS.find(t => t.id === activeComposerToolId) || MEO_COMPOSER_TOOLS[0];
   const [prompt, setPrompt] = useState('');
   const [user, setUser] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -413,6 +473,9 @@ function App() {
   const [simulateLoading, setSimulateLoading] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [pricingModalFromExpiry, setPricingModalFromExpiry] = useState(false);
+  const [pricingModalBanner, setPricingModalBanner] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
+  const toastTimerRef = useRef(null);
   const [limitError, setLimitError] = useState(null);
   const [selectedTierForPay, setSelectedTierForPay] = useState(null);
   const [isAudioView, setIsAudioView] = useState(false);
@@ -657,8 +720,15 @@ function App() {
         setUserTrialVideoUsed(Boolean(data.trialVideoUsed));
         setUserTrialImageUsed(Boolean(data.trialImageUsed));
         setPendingPayment(nextPendingPayment);
-         setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
-        setCurrentUserHasDramaAccess(data.tier === 'master_499k' || data.hasDramaAccess || data.isAdmin || emailIsAdmin || false);
+        const subExpired = data.tier && data.tier !== 'free' && data.expiryDate && data.expiryDate < Date.now();
+        setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
+        setCurrentUserHasDramaAccess(
+          (!subExpired && (data.tier === 'master_499k' || data.tier === 'drama_500k' || data.tier === 'vip_399k')) ||
+          data.hasDramaAccess ||
+          data.isAdmin ||
+          emailIsAdmin ||
+          false
+        );
       } else {
         previousPendingPaymentRef.current = null;
         setUserTier('free');
@@ -712,7 +782,8 @@ function App() {
         if (userProfileLoaded && !currentUserHasDramaAccess) {
           window.location.hash = '';
           setIsDramaView(false);
-          alert("Tài khoản của bạn cần nâng cấp lên Gói Đặc Quyền (899k) hoặc được cấp quyền để truy cập Công cụ AI này!");
+          setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+          setShowPricingModal(true);
           return;
         }
         const targetChannel = isHashSumo ? 'sumo' : 'drama';
@@ -1077,14 +1148,31 @@ function App() {
     return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, []);
 
+  const isSubExpired = !currentUserIsAdmin && userTier !== 'free' && userExpiryDate && userExpiryDate < Date.now();
+  const hasFullToolAccess =
+    currentUserIsAdmin ||
+    (!isSubExpired &&
+      (currentUserHasDramaAccess ||
+        userTier === 'master_499k' ||
+        userTier === 'drama_500k' ||
+        userTier === 'vip_399k'));
+
+  const showAccessDeniedToast = (msg) => {
+    setToastMessage(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 4500);
+  };
+
   const getUpgradeCost = (targetTier) => {
     const prices = {
       free: 0,
       basic_69k: 69000,
       
       premium_169k: 199000,
-      pro_299k: 499000,
-      master_499k: 899000
+      pro_299k: 299000,
+      master_499k: 399000
     };
 
     const currentPrice = prices[userTier] || 0;
@@ -1108,7 +1196,8 @@ function App() {
   };
 
   const audioTierLabel = (tier) => {
-    return tier === 'premium_169k' ? 'Premium' :
+    return tier === 'master_499k' ? 'VIP (399k)' :
+           tier === 'premium_169k' ? 'Premium' :
            tier === 'basic_69k' ? 'Basic' :
            tier === 'hocvien' ? 'Học viên' : 'Free';
   };
@@ -1708,8 +1797,8 @@ function App() {
                               <option value="hocvien">Học viên (30 ảnh/ngày)</option>
                               <option value="basic_69k">Basic (69k)</option>
                               <option value="premium_169k">Premium (199k)</option>
-                              <option value="pro_299k">VIP / Pro (499k)</option>
-                              <option value="master_499k">Đặc Quyền (899k)</option>
+                              <option value="pro_299k">VIP / Pro (299k)</option>
+                              <option value="master_499k">Gói VIP Full Quyền (399k)</option>
                             </select>
                           </td>
                           <td data-label="Hạn dùng" style={{ padding: '10px 8px' }}>
@@ -1836,9 +1925,9 @@ function App() {
                   <option value="30000">30,000đ (Bù Basic)</option>
                   <option value="69000">69,000đ (Gói Cơ bản)</option>
                   <option value="199000">199,000đ (Gói Premium)</option>
-                  <option value="499000">499,000đ (Gói VIP/Pro)</option>
-                  <option value="899000">899,000đ (Gói Đặc Quyền)</option>
-                  <option value="230000">230,000đ (Bù Basic &rarr; Premium)</option>
+                  <option value="399000">399,000đ (Gói VIP Full Quyền)</option>
+                  <option value="200000">200,000đ (Bù Premium &rarr; VIP 399k)</option>
+                  <option value="330000">330,000đ (Bù Basic &rarr; VIP 399k)</option>
                 </select>
               </div>
 
@@ -3009,7 +3098,7 @@ function App() {
                     marginTop: '10px'
                   }}
                 >
-                  {currentUserHasDramaAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói Đặc Quyền'}
+                  {hasFullToolAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói VIP 399k'}
                 </button>
               </div>
             </div>
@@ -3072,7 +3161,7 @@ function App() {
                     marginTop: '10px'
                   }}
                 >
-                  {currentUserHasDramaAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói Đặc Quyền'}
+                  {hasFullToolAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói VIP 399k'}
                 </button>
               </div>
             </div>
@@ -6186,8 +6275,19 @@ function App() {
       }
     }
     
+    if (activeComposerToolId !== 'text-to-video' && !hasFullToolAccess) {
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+      setShowPricingModal(true);
+      return;
+    }
+
     setIsSubmitting(true);
-    const currentPrompt = prompt;
+    const rawTrimmedPrompt = prompt.trim();
+    const prefix = activeComposerTool?.promptPrefix || '';
+    const currentPrompt = prefix && !rawTrimmedPrompt.startsWith(prefix.trim())
+      ? `${prefix}${rawTrimmedPrompt}`
+      : rawTrimmedPrompt;
     try {
       let startFrameUrl = startLibraryUrl || (startUploadState && startUploadState.url) || null;
       let endFrameUrl = endLibraryUrl || (endUploadState && endUploadState.url) || null;
@@ -6507,7 +6607,10 @@ function App() {
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {/* Dynamic Subscription Badge & Upgrade Button */}
           <div 
-            onClick={() => setShowPricingModal(true)}
+            onClick={() => {
+              setPricingModalBanner(null);
+              setShowPricingModal(true);
+            }}
             style={{ 
               cursor: 'pointer', 
               userSelect: 'none',
@@ -6517,12 +6620,15 @@ function App() {
             }}
             title="Bấm để nâng cấp / thay đổi gói"
           >
+            {userTier === 'master_499k' && (
+              <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', color: '#fff', borderRadius: '6px', fontWeight: 'bold', boxShadow: '0 0 10px rgba(236, 72, 153, 0.35)' }}>VIP Full Quyền</span>
+            )}
             {userTier === 'premium_169k' && (
               <span style={{ fontSize: '0.68rem', padding: '4px 8px', background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)', color: '#16161a', borderRadius: '6px', fontWeight: 'bold', boxShadow: '0 0 10px rgba(251, 191, 36, 0.3)' }}>Premium</span>
             )}
             
-            {/* Highly visible pop-out upgrade button if not Premium */}
-            {userTier !== 'premium_169k' && (
+            {/* Highly visible pop-out upgrade button if not VIP Full Quyền */}
+            {userTier !== 'master_499k' && (
               <button 
                 type="button"
                 style={{
@@ -7039,6 +7145,35 @@ function App() {
         )}
       </main>
 
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 100020,
+            background: 'linear-gradient(135deg, rgba(239,68,68,0.95) 0%, rgba(190,24,93,0.95) 100%)',
+            color: '#fff',
+            padding: '10px 18px',
+            borderRadius: '999px',
+            fontSize: '0.82rem',
+            fontWeight: 700,
+            boxShadow: '0 10px 30px rgba(239,68,68,0.45)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            maxWidth: '92vw',
+            textAlign: 'center',
+          }}
+        >
+          <span>🔒</span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Floating Bottom Controls Wrapper */}
       <div className="bottom-controls-wrapper" ref={bottomControlsRef}>
         
@@ -7054,118 +7189,152 @@ function App() {
             gap: '6px' 
           }}
         >
-          {/* Row 1: Previews / Upload Placeholders */}
-          {activeTab === 'video' ? (
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '2px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
-              {/* Start Image Box */}
-              <div 
-                onClick={() => {
-                  if (!startFile && !startLibraryUrl) {
-                    setAddFileContext('start');
-                    setShowAddMenu(true);
-                  }
-                }}
-                style={{ 
-                  width: '28px', 
-                  height: '28px', 
-                  borderRadius: '6px', 
-                  border: '1px dashed rgba(255, 255, 255, 0.2)',
-                  background: (startFile || startLibraryUrl) ? 'none' : 'rgba(255, 255, 255, 0.02)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  flexShrink: 0
-                }}
-                title="Ảnh bắt đầu (Start)"
-              >
-                {(startFile || startLibraryUrl) ? (
-                  <>
-                    <img src={startFile ? URL.createObjectURL(startFile) : startLibraryUrl} alt="Start Frame" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px' }} />
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setStartFile(null); setStartLibraryUrl(null); setStartUploadState(null); startUploadPromiseRef.current = null; }} className="remove-preview-btn">×</button>
-                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '7px', textAlign: 'center', padding: '1px 0', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>Start</div>
-                    {startUploadState === 'uploading' && (
-                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '6px', zIndex: 2 }}>
-                        <Loader size={10} className="spin-loader" style={{ color: '#fff' }} />
-                        <span style={{ fontSize: '6px', color: '#fff', fontWeight: '700' }}>đang tải</span>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <Plus size={10} style={{ color: 'rgba(255,255,255,0.4)' }} />
-                    <span style={{ fontSize: '7px', color: 'rgba(255,255,255,0.4)', fontWeight: 'bold' }}>Start</span>
-                  </div>
-                )}
-              </div>
-
-              {/* End Image Box */}
-              <div 
-                onClick={() => {
-                  if (!endFile && !endLibraryUrl) {
-                    setAddFileContext('end');
-                    setShowAddMenu(true);
-                  }
-                }}
-                style={{ 
-                  width: '28px', 
-                  height: '28px', 
-                  borderRadius: '6px', 
-                  border: '1px dashed rgba(255, 255, 255, 0.2)',
-                  background: (endFile || endLibraryUrl) ? 'none' : 'rgba(255, 255, 255, 0.02)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  flexShrink: 0
-                }}
-                title="Ảnh kết thúc (End)"
-              >
-                {(endFile || endLibraryUrl) ? (
-                  <>
-                    <img src={endFile ? URL.createObjectURL(endFile) : endLibraryUrl} alt="End Frame" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px' }} />
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setEndFile(null); setEndLibraryUrl(null); setEndUploadState(null); endUploadPromiseRef.current = null; }} className="remove-preview-btn">×</button>
-                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '7px', textAlign: 'center', padding: '1px 0', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>End</div>
-                    {endUploadState === 'uploading' && (
-                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '6px', zIndex: 2 }}>
-                        <Loader size={10} className="spin-loader" style={{ color: '#fff' }} />
-                        <span style={{ fontSize: '6px', color: '#fff', fontWeight: '700' }}>đang tải</span>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <Plus size={10} style={{ color: 'rgba(255,255,255,0.4)' }} />
-                    <span style={{ fontSize: '7px', color: 'rgba(255,255,255,0.4)', fontWeight: 'bold' }}>End</span>
-                  </div>
-                )}
-              </div>
+          {/* Row 0: Horizontal Scrollable Tool Selector (Vuốt ngang chọn công cụ ngay trên thanh nhập) */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '5px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              paddingBottom: '7px',
+              marginBottom: '2px',
+            }}
+          >
+            <div
+              ref={composerToolsScrollRef}
+              onWheel={(e) => {
+                if (composerToolsScrollRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                  composerToolsScrollRef.current.scrollLeft += e.deltaY;
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                overflowX: 'auto',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                WebkitOverflowScrolling: 'touch',
+                paddingBottom: '1px',
+              }}
+            >
+              {MEO_COMPOSER_TOOLS.map((tool) => {
+                const isSelected = activeComposerToolId === tool.id;
+                const isLockedTool = tool.id !== 'text-to-video' && !hasFullToolAccess;
+                return (
+                  <button
+                    key={tool.id}
+                    type="button"
+                    onClick={(e) => {
+                      if (tool.id !== 'text-to-video' && !hasFullToolAccess) {
+                        showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
+                        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+                        setShowPricingModal(true);
+                        return;
+                      }
+                      setActiveComposerToolId(tool.id);
+                      e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '5px 11px',
+                      borderRadius: '999px',
+                      fontSize: '0.76rem',
+                      fontWeight: isSelected ? 700 : 600,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                      cursor: 'pointer',
+                      transition: 'all 0.18s ease',
+                      background: isSelected
+                        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.25) 0%, rgba(6, 182, 212, 0.22) 100%)'
+                        : 'rgba(255, 255, 255, 0.04)',
+                      border: isSelected
+                        ? '1px solid rgba(56, 189, 248, 0.55)'
+                        : '1px solid rgba(255, 255, 255, 0.07)',
+                      color: isSelected ? '#e0f2fe' : '#a1a1aa',
+                      boxShadow: isSelected ? '0 2px 10px rgba(56, 189, 248, 0.18)' : 'none',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.88rem', lineHeight: 1 }}>{tool.emoji}</span>
+                    <span>{tool.label}</span>
+                    {isLockedTool && <span style={{ fontSize: '0.72rem', opacity: 0.85 }}>🔒</span>}
+                  </button>
+                );
+              })}
             </div>
-          ) : (
-            (refFiles.length > 0 || selectedRefUrls.length > 0) && (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '8px' }}>
-                {selectedRefUrls.map((url, idx) => (
-                  <div key={`selected-url-${idx}`} className="preview-thumbnail" style={{ width: '42px', height: '42px', borderRadius: '8px' }}>
-                    <img src={url} alt="Selected Ref" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <button type="button" onClick={() => setSelectedRefUrls(prev => prev.filter((_, i) => i !== idx))} className="remove-preview-btn">×</button>
-                  </div>
-                ))}
-                {refFiles.map((file, idx) => (
-                  <div key={idx} className="preview-thumbnail" style={{ width: '42px', height: '42px', borderRadius: '8px' }}>
-                    <img src={URL.createObjectURL(file)} alt="Ref File" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <button type="button" onClick={() => handleRemoveRefFile(idx)} className="remove-preview-btn">×</button>
-                    {refUploadStates[idx] === 'uploading' && (
-                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '8px', zIndex: 2 }}>
-                        <Loader size={12} className="spin-loader" style={{ color: '#fff' }} />
-                        <span style={{ fontSize: '7px', color: '#fff', fontWeight: '700' }}>đang tải</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
+
+            {(activeComposerTool.badgeText || activeComposerToolId === 'mother-in-law') && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                  paddingTop: '2px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '0.7rem',
+                    color: '#38bdf8',
+                    fontWeight: 600,
+                  }}
+                >
+                  <span>✨ {activeComposerTool.badgeText || 'Tự động tối ưu Prompt theo chủ đề'}</span>
+                </div>
+
+                {activeComposerToolId === 'mother-in-law' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.location.hash = '#drama';
+                    }}
+                    style={{
+                      border: '1px solid rgba(251, 191, 36, 0.35)',
+                      borderRadius: '999px',
+                      padding: '3px 10px',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: 'rgba(251, 191, 36, 0.16)',
+                      color: '#fde68a',
+                    }}
+                  >
+                    📜 Mở Xưởng kịch bản nhiều cảnh ➔
+                  </button>
+                )}
               </div>
-            )
+            )}
+          </div>
+
+          {/* Row 1: Previews for Image Mode (if any) */}
+          {activeTab === 'image' && (refFiles.length > 0 || selectedRefUrls.length > 0) && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '8px' }}>
+              {selectedRefUrls.map((url, idx) => (
+                <div key={`selected-url-${idx}`} className="preview-thumbnail" style={{ width: '42px', height: '42px', borderRadius: '8px' }}>
+                  <img src={url} alt="Selected Ref" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <button type="button" onClick={() => setSelectedRefUrls(prev => prev.filter((_, i) => i !== idx))} className="remove-preview-btn">×</button>
+                </div>
+              ))}
+              {refFiles.map((file, idx) => (
+                <div key={idx} className="preview-thumbnail" style={{ width: '42px', height: '42px', borderRadius: '8px' }}>
+                  <img src={URL.createObjectURL(file)} alt="Ref File" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <button type="button" onClick={() => handleRemoveRefFile(idx)} className="remove-preview-btn">×</button>
+                  {refUploadStates[idx] === 'uploading' && (
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '8px', zIndex: 2 }}>
+                      <Loader size={12} className="spin-loader" style={{ color: '#fff' }} />
+                      <span style={{ fontSize: '7px', color: '#fff', fontWeight: '700' }}>đang tải</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
 
           {/* Row 2: Prompt Text Input (Full Width) */}
@@ -7173,7 +7342,7 @@ function App() {
             ref={promptTextareaRef}
             rows={1}
             className="prompt-textarea"
-            placeholder={activeTab === 'video' ? "Mô tả video bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)" : "Mô tả hình ảnh bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)"}
+            placeholder={activeTab === 'video' ? activeComposerTool.videoPlaceholder : activeComposerTool.imagePlaceholder}
             value={prompt}
             onChange={(e) => {
               setPrompt(e.target.value);
@@ -7193,28 +7362,110 @@ function App() {
           {/* Row 3: Action Toolbar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-              <div style={{ position: 'relative' }} ref={addMenuRef}>
-              <button 
-                type="button" 
-                className="add-file-btn" 
-                onClick={() => {
-                  if (activeTab === 'video') {
-                    if (!startFile && !startLibraryUrl) {
-                      setAddFileContext('start');
-                    } else {
-                      setAddFileContext('end');
-                    }
-                  } else {
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '6px' }} ref={addMenuRef}>
+              {activeTab === 'video' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                  {/* Start Image Box */}
+                  <div 
+                    onClick={() => {
+                      if (!startFile && !startLibraryUrl) {
+                        setAddFileContext('start');
+                        setShowAddMenu(true);
+                      }
+                    }}
+                    style={{ 
+                      width: '28px', 
+                      height: '28px', 
+                      borderRadius: '6px', 
+                      border: '1px dashed rgba(255, 255, 255, 0.22)',
+                      background: (startFile || startLibraryUrl) ? 'none' : 'rgba(255, 255, 255, 0.03)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      flexShrink: 0
+                    }}
+                    title="Ảnh bắt đầu (Start)"
+                  >
+                    {(startFile || startLibraryUrl) ? (
+                      <>
+                        <img src={startFile ? URL.createObjectURL(startFile) : startLibraryUrl} alt="Start Frame" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px' }} />
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setStartFile(null); setStartLibraryUrl(null); setStartUploadState(null); startUploadPromiseRef.current = null; }} className="remove-preview-btn">×</button>
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '7px', textAlign: 'center', padding: '1px 0', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>Start</div>
+                        {startUploadState === 'uploading' && (
+                          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '6px', zIndex: 2 }}>
+                            <Loader size={10} className="spin-loader" style={{ color: '#fff' }} />
+                            <span style={{ fontSize: '6px', color: '#fff', fontWeight: '700' }}>đang tải</span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <Plus size={10} style={{ color: 'rgba(255,255,255,0.45)' }} />
+                        <span style={{ fontSize: '7px', color: 'rgba(255,255,255,0.45)', fontWeight: 'bold' }}>Start</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* End Image Box */}
+                  <div 
+                    onClick={() => {
+                      if (!endFile && !endLibraryUrl) {
+                        setAddFileContext('end');
+                        setShowAddMenu(true);
+                      }
+                    }}
+                    style={{ 
+                      width: '28px', 
+                      height: '28px', 
+                      borderRadius: '6px', 
+                      border: '1px dashed rgba(255, 255, 255, 0.22)',
+                      background: (endFile || endLibraryUrl) ? 'none' : 'rgba(255, 255, 255, 0.03)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      flexShrink: 0
+                    }}
+                    title="Ảnh kết thúc (End)"
+                  >
+                    {(endFile || endLibraryUrl) ? (
+                      <>
+                        <img src={endFile ? URL.createObjectURL(endFile) : endLibraryUrl} alt="End Frame" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px' }} />
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setEndFile(null); setEndLibraryUrl(null); setEndUploadState(null); endUploadPromiseRef.current = null; }} className="remove-preview-btn">×</button>
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '7px', textAlign: 'center', padding: '1px 0', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>End</div>
+                        {endUploadState === 'uploading' && (
+                          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', borderRadius: '6px', zIndex: 2 }}>
+                            <Loader size={10} className="spin-loader" style={{ color: '#fff' }} />
+                            <span style={{ fontSize: '6px', color: '#fff', fontWeight: '700' }}>đang tải</span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <Plus size={10} style={{ color: 'rgba(255,255,255,0.45)' }} />
+                        <span style={{ fontSize: '7px', color: 'rgba(255,255,255,0.45)', fontWeight: 'bold' }}>End</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <button 
+                  type="button" 
+                  className="add-file-btn" 
+                  onClick={() => {
                     setAddFileContext('ref');
-                  }
-                  setShowAddMenu(prev => !prev);
-                }}
-                disabled={isSubmitting}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
-                title={activeTab === 'video' ? "Thêm ảnh bắt đầu/ảnh kết thúc" : "Thêm ảnh mẫu/ảnh tham khảo"}
-              >
-                <Plus size={16} />
-              </button>
+                    setShowAddMenu(prev => !prev);
+                  }}
+                  disabled={isSubmitting}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                  title="Thêm ảnh mẫu/ảnh tham khảo"
+                >
+                  <Plus size={16} />
+                </button>
+              )}
 
               {showAddMenu && (
                 <div style={{
@@ -7484,7 +7735,7 @@ function App() {
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
               {limitError.isAllTime
                 ? <>Tính năng tạo {limitError.type === 'video' ? 'video' : 'ảnh'} không hỗ trợ tài khoản <strong>Free</strong>. Vui lòng nâng cấp gói để trải nghiệm tính năng này nhé! 🎬</>
-                : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'Đặc Quyền' : userTier}</strong>.</>
+                : <>Bạn đã dùng hết {limitError.current}/{limitError.limit} lượt tạo {limitError.type === 'video' ? 'Video' : 'Ảnh'} hôm nay của gói <strong>{userTier === 'free' ? 'Free' : userTier === 'hocvien' ? 'Học viên' : userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'VIP (Full Quyền)' : userTier}</strong>.</>
               }
             </p>
             <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
@@ -7527,17 +7778,34 @@ function App() {
         }}>
           <div style={{
             background: '#16161a',
-            border: pricingModalFromExpiry ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+            border: (pricingModalFromExpiry || pricingModalBanner) ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: '20px',
             width: '100%',
-            maxWidth: '800px',
+            maxWidth: '860px',
             maxHeight: 'calc(100vh - 40px)',
             margin: 'auto',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            boxShadow: pricingModalFromExpiry ? '0 25px 60px rgba(239,68,68,0.25)' : '0 25px 60px rgba(0, 0, 0, 0.7)'
+            boxShadow: (pricingModalFromExpiry || pricingModalBanner) ? '0 25px 60px rgba(239,68,68,0.25)' : '0 25px 60px rgba(0, 0, 0, 0.7)'
           }}>
+            {/* Banner thông báo không có quyền truy cập công cụ VIP */}
+            {pricingModalBanner && !pricingModalFromExpiry && (
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(239,68,68,0.18) 0%, rgba(236,72,153,0.14) 100%)',
+                borderBottom: '1px solid rgba(239,68,68,0.28)',
+                padding: '12px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                <span style={{ fontSize: '1.2rem' }}>🔒</span>
+                <div style={{ color: '#fca5a5', fontWeight: 'bold', fontSize: '0.88rem', lineHeight: 1.45 }}>
+                  {pricingModalBanner}
+                </div>
+              </div>
+            )}
+
             {/* Banner hết hạn */}
             {pricingModalFromExpiry && (
               <div style={{
@@ -7551,7 +7819,7 @@ function App() {
                 <span style={{ fontSize: '1.2rem' }}>⚠️</span>
                 <div>
                   <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'Đặc Quyền' : userTier} của bạn đã hết hạn
+                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'VIP (Full Quyền)' : userTier} của bạn đã hết hạn
                   </div>
                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', marginTop: '2px' }}>
                     Gia hạn hoặc nâng cấp để tiếp tục tạo nội dung
@@ -7569,7 +7837,7 @@ function App() {
               {!pricingModalFromExpiry && (
                 <button
                   type="button"
-                  onClick={() => { setShowPricingModal(false); setPricingModalFromExpiry(false); }}
+                  onClick={() => { setShowPricingModal(false); setPricingModalFromExpiry(false); setPricingModalBanner(null); }}
                   style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.6rem', padding: '0 5px' }}
                 >
                   ×
@@ -7666,6 +7934,55 @@ function App() {
                 >
                   {userTier === 'premium_169k' ? 'Gói hiện tại' : 
                    (userTier === 'pro_299k' || userTier === 'master_499k') ? 'Gói thấp hơn' : `Nâng cấp +${getUpgradeCost('premium_169k') / 1000}k`}
+                </button>
+              </div>
+
+              {/* VIP Full Quyền Plan (399k) */}
+              <div style={{
+                background: 'linear-gradient(180deg, rgba(236,72,153,0.08) 0%, rgba(139,92,246,0.05) 100%)',
+                border: userTier === 'master_499k' ? '2px solid #ec4899' : '1.5px solid rgba(236,72,153,0.45)',
+                borderRadius: '16px',
+                padding: '24px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                position: 'relative',
+                boxShadow: '0 8px 32px rgba(236, 72, 153, 0.22)'
+              }}>
+                {userTier === 'master_499k' ? (
+                  <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#ec4899', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>
+                ) : (
+                  <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 7px', background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>MỞ HẾT QUYỀN</span>
+                )}
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói VIP (Full Quyền)</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#f472b6' }}>399k</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
+                </div>
+                <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }} />
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Không giới hạn Video & Ảnh</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Không giới hạn Giọng nói AI</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Mở khóa Mẹ chồng nàng dâu, Review đồ ăn, Thời trang...</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fff', fontWeight: '700' }}>✓ Mở hết quyền toàn bộ công cụ VIP</li>
+                </ul>
+                <button
+                  onClick={() => handleSelectTierForPay('master_499k')}
+                  disabled={false}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 16px rgba(236, 72, 153, 0.35)'
+                  }}
+                >
+                  {userTier === 'master_499k' ? 'Gói hiện tại' : `Nâng cấp +${getUpgradeCost('master_499k') / 1000}k`}
                 </button>
               </div>
 </div>

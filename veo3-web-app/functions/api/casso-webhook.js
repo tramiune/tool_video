@@ -178,7 +178,14 @@ export async function onRequestPost(context) {
       processedTransactions.push({ userId, paymentCode, tier: requestedTier, amount });
 
       // 6. Post Notification to Telegram channel
-      const tierName = requestedTier === "premium_169k" ? "Premium (199k)" : (requestedTier === "standard_99k" ? "Standard (99k)" : "Basic (69k)");
+      const tierName =
+        requestedTier === "master_499k" || requestedTier === "vip_399k"
+          ? "VIP Full Quyền (399k)"
+          : requestedTier === "premium_169k"
+          ? "Premium (199k)"
+          : requestedTier === "standard_99k"
+          ? "Standard (99k)"
+          : "Basic (69k)";
       const telegramMsg = `✨ *Giao dịch nạp tiền thành công (meo3)*\n\n` +
                           `- User ID: \`${userId}\`\n` +
                           `- Gói nâng cấp: *${tierName}*\n` +

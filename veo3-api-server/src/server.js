@@ -3463,12 +3463,59 @@ async function runImageTask(taskId) {
           task.docRef.update({ referenceImages: resolvedRefs }).catch(() => {});
         }
 
+        // Chuyển ảnh reference sang data:image/jpeg;base64,... gọn nhẹ (768px) khi gửi qua Extension Bridge
+        // để iframe Bulk AI Studio Pro không bị chặn bởi CSP của Google Flow
+        const bridgeRefs = [];
+        for (let i = 0; i < resolvedRefs.length; i++) {
+          const refUrl = resolvedRefs[i];
+          if (typeof refUrl === 'string' && refUrl.startsWith('data:image')) {
+            bridgeRefs.push(refUrl);
+          } else if (typeof refUrl === 'string' && refUrl.startsWith('http')) {
+            try {
+              const r = await fetch(refUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              const rawBuf = Buffer.from(await r.arrayBuffer());
+              const { spawnSync } = require('child_process');
+              const pyResize = spawnSync('python3', ['-c', `
+import sys, io, base64
+from PIL import Image, ImageOps
+raw = sys.stdin.buffer.read()
+im = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+max_dim = 768
+if max(im.width, im.height) > max_dim:
+    scale = max_dim / float(max(im.width, im.height))
+    im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))), Image.Resampling.LANCZOS)
+buf = io.BytesIO()
+im.save(buf, format="JPEG", quality=80, optimize=True)
+b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+if len(b64) > 90000:
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=72, optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+sys.stdout.write("data:image/jpeg;base64," + b64)
+`], { input: rawBuf, maxBuffer: 15 * 1024 * 1024, timeout: 10000 });
+              if (pyResize.status === 0 && pyResize.stdout && pyResize.stdout.length > 30) {
+                const dataUri = pyResize.stdout.toString();
+                logger.info(`[Image Task] Đã chuyển ref image ${i} sang data:image/jpeg (${Math.round(dataUri.length / 1024)} KB base64) vượt CSP Flow.`);
+                bridgeRefs.push(dataUri);
+              } else {
+                bridgeRefs.push(`data:image/jpeg;base64,${rawBuf.toString('base64')}`);
+              }
+            } catch (convErr) {
+              logger.warn(`[Image Task] Không thể chuyển ref image ${i} sang base64 (${convErr.message}), giữ nguyên URL.`);
+              bridgeRefs.push(refUrl);
+            }
+          } else {
+            bridgeRefs.push(refUrl);
+          }
+        }
+
         const result = await extensionBridge.generateImage({
           id: taskId,
           prompt: task.prompt,
           model: task.model || 'nano_banana_pro',
           aspectRatio: task.aspectRatio || '1:1',
-          referenceImages: resolvedRefs,
+          referenceImages: bridgeRefs,
           sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
           projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
         });
