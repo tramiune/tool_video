@@ -817,7 +817,7 @@ function App() {
         if (userProfileLoaded && !currentUserHasDramaAccess) {
           window.location.hash = '';
           setIsDramaView(false);
-          setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+          setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
           setShowPricingModal(true);
           return;
         }
@@ -1287,8 +1287,8 @@ function App() {
       return;
     }
     if (!hasFullToolAccess) {
-      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
-      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
       setShowPricingModal(true);
       return;
     }
@@ -1311,7 +1311,7 @@ function App() {
       const scriptData = await scriptRes.json().catch(() => ({}));
 
       if (scriptRes.status === 402 || scriptData.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
-        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
         setShowPricingModal(true);
         return;
       }
@@ -1343,7 +1343,7 @@ function App() {
       const jobData = await jobRes.json().catch(() => ({}));
 
       if (jobRes.status === 402 || jobData.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
-        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
         setShowPricingModal(true);
         return;
       }
@@ -1564,8 +1564,8 @@ function App() {
       return;
     }
     if (!hasFullToolAccess) {
-      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
-      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
       setShowPricingModal(true);
       return;
     }
@@ -1608,7 +1608,7 @@ function App() {
       const data = await res.json().catch(() => ({}));
 
       if (res.status === 402 || data.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
-        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
         setShowPricingModal(true);
         return;
       }
@@ -1836,8 +1836,8 @@ function App() {
       return;
     }
     if (!hasFullToolAccess) {
-      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
-      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
       setShowPricingModal(true);
       return;
     }
@@ -1880,7 +1880,7 @@ function App() {
       const data = await res.json().catch(() => ({}));
 
       if (res.status === 402 || data.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
-        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
         setShowPricingModal(true);
         return;
       }
@@ -1949,10 +1949,12 @@ function App() {
     const prices = {
       free: 0,
       basic_69k: 69000,
-      
+      standard_99k: 99000,
       premium_169k: 199000,
+      premium_199k: 199000,
       pro_299k: 299000,
-      master_499k: 399000
+      vip_399k: 399000,
+      master_499k: 499000
     };
 
     const currentPrice = prices[userTier] || 0;
@@ -1976,7 +1978,8 @@ function App() {
   };
 
   const audioTierLabel = (tier) => {
-    return tier === 'master_499k' ? 'VIP (399k)' :
+    return (tier === 'master_499k' || tier === 'vip_399k') ? 'VIP (499k)' :
+           tier === 'pro_299k' ? 'Pro (299k)' :
            tier === 'premium_169k' ? 'Premium' :
            tier === 'basic_69k' ? 'Basic' :
            tier === 'hocvien' ? 'Học viên' : 'Free';
@@ -2575,10 +2578,10 @@ function App() {
                             >
                               <option value="free">Free</option>
                               <option value="hocvien">Học viên (30 ảnh/ngày)</option>
-                              <option value="basic_69k">Basic (69k)</option>
-                              <option value="premium_169k">Premium (199k)</option>
-                              <option value="pro_299k">VIP / Pro (299k)</option>
-                              <option value="master_499k">Gói VIP Full Quyền (399k)</option>
+                              <option value="basic_69k">Basic (69k - Có logo)</option>
+                              <option value="premium_169k">Premium (199k - Có logo)</option>
+                              <option value="pro_299k">Pro Xóa Logo (299k - Không logo)</option>
+                              <option value="master_499k">Gói VIP Full Quyền (499k - Không logo)</option>
                             </select>
                           </td>
                           <td data-label="Hạn dùng" style={{ padding: '10px 8px' }}>
@@ -2705,9 +2708,10 @@ function App() {
                   <option value="30000">30,000đ (Bù Basic)</option>
                   <option value="69000">69,000đ (Gói Cơ bản)</option>
                   <option value="199000">199,000đ (Gói Premium)</option>
-                  <option value="399000">399,000đ (Gói VIP Full Quyền)</option>
-                  <option value="200000">200,000đ (Bù Premium &rarr; VIP 399k)</option>
-                  <option value="330000">330,000đ (Bù Basic &rarr; VIP 399k)</option>
+                  <option value="299000">299,000đ (Gói Pro Xóa Logo)</option>
+                  <option value="499000">499,000đ (Gói VIP Full Quyền)</option>
+                  <option value="300000">300,000đ (Bù Premium &rarr; VIP 499k)</option>
+                  <option value="200000">200,000đ (Bù Pro 299k &rarr; VIP 499k)</option>
                 </select>
               </div>
 
@@ -3878,7 +3882,7 @@ function App() {
                     marginTop: '10px'
                   }}
                 >
-                  {hasFullToolAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói VIP 399k'}
+                  {hasFullToolAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói VIP 499k'}
                 </button>
               </div>
             </div>
@@ -3941,7 +3945,7 @@ function App() {
                     marginTop: '10px'
                   }}
                 >
-                  {hasFullToolAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói VIP 399k'}
+                  {hasFullToolAccess ? 'Trải nghiệm ngay' : '🔒 Yêu cầu Gói VIP 499k'}
                 </button>
               </div>
             </div>
@@ -7071,8 +7075,8 @@ function App() {
     }
     
     if (activeComposerToolId !== 'text-to-video' && !hasFullToolAccess) {
-      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
-      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
       setShowPricingModal(true);
       return;
     }
@@ -8078,8 +8082,8 @@ function App() {
                       type="button"
                       onClick={(e) => {
                         if (tool.id !== 'text-to-video' && !hasFullToolAccess) {
-                          showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
-                          setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+                          showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
+                          setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
                           setShowPricingModal(true);
                           return;
                         }
@@ -10127,7 +10131,7 @@ function App() {
             border: (pricingModalFromExpiry || pricingModalBanner) ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: '20px',
             width: '100%',
-            maxWidth: '860px',
+            maxWidth: '1040px',
             maxHeight: 'calc(100vh - 40px)',
             margin: 'auto',
             display: 'flex',
@@ -10165,7 +10169,7 @@ function App() {
                 <span style={{ fontSize: '1.2rem' }}>⚠️</span>
                 <div>
                   <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'VIP (Pro)' : userTier === 'master_499k' ? 'VIP (Full Quyền)' : userTier} của bạn đã hết hạn
+                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'Pro (Xóa Logo)' : (userTier === 'master_499k' || userTier === 'vip_399k') ? 'VIP (Full Quyền)' : userTier} của bạn đã hết hạn
                   </div>
                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', marginTop: '2px' }}>
                     Gia hạn hoặc nâng cấp để tiếp tục tạo nội dung
@@ -10192,31 +10196,32 @@ function App() {
             </div>
 
             {/* Pricing Grid */}
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', alignContent: 'start' }}>
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '16px', alignContent: 'start' }}>
               
-              {/* Basic Plan */}
+              {/* Basic Plan (69k) */}
               <div style={{
                 background: 'rgba(255,255,255,0.02)',
                 border: userTier === 'basic_69k' ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.05)',
                 borderRadius: '16px',
-                padding: '24px 20px',
+                padding: '22px 18px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '16px',
+                gap: '14px',
                 position: 'relative'
               }}>
                 {userTier === 'basic_69k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#3b82f6', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
                 <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Cơ Bản</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#3b82f6' }}>69k</span>
+                  <span style={{ fontSize: '1.55rem', fontWeight: '800', color: '#3b82f6' }}>69k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '9px', fontSize: '0.78rem', color: 'var(--text-secondary)', flex: 1 }}>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 5 Video / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 10 Ảnh / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ 5 giọng nói / ngày</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ chọn ảnh thư viện</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fb923c', fontWeight: '600' }}>⚠️ Có dính logo (Watermark)</li>
                 </ul>
                 <button
                   onClick={() => handleSelectTierForPay('basic_69k')}
@@ -10228,40 +10233,41 @@ function App() {
                     border: 'none',
                     borderRadius: '8px',
                     color: '#fff',
-                    fontSize: '0.85rem',
+                    fontSize: '0.82rem',
                     fontWeight: 'bold',
                     cursor: 'pointer'
                   }}
                 >
                   {userTier === 'basic_69k' ? 'Gói hiện tại' : 
-                   (userTier === 'premium_169k' || userTier === 'pro_299k' || userTier === 'master_499k') ? 'Gói thấp hơn' : `Nâng cấp ${getUpgradeCost('basic_69k') / 1000}k`}
+                   (userTier === 'premium_169k' || userTier === 'pro_299k' || userTier === 'master_499k' || userTier === 'vip_399k') ? 'Gói thấp hơn' : `Nâng cấp ${getUpgradeCost('basic_69k') / 1000}k`}
                 </button>
               </div>
 
-              {/* Premium Plan */}
+              {/* Premium Plan (199k) */}
               <div style={{
                 background: 'rgba(255,255,255,0.02)',
                 border: userTier === 'premium_169k' ? '2px solid #fbbf24' : '1px solid rgba(255,255,255,0.05)',
                 borderRadius: '16px',
-                padding: '24px 20px',
+                padding: '22px 18px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '16px',
+                gap: '14px',
                 position: 'relative',
-                boxShadow: '0 8px 30px rgba(251, 191, 36, 0.15)'
+                boxShadow: '0 8px 30px rgba(251, 191, 36, 0.12)'
               }}>
                 {userTier === 'premium_169k' && <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#fbbf24', color: '#16161a', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>}
                 <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Premium</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#fbbf24' }}>199k</span>
+                  <span style={{ fontSize: '1.55rem', fontWeight: '800', color: '#fbbf24' }}>199k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }} />
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '9px', fontSize: '0.78rem', color: 'var(--text-secondary)', flex: 1 }}>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '700' }}>✓ Không giới hạn Video</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '700' }}>✓ Không giới hạn Ảnh</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fbbf24', fontWeight: '700' }}>✓ Không giới hạn Giọng nói</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ ưu tiên tốc độ cao</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fb923c', fontWeight: '600' }}>⚠️ Có dính logo (Watermark)</li>
                 </ul>
                 <button
                   onClick={() => handleSelectTierForPay('premium_169k')}
@@ -10273,42 +10279,93 @@ function App() {
                     border: 'none',
                     borderRadius: '8px',
                     color: '#16161a',
-                    fontSize: '0.85rem',
+                    fontSize: '0.82rem',
                     fontWeight: 'bold',
                     cursor: 'pointer'
                   }}
                 >
                   {userTier === 'premium_169k' ? 'Gói hiện tại' : 
-                   (userTier === 'pro_299k' || userTier === 'master_499k') ? 'Gói thấp hơn' : `Nâng cấp +${getUpgradeCost('premium_169k') / 1000}k`}
+                   (userTier === 'pro_299k' || userTier === 'master_499k' || userTier === 'vip_399k') ? 'Gói thấp hơn' : `Nâng cấp +${getUpgradeCost('premium_169k') / 1000}k`}
                 </button>
               </div>
 
-              {/* VIP Full Quyền Plan (399k) */}
+              {/* Pro Plan (299k - Xóa Watermark) */}
               <div style={{
-                background: 'linear-gradient(180deg, rgba(236,72,153,0.08) 0%, rgba(139,92,246,0.05) 100%)',
-                border: userTier === 'master_499k' ? '2px solid #ec4899' : '1.5px solid rgba(236,72,153,0.45)',
+                background: 'linear-gradient(180deg, rgba(16,185,129,0.08) 0%, rgba(6,182,212,0.04) 100%)',
+                border: userTier === 'pro_299k' ? '2px solid #10b981' : '1.5px solid rgba(16,185,129,0.4)',
                 borderRadius: '16px',
-                padding: '24px 20px',
+                padding: '22px 18px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '16px',
+                gap: '14px',
                 position: 'relative',
-                boxShadow: '0 8px 32px rgba(236, 72, 153, 0.22)'
+                boxShadow: '0 8px 30px rgba(16, 185, 129, 0.16)'
               }}>
-                {userTier === 'master_499k' ? (
-                  <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#ec4899', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>
+                {userTier === 'pro_299k' ? (
+                  <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#10b981', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>
                 ) : (
-                  <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 7px', background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>MỞ HẾT QUYỀN</span>
+                  <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.58rem', padding: '2px 7px', background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>XÓA WATERMARK</span>
                 )}
-                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói VIP (Full Quyền)</div>
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Pro (Xóa Logo)</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: '800', color: '#f472b6' }}>399k</span>
+                  <span style={{ fontSize: '1.55rem', fontWeight: '800', color: '#34d399' }}>299k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
                 </div>
                 <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }} />
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', flex: 1 }}>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Không giới hạn Video & Ảnh</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Không giới hạn Giọng nói AI</li>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '9px', fontSize: '0.78rem', color: 'var(--text-secondary)', flex: 1 }}>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#34d399', fontWeight: '700' }}>✓ Không giới hạn Video</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#34d399', fontWeight: '700' }}>✓ Không giới hạn Ảnh</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#34d399', fontWeight: '700' }}>✓ Không giới hạn Giọng nói</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fff', fontWeight: '800' }}>✨ Không dính logo (Xóa Watermark 100%)</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>✓ Hỗ trợ ưu tiên tốc độ cao</li>
+                </ul>
+                <button
+                  onClick={() => handleSelectTierForPay('pro_299k')}
+                  disabled={false}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.82rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
+                  }}
+                >
+                  {userTier === 'pro_299k' ? 'Gói hiện tại' :
+                   (userTier === 'master_499k' || userTier === 'vip_399k') ? 'Gói thấp hơn' : `Nâng cấp +${getUpgradeCost('pro_299k') / 1000}k`}
+                </button>
+              </div>
+
+              {/* VIP Full Quyền Plan (499k) */}
+              <div style={{
+                background: 'linear-gradient(180deg, rgba(236,72,153,0.08) 0%, rgba(139,92,246,0.05) 100%)',
+                border: (userTier === 'master_499k' || userTier === 'vip_399k') ? '2px solid #ec4899' : '1.5px solid rgba(236,72,153,0.45)',
+                borderRadius: '16px',
+                padding: '22px 18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+                position: 'relative',
+                boxShadow: '0 8px 32px rgba(236, 72, 153, 0.22)'
+              }}>
+                {(userTier === 'master_499k' || userTier === 'vip_399k') ? (
+                  <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.6rem', padding: '2px 6px', background: '#ec4899', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Đang dùng</span>
+                ) : (
+                  <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.58rem', padding: '2px 7px', background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>MỞ HẾT QUYỀN</span>
+                )}
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói VIP (Full Quyền)</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ fontSize: '1.55rem', fontWeight: '800', color: '#f472b6' }}>499k</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
+                </div>
+                <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }} />
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '9px', fontSize: '0.78rem', color: 'var(--text-secondary)', flex: 1 }}>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Không giới hạn Video, Ảnh & Giọng nói</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#34d399', fontWeight: '800' }}>✨ Không dính logo (Xóa Watermark 100%)</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Mở khóa Mẹ chồng nàng dâu, Review đồ ăn, Thời trang...</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fff', fontWeight: '700' }}>✓ Mở hết quyền toàn bộ công cụ VIP</li>
                 </ul>
@@ -10322,13 +10379,13 @@ function App() {
                     border: 'none',
                     borderRadius: '8px',
                     color: '#fff',
-                    fontSize: '0.85rem',
+                    fontSize: '0.82rem',
                     fontWeight: 'bold',
                     cursor: 'pointer',
                     boxShadow: '0 4px 16px rgba(236, 72, 153, 0.35)'
                   }}
                 >
-                  {userTier === 'master_499k' ? 'Gói hiện tại' : `Nâng cấp +${getUpgradeCost('master_499k') / 1000}k`}
+                  {(userTier === 'master_499k' || userTier === 'vip_399k') ? 'Gói hiện tại' : `Nâng cấp +${getUpgradeCost('master_499k') / 1000}k`}
                 </button>
               </div>
 </div>

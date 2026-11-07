@@ -1439,6 +1439,7 @@ app.post('/api/generate-video', upload.fields([{ name: 'startImage', maxCount: 1
       durationSeconds: parseInt(req.body.durationSeconds, 10) || 8,
       startImage,
       endImage,
+      watermarkText: req.body.watermarkText !== undefined ? String(req.body.watermarkText) : null,
       createdAt: Date.now()
     };
 
@@ -1482,6 +1483,7 @@ app.post('/api/generate-image', upload.single('referenceImage'), async (req, res
       model: String(req.body.model || 'nano_banana_pro'),
       count: parseInt(req.body.count, 10) || 1,
       referenceImages,
+      watermarkText: req.body.watermarkText !== undefined ? String(req.body.watermarkText) : null,
       createdAt: Date.now()
     };
 
@@ -3683,6 +3685,36 @@ async function processImageInput(imgInput, client = apiClient) {
   return imgInput; // Return as-is if it's already a mediaId or something else
 }
 
+const NO_WATERMARK_TIERS = new Set(['pro_299k', 'vip_399k', 'master_499k', 'drama_500k', 'master_899k']);
+
+async function resolveTaskWatermarkText(task) {
+  if (!task) return null;
+  // Tuyệt đối không gắn watermark vào các ảnh/video trung gian của Drama / AutoTool
+  if (task.dramaJobId || task.dramaScriptId || task.autoToolJobId) return null;
+  // Nếu task đã được chỉ định rõ watermarkText (ví dụ từ aquaai.vn gửi sang)
+  if (task.watermarkText !== undefined && task.watermarkText !== null) {
+    return String(task.watermarkText).trim() || null;
+  }
+  const uid = String(task.userId || '').trim();
+  if (!uid || uid.startsWith('aqua_') || uid === 'aquaai' || uid === 'anonymous') {
+    return null;
+  }
+  try {
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (!userDoc.exists) return 'meo3.cloud';
+    const data = userDoc.data() || {};
+    const email = String(data.email || '').toLowerCase();
+    if (data.isAdmin || email.includes('traderfinn0312')) return null;
+    const isExpired = Boolean(data.expiryDate && data.expiryDate < Date.now());
+    const activeTier = isExpired ? 'free' : String(data.tier || 'free');
+    if (NO_WATERMARK_TIERS.has(activeTier)) return null;
+    return 'meo3.cloud';
+  } catch (err) {
+    logger.warn(`[Watermark] Không thể kiểm tra gói của user ${uid}: ${err.message}`);
+    return null;
+  }
+}
+
 async function runImageTask(taskId) {
   const task = tasks[taskId];
   if (!task) return;
@@ -3737,6 +3769,7 @@ async function runImageTask(taskId) {
         task.docRef.update({ referenceImages: resolvedRefs }).catch(() => {});
       }
 
+      const watermarkText = await resolveTaskWatermarkText(task);
       const result = await generateImageViaAutoClick({
         id: taskId,
         seq: task.seq,
@@ -3745,7 +3778,8 @@ async function runImageTask(taskId) {
         aspectRatio: task.aspectRatio || '9:16',
         referenceImages: resolvedRefs,
         sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
-        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
+        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
+        watermarkText
       });
 
       const r2Url = result.r2Url || result.url || await uploadToR2(result.buffer, `meo3/images/${taskId}_${Date.now()}.jpg`, 'image/jpeg');
@@ -4012,6 +4046,7 @@ async function runVideoTask(taskId) {
     // Cơ chế AutoClick Video mới (PyAutoGUI + Poll Downloads 5 phút + Upload R2 + Xóa file)
     logger.info(`[Video] Dispatching task ${taskId} to AutoClick Video Runner (PyAutoGUI)...`);
     try {
+      const watermarkText = await resolveTaskWatermarkText(task);
       const result = await generateVideoViaAutoClick({
         id: taskId,
         prompt: task.prompt,
@@ -4020,7 +4055,8 @@ async function runVideoTask(taskId) {
         startImage: task.startImage,
         endImage: task.endImage,
         sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
-        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
+        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
+        watermarkText
       });
 
       const r2Url = result.r2Url;

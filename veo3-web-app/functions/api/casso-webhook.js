@@ -180,7 +180,9 @@ export async function onRequestPost(context) {
       // 6. Post Notification to Telegram channel
       const tierName =
         requestedTier === "master_499k" || requestedTier === "vip_399k"
-          ? "VIP Full Quyền (399k)"
+          ? "VIP Full Quyền (499k)"
+          : requestedTier === "pro_299k"
+          ? "Pro Xóa Logo (299k)"
           : requestedTier === "premium_169k"
           ? "Premium (199k)"
           : requestedTier === "standard_99k"
