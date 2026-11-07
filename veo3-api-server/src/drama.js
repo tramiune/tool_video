@@ -137,35 +137,39 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
     ];
   } else {
     const themePrompt = inputTopic 
-      ? `Hãy sáng tạo một kịch bản phim ngắn drama về chủ đề cụ thể: "${inputTopic}".`
-      : 'Hãy tự sáng tạo ra một chủ đề drama gia đình Việt Nam ngẫu nhiên bất kỳ (mâu thuẫn mẹ chồng nàng dâu, ngoại tình, phân chia tài sản, sự vô cảm,...) thật kịch tính và viết kịch bản dựa trên chủ đề tự nghĩ đó.';
+      ? `Hãy sáng tạo một kịch bản phim hoạt hình 3D Pixar drama gia đình Việt Nam ("Mẹ chồng nàng dâu") về chủ đề cụ thể: "${inputTopic}".`
+      : 'Hãy tự sáng tạo ra một chủ đề phim hoạt hình 3D Pixar drama gia đình Việt Nam ("Mẹ chồng nàng dâu") ngẫu nhiên bất kỳ (mâu thuẫn mẹ chồng nàng dâu, chuyện bếp núc, tiền bạc, chăm con, đối xử thiên vị...) thật kịch tính và viết kịch bản dựa trên chủ đề tự nghĩ đó.';
 
-    systemPrompt = 'Bạn là biên kịch phim ngắn drama gia đình Việt Nam dạng dọc (9:16). '
+    systemPrompt = 'Bạn là biên kịch kiêm đạo diễn phim hoạt hình 3D Pixar ngắn chủ đề drama gia đình Việt Nam ("Mẹ chồng nàng dâu") dạng dọc (9:16). '
+      + 'Toàn bộ hình ảnh và chuyển động BẮT BUỘC ở phong cách hoạt hình 3D Pixar (3D Pixar animated movie style, stylized 3D Disney/Pixar cartoon characters with expressive faces and big emotional eyes, tuyệt đối KHÔNG phải người thật / NOT photorealistic, NOT live-action). '
       + 'Tuân thủ chính xác schema JSON được yêu cầu, không xuất thêm gì khác.';
 
     userPrompts = [
       themePrompt,
-      'Kịch bản phải đánh trúng cảm xúc, có kịch tính, nhiều mâu thuẫn và cao trào, kiểu nội dung "mẹ chồng nàng dâu" hoặc drama gia đình dễ gây tranh cãi.',
+      'Kịch bản phải đánh trúng cảm xúc, có kịch tính, nhiều mâu thuẫn và cao trào xoay quanh mối quan hệ Mẹ chồng - Nàng dâu.',
+      '- LƯU Ý AN TOÀN NỘI DUNG (SAFETY): Kịch tính tập trung vào mâu thuẫn tâm lý, lời nói, ánh mắt và tình huống gia đình; TUYỆT ĐỐI KHÔNG mô tả bạo lực thể xác, đánh đập, tát hay hành hung (no physical violence or abuse).',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
       '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
       '- title: tiêu đề kịch bản, ngắn gọn, gây tò mò (tiếng Việt).',
-      '- characters: 3 nhân vật, mỗi người có role (vd: "con dâu", "mẹ chồng", "chồng") và description ngắn.',
-      '- baseImagePrompt: prompt tiếng Anh mô tả khung cảnh gốc + phong cách hình ảnh chung (vd: "A 3D Pixar-style modern Vietnamese house, cinematic lighting..."), vertical 9:16.',
-      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Anh, mô tả hình ảnh khung hình), imagePrompt (prompt tiếng Anh cho khung hình BẮT ĐẦU của cảnh với bố cục điện ảnh sinh động), endImagePrompt (prompt tiếng Anh mô tả khung hình KẾT THÚC của cảnh sau 8s thoại, biểu cảm phản ứng và tư thế mới của các nhân vật, giữ nguyên góc máy và bối cảnh để làm frame đầu cho cảnh kế tiếp), videoPrompt (prompt tiếng Anh mô tả chuyển động/hành động của clip 8 giây nối từ start frame sang end frame), và dialogue (mảng các câu thoại tiếng Việt, mỗi câu có speaker trùng tên nhân vật trong characters và text lời thoại).`,
+      '- characters: BẮT BUỘC đúng 3 nhân vật gồm: 1) Mẹ chồng (role: "mẹ chồng", phụ nữ lớn tuổi 55-62 tuổi), 2) Con dâu (role: "con dâu", cô gái trẻ 25-27 tuổi, đặt tên thuần nữ như Mai, Lan, Linh, Thảo, Hương), và 3) Chồng (role: "chồng", nam 28-30 tuổi). Trường description viết bằng TIẾNG ANH mô tả rõ nhân vật hoạt hình 3D Pixar kèm giới tính, độ tuổi, kiểu tóc và trang phục cố định (vd: "3D Pixar elderly Vietnamese mother-in-law woman, 60yo female, hair in a neat bun, wearing a dark green traditional blouse", "3D Pixar young Vietnamese daughter-in-law woman, 26yo pretty female with long black ponytail, wearing a pastel pink blouse and skirt", "3D Pixar young Vietnamese husband man, 29yo male with short hair, wearing a light blue polo shirt").',
+      '- baseImagePrompt: prompt tiếng Anh mô tả bối cảnh ngôi nhà Việt Nam theo phong cách hoạt hình 3D Pixar (bắt đầu bằng: "3D Pixar animated movie style, vertical 9:16: A cozy modern Vietnamese living room and dining area, stylized 3D Pixar CGI interior, warm cinematic lighting..."). TUYỆT ĐỐI KHÔNG dùng từ "photorealistic" hay "realistic textures".',
+      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Việt/Anh mô tả cảnh), imagePrompt (prompt tiếng Anh vẽ ảnh 3D Pixar cho khung hình BẮT ĐẦU của cảnh), endImagePrompt (prompt tiếng Anh vẽ ảnh 3D Pixar cho khung hình KẾT THÚC của cảnh sau 8s thoại, giữ nguyên góc máy, bối cảnh và trang phục để nối mượt sang cảnh kế tiếp), videoPrompt (prompt tiếng Anh cho clip hoạt hình 3D Pixar 8 giây nối từ start frame sang end frame), và dialogue (mảng thoại tiếng Việt).`,
+      '- YÊU CẦU BẮT BUỘC VỀ NHÂN VẬT CON DÂU & MẸ CHỒNG TRONG MỌI CẢNH (MANDATORY CHARACTER PRESENCE & GENDER CLARITY):',
+      '  * Trong TẤT CẢ 6 cảnh, CẢ MẸ CHỒNG (the elderly mother-in-law woman) VÀ CON DÂU (the young daughter-in-law woman) ĐỀU BẮT BUỘC PHẢI XUẤT HIỆN RÕ RÀNG TRONG KHUNG HÌNH!',
+      '  * Khi viết imagePrompt, endImagePrompt và videoPrompt bằng tiếng Anh, TUYỆT ĐỐI KHÔNG chỉ viết tên riêng tiếng Việt (vì AI tạo ảnh sẽ nhầm giới tính con dâu thành đàn ông). BẮT BUỘC mỗi lần nhắc tên nhân vật phải ghi kèm cụm mô tả giới tính + vai trò + trang phục bằng tiếng Anh, ví dụ: "the elderly mother-in-law woman Bà Lan (60yo female in green blouse)", "the young daughter-in-law woman Mai (26yo young woman with long hair in pastel pink blouse)", "the young husband man Huy (29yo man in blue polo shirt)".',
+      '  * Mọi imagePrompt, endImagePrompt và videoPrompt đều phải bắt đầu bằng cụm "3D Pixar animated movie style, vertical 9:16:".',
       '- YÊU CẦU QUAN TRỌNG VỀ THOẠI (DIALOGUE):',
-      '  * Bắt buộc cảnh nào cũng phải có thoại. Mảng dialogue của mỗi cảnh chỉ được phép chứa đúng 1 câu thoại duy nhất của 1 nhân vật (1 người nói duy nhất mỗi cảnh, không có đối thoại qua lại trong cùng 1 cảnh).',
+      '  * Bắt buộc cảnh nào cũng phải có thoại. Mảng dialogue của mỗi cảnh chỉ được phép chứa đúng 1 câu thoại duy nhất của 1 nhân vật (1 người nói duy nhất mỗi cảnh, xen kẽ giữa mẹ chồng, con dâu và chồng qua các cảnh).',
       '  * Mỗi câu thoại phải đủ dài để đọc/nói chậm rãi trong khoảng 7 đến 8 giây (độ dài kịch bản thoại khoảng 25-35 từ tiếng Việt), diễn đạt sâu sắc, kịch tính, tránh thoại ngắn cụt lủn.',
       'YÊU CẦU QUAN TRỌNG VỀ BỐ CỤC ĐIỆN ẢNH & TƯ THẾ NHÂN VẬT (CINEMATIC STAGING & NATURAL POSING):',
       '- TUYỆT ĐỐI KHÔNG ĐỂ CÁC NHÂN VẬT ĐỨNG DÀN HÀNG NGANG (DO NOT POSE CHARACTERS IN A STIFF LINEUP LIKE A MUGSHOT OR GROUP PHOTO).',
       '- ĐA DẠNG HÓA TƯ THẾ & TƯƠNG TÁC TỰ NHIÊN VỚI BỐI CẢNH (Contextual Posing & Natural Props):',
-      '  * Phân chia tư thế thực tế theo cốt truyện từng cảnh: Có người NGỒI (sitting on the sofa watching TV, sitting at the dining table holding a teacup, looking down at a smartphone...), có người ĐỨNG hoặc TỰA LƯNG (standing or leaning by the kitchen counter, standing to plead or explain, holding a plate of fruit or glass of water...), có người làm việc nhà hoặc sinh hoạt đời thường.',
-      '  * Tạo chiều sâu khung hình (Layering & Depth): Có người ở tiền cảnh (foreground, ví dụ ngồi trên ghế sofa gần camera hơn), người ở trung cảnh (midground) hoặc hậu cảnh (bên bàn ăn hoặc quầy bếp). Góc máy bao quát căn phòng với bố cục điện ảnh chân thực.',
-      '  * Ngôn ngữ cơ thể & Ánh mắt: Các nhân vật hướng mắt, cử chỉ và tư thế về phía nhau để trò chuyện, thể hiện rõ cảm xúc kịch tính thay vì cùng quay mặt đơ về phía máy ảnh.',
-      '- Giữ tính liên tục của bối cảnh & nhân vật (Spatial Continuity): Giữ nguyên căn phòng, đồ đạc nội thất, phong cách trang phục và diện mạo của các nhân vật qua các cảnh.',
-      '- Trong baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt của TẤT CẢ các cảnh, mô tả rõ tư thế tự nhiên cụ thể của từng người bằng tiếng Anh (ví dụ: "The mother is sitting sternly on the sofa holding a teacup, while Lan stands nervously near the dining table holding a plate, and Huy leans against the doorway looking conflicted"). Do not write or include any text, labels, subtitles, names as text, or words inside the visual outputs. The output must be completely clean and free of any text overlay.',
-      '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt. Toàn bộ prompt chỉ mô tả hình ảnh và hành động trực quan (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
+      '  * Phân chia tư thế thực tế theo cốt truyện từng cảnh: Ví dụ Mẹ chồng ngồi uy quyền trên ghế sofa cầm tách trà; Con dâu đứng gần bàn ăn hoặc quầy bếp bê đĩa hoa quả / cầm khăn lau với ánh mắt tủi thân; Chồng đứng hoặc ngồi gần đó bối rối khuyên giải.',
+      '  * Tạo chiều sâu khung hình (Layering & Depth) và ngôn ngữ cơ thể hướng về nhau.',
+      '- Giữ tính liên tục của bối cảnh & nhân vật (Spatial Continuity): Giữ nguyên căn phòng, đồ đạc nội thất, phong cách trang phục và diện mạo 3D Pixar của cả 3 nhân vật qua tất cả các cảnh.',
+      '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
       '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes) để đảm bảo video ghép lại không bị giật, nhảy hình.',
-      '- KHUNG HÌNH ĐƠN (Single Shot Only): Toàn bộ imagePrompt và endImagePrompt chỉ mô tả một bức ảnh đơn lẻ duy nhất (single unified camera shot, full bleed 9:16). Tuyệt đối KHÔNG viết prompt dạng chuỗi khung hình, không phân chia frame (no split screen, no collage, no panels, no triptych, no sequence).'
+      '- KHUNG HÌNH ĐƠN (Single Shot Only): Toàn bộ imagePrompt và endImagePrompt chỉ mô tả một bức ảnh 3D Pixar đơn lẻ duy nhất (single unified 3D Pixar camera shot, full bleed 9:16). Tuyệt đối KHÔNG viết prompt dạng chuỗi khung hình, không phân chia frame (no split screen, no collage, no panels, no triptych, no sequence).'
     ];
   }
 
@@ -455,7 +459,7 @@ async function runDramaJob(jobId) {
                 referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/mother_character.jpg');
               }
               if (promptLower.includes('gac huou non sumo') || promptLower.includes('sumo non') || promptLower.includes('pouch') || promptLower.includes('product') || promptLower.includes('package')) {
-                referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_product.png');
+                referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_product.jpg');
               }
             }
 
@@ -675,6 +679,26 @@ async function runDramaJob(jobId) {
       });
       const completedJob = { ...job, status: 'completed', progress: 100, finalUrl, completedAt: Date.now() };
       await recordDramaEpisode(jobRef, completedJob).catch(() => {});
+      if (job.userId && !String(job.userId).startsWith('aqua_')) {
+        const firstScene = Array.isArray(job.scenes) && job.scenes[0] ? job.scenes[0] : {};
+        await db.collection('tasks').add({
+          userId: job.userId,
+          email: job.userEmail || null,
+          type: 'video',
+          status: 'completed',
+          aspectRatio: '9:16',
+          model: 'mother-in-law',
+          count: 1,
+          durationSeconds: Math.max(16, (Array.isArray(job.scenes) ? job.scenes.length : 6) * 8),
+          startImage: firstScene.startImageUrl || firstScene.imageUrl || null,
+          prompt: `Phim Mẹ chồng nàng dâu (Tập ${job.episodeNumber || 1}): ${job.title || ''}`,
+          mediaUrl: finalUrl,
+          dramaJobId: jobId,
+          isMergedEpisode: true,
+          createdAt: Date.now(),
+          completedAt: Date.now()
+        }).catch(() => {});
+      }
       logger.success(`[Drama] Job ${jobId} completed: ${finalUrl}`);
     } finally {
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -780,10 +804,70 @@ function getCharacterPositionLabel(job, scene, speakerName) {
   return `the ${descriptor} ${posture} ${position || 'in the scene'}`.replace(/\s+/g, ' ').trim();
 }
 
+function getCharacterEnglishTag(charObj, index = 0) {
+  if (!charObj) return '3D Pixar character';
+  const role = String(charObj.role || '').toLowerCase();
+  const name = String(charObj.name || '').toLowerCase();
+  const age = String(charObj.age || '').trim();
+  const desc = String(charObj.description || '').trim();
+
+  let roleEn = '';
+  if (role.includes('mẹ chồng') || role.includes('mẹ') || role.includes('bà') || name.startsWith('bà ')) {
+    roleEn = `elderly Vietnamese mother-in-law woman (${age || '60'}yo female, older woman)`;
+  } else if (role.includes('con dâu') || role.includes('nàng dâu') || role.includes('vợ')) {
+    roleEn = `young Vietnamese daughter-in-law woman (${age || '26'}yo pretty young female woman with feminine long hair)`;
+  } else if (role.includes('chồng') || role.includes('con trai') || role.includes('nam')) {
+    roleEn = `young Vietnamese husband man (${age || '29'}yo male man)`;
+  } else if (index === 0) {
+    roleEn = `elderly Vietnamese mother-in-law woman (${age || '60'}yo female)`;
+  } else if (index === 1) {
+    roleEn = `young Vietnamese daughter-in-law woman (${age || '26'}yo young female woman)`;
+  } else {
+    roleEn = `Vietnamese family member (${age || '29'}yo)`;
+  }
+
+  // If description is already mostly English, append a short snippet
+  const hasAsciiDesc = desc && /[a-zA-Z]{4,}/.test(desc) && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(desc);
+  if (hasAsciiDesc) {
+    return `${charObj.name} (${roleEn} — ${desc.slice(0, 140)})`;
+  }
+  return `${charObj.name} (${roleEn})`;
+}
+
+function enrichPromptWithCharacterRoles(rawPrompt, characters) {
+  let text = String(rawPrompt || '').trim()
+    .replace(/\b(photorealistic|realistic textures|realistic lighting|live-action|photograph)\b/gi, '3D Pixar animated');
+  if (!Array.isArray(characters) || characters.length === 0) return text;
+
+  characters.forEach((c, idx) => {
+    const rawName = String(c?.name || '').trim();
+    if (!rawName) return;
+    const role = String(c?.role || '').toLowerCase();
+    const age = String(c?.age || '').trim();
+    let shortTag = '';
+    if (role.includes('mẹ chồng') || role.includes('mẹ') || rawName.toLowerCase().startsWith('bà ')) {
+      shortTag = `the ${age || '60'}yo elderly mother-in-law woman`;
+    } else if (role.includes('con dâu') || role.includes('nàng dâu') || role.includes('vợ')) {
+      shortTag = `the ${age || '26'}yo young female daughter-in-law woman`;
+    } else if (role.includes('chồng') || role.includes('con trai')) {
+      shortTag = `the ${age || '29'}yo young husband man`;
+    }
+    if (!shortTag) return;
+
+    const escaped = rawName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b(?!\\s*\\()`, 'i');
+    if (regex.test(text)) {
+      text = text.replace(regex, `${rawName} (${shortTag})`);
+    }
+  });
+  return text;
+}
+
 function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
-  const baseImagePrompt = String(job.baseImagePrompt || '').trim();
+  const rawBaseImagePrompt = String(job.baseImagePrompt || '').trim();
+  const baseImagePrompt = rawBaseImagePrompt.replace(/\b(photorealistic|realistic textures|realistic lighting|live-action|photograph)\b/gi, '3D Pixar animated');
   const characters = Array.isArray(job.characters) ? job.characters.filter(c => String(c.name || '').trim()) : [];
-  const characterNames = characters.map(c => c.name).join(', ');
+  const characterManifest = characters.map((c, idx) => getCharacterEnglishTag(c, idx)).join('; ');
 
   const dialogues = Array.isArray(scene.dialogue) ? scene.dialogue : [];
   const dialogueLines = dialogues.map(line => {
@@ -797,49 +881,47 @@ function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
   const isEndImageTask = normalizedType === 'endimage' || normalizedType === 'end_image';
 
   if (isImageTask) {
-    parts.push(String(scene.imagePrompt || scene.description || '').trim());
+    parts.push('3D Pixar animated movie style, vertical 9:16, expressive 3D Disney/Pixar cartoon characters:');
+    parts.push(enrichPromptWithCharacterRoles(scene.imagePrompt || scene.description || '', characters));
     if (baseImagePrompt) {
       parts.push(`Environment: ${baseImagePrompt}`);
     }
-    if (characterNames) {
-      parts.push(`Characters in scene: ${characterNames}. All characters must appear together in this room.`);
+    if (characterManifest) {
+      parts.push(`Characters visible in this room (MUST clearly show BOTH the elderly mother-in-law woman AND the young female daughter-in-law woman in frame): ${characterManifest}.`);
     }
-    parts.push('Cinematic staging: Characters have natural, varied postures with depth across the room (e.g. one seated comfortably, others standing or leaning naturally near furniture, interacting naturally). No stiff lineup.');
-    if (job.channelType === 'sumo') {
-      parts.push('3D Pixar animated film style, vibrant, expressive, cute.');
-    } else {
-      parts.push('Photorealistic cinematic Vietnamese family drama.');
-    }
+    parts.push('Cinematic staging: Characters have natural, varied postures with depth across the room (e.g. the elderly mother-in-law woman seated on the sofa, the young female daughter-in-law woman standing near the dining table or kitchen counter, interacting naturally). No stiff lineup.');
+    parts.push('3D Pixar animated film style, stylized 3D CGI cartoon characters with expressive faces and big emotional eyes, vibrant warm lighting. ABSOLUTELY NOT photorealistic, NOT live-action, NOT real human photography.');
     // Anti-split, anti-collage, anti-triptych guard
-    parts.push('Single unified vertical 9:16 shot. Full-bleed photograph. ABSOLUTELY NO split screen, NO multi-panel, NO collage, NO triptych, NO comic strip, NO storyboard sequence, NO duplicate characters, NO borders.');
+    parts.push('Single unified vertical 9:16 3D Pixar animated shot. Full-bleed 3D CGI render. ABSOLUTELY NO split screen, NO multi-panel, NO collage, NO triptych, NO comic strip, NO storyboard sequence, NO duplicate characters, NO borders.');
   } else if (isEndImageTask) {
     const endPrompt = String(scene.endImagePrompt || '').trim() || String(scene.videoPrompt || scene.description || '').trim();
-    parts.push(endPrompt);
+    parts.push('3D Pixar animated movie style, vertical 9:16, expressive 3D Disney/Pixar cartoon characters:');
+    parts.push(enrichPromptWithCharacterRoles(endPrompt, characters));
     if (baseImagePrompt) {
       parts.push(`Environment: ${baseImagePrompt}`);
     }
-    parts.push('Depict the updated emotional reaction, facial expressions, and natural body postures of the characters at this moment. Maintain identical faces, clothing, and room setting as the reference image.');
-    if (job.channelType === 'sumo') {
-      parts.push('3D Pixar animated film style, vibrant, expressive, cute.');
-    } else {
-      parts.push('Photorealistic cinematic Vietnamese family drama.');
+    if (characterManifest) {
+      parts.push(`Characters in frame (keep exact same 3D Pixar characters including BOTH the elderly mother-in-law woman AND the young female daughter-in-law woman): ${characterManifest}.`);
     }
+    parts.push('Depict the updated emotional reaction, facial expressions, and natural body postures of the 3D Pixar characters at this moment. Maintain identical 3D Pixar faces, clothing, gender, and room setting as the reference image.');
+    parts.push('3D Pixar animated film style, stylized 3D CGI cartoon characters, vibrant warm lighting. ABSOLUTELY NOT photorealistic, NOT live-action.');
     // Anti-split, anti-collage, anti-triptych guard
-    parts.push('Single unified vertical 9:16 shot. Full-bleed photograph. ABSOLUTELY NO split screen, NO multi-panel, NO collage, NO triptych, NO comic strip, NO storyboard sequence, NO duplicate characters, NO borders.');
+    parts.push('Single unified vertical 9:16 3D Pixar animated shot. Full-bleed 3D CGI render. ABSOLUTELY NO split screen, NO multi-panel, NO collage, NO triptych, NO comic strip, NO storyboard sequence, NO duplicate characters, NO borders.');
   } else {
     // Video prompt
-    parts.push(String(scene.videoPrompt || scene.description || '').trim());
+    parts.push('3D Pixar animated movie style, vertical 9:16:');
+    parts.push(enrichPromptWithCharacterRoles(scene.videoPrompt || scene.description || '', characters));
     if (baseImagePrompt) {
       parts.push(`Environment: ${baseImagePrompt}`);
     }
-    if (characterNames) {
-      parts.push(`Characters: ${characterNames}`);
+    if (characterManifest) {
+      parts.push(`Characters: ${characterManifest}`);
     }
     if (dialogueLines) {
-      parts.push(`Character Dialogues (speaking with natural lip movement matching this line):\n${dialogueLines}`);
+      parts.push(`Character Dialogues (speaking with natural 3D Pixar lip movement matching this line):\n${dialogueLines}`);
     }
-    parts.push('Characters talk with expressive, natural facial emotions and subtle gestures.');
-    parts.push('One coherent 8-second continuous vertical 9:16 video clip smoothly transitioning from start frame to end frame. Locked static camera, smooth cinematic depth, no camera cuts, no split screen.');
+    parts.push('3D Pixar animated characters talk with expressive, natural facial emotions and subtle gestures.');
+    parts.push('One coherent 8-second continuous vertical 9:16 3D Pixar animated video clip smoothly transitioning from start frame to end frame. Locked static camera, smooth cinematic depth, no camera cuts, no split screen.');
   }
 
   let finalPrompt = parts.join('\n');
@@ -937,7 +1019,7 @@ async function generateSceneMedia({
           referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/mother_character.jpg');
         }
         if (promptLower.includes('gac huou non sumo') || promptLower.includes('sumo non') || promptLower.includes('pouch') || promptLower.includes('product') || promptLower.includes('package')) {
-          referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_product.png');
+          referenceImages.push('https://pub-2b53cd37b4a44642afdbb8bb470bde66.r2.dev/sumo_product.jpg');
         }
       }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid, ArrowUp, ArrowDown } from 'lucide-react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid, ArrowUp, ArrowDown, Volume2, Shirt } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -390,11 +390,11 @@ const MEO_COMPOSER_TOOLS = [
   {
     id: 'fashion',
     emoji: '👗',
-    label: 'Thời trang',
+    label: 'Thời trang trước gương',
     videoPlaceholder: 'Nhập trang phục & người mẫu... (VD: Người mẫu nữ mặc váy dạ hội đỏ bước đi trên sàn catwalk)',
     imagePlaceholder: 'Mô tả bộ trang phục / lookbook thời trang muốn tạo ảnh...',
     promptPrefix: 'Phong cách fashion lookbook, ánh sáng studio mờ ảo, người mẫu chuyên nghiệp: ',
-    badgeText: 'Chế độ Lookbook Thời trang Studio',
+    badgeText: 'Chế độ Thời trang trước gương (Tự thay đồ + Ghép cảnh)',
   },
   {
     id: 'product-ad',
@@ -1163,6 +1163,751 @@ function App() {
     toastTimerRef.current = setTimeout(() => {
       setToastMessage(null);
     }, 4500);
+  };
+
+  // ─── QUICK COMPOSER MULTI-SCENE TOOLS: Mẹ chồng nàng dâu, Review đồ ăn, Thời trang trước gương ───
+  const [quickDramaGeneratingScript, setQuickDramaGeneratingScript] = useState(false);
+  const [quickDramaCreatingVideo, setQuickDramaCreatingVideo] = useState(false);
+  const [quickDramaCancelling, setQuickDramaCancelling] = useState(false);
+  const [quickDramaJobId, setQuickDramaJobId] = useState(null);
+  const [quickDramaJob, setQuickDramaJob] = useState(null);
+  const [quickDramaScript, setQuickDramaScript] = useState(null);
+  const [quickDramaError, setQuickDramaError] = useState(null);
+  const quickDramaAbortRef = useRef(null);
+
+  useEffect(() => {
+    if (activeComposerToolId !== 'mother-in-law' || !hasFullToolAccess || !user?.uid || quickDramaJobId) return;
+    let cancelled = false;
+    const checkRunningDramaJob = async () => {
+      try {
+        const res = await authFetch(user, `${API_BASE}/api/drama/scripts`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const scripts = data?.scripts || [];
+        for (const sc of scripts.slice(0, 2)) {
+          if (!sc?.id || cancelled) continue;
+          const jobRes = await authFetch(user, `${API_BASE}/api/drama/scripts/${sc.id}/jobs/latest`);
+          if (!jobRes.ok || cancelled) continue;
+          const jobData = await jobRes.json();
+          const job = jobData?.job;
+          if (job && job.status !== 'completed' && job.status !== 'failed') {
+            setQuickDramaScript(normalizeDramaScript({ ...sc, id: sc.id }));
+            setQuickDramaJobId(job.id);
+            setQuickDramaJob(job);
+            break;
+          }
+        }
+      } catch (_) {}
+    };
+    checkRunningDramaJob();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeComposerToolId, hasFullToolAccess, user?.uid, quickDramaJobId]);
+
+  useEffect(() => {
+    if (!quickDramaJobId || !user?.uid) return;
+    let cancelled = false;
+    let interval = null;
+
+    const pollQuickDramaJob = async () => {
+      try {
+        const res = await authFetch(user, `${API_BASE}/api/drama/jobs/${quickDramaJobId}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setQuickDramaJob(data);
+        if (data.status === 'completed' || data.status === 'failed') {
+          if (interval) {
+            clearInterval(interval);
+            interval = null;
+          }
+          if (data.status === 'failed') {
+            const errMsg = typeof data.error === 'string' ? data.error : 'Tạo video thất bại, vui lòng thử lại.';
+            setQuickDramaError(errMsg);
+          }
+        }
+      } catch (_) {}
+    };
+
+    pollQuickDramaJob();
+    interval = setInterval(pollQuickDramaJob, 3500);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [quickDramaJobId, user?.uid]);
+
+  const handleQuickDramaStart = async () => {
+    if (
+      quickDramaGeneratingScript ||
+      quickDramaCreatingVideo ||
+      (quickDramaJob && quickDramaJob.status !== 'completed' && quickDramaJob.status !== 'failed')
+    ) {
+      return;
+    }
+
+    if (!user?.uid) {
+      showAccessDeniedToast('Vui lòng đăng nhập để tạo video.');
+      return;
+    }
+    if (!hasFullToolAccess) {
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+      setShowPricingModal(true);
+      return;
+    }
+
+    const abortCtrl = new AbortController();
+    quickDramaAbortRef.current = abortCtrl;
+    setQuickDramaError(null);
+    setQuickDramaJobId(null);
+    setQuickDramaJob(null);
+    setQuickDramaScript(null);
+    setQuickDramaGeneratingScript(true);
+
+    try {
+      const scriptRes = await authFetch(user, `${API_BASE}/api/drama/scripts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: '', channelType: 'drama', checkVideoEligibility: true }),
+        signal: abortCtrl.signal,
+      });
+      const scriptData = await scriptRes.json().catch(() => ({}));
+
+      if (scriptRes.status === 402 || scriptData.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
+        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+        setShowPricingModal(true);
+        return;
+      }
+      if (scriptData.code === 'DRAMA_JOB_RUNNING' && scriptData.activeJob) {
+        if (scriptData.activeScript) {
+          setQuickDramaScript(normalizeDramaScript({ ...scriptData.activeScript, id: scriptData.activeScript.id }));
+        }
+        setQuickDramaJobId(scriptData.activeJob.id);
+        setQuickDramaJob(scriptData.activeJob);
+        showAccessDeniedToast(scriptData.error || 'Bạn đang có 1 video đang dựng.');
+        return;
+      }
+      if (!scriptRes.ok) {
+        throw new Error(scriptData.error || scriptData.detail || 'Không đủ điều kiện hoặc không thể tạo kịch bản.');
+      }
+      if (abortCtrl.signal.aborted) return;
+
+      const normalized = normalizeDramaScript({ ...scriptData.script, id: scriptData.script.id });
+      setQuickDramaScript(normalized);
+      setQuickDramaGeneratingScript(false);
+      setQuickDramaCreatingVideo(true);
+
+      const jobRes = await authFetch(user, `${API_BASE}/api/drama/scripts/${normalized.id}/jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+        signal: abortCtrl.signal,
+      });
+      const jobData = await jobRes.json().catch(() => ({}));
+
+      if (jobRes.status === 402 || jobData.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
+        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+        setShowPricingModal(true);
+        return;
+      }
+      if (!jobRes.ok) {
+        throw new Error(jobData.error || jobData.detail || 'Không thể bắt đầu tạo video.');
+      }
+      if (abortCtrl.signal.aborted) return;
+
+      setQuickDramaJobId(jobData.jobId);
+      setQuickDramaJob({
+        id: jobData.jobId,
+        status: jobData.status || 'queued',
+        progress: 5,
+        episodeNumber: jobData.episodeNumber || 1,
+        title: normalized.title,
+        scenes: (normalized.scenes || []).map((s, idx) => ({
+          ...s,
+          index: idx,
+          status: 'pending',
+        })),
+      });
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      const errMsg = err?.message || 'Không thể tạo video, vui lòng thử lại.';
+      setQuickDramaError(errMsg);
+      showAccessDeniedToast(errMsg);
+    } finally {
+      setQuickDramaGeneratingScript(false);
+      setQuickDramaCreatingVideo(false);
+    }
+  };
+
+  const handleQuickDramaStop = async () => {
+    if (quickDramaCancelling) return;
+    if (quickDramaAbortRef.current) {
+      quickDramaAbortRef.current.abort();
+      quickDramaAbortRef.current = null;
+    }
+    if (!quickDramaJobId) {
+      setQuickDramaGeneratingScript(false);
+      setQuickDramaCreatingVideo(false);
+      setQuickDramaJob(null);
+      setQuickDramaError('Đã dừng tạo video.');
+      return;
+    }
+
+    setQuickDramaCancelling(true);
+    try {
+      const res = await authFetch(user, `${API_BASE}/api/drama/jobs/${quickDramaJobId}/cancel`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 400) {
+        throw new Error(data.error || data.detail || 'Không thể dừng tác vụ.');
+      }
+      setQuickDramaJobId(null);
+      setQuickDramaJob(null);
+      setQuickDramaGeneratingScript(false);
+      setQuickDramaCreatingVideo(false);
+      setQuickDramaError('Đã dừng tạo video theo yêu cầu.');
+    } catch (err) {
+      showAccessDeniedToast(err?.message || 'Không thể dừng tác vụ.');
+    } finally {
+      setQuickDramaCancelling(false);
+    }
+  };
+
+  // ─── FOOD REVIEW (Review đồ ăn) ───
+  const [foodReviewFiles, setFoodReviewFiles] = useState([]);
+  const [foodReviewPreviewUrls, setFoodReviewPreviewUrls] = useState([]);
+  const [foodReviewProductName, setFoodReviewProductName] = useState('');
+  const [foodReviewVoices, setFoodReviewVoices] = useState([
+    { index: 0, name: 'Giọng Adam', sampleUrl: 'https://pub-4ab82acbfdfa460d9fb6eed5cdca1fc5.r2.dev/voices/voice-sample-1.mp3' },
+  ]);
+  const [foodReviewVoiceIndex, setFoodReviewVoiceIndex] = useState(0);
+  const [foodReviewPlayingSample, setFoodReviewPlayingSample] = useState(false);
+  const foodVoiceSampleAudioRef = useRef(null);
+  const foodReviewFileInputRef = useRef(null);
+  const foodReviewAbortRef = useRef(null);
+  const [foodReviewSubmitting, setFoodReviewSubmitting] = useState(false);
+  const [foodReviewJobId, setFoodReviewJobId] = useState(null);
+  const [foodReviewJob, setFoodReviewJob] = useState(null);
+  const [foodReviewError, setFoodReviewError] = useState(null);
+  const [foodReviewCancelling, setFoodReviewCancelling] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/api/audio/voices`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        const list = res?.data || res?.voices;
+        if (cancelled || !Array.isArray(list) || list.length === 0) return;
+        setFoodReviewVoices(list);
+        const adamVoice = list.find((v) => String(v?.name || '').toLowerCase().includes('adam'));
+        if (adamVoice && typeof adamVoice.index === 'number') {
+          setFoodReviewVoiceIndex(adamVoice.index);
+        } else {
+          setFoodReviewVoiceIndex(0);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasFullToolAccess || !user?.uid || foodReviewJobId) return;
+    let cancelled = false;
+    const checkRunningFoodJob = async () => {
+      try {
+        const res = await authFetch(user, `${API_BASE}/api/drama/food-review/jobs/latest`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const job = data?.job;
+        if (job) {
+          setFoodReviewJob(job);
+          if (job.status !== 'completed' && job.status !== 'failed') {
+            setFoodReviewJobId(job.id);
+            if (job.productName) setFoodReviewProductName(job.productName);
+            if (typeof job.voiceIndex === 'number') setFoodReviewVoiceIndex(job.voiceIndex);
+          }
+        }
+      } catch (_) {}
+    };
+    checkRunningFoodJob();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasFullToolAccess, user?.uid, foodReviewJobId]);
+
+  useEffect(() => {
+    if (!foodReviewJobId || !user?.uid) return;
+    let cancelled = false;
+    let interval = null;
+
+    const pollFoodJob = async () => {
+      try {
+        const res = await authFetch(user, `${API_BASE}/api/drama/food-review/jobs/${foodReviewJobId}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setFoodReviewJob(data);
+        if (data.status === 'completed' || data.status === 'failed') {
+          if (interval) {
+            clearInterval(interval);
+            interval = null;
+          }
+          if (data.status === 'failed') {
+            const errMsg = typeof data.error === 'string' ? data.error : 'Tạo video Review thất bại, vui lòng thử lại.';
+            setFoodReviewError(errMsg);
+          }
+        }
+      } catch (_) {}
+    };
+
+    pollFoodJob();
+    interval = setInterval(pollFoodJob, 3500);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [foodReviewJobId, user?.uid]);
+
+  const handleFoodReviewFilesChange = (e) => {
+    const selected = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (selected.length === 0) return;
+    if (selected.some((f) => String(f?.type || '').startsWith('video/'))) {
+      showAccessDeniedToast('Vui lòng chỉ chọn file hình ảnh (JPG, PNG, WEBP) món ăn rõ nét!');
+      return;
+    }
+    const valid = selected.filter((f) => f.size <= 30 * 1024 * 1024);
+    setFoodReviewFiles((prev) => {
+      const merged = [...prev, ...valid].slice(0, 5);
+      setFoodReviewPreviewUrls(merged.map((file) => URL.createObjectURL(file)));
+      return merged;
+    });
+    setFoodReviewError(null);
+  };
+
+  const handleRemoveFoodReviewImage = (idx) => {
+    setFoodReviewFiles((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      setFoodReviewPreviewUrls(next.map((file) => URL.createObjectURL(file)));
+      return next;
+    });
+  };
+
+  const handlePreviewFoodVoice = () => {
+    const selectedVoice = foodReviewVoices.find((v) => v.index === foodReviewVoiceIndex) || foodReviewVoices[0];
+    if (!selectedVoice?.sampleUrl) return;
+    if (foodVoiceSampleAudioRef.current) {
+      foodVoiceSampleAudioRef.current.pause();
+      foodVoiceSampleAudioRef.current = null;
+      if (foodReviewPlayingSample) {
+        setFoodReviewPlayingSample(false);
+        return;
+      }
+    }
+    const audio = new Audio(selectedVoice.sampleUrl);
+    foodVoiceSampleAudioRef.current = audio;
+    setFoodReviewPlayingSample(true);
+    audio.onended = () => setFoodReviewPlayingSample(false);
+    audio.onerror = () => setFoodReviewPlayingSample(false);
+    audio.play().catch(() => setFoodReviewPlayingSample(false));
+  };
+
+  const handleFoodReviewStart = async () => {
+    const isRunning = Boolean(
+      foodReviewSubmitting ||
+        (foodReviewJob && foodReviewJob.status !== 'completed' && foodReviewJob.status !== 'failed')
+    );
+    if (isRunning) return;
+
+    if (!user?.uid) {
+      showAccessDeniedToast('Vui lòng đăng nhập để tạo video.');
+      return;
+    }
+    if (!hasFullToolAccess) {
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+      setShowPricingModal(true);
+      return;
+    }
+    if (foodReviewFiles.length === 0) {
+      const msgTxt = 'Vui lòng chọn ít nhất 1 ảnh đồ ăn/sản phẩm rõ nét!';
+      setFoodReviewError(msgTxt);
+      return;
+    }
+    if (!foodReviewProductName.trim()) {
+      const msgTxt = 'Vui lòng nhập tên món ăn hoặc sản phẩm cần review!';
+      setFoodReviewError(msgTxt);
+      return;
+    }
+
+    const abortCtrl = new AbortController();
+    foodReviewAbortRef.current = abortCtrl;
+    setFoodReviewError(null);
+    setFoodReviewJobId(null);
+    setFoodReviewJob(null);
+    setFoodReviewSubmitting(true);
+
+    try {
+      const selectedVoice = foodReviewVoices.find((v) => v.index === foodReviewVoiceIndex) || {
+        index: 0,
+        name: 'Giọng Adam',
+      };
+      const formData = new FormData();
+      formData.append('productName', foodReviewProductName.trim());
+      formData.append('voiceIndex', String(selectedVoice.index));
+      formData.append('voiceName', selectedVoice.name || 'Giọng Adam');
+      foodReviewFiles.forEach((f) => {
+        formData.append('images', f);
+      });
+
+      const res = await authFetch(user, `${API_BASE}/api/drama/food-review/jobs`, {
+        method: 'POST',
+        body: formData,
+        signal: abortCtrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 402 || data.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
+        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+        setShowPricingModal(true);
+        return;
+      }
+      if (data.code === 'FOOD_REVIEW_JOB_RUNNING' && data.activeJob) {
+        setFoodReviewJobId(data.activeJob.id);
+        setFoodReviewJob(data.activeJob);
+        showAccessDeniedToast(data.error || 'Bạn đang có 1 video Review đồ ăn đang dựng.');
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data.error || data.detail || 'Không thể bắt đầu tạo video Review đồ ăn.');
+      }
+      if (abortCtrl.signal.aborted) return;
+
+      setFoodReviewJobId(data.jobId);
+      setFoodReviewJob(data.job);
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      const errMsg = err?.message || 'Không thể tạo video Review đồ ăn, vui lòng thử lại.';
+      setFoodReviewError(errMsg);
+    } finally {
+      setFoodReviewSubmitting(false);
+    }
+  };
+
+  const handleFoodReviewStop = async () => {
+    if (foodReviewCancelling) return;
+    if (foodReviewAbortRef.current) {
+      foodReviewAbortRef.current.abort();
+      foodReviewAbortRef.current = null;
+    }
+    if (!foodReviewJobId) {
+      setFoodReviewSubmitting(false);
+      setFoodReviewJob(null);
+      setFoodReviewError('Đã dừng tạo video.');
+      return;
+    }
+
+    setFoodReviewCancelling(true);
+    try {
+      const res = await authFetch(user, `${API_BASE}/api/drama/food-review/jobs/${foodReviewJobId}/cancel`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 400) {
+        throw new Error(data.error || data.detail || 'Không thể dừng tác vụ.');
+      }
+      setFoodReviewJobId(null);
+      setFoodReviewJob(null);
+      setFoodReviewSubmitting(false);
+      setFoodReviewError('Đã dừng tạo video theo yêu cầu.');
+    } catch (err) {
+      showAccessDeniedToast(err?.message || 'Không thể dừng tác vụ.');
+    } finally {
+      setFoodReviewCancelling(false);
+    }
+  };
+
+  // ─── THỜI TRANG TRƯỚC GƯƠNG (Lần đầu up 1 mẫu lưu sẵn -> Từ lần sau chỉ cần up ảnh trang phục -> Tự thay đồ + Ghép video) ───
+  const [fashionModelUrl, setFashionModelUrl] = useState(null);
+  const [fashionModelFile, setFashionModelFile] = useState(null);
+  const [fashionModelPreviewUrl, setFashionModelPreviewUrl] = useState(null);
+  const [fashionModelSaving, setFashionModelSaving] = useState(false);
+  const [fashionOutfitFiles, setFashionOutfitFiles] = useState([]);
+  const [fashionOutfitPreviewUrls, setFashionOutfitPreviewUrls] = useState([]);
+  const [fashionOutfitName, setFashionOutfitName] = useState('');
+  const fashionModelInputRef = useRef(null);
+  const fashionOutfitInputRef = useRef(null);
+  const fashionAbortRef = useRef(null);
+  const [fashionSubmitting, setFashionSubmitting] = useState(false);
+  const [fashionJobId, setFashionJobId] = useState(null);
+  const [fashionJob, setFashionJob] = useState(null);
+  const [fashionError, setFashionError] = useState(null);
+  const [fashionCancelling, setFashionCancelling] = useState(false);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const storageKey = `meo3_fashion_mirror_model_${user.uid}`;
+    const cachedModel = safeGetLocalStorage(storageKey);
+    if (cachedModel) {
+      setFashionModelUrl(cachedModel);
+    }
+
+    let cancelled = false;
+    const checkFashionMirrorState = async () => {
+      try {
+        const res = await authFetch(user, `${API_BASE}/api/drama/fashion-mirror/jobs/latest`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const remoteModelUrl = data?.modelImageUrl || data?.savedModelUrl;
+        if (remoteModelUrl) {
+          setFashionModelUrl(remoteModelUrl);
+          safeSetLocalStorage(storageKey, remoteModelUrl);
+        }
+        const job = data?.job;
+        if (job) {
+          setFashionJob(job);
+          if (job.status !== 'completed' && job.status !== 'failed') {
+            setFashionJobId(job.id);
+            if (job.outfitName) setFashionOutfitName(job.outfitName);
+          }
+        }
+      } catch (_) {}
+    };
+    checkFashionMirrorState();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!fashionJobId || !user?.uid) return;
+    let cancelled = false;
+    let interval = null;
+
+    const pollFashionJob = async () => {
+      try {
+        const res = await authFetch(user, `${API_BASE}/api/drama/fashion-mirror/jobs/${fashionJobId}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setFashionJob(data);
+        if (data?.modelImageUrl) {
+          setFashionModelUrl(data.modelImageUrl);
+          safeSetLocalStorage(`meo3_fashion_mirror_model_${user.uid}`, data.modelImageUrl);
+        }
+        if (data.status === 'completed' || data.status === 'failed') {
+          if (interval) {
+            clearInterval(interval);
+            interval = null;
+          }
+          if (data.status === 'failed') {
+            const errMsg =
+              typeof data.error === 'string'
+                ? data.error
+                : 'Tạo video Thời trang trước gương thất bại, vui lòng thử lại.';
+            setFashionError(errMsg);
+          }
+        }
+      } catch (_) {}
+    };
+
+    pollFashionJob();
+    interval = setInterval(pollFashionJob, 3500);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [fashionJobId, user?.uid]);
+
+  const handleFashionModelFileChange = async (e) => {
+    const selected = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (selected.length === 0) return;
+    const file = selected[0];
+    if (String(file?.type || '').startsWith('video/')) {
+      showAccessDeniedToast('Vui lòng chỉ chọn file hình ảnh (JPG, PNG, WEBP) người mẫu rõ nét!');
+      return;
+    }
+    if (file.size > 30 * 1024 * 1024) {
+      showAccessDeniedToast('Ảnh người mẫu không được vượt quá 30MB.');
+      return;
+    }
+    const localPreview = URL.createObjectURL(file);
+    setFashionModelFile(file);
+    setFashionModelPreviewUrl(localPreview);
+    setFashionError(null);
+
+    if (!user?.uid) return;
+    setFashionModelSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append('modelImage', file);
+      const res = await authFetch(user, `${API_BASE}/api/drama/fashion-mirror/model`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      const savedUrl = data?.modelImageUrl || data?.savedModelUrl;
+      if (res.ok && savedUrl) {
+        setFashionModelUrl(savedUrl);
+        safeSetLocalStorage(`meo3_fashion_mirror_model_${user.uid}`, savedUrl);
+      }
+    } catch (_) {
+    } finally {
+      setFashionModelSaving(false);
+    }
+  };
+
+  const handleFashionOutfitFilesChange = (e) => {
+    const selected = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (selected.length === 0) return;
+    if (selected.some((f) => String(f?.type || '').startsWith('video/'))) {
+      showAccessDeniedToast('Vui lòng chỉ chọn file hình ảnh (JPG, PNG, WEBP) trang phục!');
+      return;
+    }
+    const valid = selected.filter((f) => f.size <= 30 * 1024 * 1024);
+    setFashionOutfitFiles((prev) => {
+      const merged = [...prev, ...valid].slice(0, 5);
+      setFashionOutfitPreviewUrls(merged.map((file) => URL.createObjectURL(file)));
+      return merged;
+    });
+    setFashionError(null);
+  };
+
+  const handleRemoveFashionOutfitImage = (idx) => {
+    setFashionOutfitFiles((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      setFashionOutfitPreviewUrls(next.map((file) => URL.createObjectURL(file)));
+      return next;
+    });
+  };
+
+  const handleFashionMirrorStart = async () => {
+    const isRunning = Boolean(
+      fashionSubmitting ||
+        (fashionJob && fashionJob.status !== 'completed' && fashionJob.status !== 'failed')
+    );
+    if (isRunning) return;
+
+    if (!user?.uid) {
+      showAccessDeniedToast('Vui lòng đăng nhập để tạo video.');
+      return;
+    }
+    if (!hasFullToolAccess) {
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+      setShowPricingModal(true);
+      return;
+    }
+    if (!fashionModelUrl && !fashionModelFile) {
+      const msgTxt = 'Lần đầu sử dụng: Vui lòng chọn 1 ảnh Người mẫu trước! Từ lần sau hệ thống sẽ tự nhớ mẫu này.';
+      setFashionError(msgTxt);
+      return;
+    }
+    if (fashionOutfitFiles.length === 0) {
+      const msgTxt = 'Vui lòng chọn ít nhất 1 ảnh Trang phục (quần áo / váy) để AI thay đồ cho mẫu!';
+      setFashionError(msgTxt);
+      return;
+    }
+
+    const abortCtrl = new AbortController();
+    fashionAbortRef.current = abortCtrl;
+    setFashionError(null);
+    setFashionJobId(null);
+    setFashionJob(null);
+    setFashionSubmitting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('outfitName', fashionOutfitName.trim() || 'Bộ trang phục mới');
+      formData.append('numScenes', '3');
+      if (fashionModelFile) {
+        formData.append('modelImage', fashionModelFile);
+      } else if (fashionModelUrl) {
+        formData.append('modelImageUrl', fashionModelUrl);
+      }
+      fashionOutfitFiles.forEach((f) => {
+        formData.append('outfits', f);
+      });
+
+      const res = await authFetch(user, `${API_BASE}/api/drama/fashion-mirror/jobs`, {
+        method: 'POST',
+        body: formData,
+        signal: abortCtrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 402 || data.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
+        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+        setShowPricingModal(true);
+        return;
+      }
+      if (data.code === 'FASHION_MIRROR_JOB_RUNNING' && data.activeJob) {
+        setFashionJobId(data.activeJob.id);
+        setFashionJob(data.activeJob);
+        showAccessDeniedToast(data.error || 'Bạn đang có 1 video Thời trang trước gương đang dựng.');
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data.error || data.detail || 'Không thể bắt đầu tạo video Thời trang trước gương.');
+      }
+      if (abortCtrl.signal.aborted) return;
+
+      const savedUrl = data.modelImageUrl || data.savedModelUrl;
+      if (savedUrl) {
+        setFashionModelUrl(savedUrl);
+        setFashionModelFile(null);
+        safeSetLocalStorage(`meo3_fashion_mirror_model_${user.uid}`, savedUrl);
+      }
+      setFashionJobId(data.jobId);
+      setFashionJob(data.job);
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      const errMsg = err?.message || 'Không thể tạo video Thời trang trước gương, vui lòng thử lại.';
+      setFashionError(errMsg);
+    } finally {
+      setFashionSubmitting(false);
+    }
+  };
+
+  const handleFashionMirrorStop = async () => {
+    if (fashionCancelling) return;
+    if (fashionAbortRef.current) {
+      fashionAbortRef.current.abort();
+      fashionAbortRef.current = null;
+    }
+    if (!fashionJobId) {
+      setFashionSubmitting(false);
+      setFashionJob(null);
+      setFashionError('Đã dừng tạo video.');
+      return;
+    }
+
+    setFashionCancelling(true);
+    try {
+      const res = await authFetch(user, `${API_BASE}/api/drama/fashion-mirror/jobs/${fashionJobId}/cancel`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 400) {
+        throw new Error(data.error || data.detail || 'Không thể dừng tác vụ.');
+      }
+      setFashionJobId(null);
+      setFashionJob(null);
+      setFashionSubmitting(false);
+      setFashionError('Đã dừng tạo video theo yêu cầu.');
+    } catch (err) {
+      showAccessDeniedToast(err?.message || 'Không thể dừng tác vụ.');
+    } finally {
+      setFashionCancelling(false);
+    }
   };
 
   const getUpgradeCost = (targetTier) => {
@@ -7313,6 +8058,1413 @@ function App() {
             )}
           </div>
 
+          {activeComposerToolId === 'mother-in-law' ? (
+            /* Luồng Mẹ chồng nàng dâu 1 nút duy nhất: Ấn Tạo Video -> Tự tạo kịch bản 6 cảnh -> Tự dựng video luôn */
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                padding: '4px 2px 2px',
+              }}
+            >
+              {(() => {
+                const isJobRunning = Boolean(
+                  quickDramaJob && quickDramaJob.status !== 'completed' && quickDramaJob.status !== 'failed'
+                );
+                const isBusyAll = quickDramaGeneratingScript || quickDramaCreatingVideo || isJobRunning;
+                const rawProg = Number(quickDramaJob?.progress) || 0;
+                const normalizedProg = rawProg > 0 && rawProg <= 1 ? Math.round(rawProg * 100) : Math.round(rawProg);
+                const displayPercent = quickDramaGeneratingScript
+                  ? 8
+                  : quickDramaCreatingVideo
+                  ? 14
+                  : Math.max(15, Math.min(99, normalizedProg || 15));
+                const scenesList =
+                  Array.isArray(quickDramaJob?.scenes) && quickDramaJob.scenes.length > 0
+                    ? quickDramaJob.scenes
+                    : Array.isArray(quickDramaScript?.scenes)
+                    ? quickDramaScript.scenes
+                    : [];
+                const activeSceneIndex = scenesList.findIndex(
+                  (s) => s?.status !== 'completed' && !s?.videoUrl
+                );
+
+                if (isBusyAll) {
+                  return (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        padding: '6px 8px',
+                        borderRadius: '14px',
+                        background: 'rgba(15, 23, 42, 0.65)',
+                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '7px',
+                            minWidth: 0,
+                            flex: 1,
+                          }}
+                        >
+                          <Loader size={15} className="spin-loader" style={{ color: '#38bdf8', flexShrink: 0 }} />
+                          <span
+                            style={{
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              color: '#e0f2fe',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {quickDramaGeneratingScript
+                              ? 'Bước 1/2: Đang tự động viết kịch bản 6 cảnh...'
+                              : quickDramaCreatingVideo
+                              ? `Bước 2/2: Đang khởi tạo dựng phim "${quickDramaScript?.title || 'Mẹ chồng nàng dâu'}"...`
+                              : `Đang dựng: ${quickDramaJob?.title || quickDramaScript?.title || 'Mẹ chồng nàng dâu'} (Tập ${quickDramaJob?.episodeNumber || 1})`}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '0.76rem',
+                              fontWeight: 800,
+                              color: '#38bdf8',
+                              background: 'rgba(56, 189, 248, 0.12)',
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              border: '1px solid rgba(56, 189, 248, 0.25)',
+                            }}
+                          >
+                            {displayPercent}%
+                          </span>
+                          <button
+                            type="button"
+                            disabled={quickDramaCancelling}
+                            onClick={handleQuickDramaStop}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              border: '1px solid rgba(248, 113, 113, 0.45)',
+                              background: 'rgba(239, 68, 68, 0.18)',
+                              color: '#fca5a5',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: quickDramaCancelling ? 'default' : 'pointer',
+                              opacity: quickDramaCancelling ? 0.6 : 1,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '999px',
+                                background: '#f87171',
+                                display: 'inline-block',
+                              }}
+                            />
+                            {quickDramaCancelling ? 'Đang dừng...' : 'Dừng'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '6px',
+                          borderRadius: '999px',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${displayPercent}%`,
+                            height: '100%',
+                            borderRadius: '999px',
+                            background: 'linear-gradient(90deg, #06b6d4 0%, #3b82f6 50%, #ec4899 100%)',
+                            transition: 'width 0.4s ease',
+                          }}
+                        />
+                      </div>
+
+                      {scenesList.length > 0 && (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+                            gap: '4px 10px',
+                            maxHeight: '96px',
+                            overflowY: 'auto',
+                            paddingTop: '2px',
+                          }}
+                        >
+                          {scenesList.map((sc, idx) => {
+                            const scStatus = sc?.status || 'pending';
+                            const isDone = scStatus === 'completed' || Boolean(sc?.videoUrl);
+                            const isFailed = scStatus === 'failed';
+                            const isCurrent = !isDone && !isFailed && idx === activeSceneIndex;
+                            const stepText = isDone
+                              ? 'Hoàn tất'
+                              : isFailed
+                              ? 'Lỗi'
+                              : sc?.endImageUrl
+                              ? 'Đang dựng video...'
+                              : sc?.startImageUrl || sc?.imageUrl
+                              ? 'Đang tạo ảnh cuối...'
+                              : isCurrent
+                              ? 'Đang tạo ảnh đầu...'
+                              : 'Chờ tới lượt';
+                            return (
+                              <div
+                                key={idx}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '6px',
+                                  fontSize: '0.7rem',
+                                  padding: '2px 4px',
+                                  borderRadius: '6px',
+                                  background: isCurrent ? 'rgba(56, 189, 248, 0.08)' : 'transparent',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    minWidth: 0,
+                                    color: isDone ? '#6ee7b7' : isCurrent ? '#e0f2fe' : '#94a3b8',
+                                    fontWeight: isCurrent || isDone ? 600 : 400,
+                                  }}
+                                >
+                                  {isDone ? (
+                                    <Check size={12} style={{ color: '#34d399', flexShrink: 0 }} />
+                                  ) : isFailed ? (
+                                    <X size={12} style={{ color: '#f87171', flexShrink: 0 }} />
+                                  ) : isCurrent ? (
+                                    <Loader size={12} className="spin-loader" style={{ color: '#38bdf8', flexShrink: 0 }} />
+                                  ) : (
+                                    <span style={{ width: '12px', textAlign: 'center', color: '#64748b', flexShrink: 0 }}>•</span>
+                                  )}
+                                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    Cảnh {idx + 1}: {sc?.title || ''}
+                                  </span>
+                                </span>
+                                <span
+                                  style={{
+                                    flexShrink: 0,
+                                    fontSize: '0.66rem',
+                                    color: isDone ? '#34d399' : isFailed ? '#f87171' : isCurrent ? '#7dd3fc' : '#64748b',
+                                    fontWeight: isCurrent || isDone ? 600 : 400,
+                                  }}
+                                >
+                                  {stepText}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {quickDramaError && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          padding: '6px 10px',
+                          borderRadius: '10px',
+                          background: 'rgba(239, 68, 68, 0.12)',
+                          border: '1px solid rgba(248, 113, 113, 0.3)',
+                          color: '#fca5a5',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>⚠️ {quickDramaError}</span>
+                        <button
+                          type="button"
+                          onClick={() => setQuickDramaError(null)}
+                          style={{ background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+
+                    {quickDramaJob && quickDramaJob.status === 'completed' && quickDramaJob.finalUrl && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                          padding: '6px 10px',
+                          borderRadius: '11px',
+                          background: 'rgba(16, 185, 129, 0.12)',
+                          border: '1px solid rgba(52, 211, 153, 0.3)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#6ee7b7', flex: 1, minWidth: '150px' }}>
+                          ✅ Đã tạo xong: {quickDramaJob?.title || quickDramaScript?.title || 'Mẹ chồng nàng dâu'}
+                        </span>
+                        <a
+                          href={quickDramaJob.finalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '5px 12px',
+                            borderRadius: '9px',
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: '#fff',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          🎬 Xem / Tải Video
+                        </a>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleQuickDramaStart}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        borderRadius: '13px',
+                        border: '1px solid rgba(56, 189, 248, 0.45)',
+                        background: 'linear-gradient(135deg, #e11d48 0%, #db2777 45%, #2563eb 100%)',
+                        color: '#fff',
+                        fontSize: '0.86rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 16px rgba(225, 29, 72, 0.32)',
+                      }}
+                    >
+                      <Video size={16} />
+                      <span>Tạo Video</span>
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : activeComposerToolId === 'food-review' ? (
+            /* Luồng Review đồ ăn: Chọn 1 hoặc nhiều ảnh đồ ăn + Tên sản phẩm + Chọn giọng (mặc định Adam) -> Ấn Tạo là viết kịch bản + tạo nhiều video + lồng giọng + ghép lại */
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                padding: '4px 2px 2px',
+              }}
+            >
+              <input
+                ref={foodReviewFileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleFoodReviewFilesChange}
+              />
+
+              {(() => {
+                const isFoodJobRunning = Boolean(
+                  foodReviewJob && foodReviewJob.status !== 'completed' && foodReviewJob.status !== 'failed'
+                );
+                const isFoodBusy = foodReviewSubmitting || isFoodJobRunning;
+                const rawProg = Number(foodReviewJob?.progress) || 0;
+                const displayPercent = foodReviewSubmitting
+                  ? 6
+                  : Math.max(8, Math.min(99, Math.round(rawProg) || 10));
+                const scenesList = Array.isArray(foodReviewJob?.scenes) ? foodReviewJob.scenes : [];
+                const activeSceneIndex = scenesList.findIndex(
+                  (s) => s?.status !== 'completed' && !s?.videoUrl
+                );
+
+                if (isFoodBusy) {
+                  return (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        padding: '6px 8px',
+                        borderRadius: '14px',
+                        background: 'rgba(15, 23, 42, 0.65)',
+                        border: '1px solid rgba(251, 146, 60, 0.35)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '7px',
+                            minWidth: 0,
+                            flex: 1,
+                          }}
+                        >
+                          <Loader size={15} className="spin-loader" style={{ color: '#fb923c', flexShrink: 0 }} />
+                          <span
+                            style={{
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              color: '#ffedd5',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {foodReviewSubmitting
+                              ? 'Đang tải ảnh món ăn & khởi tạo kịch bản Review...'
+                              : foodReviewJob?.phase || `Đang dựng video Review "${foodReviewJob?.productName || foodReviewProductName}"...`}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '0.76rem',
+                              fontWeight: 800,
+                              color: '#fdba74',
+                              background: 'rgba(251, 146, 60, 0.14)',
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              border: '1px solid rgba(251, 146, 60, 0.3)',
+                            }}
+                          >
+                            {displayPercent}%
+                          </span>
+                          <button
+                            type="button"
+                            disabled={foodReviewCancelling}
+                            onClick={handleFoodReviewStop}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              border: '1px solid rgba(248, 113, 113, 0.45)',
+                              background: 'rgba(239, 68, 68, 0.18)',
+                              color: '#fca5a5',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: foodReviewCancelling ? 'default' : 'pointer',
+                              opacity: foodReviewCancelling ? 0.6 : 1,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '999px',
+                                background: '#f87171',
+                                display: 'inline-block',
+                              }}
+                            />
+                            {foodReviewCancelling ? 'Đang dừng...' : 'Dừng'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '6px',
+                          borderRadius: '999px',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${displayPercent}%`,
+                            height: '100%',
+                            borderRadius: '999px',
+                            background: 'linear-gradient(90deg, #f97316 0%, #eab308 50%, #10b981 100%)',
+                            transition: 'width 0.4s ease',
+                          }}
+                        />
+                      </div>
+
+                      {scenesList.length > 0 && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            maxHeight: '105px',
+                            overflowY: 'auto',
+                            paddingTop: '2px',
+                          }}
+                        >
+                          {scenesList.map((sc, idx) => {
+                            const scStatus = sc?.status || 'pending';
+                            const isDone = scStatus === 'completed' || Boolean(sc?.videoUrl);
+                            const isFailed = scStatus === 'failed';
+                            const isCurrent = !isDone && !isFailed && idx === activeSceneIndex;
+                            const stepText = isDone
+                              ? 'Hoàn tất'
+                              : isFailed
+                              ? 'Lỗi'
+                              : scStatus === 'start_image_processing'
+                              ? 'Đang tạo ảnh đầu...'
+                              : scStatus === 'end_image_processing' || scStatus === 'start_image_completed'
+                              ? 'Đang tạo ảnh cuối...'
+                              : scStatus === 'video_processing' || scStatus === 'end_image_completed'
+                              ? 'Đang dựng video 8s...'
+                              : scStatus === 'audio_processing'
+                              ? 'Đang lồng giọng...'
+                              : isCurrent
+                              ? 'Đang tạo ảnh & video...'
+                              : 'Chờ tới lượt';
+                            return (
+                              <div
+                                key={idx}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '8px',
+                                  fontSize: '0.7rem',
+                                  padding: '3px 6px',
+                                  borderRadius: '6px',
+                                  background: isCurrent ? 'rgba(251, 146, 60, 0.1)' : 'transparent',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    minWidth: 0,
+                                    flex: 1,
+                                    color: isDone ? '#6ee7b7' : isCurrent ? '#ffedd5' : '#94a3b8',
+                                    fontWeight: isCurrent || isDone ? 600 : 400,
+                                  }}
+                                >
+                                  {isDone ? (
+                                    <Check size={12} style={{ color: '#34d399', flexShrink: 0 }} />
+                                  ) : isFailed ? (
+                                    <X size={12} style={{ color: '#f87171', flexShrink: 0 }} />
+                                  ) : isCurrent ? (
+                                    <Loader size={12} className="spin-loader" style={{ color: '#fb923c', flexShrink: 0 }} />
+                                  ) : (
+                                    <span style={{ width: '12px', textAlign: 'center', color: '#64748b', flexShrink: 0 }}>•</span>
+                                  )}
+                                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {sc?.title || `Cảnh ${idx + 1}`}{sc?.voiceText ? ` — "${sc.voiceText}"` : ''}
+                                  </span>
+                                </span>
+                                <span
+                                  style={{
+                                    flexShrink: 0,
+                                    fontSize: '0.66rem',
+                                    color: isDone ? '#34d399' : isFailed ? '#f87171' : isCurrent ? '#fdba74' : '#64748b',
+                                    fontWeight: isCurrent || isDone ? 600 : 400,
+                                  }}
+                                >
+                                  {stepText}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                    {foodReviewError && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          padding: '6px 10px',
+                          borderRadius: '10px',
+                          background: 'rgba(239, 68, 68, 0.12)',
+                          border: '1px solid rgba(248, 113, 113, 0.3)',
+                          color: '#fca5a5',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>⚠️ {foodReviewError}</span>
+                        <button
+                          type="button"
+                          onClick={() => setFoodReviewError(null)}
+                          style={{ background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+
+                    {foodReviewJob && foodReviewJob.status === 'completed' && foodReviewJob.finalUrl && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                          padding: '6px 10px',
+                          borderRadius: '11px',
+                          background: 'rgba(16, 185, 129, 0.12)',
+                          border: '1px solid rgba(52, 211, 153, 0.3)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#6ee7b7', flex: 1, minWidth: '150px' }}>
+                          ✅ Đã tạo xong Review: {foodReviewJob?.productName || foodReviewProductName}
+                        </span>
+                        <a
+                          href={foodReviewJob.finalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '5px 12px',
+                            borderRadius: '9px',
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: '#fff',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          🎬 Xem / Tải Video
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Hàng 1: Chọn 1 hoặc nhiều ảnh đồ ăn + Ghi chú chọn ảnh rõ nét */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '5px',
+                        padding: '6px 8px',
+                        borderRadius: '12px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px dashed rgba(251, 146, 60, 0.35)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                        {foodReviewPreviewUrls.map((url, idx) => (
+                          <div
+                            key={`food-img-${idx}`}
+                            style={{
+                              position: 'relative',
+                              width: '44px',
+                              height: '44px',
+                              borderRadius: '9px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <img
+                              src={url}
+                              alt={`Ảnh món ăn ${idx + 1}`}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(251, 146, 60, 0.45)',
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFoodReviewImage(idx)}
+                              style={{
+                                position: 'absolute',
+                                top: '-4px',
+                                right: '-4px',
+                                width: '15px',
+                                height: '15px',
+                                borderRadius: '999px',
+                                background: '#ef4444',
+                                color: '#fff',
+                                border: '1px solid rgba(0,0,0,0.3)',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                padding: 0,
+                                lineHeight: 1,
+                              }}
+                              title="Xóa ảnh này"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+
+                        {foodReviewFiles.length < 5 && (
+                          <button
+                            type="button"
+                            onClick={() => foodReviewFileInputRef.current?.click()}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '7px 11px',
+                              borderRadius: '10px',
+                              border: '1px solid rgba(251, 146, 60, 0.4)',
+                              background: 'rgba(251, 146, 60, 0.12)',
+                              color: '#fdba74',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Plus size={14} />
+                            <span>
+                              {foodReviewFiles.length === 0
+                                ? 'Chọn ảnh đồ ăn (1 hoặc nhiều ảnh)'
+                                : `Thêm ảnh (${foodReviewFiles.length}/5)`}
+                            </span>
+                          </button>
+                        )}
+
+                        <span
+                          style={{
+                            fontSize: '0.69rem',
+                            color: '#fde68a',
+                            lineHeight: 1.35,
+                            flex: 1,
+                            minWidth: '180px',
+                          }}
+                        >
+                          📸 Lưu ý: Nên chọn ảnh chụp rõ nét, thấy rõ món ăn để AI lên video đẹp nhất.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Hàng 2: Tên sản phẩm / món ăn + Chọn giọng đọc (mặc định Giọng Adam) */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={foodReviewProductName}
+                        onChange={(e) => setFoodReviewProductName(e.target.value)}
+                        placeholder="Nhập tên món ăn / sản phẩm (VD: Chân gà sả tắc)..."
+                        style={{
+                          flex: '1 1 200px',
+                          minWidth: '160px',
+                          padding: '8px 11px',
+                          borderRadius: '11px',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          background: 'rgba(0, 0, 0, 0.28)',
+                          color: '#f8fafc',
+                          fontSize: '0.8rem',
+                          outline: 'none',
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            handleFoodReviewStart();
+                          }
+                        }}
+                      />
+
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '4px 6px 4px 9px',
+                          borderRadius: '11px',
+                          border: '1px solid rgba(56, 189, 248, 0.3)',
+                          background: 'rgba(15, 23, 42, 0.75)',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span style={{ fontSize: '0.71rem', color: '#94a3b8', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          🎙 Giọng:
+                        </span>
+                        <select
+                          value={foodReviewVoiceIndex}
+                          onChange={(e) => setFoodReviewVoiceIndex(Number(e.target.value))}
+                          style={{
+                            background: 'transparent',
+                            color: '#7dd3fc',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            border: 'none',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            maxWidth: '135px',
+                          }}
+                        >
+                          {foodReviewVoices.map((v) => (
+                            <option key={v.index} value={v.index} style={{ background: '#0f172a', color: '#f8fafc' }}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={handlePreviewFoodVoice}
+                          title="Nghe thử giọng đọc"
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '999px',
+                            border: '1px solid rgba(56, 189, 248, 0.35)',
+                            background: foodReviewPlayingSample ? 'rgba(56, 189, 248, 0.3)' : 'rgba(255, 255, 255, 0.06)',
+                            color: '#7dd3fc',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            padding: 0,
+                          }}
+                        >
+                          <Volume2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Hàng 3: Nút Tạo Video Review 1 chạm */}
+                    <button
+                      type="button"
+                      onClick={handleFoodReviewStart}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        borderRadius: '13px',
+                        border: '1px solid rgba(251, 146, 60, 0.5)',
+                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 45%, #db2777 100%)',
+                        color: '#fff',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 16px rgba(249, 115, 22, 0.32)',
+                      }}
+                    >
+                      <Video size={16} />
+                      <span>Tạo Video Review</span>
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : activeComposerToolId === 'fashion' ? (
+            /* Luồng Thời trang trước gương: Lần đầu up 1 ảnh người mẫu lưu sẵn -> Từ lần sau chỉ cần up ảnh trang phục -> Tự thay đồ + Chọn ngẫu nhiên prompt trước gương + Ghép video */
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                padding: '4px 2px 2px',
+              }}
+            >
+              <input
+                ref={fashionModelInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleFashionModelFileChange}
+              />
+              <input
+                ref={fashionOutfitInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleFashionOutfitFilesChange}
+              />
+
+              {(() => {
+                const isFashionJobRunning = Boolean(
+                  fashionJob && fashionJob.status !== 'completed' && fashionJob.status !== 'failed'
+                );
+                const isFashionBusy = fashionSubmitting || isFashionJobRunning;
+                const rawProg = Number(fashionJob?.progress) || 0;
+                const displayPercent = fashionSubmitting
+                  ? 6
+                  : Math.max(8, Math.min(99, Math.round(rawProg) || 10));
+                const scenesList = Array.isArray(fashionJob?.scenes) ? fashionJob.scenes : [];
+                const activeSceneIndex = scenesList.findIndex(
+                  (s) => s?.status !== 'completed' && !s?.videoUrl
+                );
+                const activeModelThumb = fashionModelPreviewUrl || fashionModelUrl;
+
+                if (isFashionBusy) {
+                  return (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        padding: '6px 8px',
+                        borderRadius: '14px',
+                        background: 'rgba(15, 23, 42, 0.65)',
+                        border: '1px solid rgba(244, 114, 182, 0.38)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '7px',
+                            minWidth: 0,
+                            flex: 1,
+                          }}
+                        >
+                          <Loader size={15} className="spin-loader" style={{ color: '#f472b6', flexShrink: 0 }} />
+                          <span
+                            style={{
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              color: '#fce7f3',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {fashionSubmitting
+                              ? 'Đang tải ảnh trang phục & khởi tạo Thời trang trước gương...'
+                              : fashionJob?.phase || `Đang thay đồ & dựng video "${fashionJob?.outfitName || fashionOutfitName || 'Trang phục mới'}"...`}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '0.76rem',
+                              fontWeight: 800,
+                              color: '#f9a8d4',
+                              background: 'rgba(244, 114, 182, 0.14)',
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              border: '1px solid rgba(244, 114, 182, 0.3)',
+                            }}
+                          >
+                            {displayPercent}%
+                          </span>
+                          <button
+                            type="button"
+                            disabled={fashionCancelling}
+                            onClick={handleFashionMirrorStop}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              border: '1px solid rgba(248, 113, 113, 0.45)',
+                              background: 'rgba(239, 68, 68, 0.18)',
+                              color: '#fca5a5',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: fashionCancelling ? 'default' : 'pointer',
+                              opacity: fashionCancelling ? 0.6 : 1,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '999px',
+                                background: '#f87171',
+                                display: 'inline-block',
+                              }}
+                            />
+                            {fashionCancelling ? 'Đang dừng...' : 'Dừng'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '6px',
+                          borderRadius: '999px',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${displayPercent}%`,
+                            height: '100%',
+                            borderRadius: '999px',
+                            background: 'linear-gradient(90deg, #ec4899 0%, #a855f7 50%, #10b981 100%)',
+                            transition: 'width 0.4s ease',
+                          }}
+                        />
+                      </div>
+
+                      {scenesList.length > 0 && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            maxHeight: '105px',
+                            overflowY: 'auto',
+                            paddingTop: '2px',
+                          }}
+                        >
+                          {scenesList.map((sc, idx) => {
+                            const scStatus = sc?.status || 'pending';
+                            const isDone = scStatus === 'completed' || Boolean(sc?.videoUrl);
+                            const isFailed = scStatus === 'failed';
+                            const isCurrent = !isDone && !isFailed && idx === activeSceneIndex;
+                            const stepText = isDone
+                              ? 'Hoàn tất'
+                              : isFailed
+                              ? 'Lỗi'
+                              : scStatus === 'start_image_processing'
+                              ? 'Đang thay đồ lên mẫu...'
+                              : scStatus === 'end_image_processing' || scStatus === 'start_image_completed'
+                              ? 'Đang tạo ảnh cuối...'
+                              : scStatus === 'video_processing' || scStatus === 'end_image_completed'
+                              ? 'Đang dựng video trước gương...'
+                              : isCurrent
+                              ? 'Đang thay đồ & dựng video...'
+                              : 'Chờ tới lượt';
+                            return (
+                              <div
+                                key={idx}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '8px',
+                                  fontSize: '0.7rem',
+                                  padding: '3px 6px',
+                                  borderRadius: '6px',
+                                  background: isCurrent ? 'rgba(244, 114, 182, 0.12)' : 'transparent',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    minWidth: 0,
+                                    flex: 1,
+                                    color: isDone ? '#6ee7b7' : isCurrent ? '#fce7f3' : '#94a3b8',
+                                    fontWeight: isCurrent || isDone ? 600 : 400,
+                                  }}
+                                >
+                                  {isDone ? (
+                                    <Check size={12} style={{ color: '#34d399', flexShrink: 0 }} />
+                                  ) : isFailed ? (
+                                    <X size={12} style={{ color: '#f87171', flexShrink: 0 }} />
+                                  ) : isCurrent ? (
+                                    <Loader size={12} className="spin-loader" style={{ color: '#f472b6', flexShrink: 0 }} />
+                                  ) : (
+                                    <span style={{ width: '12px', textAlign: 'center', color: '#64748b', flexShrink: 0 }}>•</span>
+                                  )}
+                                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {sc?.title || `Cảnh ${idx + 1}`}{sc?.videoPrompt ? ` — ${sc.videoPrompt}` : ''}
+                                  </span>
+                                </span>
+                                <span
+                                  style={{
+                                    flexShrink: 0,
+                                    fontSize: '0.66rem',
+                                    color: isDone ? '#34d399' : isFailed ? '#f87171' : isCurrent ? '#f9a8d4' : '#64748b',
+                                    fontWeight: isCurrent || isDone ? 600 : 400,
+                                  }}
+                                >
+                                  {stepText}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                    {fashionError && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          padding: '6px 10px',
+                          borderRadius: '10px',
+                          background: 'rgba(239, 68, 68, 0.12)',
+                          border: '1px solid rgba(248, 113, 113, 0.3)',
+                          color: '#fca5a5',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>⚠️ {fashionError}</span>
+                        <button
+                          type="button"
+                          onClick={() => setFashionError(null)}
+                          style={{ background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+
+                    {fashionJob && fashionJob.status === 'completed' && fashionJob.finalUrl && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                          padding: '6px 10px',
+                          borderRadius: '11px',
+                          background: 'rgba(16, 185, 129, 0.12)',
+                          border: '1px solid rgba(52, 211, 153, 0.3)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#6ee7b7', flex: 1, minWidth: '150px' }}>
+                          ✅ Đã tạo xong Thời trang trước gương: {fashionJob?.outfitName || fashionOutfitName || 'Trang phục mới'}
+                        </span>
+                        <a
+                          href={fashionJob.finalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '5px 12px',
+                            borderRadius: '9px',
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: '#fff',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          🎬 Xem / Tải Video
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Hàng 1: Ảnh Người Mẫu Mặc Định (Chỉ cần up 1 lần đầu, các lần sau tự động nhớ) */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        flexWrap: 'wrap',
+                        padding: '6px 9px',
+                        borderRadius: '12px',
+                        background: activeModelThumb
+                          ? 'rgba(16, 185, 129, 0.08)'
+                          : 'rgba(244, 114, 182, 0.08)',
+                        border: activeModelThumb
+                          ? '1px solid rgba(52, 211, 153, 0.32)'
+                          : '1px dashed rgba(244, 114, 182, 0.45)',
+                      }}
+                    >
+                      {activeModelThumb ? (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                            <img
+                              src={activeModelThumb}
+                              alt="Mẫu mặc định"
+                              style={{
+                                width: '38px',
+                                height: '38px',
+                                borderRadius: '8px',
+                                objectFit: 'cover',
+                                border: '1px solid rgba(52, 211, 153, 0.5)',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                              <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#6ee7b7' }}>
+                                {fashionModelSaving ? '⏳ Đang lưu mẫu mặc định...' : '✅ Mẫu mặc định đã lưu'}
+                              </span>
+                              <span style={{ fontSize: '0.67rem', color: '#94a3b8' }}>
+                                Từ nay bạn chỉ cần chọn ảnh trang phục bên dưới, AI sẽ tự thay đồ cho mẫu này.
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => fashionModelInputRef.current?.click()}
+                            style={{
+                              padding: '5px 10px',
+                              borderRadius: '9px',
+                              border: '1px solid rgba(255, 255, 255, 0.16)',
+                              background: 'rgba(255, 255, 255, 0.06)',
+                              color: '#e2e8f0',
+                              fontSize: '0.71rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            Đổi mẫu khác
+                          </button>
+                        </>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', width: '100%' }}>
+                          <button
+                            type="button"
+                            onClick={() => fashionModelInputRef.current?.click()}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '7px 12px',
+                              borderRadius: '10px',
+                              border: '1px solid rgba(244, 114, 182, 0.45)',
+                              background: 'rgba(244, 114, 182, 0.16)',
+                              color: '#f9a8d4',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Plus size={14} />
+                            <span>Bước 1: Tải lên 1 ảnh Người mẫu (Chỉ cần up 1 lần đầu)</span>
+                          </button>
+                          <span style={{ fontSize: '0.68rem', color: '#fbcfe8', flex: 1, minWidth: '180px' }}>
+                            💡 Chọn 1 ảnh cô gái đứng trước gương hoặc toàn thân rõ nét. Hệ thống sẽ lưu mẫu này cho mọi lần sau!
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Hàng 2: Chọn ảnh Trang phục (Quần áo / Váy) + Tên bộ trang phục */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        padding: '6px 8px',
+                        borderRadius: '12px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px dashed rgba(244, 114, 182, 0.35)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                        {fashionOutfitPreviewUrls.map((url, idx) => (
+                          <div
+                            key={`fashion-outfit-${idx}`}
+                            style={{
+                              position: 'relative',
+                              width: '44px',
+                              height: '44px',
+                              borderRadius: '9px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <img
+                              src={url}
+                              alt={`Trang phục ${idx + 1}`}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(244, 114, 182, 0.45)',
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFashionOutfitImage(idx)}
+                              style={{
+                                position: 'absolute',
+                                top: '-4px',
+                                right: '-4px',
+                                width: '15px',
+                                height: '15px',
+                                borderRadius: '999px',
+                                background: '#ef4444',
+                                color: '#fff',
+                                border: '1px solid rgba(0,0,0,0.3)',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                padding: 0,
+                                lineHeight: 1,
+                              }}
+                              title="Xóa ảnh trang phục này"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+
+                        {fashionOutfitFiles.length < 5 && (
+                          <button
+                            type="button"
+                            onClick={() => fashionOutfitInputRef.current?.click()}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '7px 11px',
+                              borderRadius: '10px',
+                              border: '1px solid rgba(244, 114, 182, 0.45)',
+                              background: 'rgba(244, 114, 182, 0.14)',
+                              color: '#f9a8d4',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Shirt size={14} />
+                            <span>
+                              {fashionOutfitFiles.length === 0
+                                ? 'Chọn ảnh Trang phục (Quần áo / Váy)'
+                                : `Thêm ảnh trang phục (${fashionOutfitFiles.length}/5)`}
+                            </span>
+                          </button>
+                        )}
+
+                        <input
+                          type="text"
+                          value={fashionOutfitName}
+                          onChange={(e) => setFashionOutfitName(e.target.value)}
+                          placeholder="Tên trang phục (tuỳ chọn, VD: Set váy tiểu thư)..."
+                          style={{
+                            flex: '1 1 180px',
+                            minWidth: '150px',
+                            padding: '7px 10px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            background: 'rgba(0, 0, 0, 0.28)',
+                            color: '#f8fafc',
+                            fontSize: '0.76rem',
+                            outline: 'none',
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                              e.preventDefault();
+                              handleFashionMirrorStart();
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Hàng 3: Nút Tạo Video Thời Trang Trước Gương */}
+                    <button
+                      type="button"
+                      onClick={handleFashionMirrorStart}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        borderRadius: '13px',
+                        border: '1px solid rgba(244, 114, 182, 0.5)',
+                        background: 'linear-gradient(135deg, #ec4899 0%, #db2777 50%, #9333ea 100%)',
+                        color: '#fff',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 16px rgba(236, 72, 153, 0.32)',
+                      }}
+                    >
+                      <Video size={16} />
+                      <span>Tạo Video Thời Trang Trước Gương (Tự thay đồ + Ghép cảnh)</span>
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            <>
           {/* Row 1: Previews for Image Mode (if any) */}
           {activeTab === 'image' && (refFiles.length > 0 || selectedRefUrls.length > 0) && (
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '8px' }}>
@@ -7689,6 +9841,8 @@ function App() {
               {isSubmitting ? <Loader size={16} className="spin-loader" /> : <ArrowRight size={16} />}
             </button>
           </div>
+            </>
+          )}
         </form>
 
       </div>

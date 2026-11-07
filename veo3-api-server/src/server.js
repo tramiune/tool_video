@@ -23,7 +23,7 @@ const { processAutoToolJob, resumeAutoToolJobs, generateProjectIdea, generateCha
 const drama = require('./drama');
 const sumo  = require('./sumo');
 const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
-const { generateVideoViaAutoClick } = require('./autoclick_video_service');
+const { generateVideoViaAutoClick, generateImageViaAutoClick } = require('./autoclick_video_service');
 const chromeProfileManager = require('./chrome_profile_manager');
 
 process.on("uncaughtException", (err) => { 
@@ -312,44 +312,9 @@ const extensionBridge = {
     return generateVideoViaAutoClick(task);
   },
 
-  async generateImage(task, timeoutMs = 600000) {
-    const client = pickBestClient();
-    if (!client) return Promise.reject(new Error('Flow Extension chưa kết nối'));
-    const id = task.id || `img_${Date.now()}`;
-
-    let rawRefs = [];
-    if (Array.isArray(task.referenceImages) && task.referenceImages.length > 0) {
-      rawRefs = task.referenceImages;
-    } else if (task.referenceImage) {
-      rawRefs = [task.referenceImage];
-    }
-
-    const refBase64Array = [];
-    for (const raw of rawRefs) {
-      if (raw) {
-        const b64 = await imageInputToBase64(raw);
-        if (b64) refBase64Array.push(b64);
-      }
-    }
-
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        _extPending.delete(id);
-        reject(new Error('Extension image generation timeout (2 phút)'));
-      }, timeoutMs);
-      _extPending.set(id, { resolve, reject, timer, clientId: client.clientId });
-      logger.info(`[Bridge] Route img task ${id} → ${client.clientId}`);
-      client.ws.send(JSON.stringify({
-        type: 'TASK_GENERATE_IMAGE',
-        id,
-        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
-        prompt: task.prompt,
-        model: task.model || 'HARBOR_SEAL',
-        aspectRatio: task.aspectRatio || '1:1',
-        referenceImages: refBase64Array,
-        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null
-      }));
-    });
+  async generateImage(task, timeoutMs = 180000) {
+    logger.info(`[Bridge] Chạy image task ${task.id} qua AutoClick Image Runner (PyAutoGUI)...`);
+    return generateImageViaAutoClick(task);
   },
 
   isPending(id) {
@@ -1695,7 +1660,7 @@ async function requireDramaAccess(req, res, next) {
     const ADMIN_EMAILS = ['traderfinn0312@gmail.com'];
     const isAdmin = userData.isAdmin === true || ADMIN_EMAILS.includes(email);
     const isActiveDramaTier =
-      (userData.tier === 'drama_500k' || userData.tier === 'master_499k') &&
+      ['drama_500k', 'master_499k', 'vip_399k', 'pro_299k', 'pro_499k', 'master_899k'].includes(userData.tier) &&
       (!userData.expiryDate || Number(userData.expiryDate) > Date.now());
     const hasDramaVideoAccess = isAdmin || userData.hasDramaAccess === true || isActiveDramaTier;
     req.authUser = {
@@ -2348,6 +2313,35 @@ app.get('/api/drama/scripts', requireDramaAccess, async (req, res) => {
 
 app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
   try {
+    if (req.body?.checkVideoEligibility) {
+      if (!req.authUser.hasDramaVideoAccess) {
+        return res.status(402).json({
+          error: 'Gói hiện tại không hỗ trợ tính năng này. Cần nâng cấp Gói VIP 399k/tháng để mở khóa!',
+          code: 'DRAMA_SUBSCRIPTION_REQUIRED'
+        });
+      }
+      const startOfDayMs = getStartOfDayVnMs();
+      const jobsSnap = await db.collection('drama_jobs').where('userId', '==', req.authUser.uid).get();
+      const allJobs = jobsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      const activeJob = allJobs.find(jd => jd.status && jd.status !== 'completed' && jd.status !== 'failed');
+      if (activeJob) {
+        return res.status(429).json({
+          error: 'Bạn đang có 1 video Mẹ chồng nàng dâu đang dựng. Vui lòng đợi hoàn tất hoặc bấm Dừng!',
+          code: 'DRAMA_JOB_RUNNING',
+          activeJob
+        });
+      }
+      if (!req.authUser.isSuperAdmin) {
+        const todayEpisodes = allJobs.filter(jd => Number(jd.createdAt || 0) >= startOfDayMs && jd.status !== 'failed').length;
+        if (todayEpisodes >= 2) {
+          return res.status(429).json({
+            error: 'Bạn đã tạo đủ 2/2 tập phim Mẹ chồng nàng dâu hôm nay. Vui lòng quay lại vào ngày mai nhé!',
+            code: 'DRAMA_DAILY_LIMIT'
+          });
+        }
+      }
+    }
+
     const topic = String(req.body?.topic || '').trim();
     const channelType = String(req.body?.channelType || 'drama').trim();
 
@@ -2659,6 +2653,289 @@ app.post('/api/drama/jobs/:id/cancel', requireDramaAccess, async (req, res) => {
     return res.json({ success: true, message: 'Đã dừng tác vụ thành công.' });
   } catch (error) {
     logger.error('Drama job cancellation failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── INTERNAL UPSERT TASK (for Food Review / Fashion Mirror merged videos on meo3.cloud) ───
+app.post('/api/internal/upsert-task', async (req, res) => {
+  try {
+    const {
+      taskId,
+      userId,
+      type = 'video',
+      status = 'processing',
+      prompt = '',
+      mediaUrl = null,
+      startImage = null,
+      durationSeconds = 16,
+      model = 'veo_3_1_lite',
+      error = null
+    } = req.body || {};
+
+    if (taskId) {
+      const ref = db.collection('tasks').doc(String(taskId));
+      const updateData = { status, updatedAt: Date.now() };
+      if (mediaUrl !== undefined && mediaUrl !== null) updateData.mediaUrl = mediaUrl;
+      if (status === 'completed') updateData.completedAt = Date.now();
+      if (error) updateData.error = error;
+      await ref.set(updateData, { merge: true });
+      return res.json({ ok: true, taskId: ref.id });
+    }
+
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    const now = Date.now();
+    const docData = {
+      userId: String(userId),
+      type,
+      status,
+      aspectRatio: '9:16',
+      model,
+      count: 1,
+      durationSeconds: Number(durationSeconds) || 16,
+      startImage: startImage || null,
+      prompt: String(prompt || ''),
+      mediaUrl: mediaUrl || null,
+      createdAt: now,
+      updatedAt: now
+    };
+    if (status === 'completed') docData.completedAt = now;
+    const ref = await db.collection('tasks').add(docData);
+    return res.json({ ok: true, taskId: ref.id });
+  } catch (err) {
+    logger.error('Internal upsert-task failed', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PROXY TO AQUA BACKEND (127.0.0.1:8000) FOR VOICES, FOOD REVIEW & FASHION MIRROR ───
+const AQUA_BACKEND_URL = process.env.AQUA_BACKEND_URL || 'http://127.0.0.1:8000';
+
+function buildMeo3BridgeHeaders(authUser) {
+  return {
+    'X-Meo3-User-Id': String(authUser?.uid || ''),
+    'X-Meo3-User-Email': String(authUser?.email || 'user@meo3.cloud'),
+    'X-Meo3-Drama-Sub': authUser?.hasDramaVideoAccess ? '1' : '0',
+    'X-Meo3-Is-Admin': authUser?.isSuperAdmin ? '1' : '0'
+  };
+}
+
+async function uploadTempFilesToR2List(files = [], folderPrefix = 'meo3/inputs') {
+  const urls = [];
+  for (const file of files || []) {
+    if (!file || !file.path) continue;
+    try {
+      const buffer = await fs.promises.readFile(file.path);
+      const fileExt = (path.extname(file.originalname) || '.jpg').toLowerCase();
+      const fileName = `${folderPrefix}/${uuidv4()}${fileExt}`;
+      const contentType = file.mimetype || (fileExt === '.png' ? 'image/png' : fileExt === '.webp' ? 'image/webp' : 'image/jpeg');
+      const r2Url = await uploadToR2(buffer, fileName, contentType);
+      urls.push(r2Url);
+    } finally {
+      await fs.promises.unlink(file.path).catch(() => {});
+    }
+  }
+  return urls;
+}
+
+app.get('/api/audio/voices', async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/audio/voices`);
+    const data = await resp.json().catch(() => ({ voices: [] }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    logger.error('Voices proxy failed', error);
+    return res.json({ voices: [{ index: 0, name: 'Giọng Adam', sampleUrl: 'https://pub-4ab82acbfdfa460d9fb6eed5cdca1fc5.r2.dev/voices/voice-sample-1.mp3' }] });
+  }
+});
+
+// Food Review proxy routes
+app.post('/api/drama/food-review/jobs', requireDramaAccess, upload.array('images', 5), async (req, res) => {
+  try {
+    const uploadedUrls = await uploadTempFilesToR2List(req.files || [], 'meo3/food-review');
+    let existingUrls = [];
+    try {
+      const parsed = JSON.parse(req.body?.imageUrls || '[]');
+      if (Array.isArray(parsed)) existingUrls = parsed;
+    } catch (_) {}
+    const allImageUrls = [...existingUrls, ...uploadedUrls].filter(u => typeof u === 'string' && u.startsWith('http')).slice(0, 5);
+
+    const formBody = new URLSearchParams();
+    formBody.append('productName', String(req.body?.productName || '').trim());
+    formBody.append('voiceIndex', String(req.body?.voiceIndex ?? 0));
+    formBody.append('voiceName', String(req.body?.voiceName || 'Giọng Adam'));
+    formBody.append('imageUrls', JSON.stringify(allImageUrls));
+
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/food-review/jobs`, {
+      method: 'POST',
+      headers: {
+        ...buildMeo3BridgeHeaders(req.authUser),
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: formBody.toString()
+    });
+    const data = await resp.json().catch(() => ({ error: 'Upstream error' }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    logger.error('Food review create job proxy failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/drama/food-review/jobs/latest', requireDramaAccess, async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/food-review/jobs/latest`, {
+      headers: buildMeo3BridgeHeaders(req.authUser)
+    });
+    const data = await resp.json().catch(() => ({ job: null }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/drama/food-review/jobs/:id', requireDramaAccess, async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/food-review/jobs/${encodeURIComponent(req.params.id)}`, {
+      headers: buildMeo3BridgeHeaders(req.authUser)
+    });
+    const data = await resp.json().catch(() => ({ error: 'Not found' }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/drama/food-review/jobs/:id/cancel', requireDramaAccess, async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/food-review/jobs/${encodeURIComponent(req.params.id)}/cancel`, {
+      method: 'POST',
+      headers: buildMeo3BridgeHeaders(req.authUser)
+    });
+    const data = await resp.json().catch(() => ({ error: 'Cancel failed' }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Fashion Mirror proxy routes
+app.get('/api/drama/fashion-mirror/model', requireDramaAccess, async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/fashion-mirror/model`, {
+      headers: buildMeo3BridgeHeaders(req.authUser)
+    });
+    const data = await resp.json().catch(() => ({ modelImageUrl: null }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/drama/fashion-mirror/model', requireDramaAccess, upload.single('modelImage'), async (req, res) => {
+  try {
+    let modelImageUrl = String(req.body?.modelImageUrl || '').trim();
+    if (req.file) {
+      const uploaded = await uploadTempFilesToR2List([req.file], 'meo3/fashion-mirror/models');
+      if (uploaded[0]) modelImageUrl = uploaded[0];
+    }
+    const formBody = new URLSearchParams();
+    formBody.append('modelImageUrl', modelImageUrl);
+
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/fashion-mirror/model`, {
+      method: 'POST',
+      headers: {
+        ...buildMeo3BridgeHeaders(req.authUser),
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: formBody.toString()
+    });
+    const data = await resp.json().catch(() => ({ error: 'Save model failed' }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    logger.error('Fashion mirror save model proxy failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post(
+  '/api/drama/fashion-mirror/jobs',
+  requireDramaAccess,
+  upload.fields([{ name: 'modelImage', maxCount: 1 }, { name: 'outfits', maxCount: 5 }]),
+  async (req, res) => {
+    try {
+      let modelImageUrl = String(req.body?.modelImageUrl || '').trim();
+      const modelFiles = req.files?.modelImage || [];
+      if (modelFiles.length > 0) {
+        const uploadedModel = await uploadTempFilesToR2List(modelFiles, 'meo3/fashion-mirror/models');
+        if (uploadedModel[0]) modelImageUrl = uploadedModel[0];
+      }
+
+      const outfitFiles = req.files?.outfits || [];
+      const uploadedOutfits = await uploadTempFilesToR2List(outfitFiles, 'meo3/fashion-mirror/outfits');
+      let existingOutfits = [];
+      try {
+        const parsed = JSON.parse(req.body?.outfitUrls || '[]');
+        if (Array.isArray(parsed)) existingOutfits = parsed;
+      } catch (_) {}
+      const allOutfitUrls = [...existingOutfits, ...uploadedOutfits].filter(u => typeof u === 'string' && u.startsWith('http')).slice(0, 5);
+
+      const formBody = new URLSearchParams();
+      formBody.append('outfitName', String(req.body?.outfitName || 'Bộ trang phục mới').trim());
+      formBody.append('modelImageUrl', modelImageUrl);
+      formBody.append('outfitUrls', JSON.stringify(allOutfitUrls));
+      formBody.append('numScenes', String(req.body?.numScenes || 3));
+
+      const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/fashion-mirror/jobs`, {
+        method: 'POST',
+        headers: {
+          ...buildMeo3BridgeHeaders(req.authUser),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: formBody.toString()
+      });
+      const data = await resp.json().catch(() => ({ error: 'Upstream error' }));
+      return res.status(resp.status).json(data);
+    } catch (error) {
+      logger.error('Fashion mirror create job proxy failed', error);
+      return res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+app.get('/api/drama/fashion-mirror/jobs/latest', requireDramaAccess, async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/fashion-mirror/jobs/latest`, {
+      headers: buildMeo3BridgeHeaders(req.authUser)
+    });
+    const data = await resp.json().catch(() => ({ job: null, modelImageUrl: null }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/drama/fashion-mirror/jobs/:id', requireDramaAccess, async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/fashion-mirror/jobs/${encodeURIComponent(req.params.id)}`, {
+      headers: buildMeo3BridgeHeaders(req.authUser)
+    });
+    const data = await resp.json().catch(() => ({ error: 'Not found' }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/drama/fashion-mirror/jobs/:id/cancel', requireDramaAccess, async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/fashion-mirror/jobs/${encodeURIComponent(req.params.id)}/cancel`, {
+      method: 'POST',
+      headers: buildMeo3BridgeHeaders(req.authUser)
+    });
+    const data = await resp.json().catch(() => ({ error: 'Cancel failed' }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
     return res.status(500).json({ error: error.message });
   }
 });
@@ -3337,7 +3614,7 @@ function startFirestoreListener() {
 // ─── IMAGE WORKER (concurrent) ──────────────────────────────────────────────
 
 function drainImageQueue() {
-  const maxConcurrentImages = Math.max(1, extensionBridge.clientCount || 1);
+  const maxConcurrentImages = 10;
   if (activeImageWorkers >= maxConcurrentImages) {
     return;
   }
@@ -3361,7 +3638,7 @@ function drainImageQueue() {
     }
 
     if (activeImageWorkers >= maxConcurrentImages) {
-      return; // Global extension capacity reached
+      return; // Global capacity reached
     }
 
     const isAdmin = task.isAdmin === true;
@@ -3409,143 +3686,91 @@ async function runImageTask(taskId) {
   const task = tasks[taskId];
   if (!task) return;
 
-  const imageClient = apiClient.image;
-  const imageBrowser = browserManager;
-
   try {
     await task.docRef.update({ status: 'processing' });
     task.status = 'generating';
 
-    // Ưu tiên chạy qua Flow Extension Bridge (100% Chrome cá nhân, không dùng CDP/Puppeteer)
-    if (extensionBridge.connected) {
-      logger.info(`[Image] Dispatching task ${taskId} to Flow Extension Bridge...`);
-      try {
-        // Chuyển đổi các ảnh reference dạng Base64/Data URL hoặc HTTP ngoài domain meo3 R2 lên R2 có CORS
-        let resolvedRefs = [];
-        const rawRefs = task.referenceImages || (task.referenceImage ? [task.referenceImage] : []);
-        for (let i = 0; i < rawRefs.length; i++) {
-          const refItem = rawRefs[i];
-          if (typeof refItem === 'string' && refItem.startsWith('data:image')) {
-            try {
-              const base64Data = refItem.split(',')[1] || refItem;
-              const buffer = Buffer.from(base64Data, 'base64');
-              const ext = refItem.includes('png') ? '.png' : '.jpg';
-              const r2Key = `meo3/inputs/${taskId}_ref_${i}_${Date.now()}${ext}`;
-              const r2Url = await uploadToR2(buffer, r2Key, ext === '.png' ? 'image/png' : 'image/jpeg');
-              logger.info(`[Image Task] Uploaded Base64 ref image ${i} to R2: ${r2Url}`);
-              resolvedRefs.push(r2Url);
-            } catch (r2Err) {
-              logger.error(`[Image Task] Failed to upload Base64 ref to R2: ${r2Err.message}`);
-              resolvedRefs.push(refItem);
-            }
-          } else if (typeof refItem === 'string' && refItem.startsWith('http') && !refItem.includes('pub-6d69dc0dc47542f4ad0de11f34132785.r2.dev')) {
-            try {
-              const fetchRes = await fetch(refItem);
-              if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status}`);
-              const arrBuf = await fetchRes.arrayBuffer();
-              const buffer = Buffer.from(arrBuf);
-              const contentType = fetchRes.headers.get('content-type') || 'image/jpeg';
-              const ext = contentType.includes('png') ? '.png' : '.jpg';
-              const r2Key = `meo3/inputs/${taskId}_ref_${i}_${Date.now()}${ext}`;
-              const r2Url = await uploadToR2(buffer, r2Key, contentType);
-              logger.info(`[Image Task] Re-uploaded external ref image ${i} to CORS R2: ${r2Url}`);
-              resolvedRefs.push(r2Url);
-            } catch (r2Err) {
-              logger.error(`[Image Task] Failed to re-upload external ref to R2: ${r2Err.message}`);
-              resolvedRefs.push(refItem);
-            }
-          } else {
+    // Chạy trực tiếp qua AutoClick Image Runner (PyAutoGUI) ở nửa màn hình bên phải (800, 27, 800x873)
+    logger.info(`[Image] Dispatching task ${taskId} to AutoClick Image Runner (active workers: ${activeImageWorkers})...`);
+    try {
+      // Chuyển đổi các ảnh reference dạng Base64/Data URL hoặc HTTP ngoài domain meo3 R2 lên R2 có CORS
+      let resolvedRefs = [];
+      const rawRefs = task.referenceImages || (task.referenceImage ? [task.referenceImage] : []);
+      for (let i = 0; i < rawRefs.length; i++) {
+        const refItem = rawRefs[i];
+        if (typeof refItem === 'string' && refItem.startsWith('data:image')) {
+          try {
+            const base64Data = refItem.split(',')[1] || refItem;
+            const buffer = Buffer.from(base64Data, 'base64');
+            const ext = refItem.includes('png') ? '.png' : '.jpg';
+            const r2Key = `meo3/inputs/${taskId}_ref_${i}_${Date.now()}${ext}`;
+            const r2Url = await uploadToR2(buffer, r2Key, ext === '.png' ? 'image/png' : 'image/jpeg');
+            logger.info(`[Image Task] Uploaded Base64 ref image ${i} to R2: ${r2Url}`);
+            resolvedRefs.push(r2Url);
+          } catch (r2Err) {
+            logger.error(`[Image Task] Failed to upload Base64 ref to R2: ${r2Err.message}`);
             resolvedRefs.push(refItem);
           }
-        }
-        task.referenceImages = resolvedRefs;
-        if (task.docRef) {
-          task.docRef.update({ referenceImages: resolvedRefs }).catch(() => {});
-        }
-
-        // Chuyển ảnh reference sang data:image/jpeg;base64,... gọn nhẹ (768px) khi gửi qua Extension Bridge
-        // để iframe Bulk AI Studio Pro không bị chặn bởi CSP của Google Flow
-        const bridgeRefs = [];
-        for (let i = 0; i < resolvedRefs.length; i++) {
-          const refUrl = resolvedRefs[i];
-          if (typeof refUrl === 'string' && refUrl.startsWith('data:image')) {
-            bridgeRefs.push(refUrl);
-          } else if (typeof refUrl === 'string' && refUrl.startsWith('http')) {
-            try {
-              const r = await fetch(refUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-              if (!r.ok) throw new Error(`HTTP ${r.status}`);
-              const rawBuf = Buffer.from(await r.arrayBuffer());
-              const { spawnSync } = require('child_process');
-              const pyResize = spawnSync('python3', ['-c', `
-import sys, io, base64
-from PIL import Image, ImageOps
-raw = sys.stdin.buffer.read()
-im = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
-max_dim = 768
-if max(im.width, im.height) > max_dim:
-    scale = max_dim / float(max(im.width, im.height))
-    im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))), Image.Resampling.LANCZOS)
-buf = io.BytesIO()
-im.save(buf, format="JPEG", quality=80, optimize=True)
-b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-if len(b64) > 90000:
-    buf = io.BytesIO()
-    im.save(buf, format="JPEG", quality=72, optimize=True)
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-sys.stdout.write("data:image/jpeg;base64," + b64)
-`], { input: rawBuf, maxBuffer: 15 * 1024 * 1024, timeout: 10000 });
-              if (pyResize.status === 0 && pyResize.stdout && pyResize.stdout.length > 30) {
-                const dataUri = pyResize.stdout.toString();
-                logger.info(`[Image Task] Đã chuyển ref image ${i} sang data:image/jpeg (${Math.round(dataUri.length / 1024)} KB base64) vượt CSP Flow.`);
-                bridgeRefs.push(dataUri);
-              } else {
-                bridgeRefs.push(`data:image/jpeg;base64,${rawBuf.toString('base64')}`);
-              }
-            } catch (convErr) {
-              logger.warn(`[Image Task] Không thể chuyển ref image ${i} sang base64 (${convErr.message}), giữ nguyên URL.`);
-              bridgeRefs.push(refUrl);
-            }
-          } else {
-            bridgeRefs.push(refUrl);
+        } else if (typeof refItem === 'string' && refItem.startsWith('http') && !refItem.includes('pub-6d69dc0dc47542f4ad0de11f34132785.r2.dev')) {
+          try {
+            const fetchRes = await fetch(refItem);
+            if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status}`);
+            const arrBuf = await fetchRes.arrayBuffer();
+            const buffer = Buffer.from(arrBuf);
+            const contentType = fetchRes.headers.get('content-type') || 'image/jpeg';
+            const ext = contentType.includes('png') ? '.png' : '.jpg';
+            const r2Key = `meo3/inputs/${taskId}_ref_${i}_${Date.now()}${ext}`;
+            const r2Url = await uploadToR2(buffer, r2Key, contentType);
+            logger.info(`[Image Task] Re-uploaded external ref image ${i} to CORS R2: ${r2Url}`);
+            resolvedRefs.push(r2Url);
+          } catch (r2Err) {
+            logger.error(`[Image Task] Failed to re-upload external ref to R2: ${r2Err.message}`);
+            resolvedRefs.push(refItem);
           }
+        } else {
+          resolvedRefs.push(refItem);
         }
-
-        const result = await extensionBridge.generateImage({
-          id: taskId,
-          prompt: task.prompt,
-          model: task.model || 'nano_banana_pro',
-          aspectRatio: task.aspectRatio || '1:1',
-          referenceImages: bridgeRefs,
-          sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
-          projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
-        });
-
-        const fileName = `meo3/images/${taskId}_${Date.now()}.jpg`;
-        const r2Url = await uploadToR2(result.buffer, fileName, 'image/jpeg');
-        logger.success(`[Image] Task ${taskId} completed via Extension Bridge → ${r2Url}`);
-
-        const finalMedia = [{ mediaId: result.mediaId || taskId, status: 'success', url: r2Url }];
-        await task.docRef.update({
-          status: 'completed',
-          mediaUrl: r2Url,
-          media: finalMedia,
-          progress: '100%',
-          completedAt: Date.now(),
-          error: null,
-          errorCode: null
-        });
-        task.status = 'completed';
-        task.mediaUrl = r2Url;
-        task.media = finalMedia;
-        return;
-      } catch (e) {
-        if (e.message?.includes('cancel') || e.message?.includes('deleted')) {
-          logger.info(`[Image] Task ${taskId} cancelled cleanly.`);
-          return;
-        }
-        logger.error(`[Image] Extension Bridge failed for ${taskId}: ${e.message}`);
-        throw e;
       }
+      task.referenceImages = resolvedRefs;
+      if (task.docRef) {
+        task.docRef.update({ referenceImages: resolvedRefs }).catch(() => {});
+      }
+
+      const result = await generateImageViaAutoClick({
+        id: taskId,
+        seq: task.seq,
+        prompt: task.prompt,
+        model: task.model || 'nano_banana_pro',
+        aspectRatio: task.aspectRatio || '9:16',
+        referenceImages: resolvedRefs,
+        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
+        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null
+      });
+
+      const r2Url = result.r2Url || result.url || await uploadToR2(result.buffer, `meo3/images/${taskId}_${Date.now()}.jpg`, 'image/jpeg');
+      logger.success(`[Image] Task ${taskId} completed via AutoClick Image Runner → ${r2Url}`);
+
+      const finalMedia = [{ mediaId: result.mediaId || taskId, status: 'success', url: r2Url }];
+      await task.docRef.update({
+        status: 'completed',
+        mediaUrl: r2Url,
+        media: finalMedia,
+        progress: '100%',
+        completedAt: Date.now(),
+        error: null,
+        errorCode: null
+      });
+      task.status = 'completed';
+      task.mediaUrl = r2Url;
+      task.media = finalMedia;
+      return;
+    } catch (e) {
+      if (e.message?.includes('cancel') || e.message?.includes('deleted')) {
+        logger.info(`[Image] Task ${taskId} cancelled cleanly.`);
+        return;
+      }
+      logger.error(`[Image] AutoClick Image Runner failed for ${taskId}: ${e.message}`);
+      throw e;
     }
 
     logger.info(`[Image] Starting task: ${taskId} (active workers: ${activeImageWorkers})`);
