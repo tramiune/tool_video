@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid, ArrowUp, ArrowDown, Volume2, Shirt } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid, ArrowUp, ArrowDown, Volume2, Shirt, Wand2, UtensilsCrossed, ShoppingBag, Box, Lock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -362,7 +362,10 @@ const BG_PRESETS = [
 const MEO_COMPOSER_TOOLS = [
   {
     id: 'text-to-video',
-    emoji: '🎬',
+    icon: Wand2,
+    accent: '#38bdf8',
+    accentBg: 'rgba(56, 189, 248, 0.16)',
+    accentBorder: 'rgba(56, 189, 248, 0.38)',
     label: 'Video/Ảnh tự do',
     videoPlaceholder: 'Mô tả video bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)',
     imagePlaceholder: 'Mô tả hình ảnh bạn muốn tạo... (Nhấn Ctrl+V dán ảnh trực tiếp)',
@@ -371,7 +374,10 @@ const MEO_COMPOSER_TOOLS = [
   },
   {
     id: 'mother-in-law',
-    emoji: '👵',
+    icon: Clapperboard,
+    accent: '#c084fc',
+    accentBg: 'rgba(192, 132, 252, 0.16)',
+    accentBorder: 'rgba(192, 132, 252, 0.36)',
     label: 'Mẹ chồng nàng dâu',
     videoPlaceholder: 'Nhập tình huống Mẹ chồng nàng dâu... (VD: Mẹ chồng lườm con dâu khi đang ăn cơm)',
     imagePlaceholder: 'Mô tả nhân vật / bối cảnh Mẹ chồng nàng dâu muốn tạo ảnh...',
@@ -380,7 +386,10 @@ const MEO_COMPOSER_TOOLS = [
   },
   {
     id: 'food-review',
-    emoji: '🍜',
+    icon: UtensilsCrossed,
+    accent: '#2dd4bf',
+    accentBg: 'rgba(45, 212, 191, 0.16)',
+    accentBorder: 'rgba(45, 212, 191, 0.36)',
     label: 'Review đồ ăn',
     videoPlaceholder: 'Nhập món ăn muốn review... (VD: Cận cảnh bát phở bò bốc khói nghi ngút, nước dùng sóng sánh)',
     imagePlaceholder: 'Mô tả món ăn muốn tạo ảnh... (VD: Bàn tiệc nướng BBQ Hàn Quốc xèo xèo hấp dẫn)',
@@ -389,7 +398,10 @@ const MEO_COMPOSER_TOOLS = [
   },
   {
     id: 'fashion',
-    emoji: '👗',
+    icon: Shirt,
+    accent: '#f472b6',
+    accentBg: 'rgba(244, 114, 182, 0.16)',
+    accentBorder: 'rgba(244, 114, 182, 0.36)',
     label: 'Thời trang trước gương',
     videoPlaceholder: 'Nhập trang phục & người mẫu... (VD: Người mẫu nữ mặc váy dạ hội đỏ bước đi trên sàn catwalk)',
     imagePlaceholder: 'Mô tả bộ trang phục / lookbook thời trang muốn tạo ảnh...',
@@ -398,7 +410,10 @@ const MEO_COMPOSER_TOOLS = [
   },
   {
     id: 'product-ad',
-    emoji: '🛍️',
+    icon: ShoppingBag,
+    accent: '#60a5fa',
+    accentBg: 'rgba(96, 165, 250, 0.16)',
+    accentBorder: 'rgba(96, 165, 250, 0.36)',
     label: 'Quảng cáo SP',
     videoPlaceholder: 'Nhập sản phẩm cần làm TVC... (VD: Chai nước hoa đặt trên mặt đá, tia nước bắn chậm sang trọng)',
     imagePlaceholder: 'Mô tả sản phẩm & bối cảnh studio muốn tạo ảnh quảng cáo...',
@@ -407,7 +422,10 @@ const MEO_COMPOSER_TOOLS = [
   },
   {
     id: 'pixar-3d',
-    emoji: '🧸',
+    icon: Box,
+    accent: '#818cf8',
+    accentBg: 'rgba(129, 140, 248, 0.16)',
+    accentBorder: 'rgba(129, 140, 248, 0.36)',
     label: 'Hoạt hình 3D',
     videoPlaceholder: 'Nhập cảnh hoạt hình 3D... (VD: Chú mèo con mặc áo siêu nhân bay trên bầu trời)',
     imagePlaceholder: 'Mô tả nhân vật hoạt hình 3D Pixar dễ thương...',
@@ -420,6 +438,23 @@ function App() {
   const [activeTab, setActiveTab] = useState(() => safeGetLocalStorage('activeTab') || 'video');
   const [activeComposerToolId, setActiveComposerToolId] = useState('text-to-video');
   const composerToolsScrollRef = useRef(null);
+  const [canScrollToolsLeft, setCanScrollToolsLeft] = useState(false);
+  const [canScrollToolsRight, setCanScrollToolsRight] = useState(true);
+  const updateComposerToolsScroll = useCallback(() => {
+    const el = composerToolsScrollRef.current;
+    if (!el) return;
+    setCanScrollToolsLeft(el.scrollLeft > 4);
+    setCanScrollToolsRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+  useEffect(() => {
+    updateComposerToolsScroll();
+    const timer = setTimeout(updateComposerToolsScroll, 150);
+    window.addEventListener('resize', updateComposerToolsScroll);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateComposerToolsScroll);
+    };
+  }, [updateComposerToolsScroll]);
   const activeComposerTool = MEO_COMPOSER_TOOLS.find(t => t.id === activeComposerToolId) || MEO_COMPOSER_TOOLS[0];
   const [prompt, setPrompt] = useState('');
   const [user, setUser] = useState(null);
@@ -7946,68 +7981,209 @@ function App() {
             }}
           >
             <div
-              ref={composerToolsScrollRef}
-              onWheel={(e) => {
-                if (composerToolsScrollRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                  composerToolsScrollRef.current.scrollLeft += e.deltaY;
-                }
-              }}
               style={{
+                position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                overflowX: 'auto',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-                WebkitOverflowScrolling: 'touch',
-                paddingBottom: '1px',
               }}
             >
-              {MEO_COMPOSER_TOOLS.map((tool) => {
-                const isSelected = activeComposerToolId === tool.id;
-                const isLockedTool = tool.id !== 'text-to-video' && !hasFullToolAccess;
-                return (
+              {canScrollToolsLeft && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    zIndex: 3,
+                    display: 'flex',
+                    alignItems: 'center',
+                    paddingRight: '10px',
+                    background: 'linear-gradient(270deg, rgba(30, 30, 36, 0) 0%, rgba(30, 30, 36, 0.92) 38%, #1e1e24 100%)',
+                    pointerEvents: 'none',
+                  }}
+                >
                   <button
-                    key={tool.id}
                     type="button"
-                    onClick={(e) => {
-                      if (tool.id !== 'text-to-video' && !hasFullToolAccess) {
-                        showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
-                        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
-                        setShowPricingModal(true);
-                        return;
-                      }
-                      setActiveComposerToolId(tool.id);
-                      e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    aria-label="Cuộn sang trái"
+                    onClick={() => {
+                      if (!composerToolsScrollRef.current) return;
+                      composerToolsScrollRef.current.scrollBy({ left: -210, behavior: 'smooth' });
                     }}
                     style={{
+                      pointerEvents: 'auto',
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '999px',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                      color: '#7dd3fc',
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '5px',
-                      padding: '5px 11px',
-                      borderRadius: '999px',
-                      fontSize: '0.76rem',
-                      fontWeight: isSelected ? 700 : 600,
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
+                      justifyContent: 'center',
                       cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.45), 0 0 8px rgba(56, 189, 248, 0.14)',
                       transition: 'all 0.18s ease',
-                      background: isSelected
-                        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.25) 0%, rgba(6, 182, 212, 0.22) 100%)'
-                        : 'rgba(255, 255, 255, 0.04)',
-                      border: isSelected
-                        ? '1px solid rgba(56, 189, 248, 0.55)'
-                        : '1px solid rgba(255, 255, 255, 0.07)',
-                      color: isSelected ? '#e0f2fe' : '#a1a1aa',
-                      boxShadow: isSelected ? '0 2px 10px rgba(56, 189, 248, 0.18)' : 'none',
+                      flexShrink: 0,
                     }}
                   >
-                    <span style={{ fontSize: '0.88rem', lineHeight: 1 }}>{tool.emoji}</span>
-                    <span>{tool.label}</span>
-                    {isLockedTool && <span style={{ fontSize: '0.72rem', opacity: 0.85 }}>🔒</span>}
+                    <ChevronLeft size={14} strokeWidth={2.4} />
                   </button>
-                );
-              })}
+                </div>
+              )}
+
+              <div
+                ref={composerToolsScrollRef}
+                onScroll={updateComposerToolsScroll}
+                onWheel={(e) => {
+                  if (composerToolsScrollRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                    composerToolsScrollRef.current.scrollLeft += e.deltaY;
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  overflowX: 'auto',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none',
+                  WebkitOverflowScrolling: 'touch',
+                  paddingBottom: '1px',
+                  paddingLeft: canScrollToolsLeft ? '32px' : '0px',
+                  paddingRight: '36px',
+                  transition: 'padding-left 0.15s ease',
+                }}
+              >
+                {MEO_COMPOSER_TOOLS.map((tool) => {
+                  const isSelected = activeComposerToolId === tool.id;
+                  const isLockedTool = tool.id !== 'text-to-video' && !hasFullToolAccess;
+                  const ToolIcon = tool.icon;
+                  return (
+                    <button
+                      key={tool.id}
+                      type="button"
+                      onClick={(e) => {
+                        if (tool.id !== 'text-to-video' && !hasFullToolAccess) {
+                          showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 399k/1 tháng để được mở hết quyền.');
+                          setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 399k/1 tháng để được mở hết quyền.');
+                          setShowPricingModal(true);
+                          return;
+                        }
+                        setActiveComposerToolId(tool.id);
+                        e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 11px 4px 5px',
+                        borderRadius: '999px',
+                        fontSize: '0.76rem',
+                        fontWeight: isSelected ? 700 : 600,
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                        cursor: 'pointer',
+                        transition: 'all 0.18s ease',
+                        background: isSelected
+                          ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.25) 0%, rgba(6, 182, 212, 0.22) 100%)'
+                          : 'rgba(255, 255, 255, 0.035)',
+                        border: isSelected
+                          ? '1px solid rgba(56, 189, 248, 0.55)'
+                          : '1px solid rgba(255, 255, 255, 0.075)',
+                        color: isSelected ? '#e0f2fe' : '#cbd5e1',
+                        boxShadow: isSelected ? '0 2px 12px rgba(56, 189, 248, 0.2)' : 'none',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '21px',
+                          height: '21px',
+                          borderRadius: '999px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: isSelected ? 'rgba(56, 189, 248, 0.24)' : tool.accentBg,
+                          border: `1px solid ${isSelected ? 'rgba(125, 211, 252, 0.5)' : tool.accentBorder}`,
+                          color: isSelected ? '#7dd3fc' : tool.accent,
+                          boxShadow: isSelected ? '0 0 8px rgba(56, 189, 248, 0.28)' : 'none',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <ToolIcon size={12} strokeWidth={2.2} />
+                      </span>
+                      <span>{tool.label}</span>
+                      {isLockedTool && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#a78bfa',
+                            opacity: 0.9,
+                            marginLeft: '1px',
+                          }}
+                        >
+                          <Lock size={11} strokeWidth={2.3} />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Nút sang phải cố định ở cuối bên phải để biểu thị còn công cụ phía sau */}
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  zIndex: 3,
+                  display: 'flex',
+                  alignItems: 'center',
+                  paddingLeft: '12px',
+                  background: 'linear-gradient(90deg, rgba(30, 30, 36, 0) 0%, rgba(30, 30, 36, 0.92) 38%, #1e1e24 100%)',
+                  pointerEvents: 'none',
+                }}
+              >
+                <button
+                  type="button"
+                  title={canScrollToolsRight ? 'Xem thêm công cụ bên phải' : 'Quay lại đầu danh sách'}
+                  aria-label="Cuộn sang phải"
+                  onClick={() => {
+                    const el = composerToolsScrollRef.current;
+                    if (!el) return;
+                    if (el.scrollLeft + el.clientWidth < el.scrollWidth - 6) {
+                      el.scrollBy({ left: 210, behavior: 'smooth' });
+                    } else {
+                      el.scrollTo({ left: 0, behavior: 'smooth' });
+                    }
+                  }}
+                  style={{
+                    pointerEvents: 'auto',
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '999px',
+                    border: canScrollToolsRight
+                      ? '1px solid rgba(56, 189, 248, 0.48)'
+                      : '1px solid rgba(255, 255, 255, 0.14)',
+                    background: canScrollToolsRight
+                      ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.24) 0%, rgba(59, 130, 246, 0.2) 100%)'
+                      : 'rgba(255, 255, 255, 0.06)',
+                    color: canScrollToolsRight ? '#7dd3fc' : '#94a3b8',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    boxShadow: canScrollToolsRight
+                      ? '0 2px 10px rgba(0, 0, 0, 0.45), 0 0 10px rgba(56, 189, 248, 0.22)'
+                      : '0 2px 6px rgba(0, 0, 0, 0.35)',
+                    transition: 'all 0.18s ease',
+                    flexShrink: 0,
+                  }}
+                >
+                  <ChevronRight size={14} strokeWidth={2.5} />
+                </button>
+              </div>
             </div>
 
             {(activeComposerTool.badgeText || activeComposerToolId === 'mother-in-law') && (
@@ -8031,7 +8207,8 @@ function App() {
                     fontWeight: 600,
                   }}
                 >
-                  <span>✨ {activeComposerTool.badgeText || 'Tự động tối ưu Prompt theo chủ đề'}</span>
+                  <Sparkles size={12} style={{ flexShrink: 0 }} />
+                  <span>{activeComposerTool.badgeText || 'Tự động tối ưu Prompt theo chủ đề'}</span>
                 </div>
 
                 {activeComposerToolId === 'mother-in-law' && (
