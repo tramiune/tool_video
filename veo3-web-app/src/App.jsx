@@ -8555,29 +8555,51 @@ function App() {
                       </div>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={handleQuickDramaStart}
+                    <div
                       style={{
-                        width: '100%',
-                        padding: '10px 16px',
-                        borderRadius: '13px',
-                        border: '1px solid rgba(56, 189, 248, 0.45)',
-                        background: 'linear-gradient(135deg, #e11d48 0%, #db2777 45%, #2563eb 100%)',
-                        color: '#fff',
-                        fontSize: '0.86rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        boxShadow: '0 4px 16px rgba(225, 29, 72, 0.32)',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                        flexWrap: 'wrap',
+                        padding: '2px 4px',
                       }}
                     >
-                      <Video size={16} />
-                      <span>Tạo Video</span>
-                    </button>
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          color: '#94a3b8',
+                          lineHeight: 1.35,
+                          flex: '1 1 200px',
+                        }}
+                      >
+                        🎬 Tự động viết kịch bản 3D Pixar (6 cảnh) &amp; dựng phim hoàn chỉnh
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleQuickDramaStart}
+                        style={{
+                          padding: '6px 15px',
+                          borderRadius: '999px',
+                          border: '1px solid rgba(56, 189, 248, 0.45)',
+                          background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)',
+                          color: '#fff',
+                          fontSize: '0.78rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                          boxShadow: '0 2px 10px rgba(14, 165, 233, 0.24)',
+                        }}
+                      >
+                        <Video size={14} />
+                        <span>Tạo Video</span>
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
@@ -9082,32 +9104,32 @@ function App() {
                           <Volume2 size={12} />
                         </button>
                       </div>
-                    </div>
 
-                    {/* Hàng 3: Nút Tạo Video Review 1 chạm */}
-                    <button
-                      type="button"
-                      onClick={handleFoodReviewStart}
-                      style={{
-                        width: '100%',
-                        padding: '10px 16px',
-                        borderRadius: '13px',
-                        border: '1px solid rgba(251, 146, 60, 0.5)',
-                        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 45%, #db2777 100%)',
-                        color: '#fff',
-                        fontSize: '0.85rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        boxShadow: '0 4px 16px rgba(249, 115, 22, 0.32)',
-                      }}
-                    >
-                      <Video size={16} />
-                      <span>Tạo Video Review</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={handleFoodReviewStart}
+                        style={{
+                          padding: '6px 15px',
+                          borderRadius: '999px',
+                          border: '1px solid rgba(56, 189, 248, 0.45)',
+                          background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)',
+                          color: '#fff',
+                          fontSize: '0.78rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                          boxShadow: '0 2px 10px rgba(14, 165, 233, 0.24)',
+                        }}
+                      >
+                        <Video size={14} />
+                        <span>Tạo Video</span>
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
@@ -9628,33 +9650,33 @@ function App() {
                             }
                           }}
                         />
+
+                        <button
+                          type="button"
+                          onClick={handleFashionMirrorStart}
+                          style={{
+                            padding: '6px 15px',
+                            borderRadius: '999px',
+                            border: '1px solid rgba(56, 189, 248, 0.45)',
+                            background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)',
+                            color: '#fff',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                            boxShadow: '0 2px 10px rgba(14, 165, 233, 0.24)',
+                          }}
+                        >
+                          <Video size={14} />
+                          <span>Tạo Video</span>
+                        </button>
                       </div>
                     </div>
-
-                    {/* Hàng 3: Nút Tạo Video Thời Trang Trước Gương */}
-                    <button
-                      type="button"
-                      onClick={handleFashionMirrorStart}
-                      style={{
-                        width: '100%',
-                        padding: '10px 16px',
-                        borderRadius: '13px',
-                        border: '1px solid rgba(244, 114, 182, 0.5)',
-                        background: 'linear-gradient(135deg, #ec4899 0%, #db2777 50%, #9333ea 100%)',
-                        color: '#fff',
-                        fontSize: '0.85rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        boxShadow: '0 4px 16px rgba(236, 72, 153, 0.32)',
-                      }}
-                    >
-                      <Video size={16} />
-                      <span>Tạo Video Thời Trang Trước Gương (Tự thay đồ + Ghép cảnh)</span>
-                    </button>
                   </div>
                 );
               })()}
