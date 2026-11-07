@@ -2335,9 +2335,9 @@ app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
       }
       if (!req.authUser.isSuperAdmin) {
         const todayEpisodes = allJobs.filter(jd => Number(jd.createdAt || 0) >= startOfDayMs && jd.status !== 'failed').length;
-        if (todayEpisodes >= 2) {
+        if (todayEpisodes >= 20) {
           return res.status(429).json({
-            error: 'Bạn đã tạo đủ 2/2 tập phim Mẹ chồng nàng dâu hôm nay. Vui lòng quay lại vào ngày mai nhé!',
+            error: 'Bạn đã tạo đủ 20/20 tập phim Mẹ chồng nàng dâu hôm nay. Vui lòng quay lại vào ngày mai nhé!',
             code: 'DRAMA_DAILY_LIMIT'
           });
         }
@@ -2470,7 +2470,7 @@ app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => 
     const scriptData = snapshot.data();
     if (scriptData.userId !== req.authUser.uid && !req.authUser.isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
-    // Enforce max 2 episodes per day (GMT+7)
+    // Enforce max 20 episodes per day (GMT+7)
     if (!req.authUser.isSuperAdmin) {
       const startOfDayMs = getStartOfDayVnMs();
       const jobsSnap = await db.collection('drama_jobs').where('userId', '==', req.authUser.uid).get();
@@ -2478,9 +2478,9 @@ app.post('/api/drama/scripts/:id/jobs', requireDramaAccess, async (req, res) => 
         const jd = d.data();
         return Number(jd.createdAt || 0) >= startOfDayMs && jd.status !== 'failed';
       }).length;
-      if (todayEpisodes >= 2) {
+      if (todayEpisodes >= 20) {
         return res.status(429).json({
-          error: 'Bạn đã tạo đủ 2/2 tập phim hôm nay (gói 500k/tháng tối đa 2 tập/ngày). Vui lòng quay lại vào ngày mai nhé!',
+          error: 'Bạn đã tạo đủ 20/20 tập phim hôm nay (tối đa 20 tập/ngày). Vui lòng quay lại vào ngày mai nhé!',
           code: 'DRAMA_DAILY_LIMIT'
         });
       }
