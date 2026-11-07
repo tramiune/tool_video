@@ -93,7 +93,7 @@ IMAGE_COORDS = {
         "y_btn": 729,
         "btn_check_pts": [(980, 729), (1060, 729), (1340, 729), (1420, 729)],
     },
-    "running_boxes": [(1000, 188, 1120, 238), (1440, 188, 1575, 255)],
+    "running_boxes": [(1000, 188, 1120, 238)],
     "overlay_box": (1200, 145, 1565, 575),
     "allow_btns": [(1442, 224), (1150, 224)],
     "reload_click": (920, 240),
@@ -698,9 +698,12 @@ def perform_click_and_submit(full_prompt, mode="video"):
                 pyautogui.hotkey(mod_key, "v")
                 time.sleep(1.25 if len(full_prompt) > 90000 else (1.0 if len(full_prompt) > 2000 else 0.65))
 
-                # 4. Click nút "Chạy thủ công"
+                # 4. Di chuyển chuột tự nhiên qua vùng iframe rồi click nút "Chạy thủ công" (tăng điểm reCAPTCHA Enterprise)
+                if mode == "image":
+                    pyautogui.moveTo(x_input - 35, y_input - 20, duration=0.18)
+                    pyautogui.moveTo(x_input + 30, y_input + 15, duration=0.18)
                 submitted_at = time.time()
-                pyautogui.moveTo(x_btn, y_btn, duration=0.2)
+                pyautogui.moveTo(x_btn, y_btn, duration=0.22)
                 pyautogui.click(x_btn, y_btn)
 
                 # 5. Chờ tối đa 5.5s (5 lần x 1.1s) để xác nhận huy hiệu • ĐANG CHẠY đã bật
@@ -737,12 +740,38 @@ def perform_click_and_submit(full_prompt, mode="video"):
             fcntl.flock(lock_f, fcntl.LOCK_UN)
 
 
-def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", timeout_sec=300, poll_interval=3, mode="video"):
+def _reload_image_tab_for_recaptcha_recovery():
+    """Làm mới tab Tạo Ảnh (Ctrl+R) khi gặp lỗi hoạt động bất thường / dừng chạy sớm để làm mới phiên reCAPTCHA."""
+    if sys.platform == "darwin":
+        return
+    with open(LOCK_FILE, "a+") as lock_f:
+        fcntl.flock(lock_f, fcntl.LOCK_EX)
+        try:
+            if is_flow_currently_running(mode="image"):
+                return
+            rx, ry = IMAGE_COORDS["reload_click"]
+            sys.stderr.write("[AutoClick] 🔄 Làm mới (Ctrl+R) tab Tạo Ảnh để khôi phục phiên reCAPTCHA Google Flow...\n")
+            activate_chrome(mode="image")
+            pyautogui.moveTo(rx, ry, duration=0.18)
+            pyautogui.click(rx, ry)
+            time.sleep(0.2)
+            pyautogui.hotkey("ctrl", "r")
+            time.sleep(7.5)
+            im_after = capture_screen_rgb(max_age_sec=0.0)
+            check_and_dismiss_welcome_modal(im_after, mode="image")
+        except Exception as e:
+            sys.stderr.write(f"[AutoClick] Lỗi khi Ctrl+R tab Tạo Ảnh: {e}\n")
+        finally:
+            fcntl.flock(lock_f, fcntl.LOCK_UN)
+
+
+def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", timeout_sec=300, poll_interval=3, mode="video", full_prompt=""):
     """
     Sau khi submit:
     - Với video: chờ 25s rồi poll tìm <stt>.mp4 (timeout 300s)
     - Với image: chờ 4s rồi poll mỗi 1.5s tìm <stt>.jpg / .png / .jpeg / .webp (timeout 180s)
     """
+    overall_start = submitted_at
     init_delay = 4.0 if mode == "image" else 25.0
     wait_initial = max(2.0 if mode == "image" else 5.0, min(init_delay, init_delay - (time.time() - submitted_at)))
     sys.stderr.write(f"[AutoClick] Chờ {round(wait_initial, 1)} giây trước khi bắt đầu quét file Downloads ({mode})...\n")
@@ -754,9 +783,11 @@ def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", t
 
     poll_count = 0
     not_running_streak = 0
-    min_elapsed_for_error_check = 20 if mode == "image" else 40
+    internal_resubmits = 0
+    min_elapsed_for_error_check = 10 if mode == "image" else 40
+    max_streak = 3 if mode == "image" else 6
 
-    while (time.time() - submitted_at) < timeout_sec:
+    while (time.time() - overall_start) < timeout_sec:
         current_time = time.time()
         elapsed = round(current_time - submitted_at, 1)
         poll_count += 1
@@ -773,7 +804,7 @@ def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", t
                 full_path = os.path.join(downloads_dir, f)
                 try:
                     st = os.stat(full_path)
-                    if st.st_mtime >= (submitted_at - 15) and st.st_size > 0:
+                    if st.st_mtime >= (overall_start - 15) and st.st_size > 0:
                         candidates.append({
                             "name": f,
                             "path": full_path,
@@ -826,8 +857,16 @@ def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", t
                     continue
                 if im_poll is not None and not is_flow_currently_running(im_poll, mode=mode):
                     not_running_streak += 1
-                    sys.stderr.write(f"[AutoClick] ⚠️ Huy hiệu • ĐANG CHẠY ({mode}) đã tắt ({not_running_streak}/6) tại {elapsed}s mà chưa thấy file {clean_stt}...\n")
-                    if not_running_streak >= 6:
+                    sys.stderr.write(f"[AutoClick] ⚠️ Huy hiệu • ĐANG CHẠY ({mode}) đã tắt ({not_running_streak}/{max_streak}) tại {elapsed}s mà chưa thấy file {clean_stt}...\n")
+                    if not_running_streak >= max_streak:
+                        if mode == "image" and full_prompt and internal_resubmits < 2 and (time.time() - overall_start) < (timeout_sec - 35):
+                            internal_resubmits += 1
+                            not_running_streak = 0
+                            sys.stderr.write(f"[AutoClick] 🔁 Tự động làm mới tab & gửi lại task ảnh {clean_stt} (lần khôi phục {internal_resubmits}/2)...\n")
+                            _reload_image_tab_for_recaptcha_recovery()
+                            submitted_at = perform_click_and_submit(full_prompt=full_prompt, mode="image")
+                            time.sleep(3.5)
+                            continue
                         media_label = "ảnh" if mode == "image" else "video"
                         sys.stderr.write(f"[AutoClick] ❌ FLOW_TASK_ERROR: Google Flow đã dừng chạy ({mode}) sau {elapsed}s mà không xuất file {media_label}.\n")
                         return {
@@ -893,7 +932,8 @@ def main():
         stt=args.stt,
         timeout_sec=timeout_sec,
         poll_interval=poll_interval,
-        mode=mode
+        mode=mode,
+        full_prompt=full_prompt
     )
 
     if matched and matched.get("error_fast_fail"):
