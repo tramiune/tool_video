@@ -5480,11 +5480,20 @@ function App() {
       const data = await res.json();
       if (data.jobs) setAudioJobs(data.jobs);
       if (data.used !== undefined) {
-        setAudioUsage(prev => ({ ...prev, used: data.used, limit: data.limit ?? prev.limit, tier: data.tier ?? prev.tier }));
+        const tierKey = data.tier || userTier || 'free';
+        const isUnlimTier = ['premium_169k', 'premium_199k', 'pro_299k', 'vip_399k', 'master_499k', 'drama_500k', 'master_899k'].includes(tierKey);
+        const resolvedLimit = (data.limit === null && isUnlimTier) ? 999999 : (data.limit ?? (isUnlimTier ? 999999 : prevLimitFallback(tierKey)));
+        setAudioUsage(prev => ({ ...prev, used: data.used, limit: resolvedLimit ?? prev.limit, tier: tierKey }));
       }
     } catch (e) {
       console.error('loadAudioJobs failed', e);
     }
+  };
+
+  const prevLimitFallback = (tierKey) => {
+    if (['premium_169k', 'premium_199k', 'pro_299k', 'vip_399k', 'master_499k', 'drama_500k', 'master_899k'].includes(tierKey)) return 999999;
+    if (['hocvien', 'basic_69k', 'standard_99k'].includes(tierKey)) return 5;
+    return 0;
   };
 
   const generateAudio = async () => {
@@ -5544,7 +5553,9 @@ function App() {
   }, [isAudioView, user]);
 
   const renderAudioView = () => {
-    const remaining = Math.max(0, (audioUsage.limit ?? 1) - (audioUsage.used ?? 0));
+    const effectiveTier = audioUsage.tier && audioUsage.tier !== 'free' ? audioUsage.tier : userTier;
+    const isUnlimitedAudio = currentUserIsAdmin || ['premium_169k', 'premium_199k', 'pro_299k', 'vip_399k', 'master_499k', 'drama_500k', 'master_899k'].includes(effectiveTier) || (audioUsage.limit ?? 0) >= 9999;
+    const remaining = isUnlimitedAudio ? 999999 : Math.max(0, (audioUsage.limit ?? prevLimitFallback(effectiveTier)) - (audioUsage.used ?? 0));
 
     return (
       <div className="container" style={{ maxWidth: '760px', margin: '0 auto', padding: '40px 20px', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '100vh', color: '#fff' }}>
@@ -5679,7 +5690,7 @@ function App() {
               cursor: (audioGenerating || remaining <= 0) ? 'default' : 'pointer'
             }}
           >
-            {audioGenerating ? '⏳ Đang tạo…' : remaining === 0 ? 'Bạn đã dùng hết lượt hôm nay' : `Tạo giọng nói${remaining !== 0 ? ` (còn ${remaining} lượt)` : ''}`}
+            {audioGenerating ? '⏳ Đang tạo…' : remaining <= 0 ? 'Bạn đã dùng hết lượt hôm nay' : isUnlimitedAudio ? 'Tạo giọng nói (Không giới hạn)' : `Tạo giọng nói (còn ${remaining} lượt)`}
           </button>
         </div>
 

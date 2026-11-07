@@ -2738,17 +2738,6 @@ async function uploadTempFilesToR2List(files = [], folderPrefix = 'meo3/inputs')
   return urls;
 }
 
-app.get('/api/audio/voices', async (req, res) => {
-  try {
-    const resp = await fetch(`${AQUA_BACKEND_URL}/api/audio/voices`);
-    const data = await resp.json().catch(() => ({ voices: [] }));
-    return res.status(resp.status).json(data);
-  } catch (error) {
-    logger.error('Voices proxy failed', error);
-    return res.json({ voices: [{ index: 0, name: 'Giọng Adam', sampleUrl: 'https://pub-4ab82acbfdfa460d9fb6eed5cdca1fc5.r2.dev/voices/voice-sample-1.mp3' }] });
-  }
-});
-
 // Food Review proxy routes
 app.post('/api/drama/food-review/jobs', requireDramaAccess, upload.array('images', 5), async (req, res) => {
   try {
@@ -3259,14 +3248,19 @@ app.post('/api/payment-webhook', async (req, res) => {
 
 // ─── AUDIO (AI DANCING VOICE CLONE) API ────────────────────────────────────
 // Daily usage quotas per tier (server-side enforcement)
+// Note: use 999999 for unlimited tiers because JSON.stringify(Infinity) becomes null!
 const AUDIO_LIMITS = {
   free: 0,
   hocvien: 5,
   basic_69k: 5,
-
-  premium_169k: Infinity,
-  pro_299k: Infinity,
-  master_499k: Infinity
+  standard_99k: 5,
+  premium_169k: 999999,
+  premium_199k: 999999,
+  pro_299k: 999999,
+  vip_399k: 999999,
+  master_499k: 999999,
+  drama_500k: 999999,
+  master_899k: 999999
 };
 
 function audioLimitFor(tier) {
@@ -3288,7 +3282,14 @@ async function getAudioUsageToday(userId) {
 // List preset voices (cached by audioClient)
 app.get('/api/audio/voices', async (req, res) => {
   try {
-    const voices = await audioClient.getVoices();
+    const rawVoices = await audioClient.getVoices();
+    const voices = (Array.isArray(rawVoices) ? rawVoices : []).map((v, i) => ({
+      ...v,
+      voiceIndex: v.voiceIndex ?? v.index ?? i,
+      index: v.index ?? v.voiceIndex ?? i,
+      url: v.url || v.sampleUrl || '',
+      sampleUrl: v.sampleUrl || v.url || ''
+    }));
     res.json({ voices, lang: 'vi', total: voices.length });
   } catch (err) {
     logger.error('Audio voices endpoint failed', err);
