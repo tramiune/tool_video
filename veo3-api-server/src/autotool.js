@@ -238,7 +238,7 @@ function classifyFailure(failure) {
   const raw = [failure?.errorCode, failure?.error].filter(Boolean).map(String).join(' | ');
   if (!raw) return 'transient';
   // Content-policy / copyright / unsafe → rewrite the prompt to avoid the violation.
-  if (/COPYRIGHT|IP_INPUT_IMAGE|IP_PROHIBITED|PROMINENT|PUBLIC_ERROR_SEXUAL|PUBLIC_ERROR_MINOR|DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|FILTERED|CHILD_DANGER|AUDIO_FILTER|AUDIO_GENERATION_FILTERED/i.test(raw)) {
+  if (/FLOW_TASK_ERROR|từ chối|chính sách an toàn|vi phạm|COPYRIGHT|IP_INPUT_IMAGE|IP_PROHIBITED|PROMINENT|PUBLIC_ERROR_SEXUAL|PUBLIC_ERROR_MINOR|DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|FILTERED|CHILD_DANGER|AUDIO_FILTER|AUDIO_GENERATION_FILTERED/i.test(raw)) {
     return 'safety';
   }
   // Transient / recoverable → retry the same prompt.
@@ -269,7 +269,7 @@ async function rewritePrompt({ mediaType, originalPrompt, failure, characters, a
     'Rewrite the prompt so it keeps the same creative intent, scene, and visual outcome but completely avoids the flagged issue.',
     'Strict rules:',
     '- No real people, celebrities, or their likeness; use generic fictional characters only.',
-    '- No trademarked characters, brands, logos, or copyrighted artwork/music/lyrics.',
+    '- No trademarked characters, brands, logos, or copyrighted artwork/music/lyrics (replace "Pixar" or "Disney" with "3D animated CGI").',
     '- Keep it family-friendly: not explicit, not violent, not sensitive.',
     '- Keep 9:16 vertical framing and the same intended motion.',
     characterInstructions,
@@ -374,6 +374,7 @@ async function runChildTaskWithRetry({
           });
         } catch (rewriteErr) {
           logger.warn(`[AutoTool] rewritePrompt thất bại: ${rewriteErr.message}. Giữ prompt cũ.`);
+          currentPrompt = String(currentPrompt).replace(/\b(Disney\/Pixar|Pixar|Disney)\b/gi, '3D animated CGI');
         }
       } else {
         logger.warn(`[AutoTool] Scene ${sceneIndex + 1} ${taskType} lỗi tạm thời. Thử lại...`);
@@ -382,10 +383,15 @@ async function runChildTaskWithRetry({
       continue;
     }
 
+    const attemptTaskData = { ...extraTaskData, prompt: currentPrompt };
+    if (attempt >= 2 && String(taskType).toLowerCase().includes('video') && attemptTaskData.startImage && attemptTaskData.endImage) {
+      logger.info(`[AutoTool] Scene ${sceneIndex + 1} video retry lần ${attempt}: chỉ dùng startImage (bỏ endImage) để tránh xung đột cặp ảnh trên Google Flow.`);
+      delete attemptTaskData.endImage;
+    }
+
     if (!doc) {
-      const data = { ...extraTaskData, prompt: currentPrompt };
       try {
-        await taskRef.create(data);
+        await taskRef.create(attemptTaskData);
       } catch (error) {
         if (error.code !== 6 && error.code !== 'already-exists') throw error;
       }
@@ -444,6 +450,7 @@ async function runChildTaskWithRetry({
           });
         } catch (rewriteErr) {
           logger.warn(`[AutoTool] rewritePrompt thất bại: ${rewriteErr.message}. Giữ prompt cũ.`);
+          currentPrompt = String(currentPrompt).replace(/\b(Disney\/Pixar|Pixar|Disney)\b/gi, '3D animated CGI');
         }
       } else {
         logger.warn(`[AutoTool] Scene ${sceneIndex + 1} ${taskType} lỗi tạm thời: ${String(failure.error).slice(0, 120)}. Thử lại...`);
