@@ -374,7 +374,9 @@ async function runChildTaskWithRetry({
           });
         } catch (rewriteErr) {
           logger.warn(`[AutoTool] rewritePrompt thất bại: ${rewriteErr.message}. Giữ prompt cũ.`);
-          currentPrompt = String(currentPrompt).replace(/\b(Disney\/Pixar|Pixar|Disney)\b/gi, '3D animated CGI');
+          currentPrompt = String(currentPrompt)
+            .replace(/\b(3D\s+)?(Disney\/Pixar|Pixar\/Disney|Pixar|Disney)\b/gi, '3D animated CGI')
+            .replace(/\b(3D\s+animated\s+CGI\s*){2,}/gi, '3D animated CGI ');
         }
       } else {
         logger.warn(`[AutoTool] Scene ${sceneIndex + 1} ${taskType} lỗi tạm thời. Thử lại...`);
@@ -450,7 +452,9 @@ async function runChildTaskWithRetry({
           });
         } catch (rewriteErr) {
           logger.warn(`[AutoTool] rewritePrompt thất bại: ${rewriteErr.message}. Giữ prompt cũ.`);
-          currentPrompt = String(currentPrompt).replace(/\b(Disney\/Pixar|Pixar|Disney)\b/gi, '3D animated CGI');
+          currentPrompt = String(currentPrompt)
+            .replace(/\b(3D\s+)?(Disney\/Pixar|Pixar\/Disney|Pixar|Disney)\b/gi, '3D animated CGI')
+            .replace(/\b(3D\s+animated\s+CGI\s*){2,}/gi, '3D animated CGI ');
         }
       } else {
         logger.warn(`[AutoTool] Scene ${sceneIndex + 1} ${taskType} lỗi tạm thời: ${String(failure.error).slice(0, 120)}. Thử lại...`);
