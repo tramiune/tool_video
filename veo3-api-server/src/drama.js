@@ -161,24 +161,28 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       '- characters: BẮT BUỘC đúng 3 nhân vật gồm: 1) Mẹ chồng (role: "mẹ chồng", phụ nữ lớn tuổi 55-62 tuổi), 2) Con dâu (role: "con dâu", cô gái trẻ 25-27 tuổi, đặt tên thuần nữ như Mai, Lan, Linh, Thảo, Hương), và 3) Chồng (role: "chồng", nam 28-30 tuổi). Trường description viết bằng TIẾNG ANH mô tả rõ nhân vật hoạt hình 3D CGI kèm giới tính, độ tuổi, kiểu tóc và trang phục cố định (vd: "3D animated CGI elderly Vietnamese mother-in-law woman, 60yo female, hair in a neat bun, wearing a dark green traditional blouse", "3D animated CGI young Vietnamese daughter-in-law woman, 26yo pretty female with long black ponytail, wearing a pastel pink blouse and skirt", "3D animated CGI young Vietnamese husband man, 29yo male with short hair, wearing a light blue polo shirt").',
       '- baseImagePrompt: prompt tiếng Anh mô tả bối cảnh ngôi nhà Việt Nam theo phong cách hoạt hình 3D CGI (bắt đầu bằng: "3D animated CGI movie style, vertical 9:16: A cozy modern Vietnamese living room and dining area, stylized 3D CGI interior, warm cinematic lighting..."). TUYỆT ĐỐI KHÔNG dùng từ "photorealistic", "realistic textures", "Pixar" hay "Disney".',
       `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description, shotType, imagePrompt (prompt tiếng Anh vẽ ảnh 3D CGI cho khung hình BẮT ĐẦU của cảnh), endImagePrompt (prompt tiếng Anh vẽ ảnh 3D CGI cho khung hình KẾT THÚC sau 8s thoại), videoPrompt (prompt tiếng Anh cho clip hoạt hình 3D CGI 8 giây nối từ start frame sang end frame), và dialogue (mảng thoại tiếng Việt 100%).`,
-      '- YÊU CẦU ĐẶC BIỆT VỀ KỸ THUẬT GÓC MÁY ZOOM TỪ 1 NGƯỜI RA CẢ 3 NGƯỜI (DYNAMIC 1-TO-3 CHARACTER ZOOM STAGING):',
-      '  * Để bộ phim sinh động và nối cảnh mượt mà 100%, hãy phân bổ góc máy 6 cảnh theo đúng kịch bản chuyển động camera sau:',
-      '    1. Cảnh 1 (index 0 - `shotType: "zoom_out_1_to_3"`):',
-      '       - `imagePrompt` (Ảnh Start Cảnh 1): Góc máy CẬN CẢNH / TRUNG CẬN (Medium Close-up Zoom-in) chỉ tập trung vào 1 NHÂN VẬT DUY NHẤT (ví dụ: Mẹ chồng đang nếm thử món ăn / cầm tách trà quan sát với ánh mắt sắc sảo). Khung hình đầu chỉ có 1 người này.',
-      '       - `endImagePrompt` (Ảnh End Cảnh 1): Góc máy ZOOM RỘNG RA TOÀN CẢNH (Camera pulls back / zooms out to a Wide Shot) mở rộng không gian căn phòng để thấy rõ CẢ 3 NGƯỜI (Mẹ chồng, Con dâu, và Chồng) đang đứng/ngồi tương tác tự nhiên với nhau.',
-      '       - `videoPrompt` (Video Cảnh 1): Mô tả máy quay từ từ zoom rộng ra (Smooth cinematic camera pull-back / zoom-out from the 1-person medium close-up start frame to the wide end frame revealing all 3 characters together) trong lúc nhân vật nói Tiếng Việt.',
-      '    2. Cảnh 2 (index 1 - `shotType: "wide_3"`):',
-      '       - `imagePrompt` & `endImagePrompt`: Giữ góc rộng có đủ CẢ 3 NGƯỜI (nối tiếp từ cuối Cảnh 1), cập nhật biểu cảm và cử chỉ tay/đầu khi nhân vật đối đáp.',
-      '    3. Cảnh 3 (index 2 - `shotType: "zoom_in_3_to_1"`):',
-      '       - `imagePrompt` (Ảnh Start Cảnh 3): Góc rộng CẢ 3 NGƯỜI (nối từ cuối Cảnh 2).',
-      '       - `endImagePrompt` (Ảnh End Cảnh 3): Máy quay ZOOM CẬN VÀO 1 NGƯỜI (Medium Close-up focused on 1 character — ví dụ Con dâu hoặc Mẹ chồng đang nói câu thoại điểm nhấn).',
-      '       - `videoPrompt` (Video Cảnh 3): Mô tả máy quay zoom nhẹ từ khung rộng 3 người vào cận cảnh 1 người ở cuối cảnh (Smooth cinematic camera push-in / zoom-in from all 3 characters to the single speaking character).',
-      '    4. Cảnh 4 (index 3 - `shotType: "zoom_out_1_to_3"`):',
-      '       - `imagePrompt` (Ảnh Start Cảnh 4): Nối mượt từ cuối Cảnh 3 — đang là góc máy ZOOM CẬN 1 NGƯỜI.',
-      '       - `endImagePrompt` (Ảnh End Cảnh 4): Máy quay lại ZOOM RỘNG RA CẢ 3 NGƯỜI (Camera pulls back / zooms out to Wide Shot showing all 3 characters: Mother-in-law, Daughter-in-law, and Husband together in the room).',
-      '       - `videoPrompt` (Video Cảnh 4): Mô tả máy quay zoom mượt từ cận cảnh 1 người ở ảnh đầu mở rộng ra toàn cảnh cả 3 người ở ảnh cuối (Smooth cinematic camera pull-back / zoom-out from 1 character to all 3 characters).',
-      '    5. Cảnh 5 & Cảnh 6 (index 4, 5 - `shotType: "wide_3"`):',
-      '       - Giữ góc rộng có đủ CẢ 3 NGƯỜI tương tác tự nhiên cho đến kết thúc tập phim.',
+      '- YÊU CẦU ĐẶC BIỆT VỀ NHỊP GÓC MÁY: TỪ 3 NGƯỜI -> ZOOM VỀ 1 NGƯỜI -> TỪ 1 NGƯỜI ZOOM RỘNG RA LẠI 3 NGƯỜI (DYNAMIC 3 -> 1 -> 3 CAMERA RHYTHM):',
+      '  * Để bộ phim có chiều sâu điện ảnh và giữ 100% tính nhất quán của cả 3 nhân vật ngay từ đầu, BẮT BUỘC phân bổ góc máy 6 cảnh theo đúng nhịp sau:',
+      '    1. Cảnh 1 (index 0 - `shotType: "wide_3"` - Mở đầu đủ 3 người):',
+      '       - `imagePrompt` (Ảnh Start Cảnh 1) & `endImagePrompt` (Ảnh End Cảnh 1): Góc máy TOÀN CẢNH / TRUNG CẢNH RỘNG (Wide Shot) thấy rõ CẢ 3 NGƯỜI (Mẹ chồng, Con dâu, và Chồng) trong phòng khách/phòng ăn Việt Nam để thiết lập ngoại hình và trang phục của cả 3 nhân vật ngay từ đầu.',
+      '    2. Cảnh 2 (index 1 - `shotType: "zoom_in_3_to_1"` - Từ 3 người ZOOM VỀ 1 người):',
+      '       - `imagePrompt` (Ảnh Start Cảnh 2): Đang là góc rộng CẢ 3 NGƯỜI (nối mượt từ cuối Cảnh 1).',
+      '       - `endImagePrompt` (Ảnh End Cảnh 2): Máy quay ZOOM CẬN VỀ 1 NGƯỜI (Medium Close-up focused on 1 single character — ví dụ Mẹ chồng hoặc Con dâu đang nói câu thoại điểm nhấn).',
+      '       - `videoPrompt` (Video Cảnh 2): Máy quay từ khung hình 3 người ở ảnh đầu từ từ zoom cận về 1 người ở ảnh cuối (Smooth cinematic camera push-in / zoom-in from all 3 characters to 1 character).',
+      '    3. Cảnh 3 (index 2 - `shotType: "zoom_out_1_to_3"` - Từ 1 người ZOOM RỘNG RA LẠI 3 người):',
+      '       - `imagePrompt` (Ảnh Start Cảnh 3): Đang là góc ZOOM CẬN 1 NGƯỜI (nối mượt từ cuối Cảnh 2).',
+      '       - `endImagePrompt` (Ảnh End Cảnh 3): Máy quay ZOOM RỘNG TỪ 1 NGƯỜI RA LẠI CẢ 3 NGƯỜI (Camera pulls back / zooms out to a Wide Shot revealing all 3 characters: Mother-in-law, Daughter-in-law, and Husband together in the room).',
+      '       - `videoPrompt` (Video Cảnh 3): Máy quay từ cận cảnh 1 người ở ảnh đầu zoom rộng ra toàn cảnh cả 3 người ở ảnh cuối (Smooth cinematic camera pull-back / zoom-out from 1 character back to all 3 characters).',
+      '    4. Cảnh 4 (index 3 - `shotType: "zoom_in_3_to_1"` - Lại từ 3 người ZOOM VỀ 1 người):',
+      '       - `imagePrompt` (Ảnh Start Cảnh 4): Đang là góc rộng CẢ 3 NGƯỜI (nối mượt từ cuối Cảnh 3).',
+      '       - `endImagePrompt` (Ảnh End Cảnh 4): Máy quay ZOOM CẬN VỀ 1 NGƯỜI (Medium Close-up focused on 1 character ở đoạn cao trào đối đáp).',
+      '       - `videoPrompt` (Video Cảnh 4): Máy quay zoom mượt từ 3 người về 1 người (Smooth cinematic camera push-in / zoom-in from 3 characters to 1 character).',
+      '    5. Cảnh 5 (index 4 - `shotType: "zoom_out_1_to_3"` - Lại từ 1 người ZOOM RỘNG RA 3 người):',
+      '       - `imagePrompt` (Ảnh Start Cảnh 5): Đang là góc ZOOM CẬN 1 NGƯỜI (nối mượt từ cuối Cảnh 4).',
+      '       - `endImagePrompt` (Ảnh End Cảnh 5): Máy quay ZOOM RỘNG TỪ 1 NGƯỜI RA LẠI CẢ 3 NGƯỜI (Camera pulls back / zooms out to Wide Shot showing all 3 characters together).',
+      '       - `videoPrompt` (Video Cảnh 5): Máy quay zoom mượt từ 1 người ở ảnh đầu mở rộng ra cả 3 người ở ảnh cuối (Smooth cinematic camera pull-back / zoom-out from 1 character back to all 3 characters).',
+      '    6. Cảnh 6 (index 5 - `shotType: "wide_3"` - Kết thúc đủ 3 người):',
+      '       - Giữ góc rộng có đủ CẢ 3 NGƯỜI tương tác tự nhiên khép lại tập phim.',
       '- YÊU CẦU RÕ RÀNG VỀ GIỚI TÍNH & VAI TRÒ NHÂN VẬT KHI VIẾT PROMPT TIẾNG ANH:',
       '  * Khi viết imagePrompt, endImagePrompt và videoPrompt bằng tiếng Anh, TUYỆT ĐỐI KHÔNG chỉ viết tên riêng tiếng Việt (vì AI tạo ảnh sẽ nhầm giới tính con dâu thành đàn ông). BẮT BUỘC mỗi lần nhắc tên nhân vật phải ghi kèm cụm mô tả giới tính + vai trò + trang phục bằng tiếng Anh, ví dụ: "the elderly mother-in-law woman Bà Lan (60yo female in green blouse)", "the young daughter-in-law woman Mai (26yo young woman with long hair in pastel pink blouse)", "the young husband man Huy (29yo man in blue polo shirt)".',
       '- YÊU CẦU QUAN TRỌNG VỀ THOẠI (DIALOGUE):',
@@ -210,6 +214,12 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
   const scenes = Array.isArray(parsed.scenes) ? parsed.scenes.slice(0, MAX_SCENES) : [];
   if (scenes.length < 3) throw new Error('Drama AI must return at least 3 scenes');
 
+  const defaultDramaShotType = (idx) => {
+    if (idx === 1 || idx === 3) return 'zoom_in_3_to_1';
+    if (idx === 2 || idx === 4) return 'zoom_out_1_to_3';
+    return 'wide_3';
+  };
+
   return {
     title,
     characters: characters.map((character, index) => ({
@@ -224,7 +234,7 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       index,
       title: String(scene?.title || `Cảnh ${index + 1}`).trim().slice(0, 160),
       description: String(scene?.description || '').trim().slice(0, 3000),
-      shotType: String(scene?.shotType || (channelType !== 'sumo' ? (index === 0 || index === 3 ? 'zoom_out_1_to_3' : (index === 2 ? 'zoom_in_3_to_1' : 'wide_3')) : 'wide_3')).trim(),
+      shotType: String(scene?.shotType || (channelType !== 'sumo' ? defaultDramaShotType(index) : 'wide_3')).trim(),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
       endImagePrompt: String(scene?.endImagePrompt || '').trim().slice(0, 3000),
       videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
@@ -239,6 +249,11 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
 function normalizeDramaScript(raw) {
   const script = (raw && typeof raw === 'object') ? raw : {};
   const characters = Array.isArray(script.characters) ? script.characters.slice(0, MAX_CHARACTERS) : [];
+  const defaultDramaShotType = (idx) => {
+    if (idx === 1 || idx === 3) return 'zoom_in_3_to_1';
+    if (idx === 2 || idx === 4) return 'zoom_out_1_to_3';
+    return 'wide_3';
+  };
   return {
     topic: String(script.topic || '').trim().slice(0, 300),
     title: String(script.title || '').trim().slice(0, 200),
@@ -254,7 +269,7 @@ function normalizeDramaScript(raw) {
       index,
       title: String(scene?.title || `Cảnh ${index + 1}`).trim().slice(0, 160),
       description: String(scene?.description || '').trim().slice(0, 3000),
-      shotType: String(scene?.shotType || (index === 0 || index === 3 ? 'zoom_out_1_to_3' : (index === 2 ? 'zoom_in_3_to_1' : 'wide_3'))).trim(),
+      shotType: String(scene?.shotType || defaultDramaShotType(index)).trim(),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
       endImagePrompt: String(scene?.endImagePrompt || '').trim().slice(0, 3000),
       videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
@@ -576,6 +591,22 @@ async function runDramaJob(jobId) {
         let endImageUrl = scene.endImageUrl;
         const endImgExists = await checkUrlExists(endImageUrl);
         if (!endImageUrl || !endImgExists) {
+          const rawShotType = String(scene?.shotType || '').trim().toLowerCase();
+          const isZoomOutScene = rawShotType === 'zoom_out_1_to_3' || (!rawShotType && (index === 2 || index === 4));
+          const endRefImages = [startImageUrl];
+          if (isZoomOutScene && index > 0) {
+            const wideAnchorUrl =
+              job.scenes[index - 1]?.startImageUrl ||
+              job.scenes[index - 1]?.imageUrl ||
+              job.scenes[0]?.endImageUrl ||
+              job.scenes[0]?.startImageUrl ||
+              job.scenes[0]?.imageUrl ||
+              null;
+            if (wideAnchorUrl && wideAnchorUrl !== startImageUrl) {
+              endRefImages.push(wideAnchorUrl);
+            }
+          }
+
           const endImageResult = await runChildTaskWithRetry({
             jobRef,
             job: { ...job, characters: job.characters || [] },
@@ -590,7 +621,7 @@ async function runDramaJob(jobId) {
               aspectRatio: '9:16',
               model: 'nano_banana_2',
               count: 1,
-              referenceImages: [startImageUrl],
+              referenceImages: endRefImages,
               dramaJobId: jobId,
               sceneIndex: index,
               createdAt: Date.now()
@@ -931,8 +962,8 @@ function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
     : (scene?.sceneIndex !== undefined ? Number(scene.sceneIndex) : (scene?.index !== undefined ? Number(scene.index) : 0));
 
   const rawShotType = String(scene?.shotType || '').trim().toLowerCase();
-  const isZoomOut1To3 = rawShotType === 'zoom_out_1_to_3' || (!rawShotType && (actualIndex === 0 || actualIndex === 3));
-  const isZoomIn3To1 = rawShotType === 'zoom_in_3_to_1' || (!rawShotType && actualIndex === 2);
+  const isZoomIn3To1 = rawShotType === 'zoom_in_3_to_1' || (!rawShotType && (actualIndex === 1 || actualIndex === 3));
+  const isZoomOut1To3 = rawShotType === 'zoom_out_1_to_3' || (!rawShotType && (actualIndex === 2 || actualIndex === 4));
 
   const dialogues = Array.isArray(scene.dialogue) ? scene.dialogue : [];
   const dialogueLines = dialogues.map(line => {
@@ -1181,6 +1212,22 @@ async function generateSceneMedia({
         throw new Error('Cần có ảnh bắt đầu trước khi tạo ảnh kết thúc.');
       }
 
+      const rawShotType = String(scene?.shotType || '').trim().toLowerCase();
+      const isZoomOutScene = rawShotType === 'zoom_out_1_to_3' || (!rawShotType && (sceneIndex === 2 || sceneIndex === 4));
+      const endRefImages = [startImg];
+      if (isZoomOutScene && sceneIndex > 0 && Array.isArray(script.scenes)) {
+        const wideAnchorUrl =
+          script.scenes[sceneIndex - 1]?.startImageUrl ||
+          script.scenes[sceneIndex - 1]?.imageUrl ||
+          script.scenes[0]?.endImageUrl ||
+          script.scenes[0]?.startImageUrl ||
+          script.scenes[0]?.imageUrl ||
+          null;
+        if (wideAnchorUrl && wideAnchorUrl !== startImg) {
+          endRefImages.push(wideAnchorUrl);
+        }
+      }
+
       const endImageResult = await runChildTaskWithRetry({
         jobRef: scriptRef,
         job,
@@ -1195,7 +1242,7 @@ async function generateSceneMedia({
           aspectRatio: '9:16',
           model: 'nano_banana_2',
           count: 1,
-          referenceImages: [startImg],
+          referenceImages: endRefImages,
           dramaScriptId: scriptRef.id,
           sceneIndex,
           createdAt: Date.now()
