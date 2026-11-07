@@ -10169,7 +10169,7 @@ function App() {
                 <span style={{ fontSize: '1.2rem' }}>⚠️</span>
                 <div>
                   <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'Pro (Xóa Logo)' : (userTier === 'master_499k' || userTier === 'vip_399k') ? 'VIP (Full Quyền)' : userTier} của bạn đã hết hạn
+                    Gói {userTier === 'basic_69k' ? 'Cơ Bản' : userTier === 'premium_169k' ? 'Premium' : userTier === 'pro_299k' ? 'Pro' : (userTier === 'master_499k' || userTier === 'vip_399k') ? 'VIP' : userTier} của bạn đã hết hạn
                   </div>
                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', marginTop: '2px' }}>
                     Gia hạn hoặc nâng cấp để tiếp tục tạo nội dung
@@ -10306,7 +10306,7 @@ function App() {
                 ) : (
                   <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.58rem', padding: '2px 7px', background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>XÓA WATERMARK</span>
                 )}
-                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Pro (Xóa Logo)</div>
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói Pro</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
                   <span style={{ fontSize: '1.55rem', fontWeight: '800', color: '#34d399' }}>299k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
@@ -10340,7 +10340,7 @@ function App() {
                 </button>
               </div>
 
-              {/* VIP Full Quyền Plan (499k) */}
+              {/* VIP Plan (499k) */}
               <div style={{
                 background: 'linear-gradient(180deg, rgba(236,72,153,0.08) 0%, rgba(139,92,246,0.05) 100%)',
                 border: (userTier === 'master_499k' || userTier === 'vip_399k') ? '2px solid #ec4899' : '1.5px solid rgba(236,72,153,0.45)',
@@ -10357,7 +10357,7 @@ function App() {
                 ) : (
                   <span style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.58rem', padding: '2px 7px', background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>MỞ HẾT QUYỀN</span>
                 )}
-                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói VIP (Full Quyền)</div>
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Gói VIP</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
                   <span style={{ fontSize: '1.55rem', fontWeight: '800', color: '#f472b6' }}>499k</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/ tháng</span>
