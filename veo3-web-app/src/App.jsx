@@ -7017,10 +7017,14 @@ function App() {
       free: { videos: 0, images: 0 },
       hocvien: { videos: 0, images: 30 },
       basic_69k: { videos: 5, images: 10 },
-      
+      standard_99k: { videos: 5, images: 10 },
       premium_169k: { videos: Infinity, images: Infinity },
+      premium_199k: { videos: Infinity, images: Infinity },
       pro_299k: { videos: Infinity, images: Infinity },
-      master_499k: { videos: Infinity, images: Infinity }
+      vip_399k: { videos: Infinity, images: Infinity },
+      master_499k: { videos: Infinity, images: Infinity },
+      drama_500k: { videos: Infinity, images: Infinity },
+      master_899k: { videos: Infinity, images: Infinity }
     };
 
     const isExpired = !currentUserIsAdmin && userTier !== 'free' && userExpiryDate && userExpiryDate < Date.now();
