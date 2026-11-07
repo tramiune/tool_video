@@ -1320,21 +1320,39 @@ async function _doEnsureImageChromeWindowOpen() {
 
   logger.info(`[ProfileManager] 🖼️ Không thấy cửa sổ Chrome Ảnh nửa phải trên DISPLAY=${disp}, đang mở "${imgProfile?.name || profileDirName}" (${IMAGE_WIN_X}, ${IMAGE_WIN_Y}, ${IMAGE_WIN_W}x${IMAGE_WIN_H}) → ${flowUrl}`);
 
-  // Ghi window_placement nửa màn hình bên phải (800, 27, 800x873) vào Preferences của Profile 6
+  // Ghi window_placement nửa màn hình bên phải (800, 27, 800x873) và vô hiệu hóa toàn bộ extension (kể cả unpacked) trong Profile 6
   try {
     const profFolder = path.join(userDataDir, profileDirName);
     if (fs.existsSync(profFolder)) {
-      const prefPath = path.join(profFolder, 'Preferences');
-      let pref = {};
-      if (fs.existsSync(prefPath)) {
-        try { pref = JSON.parse(fs.readFileSync(prefPath, 'utf8')); } catch (_) { pref = {}; }
+      const extDir = path.join(profFolder, 'Extensions');
+      const extBakDir = path.join(profFolder, 'Extensions_disabled_bak');
+      if (fs.existsSync(extDir) && !fs.existsSync(extBakDir)) {
+        try { fs.renameSync(extDir, extBakDir); } catch (_) {}
       }
-      if (!pref.browser) pref.browser = {};
-      pref.browser.window_placement = { ...IMAGE_WINDOW_PLACEMENT };
-      if (!pref.download) pref.download = {};
-      pref.download.default_directory = path.join(os.homedir(), 'Downloads');
-      pref.download.prompt_for_download = false;
-      fs.writeFileSync(prefPath, JSON.stringify(pref), 'utf8');
+      for (const prefFile of ['Preferences', 'Secure Preferences']) {
+        const prefPath = path.join(profFolder, prefFile);
+        let pref = {};
+        if (fs.existsSync(prefPath)) {
+          try { pref = JSON.parse(fs.readFileSync(prefPath, 'utf8')); } catch (_) { pref = {}; }
+        } else if (prefFile === 'Secure Preferences') {
+          continue;
+        }
+        if (pref.extensions && pref.extensions.settings && typeof pref.extensions.settings === 'object') {
+          for (const [extId, extCfg] of Object.entries(pref.extensions.settings)) {
+            if (extCfg && (extCfg.location === 1 || extCfg.location === 4)) {
+              delete pref.extensions.settings[extId];
+            }
+          }
+        }
+        if (prefFile === 'Preferences') {
+          if (!pref.browser) pref.browser = {};
+          pref.browser.window_placement = { ...IMAGE_WINDOW_PLACEMENT };
+          if (!pref.download) pref.download = {};
+          pref.download.default_directory = path.join(os.homedir(), 'Downloads');
+          pref.download.prompt_for_download = false;
+        }
+        fs.writeFileSync(prefPath, JSON.stringify(pref), 'utf8');
+      }
     }
   } catch (e) {
     logger.warn(`[ProfileManager] Không thể ghi Preferences cho Profile Ảnh: ${e.message}`);
