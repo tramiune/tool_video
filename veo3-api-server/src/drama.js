@@ -152,19 +152,38 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       '  2. Trong các prompt tiếng Anh (baseImagePrompt, imagePrompt, endImagePrompt, videoPrompt), TUYỆT ĐỐI KHÔNG dùng các từ mô tả bạo lực, la hét, khóc lóc hoặc đau khổ tiêu cực dễ bị bộ lọc Google chặn như: crying, tears, tearful, sobbing, weeping, quivering lip, trembling, distressed, scolding, yelling, shouting, screaming, angry, angrily, furious, hostile, cruel, humiliated, suffering, abuse, harsh, sternly, coldly, stiffly, glaring, sad, upset, tense, nervously.',
       '  3. Thay vào đó, hãy diễn tả sự kịch tính qua NGÔN NGỮ DIỄN XUẤT ĐIỆN ẢNH TINH TẾ (expressive cinematic acting): ví dụ Mẹ chồng có "serious composed expression, raised eyebrows, looking closely with a discerning culinary eye, speaking in a firm traditional tone, crossing arms thoughtfully"; Con dâu có "surprised expression, polite awkward smile, attentive posture, clasping hands respectfully, speaking softly and earnestly"; Chồng có "warm mediating gesture, earnest reassuring expression".',
       '  4. Trong lời thoại tiếng Việt (dialogue), giữ nguyên sự sắc sảo, bắt bẻ khéo léo chuẩn vị mẹ chồng - nàng dâu Việt Nam (về món ăn mặn nhạt, cách chi tiêu, nếp sinh hoạt...), nhưng TUYỆT ĐỐI KHÔNG dùng các từ ngữ mắng nhiếc nặng nề, xúc phạm hay bi lụy dễ bị bộ lọc âm thanh chặn (KHÔNG dùng: "chê bai", "vô dụng", "ăn bám", "khóc", "nước mắt", "tủi thân", "hành hạ", "cay nghiệt", "chấp nhặt", "tội nghiệp", "đàn bà con gái mà...", "mệt trong người lắm rồi", "cút", "nhục"). Hãy dùng lời thoại tự nhiên, đời thường, đối đáp thông minh và giàu cảm xúc.',
+      '- QUY TẮC BẮT BUỘC 100% NÓI TIẾNG VIỆT (STRICT VIETNAMESE SPEECH ONLY - NO ENGLISH):',
+      '  * Toàn bộ nhân vật trong phim BẮT BUỘC chỉ nói TIẾNG VIỆT 100% (native Vietnamese language). TUYỆT ĐỐI KHÔNG chèn bất kỳ từ tiếng Anh nào vào lời thoại `dialogue`.',
+      '  * Trong trường `videoPrompt` (viết bằng tiếng Anh để mô tả chuyển động), TUYỆT ĐỐI KHÔNG được dịch lời thoại sang tiếng Anh hoặc viết câu thoại bằng tiếng Anh (vì nếu viết câu thoại tiếng Anh trong `videoPrompt`, AI sẽ đọc tiếng Anh!). Thay vào đó, trong `videoPrompt` luôn phải ghi rõ: `speaking in native Vietnamese language only (ABSOLUTELY NO English speech)` kèm trích dẫn nguyên văn câu thoại Tiếng Việt.',
       'Trả về JSON đúng dạng, không markdown, không chú thích, đúng hình dạng sau:',
-      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
+      '{"title":"...","characters":[{"name":"...","age":"...","role":"...","description":"..."}],"baseImagePrompt":"...","scenes":[{"title":"...","description":"...","shotType":"...","imagePrompt":"...","endImagePrompt":"...","videoPrompt":"...","dialogue":[{"speaker":"...","text":"..."}]}]}',
       '- title: tiêu đề kịch bản, ngắn gọn, gây tò mò (tiếng Việt).',
       '- characters: BẮT BUỘC đúng 3 nhân vật gồm: 1) Mẹ chồng (role: "mẹ chồng", phụ nữ lớn tuổi 55-62 tuổi), 2) Con dâu (role: "con dâu", cô gái trẻ 25-27 tuổi, đặt tên thuần nữ như Mai, Lan, Linh, Thảo, Hương), và 3) Chồng (role: "chồng", nam 28-30 tuổi). Trường description viết bằng TIẾNG ANH mô tả rõ nhân vật hoạt hình 3D CGI kèm giới tính, độ tuổi, kiểu tóc và trang phục cố định (vd: "3D animated CGI elderly Vietnamese mother-in-law woman, 60yo female, hair in a neat bun, wearing a dark green traditional blouse", "3D animated CGI young Vietnamese daughter-in-law woman, 26yo pretty female with long black ponytail, wearing a pastel pink blouse and skirt", "3D animated CGI young Vietnamese husband man, 29yo male with short hair, wearing a light blue polo shirt").',
       '- baseImagePrompt: prompt tiếng Anh mô tả bối cảnh ngôi nhà Việt Nam theo phong cách hoạt hình 3D CGI (bắt đầu bằng: "3D animated CGI movie style, vertical 9:16: A cozy modern Vietnamese living room and dining area, stylized 3D CGI interior, warm cinematic lighting..."). TUYỆT ĐỐI KHÔNG dùng từ "photorealistic", "realistic textures", "Pixar" hay "Disney".',
-      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description (tiếng Việt/Anh mô tả cảnh), imagePrompt (prompt tiếng Anh vẽ ảnh 3D CGI cho khung hình BẮT ĐẦU của cảnh), endImagePrompt (prompt tiếng Anh chỉnh sửa trực tiếp từ khung hình bắt đầu cho khung hình KẾT THÚC sau 8s thoại: BẮT BUỘC giữ nguyên 100% góc máy, bối cảnh căn phòng, đồ nội thất, vị trí đứng/ngồi và trang phục của nhân vật trong ảnh đầu, CHỈ mô tả sự thay đổi rõ nét về biểu cảm khuôn mặt, ánh mắt và cử chỉ tay/đầu khi kết thúc câu thoại để nối mượt sang cảnh kế tiếp), videoPrompt (prompt tiếng Anh cho clip hoạt hình 3D CGI 8 giây nối từ start frame sang end frame), và dialogue (mảng thoại tiếng Việt).`,
-      '- YÊU CẦU BẮT BUỘC VỀ NHÂN VẬT CON DÂU & MẸ CHỒNG TRONG MỌI CẢNH (MANDATORY CHARACTER PRESENCE & GENDER CLARITY):',
-      '  * Trong TẤT CẢ 6 cảnh, CẢ MẸ CHỒNG (the elderly mother-in-law woman) VÀ CON DÂU (the young daughter-in-law woman) ĐỀU BẮT BUỘC PHẢI XUẤT HIỆN RÕ RÀNG TRONG KHUNG HÌNH!',
+      `- scenes: đúng ${MAX_SCENES} cảnh. Mỗi cảnh có title, description, shotType, imagePrompt (prompt tiếng Anh vẽ ảnh 3D CGI cho khung hình BẮT ĐẦU của cảnh), endImagePrompt (prompt tiếng Anh vẽ ảnh 3D CGI cho khung hình KẾT THÚC sau 8s thoại), videoPrompt (prompt tiếng Anh cho clip hoạt hình 3D CGI 8 giây nối từ start frame sang end frame), và dialogue (mảng thoại tiếng Việt 100%).`,
+      '- YÊU CẦU ĐẶC BIỆT VỀ KỸ THUẬT GÓC MÁY ZOOM TỪ 1 NGƯỜI RA CẢ 3 NGƯỜI (DYNAMIC 1-TO-3 CHARACTER ZOOM STAGING):',
+      '  * Để bộ phim sinh động và nối cảnh mượt mà 100%, hãy phân bổ góc máy 6 cảnh theo đúng kịch bản chuyển động camera sau:',
+      '    1. Cảnh 1 (index 0 - `shotType: "zoom_out_1_to_3"`):',
+      '       - `imagePrompt` (Ảnh Start Cảnh 1): Góc máy CẬN CẢNH / TRUNG CẬN (Medium Close-up Zoom-in) chỉ tập trung vào 1 NHÂN VẬT DUY NHẤT (ví dụ: Mẹ chồng đang nếm thử món ăn / cầm tách trà quan sát với ánh mắt sắc sảo). Khung hình đầu chỉ có 1 người này.',
+      '       - `endImagePrompt` (Ảnh End Cảnh 1): Góc máy ZOOM RỘNG RA TOÀN CẢNH (Camera pulls back / zooms out to a Wide Shot) mở rộng không gian căn phòng để thấy rõ CẢ 3 NGƯỜI (Mẹ chồng, Con dâu, và Chồng) đang đứng/ngồi tương tác tự nhiên với nhau.',
+      '       - `videoPrompt` (Video Cảnh 1): Mô tả máy quay từ từ zoom rộng ra (Smooth cinematic camera pull-back / zoom-out from the 1-person medium close-up start frame to the wide end frame revealing all 3 characters together) trong lúc nhân vật nói Tiếng Việt.',
+      '    2. Cảnh 2 (index 1 - `shotType: "wide_3"`):',
+      '       - `imagePrompt` & `endImagePrompt`: Giữ góc rộng có đủ CẢ 3 NGƯỜI (nối tiếp từ cuối Cảnh 1), cập nhật biểu cảm và cử chỉ tay/đầu khi nhân vật đối đáp.',
+      '    3. Cảnh 3 (index 2 - `shotType: "zoom_in_3_to_1"`):',
+      '       - `imagePrompt` (Ảnh Start Cảnh 3): Góc rộng CẢ 3 NGƯỜI (nối từ cuối Cảnh 2).',
+      '       - `endImagePrompt` (Ảnh End Cảnh 3): Máy quay ZOOM CẬN VÀO 1 NGƯỜI (Medium Close-up focused on 1 character — ví dụ Con dâu hoặc Mẹ chồng đang nói câu thoại điểm nhấn).',
+      '       - `videoPrompt` (Video Cảnh 3): Mô tả máy quay zoom nhẹ từ khung rộng 3 người vào cận cảnh 1 người ở cuối cảnh (Smooth cinematic camera push-in / zoom-in from all 3 characters to the single speaking character).',
+      '    4. Cảnh 4 (index 3 - `shotType: "zoom_out_1_to_3"`):',
+      '       - `imagePrompt` (Ảnh Start Cảnh 4): Nối mượt từ cuối Cảnh 3 — đang là góc máy ZOOM CẬN 1 NGƯỜI.',
+      '       - `endImagePrompt` (Ảnh End Cảnh 4): Máy quay lại ZOOM RỘNG RA CẢ 3 NGƯỜI (Camera pulls back / zooms out to Wide Shot showing all 3 characters: Mother-in-law, Daughter-in-law, and Husband together in the room).',
+      '       - `videoPrompt` (Video Cảnh 4): Mô tả máy quay zoom mượt từ cận cảnh 1 người ở ảnh đầu mở rộng ra toàn cảnh cả 3 người ở ảnh cuối (Smooth cinematic camera pull-back / zoom-out from 1 character to all 3 characters).',
+      '    5. Cảnh 5 & Cảnh 6 (index 4, 5 - `shotType: "wide_3"`):',
+      '       - Giữ góc rộng có đủ CẢ 3 NGƯỜI tương tác tự nhiên cho đến kết thúc tập phim.',
+      '- YÊU CẦU RÕ RÀNG VỀ GIỚI TÍNH & VAI TRÒ NHÂN VẬT KHI VIẾT PROMPT TIẾNG ANH:',
       '  * Khi viết imagePrompt, endImagePrompt và videoPrompt bằng tiếng Anh, TUYỆT ĐỐI KHÔNG chỉ viết tên riêng tiếng Việt (vì AI tạo ảnh sẽ nhầm giới tính con dâu thành đàn ông). BẮT BUỘC mỗi lần nhắc tên nhân vật phải ghi kèm cụm mô tả giới tính + vai trò + trang phục bằng tiếng Anh, ví dụ: "the elderly mother-in-law woman Bà Lan (60yo female in green blouse)", "the young daughter-in-law woman Mai (26yo young woman with long hair in pastel pink blouse)", "the young husband man Huy (29yo man in blue polo shirt)".',
-      '  * Mọi imagePrompt và videoPrompt bắt đầu bằng "3D animated CGI movie style, vertical 9:16:". Riêng endImagePrompt BẮT BUỘC bắt đầu bằng: "Same exact 3D animated CGI vertical 9:16 scene, same exact room background, furniture, camera angle, and character outfits as the start frame: " rồi mô tả cử chỉ và biểu cảm mới của các nhân vật ở cuối cảnh.',
       '- YÊU CẦU QUAN TRỌNG VỀ THOẠI (DIALOGUE):',
-      '  * Bắt buộc cảnh nào cũng phải có thoại. Mảng dialogue của mỗi cảnh chỉ được phép chứa đúng 1 câu thoại duy nhất của 1 nhân vật (1 người nói duy nhất mỗi cảnh, xen kẽ giữa mẹ chồng, con dâu và chồng qua các cảnh).',
-      '  * Mỗi câu thoại phải đủ dài để đọc/nói chậm rãi trong khoảng 7 đến 8 giây (độ dài kịch bản thoại khoảng 25-35 từ tiếng Việt), diễn đạt sâu sắc, kịch tính đời thường, tránh thoại ngắn cụt lủn.',
+      '  * Bắt buộc cảnh nào cũng phải có thoại 100% bằng Tiếng Việt. Mảng dialogue của mỗi cảnh chỉ được phép chứa đúng 1 câu thoại duy nhất của 1 nhân vật (1 người nói duy nhất mỗi cảnh, xen kẽ giữa mẹ chồng, con dâu và chồng qua các cảnh).',
+      '  * Mỗi câu thoại phải đủ dài để đọc/nói chậm rãi trong khoảng 7 đến 8 giây (độ dài kịch bản thoại khoảng 25-35 từ tiếng Việt), diễn đạt sâu sắc, kịch tính đời thường, tuyệt đối không có từ tiếng Anh nào.',
       'YÊU CẦU QUAN TRỌNG VỀ BỐ CỤC ĐIỆN ẢNH & TƯ THẾ NHÂN VẬT (CINEMATIC STAGING & NATURAL POSING):',
       '- TUYỆT ĐỐI KHÔNG ĐỂ CÁC NHÂN VẬT ĐỨNG DÀN HÀNG NGANG (DO NOT POSE CHARACTERS IN A STIFF LINEUP LIKE A MUGSHOT OR GROUP PHOTO).',
       '- ĐA DẠNG HÓA TƯ THẾ & TƯƠNG TÁC TỰ NHIÊN VỚI BỐI CẢNH (Contextual Posing & Natural Props):',
@@ -172,7 +191,6 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       '  * Tạo chiều sâu khung hình (Layering & Depth) và ngôn ngữ cơ thể hướng về nhau.',
       '- Giữ tính liên tục của bối cảnh & nhân vật (Spatial Continuity): Giữ nguyên căn phòng, đồ đạc nội thất, phong cách trang phục và diện mạo 3D CGI của cả 3 nhân vật qua tất cả các cảnh.',
       '- TUYỆT ĐỐI KHÔNG ĐƯỢC chứa bất kỳ chữ viết, tên nhân vật hiển thị dưới dạng chữ, nhãn tên, phụ đề hay watermark nào trong toàn bộ baseImagePrompt, imagePrompt, endImagePrompt và videoPrompt (No text, no subtitles, no names as labels, no written words on screen, no overlay text).',
-      '- Khóa góc máy (Locked camera shot): mô tả camera tĩnh hoặc chuyển động cực kỳ nhẹ (static camera, locked medium shot), tuyệt đối không viết prompt dạng chuyển cảnh, cắt cảnh (no camera cuts, no camera angle changes) để đảm bảo video ghép lại không bị giật, nhảy hình.',
       '- KHUNG HÌNH ĐƠN TRÀN VIỀN 9:16 (Full-bleed Single Shot Only): Toàn bộ imagePrompt và endImagePrompt chỉ mô tả một bức ảnh 3D CGI đơn lẻ duy nhất tràn kín khung dọc 9:16 từ trần nhà xuống sàn nhà (full-bleed vertical 9:16 portrait, no top or bottom blur bars, no letterbox). Tuyệt đối KHÔNG viết prompt dạng chuỗi khung hình, không phân chia frame (no split screen, no collage, no panels, no triptych, no sequence).'
     ];
   }
@@ -206,6 +224,7 @@ async function generateDramaScript({ topic, channelType = 'drama' }) {
       index,
       title: String(scene?.title || `Cảnh ${index + 1}`).trim().slice(0, 160),
       description: String(scene?.description || '').trim().slice(0, 3000),
+      shotType: String(scene?.shotType || (channelType !== 'sumo' ? (index === 0 || index === 3 ? 'zoom_out_1_to_3' : (index === 2 ? 'zoom_in_3_to_1' : 'wide_3')) : 'wide_3')).trim(),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
       endImagePrompt: String(scene?.endImagePrompt || '').trim().slice(0, 3000),
       videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
@@ -235,6 +254,7 @@ function normalizeDramaScript(raw) {
       index,
       title: String(scene?.title || `Cảnh ${index + 1}`).trim().slice(0, 160),
       description: String(scene?.description || '').trim().slice(0, 3000),
+      shotType: String(scene?.shotType || (index === 0 || index === 3 ? 'zoom_out_1_to_3' : (index === 2 ? 'zoom_in_3_to_1' : 'wide_3'))).trim(),
       imagePrompt: String(scene?.imagePrompt || '').trim().slice(0, 3000),
       endImagePrompt: String(scene?.endImagePrompt || '').trim().slice(0, 3000),
       videoPrompt: String(scene?.videoPrompt || '').trim().slice(0, 3000),
@@ -906,12 +926,21 @@ function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
   const characters = Array.isArray(job.characters) ? job.characters.filter(c => String(c.name || '').trim()) : [];
   const characterManifest = characters.map((c, idx) => getCharacterEnglishTag(c, idx)).join('; ');
 
+  const actualIndex = (sceneIndex !== null && sceneIndex !== undefined)
+    ? Number(sceneIndex)
+    : (scene?.sceneIndex !== undefined ? Number(scene.sceneIndex) : (scene?.index !== undefined ? Number(scene.index) : 0));
+
+  const rawShotType = String(scene?.shotType || '').trim().toLowerCase();
+  const isZoomOut1To3 = rawShotType === 'zoom_out_1_to_3' || (!rawShotType && (actualIndex === 0 || actualIndex === 3));
+  const isZoomIn3To1 = rawShotType === 'zoom_in_3_to_1' || (!rawShotType && actualIndex === 2);
+
   const dialogues = Array.isArray(scene.dialogue) ? scene.dialogue : [];
   const dialogueLines = dialogues.map(line => {
     const positionLabel = getCharacterPositionLabel(job, scene, line.speaker);
     const safeLineText = sanitizeDialogueForFlow(line.text);
-    return `- [${positionLabel}]: "${safeLineText}"`;
+    return `- [${positionLabel} speaking aloud in 100% native Vietnamese language (Tiếng Việt), NO English]: "${safeLineText}"`;
   }).join('\n');
+  const firstVietnameseLine = dialogues.length > 0 ? sanitizeDialogueForFlow(dialogues[0].text) : '';
 
   const parts = [];
   const normalizedType = String(mediaType || '').toLowerCase();
@@ -919,16 +948,25 @@ function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
   const isEndImageTask = normalizedType === 'endimage' || normalizedType === 'end_image';
 
   if (isImageTask) {
-    parts.push('3D animated CGI movie style, full-bleed vertical 9:16 portrait filling 100% of the vertical canvas from top ceiling to bottom floor, expressive 3D cartoon characters:');
-    parts.push(enrichPromptWithCharacterRoles(scene.imagePrompt || scene.description || '', characters));
-    if (baseImagePrompt) {
-      parts.push(`Environment: ${baseImagePrompt}`);
+    if (isZoomOut1To3) {
+      parts.push('3D animated CGI movie style, full-bleed vertical 9:16 portrait filling 100% of the vertical canvas from top ceiling to bottom floor, MEDIUM CLOSE-UP ZOOM SHOT focused on 1 SINGLE CHARACTER in the foreground:');
+      parts.push(enrichPromptWithCharacterRoles(scene.imagePrompt || scene.description || '', characters));
+      if (baseImagePrompt) {
+        parts.push(`Environment: ${baseImagePrompt}`);
+      }
+      parts.push('Framing: Medium close-up portrait focused on this 1 character in the cozy Vietnamese room so the camera can later zoom out to reveal the rest of the family. Expressive 3D CGI cartoon face and big emotional eyes, vibrant warm lighting. ABSOLUTELY NOT photorealistic, NOT live-action.');
+    } else {
+      parts.push('3D animated CGI movie style, full-bleed vertical 9:16 portrait filling 100% of the vertical canvas from top ceiling to bottom floor, expressive 3D cartoon characters:');
+      parts.push(enrichPromptWithCharacterRoles(scene.imagePrompt || scene.description || '', characters));
+      if (baseImagePrompt) {
+        parts.push(`Environment: ${baseImagePrompt}`);
+      }
+      if (characterManifest) {
+        parts.push(`Characters visible in this room (MUST clearly show all 3 family members — the elderly mother-in-law woman, the young female daughter-in-law woman, and the young husband man — in frame): ${characterManifest}.`);
+      }
+      parts.push('Cinematic staging: Characters have natural, varied postures with depth across the room (e.g. the elderly mother-in-law woman seated on the sofa or dining chair, the young female daughter-in-law woman standing near the dining table or kitchen counter, interacting naturally). No stiff lineup.');
+      parts.push('3D animated CGI film style, stylized 3D CGI cartoon characters with expressive faces and big emotional eyes, vibrant warm lighting. ABSOLUTELY NOT photorealistic, NOT live-action, NOT real human photography.');
     }
-    if (characterManifest) {
-      parts.push(`Characters visible in this room (MUST clearly show BOTH the elderly mother-in-law woman AND the young female daughter-in-law woman in frame): ${characterManifest}.`);
-    }
-    parts.push('Cinematic staging: Characters have natural, varied postures with depth across the room (e.g. the elderly mother-in-law woman seated on the sofa or dining chair, the young female daughter-in-law woman standing near the dining table or kitchen counter, interacting naturally). No stiff lineup.');
-    parts.push('3D animated CGI film style, stylized 3D CGI cartoon characters with expressive faces and big emotional eyes, vibrant warm lighting. ABSOLUTELY NOT photorealistic, NOT live-action, NOT real human photography.');
     // Anti-split, anti-collage, anti-triptych, anti-letterbox guard
     parts.push('Single unified full-bleed vertical 9:16 3D animated CGI shot filling the entire 9:16 frame edge-to-edge. ABSOLUTELY NO top or bottom blur bars, NO letterbox, NO square frame inside vertical canvas, NO split screen, NO multi-panel, NO collage, NO triptych, NO comic strip, NO storyboard sequence, NO duplicate characters, NO borders.');
   } else if (isEndImageTask) {
@@ -938,21 +976,54 @@ function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
       .replace(/^(Same\s+exact\s+3D\s+animated\s+CGI\s+vertical\s+9:16\s+scene[^:]*:\s*)+/i, '')
       .replace(/^(A\s+(medium|wide|close-up|locked)\s+shot\s+of\s+)/i, '')
       .trim();
-    parts.push(
-      'STRICT IMAGE-TO-IMAGE EDIT OF THE REFERENCE START FRAME (3D animated CGI movie style, full-bleed vertical 9:16): ' +
-      'Keep 100% of the EXACT same room background, wall decor, furniture, lighting, locked camera angle, character positions, 3D CGI faces, hairstyles, and exact clothing patterns/colors from the reference start image. ' +
-      'DO NOT redraw or change the room background, wall items, furniture, or character outfits.'
-    );
-    parts.push(
-      `Only update the characters' facial expressions, eye gaze, and natural hand/body gesture at the end of this 8-second dialogue moment: ${cleanedEndAction}`
-    );
-    parts.push(
-      'Single unified full-bleed vertical 9:16 3D animated CGI shot matching the exact composition, room setting, and outfits of the reference start image. ABSOLUTELY NO top or bottom blur bars, NO letterbox, NO split screen, NO collage, NO borders, NO text.'
-    );
+
+    if (isZoomOut1To3) {
+      parts.push(
+        'CAMERA ZOOM-OUT / PULL-BACK IMAGE-TO-IMAGE EXPANSION FROM THE 1-PERSON REFERENCE START FRAME TO ALL 3 CHARACTERS (3D animated CGI movie style, full-bleed vertical 9:16): ' +
+        'The reference start image is zoomed in on 1 character. For this END FRAME, ZOOM THE CAMERA OUT (pull back to a wide medium-full shot) in the EXACT SAME Vietnamese room environment and warm lighting so that ALL 3 FAMILY CHARACTERS are now clearly visible together in the frame.'
+      );
+      if (characterManifest) {
+        parts.push(`All 3 characters visible in this wide end frame (keep 100% exact 3D CGI face, hairstyle, and outfit of the character from the reference start image): ${characterManifest}.`);
+      }
+      parts.push(
+        `End-of-scene action and natural staging of all 3 characters in the room: ${cleanedEndAction}`
+      );
+      parts.push(
+        'Single unified full-bleed vertical 9:16 3D animated CGI wide shot showing all 3 characters (mother-in-law, daughter-in-law, and husband) interacting naturally in the same room. ABSOLUTELY NO top or bottom blur bars, NO letterbox, NO split screen, NO collage, NO borders, NO text.'
+      );
+    } else if (isZoomIn3To1) {
+      parts.push(
+        'CAMERA ZOOM-IN / PUSH-IN IMAGE-TO-IMAGE EDIT FROM THE 3-PERSON WIDE START FRAME TO 1 SINGLE CHARACTER (3D animated CGI movie style, full-bleed vertical 9:16): ' +
+        'From the wide reference start image, ZOOM THE CAMERA IN to a medium close-up focused on 1 single character in the exact same room background and lighting, preserving 100% of that character\'s exact 3D CGI face, hairstyle, and clothing from the reference start image.'
+      );
+      parts.push(
+        `Medium close-up focus on 1 character at the end of this moment: ${cleanedEndAction}`
+      );
+      parts.push(
+        'Single unified full-bleed vertical 9:16 3D animated CGI medium close-up shot focused on 1 character. ABSOLUTELY NO top or bottom blur bars, NO letterbox, NO split screen, NO collage, NO borders, NO text.'
+      );
+    } else {
+      parts.push(
+        'STRICT IMAGE-TO-IMAGE EDIT OF THE REFERENCE START FRAME (3D animated CGI movie style, full-bleed vertical 9:16): ' +
+        'Keep 100% of the EXACT same room background, wall decor, furniture, lighting, locked camera angle, character positions, 3D CGI faces, hairstyles, and exact clothing patterns/colors from the reference start image. ' +
+        'DO NOT redraw or change the room background, wall items, furniture, or character outfits.'
+      );
+      parts.push(
+        `Only update the characters' facial expressions, eye gaze, and natural hand/body gesture at the end of this 8-second dialogue moment: ${cleanedEndAction}`
+      );
+      parts.push(
+        'Single unified full-bleed vertical 9:16 3D animated CGI shot matching the exact composition, room setting, and outfits of the reference start image. ABSOLUTELY NO top or bottom blur bars, NO letterbox, NO split screen, NO collage, NO borders, NO text.'
+      );
+    }
   } else {
     // Video prompt
+    // Strip any accidental English quoted sentences from videoPrompt so Veo3 never speaks English
+    const cleanedVideoAction = enrichPromptWithCharacterRoles(scene.videoPrompt || scene.description || '', characters)
+      .replace(/"[^a-zA-Zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]*[a-zA-Z]{3,}[^àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ"]*"/g, '')
+      .trim();
+
     parts.push('3D animated CGI movie style, vertical 9:16:');
-    parts.push(enrichPromptWithCharacterRoles(scene.videoPrompt || scene.description || '', characters));
+    parts.push(cleanedVideoAction);
     if (baseImagePrompt) {
       parts.push(`Environment: ${baseImagePrompt}`);
     }
@@ -960,16 +1031,23 @@ function buildScenePrompt(job, scene, mediaType, sceneIndex = null) {
       parts.push(`Characters: ${characterManifest}`);
     }
     if (dialogueLines) {
-      parts.push(`Character Dialogues (speaking with natural 3D CGI lip movement matching this line):\n${dialogueLines}`);
+      parts.push(`Vietnamese Spoken Dialogue (character speaks aloud in 100% native Vietnamese language - Tiếng Việt, with natural 3D CGI lip-sync):\n${dialogueLines}`);
     }
-    parts.push('3D animated CGI characters talk with expressive, natural facial emotions and subtle gestures.');
-    parts.push('One coherent 8-second continuous vertical 9:16 3D animated CGI video clip smoothly transitioning from start frame to end frame. Locked static camera, smooth cinematic depth, no camera cuts, no split screen.');
+    if (firstVietnameseLine) {
+      parts.push(`MANDATORY VIETNAMESE AUDIO RULE: The speaking character MUST speak 100% in native Vietnamese language (Tiếng Việt) with a natural Vietnamese voice, saying: "${firstVietnameseLine}". ABSOLUTELY DO NOT speak English, DO NOT translate the line into English, and DO NOT generate any English words or English background voices.`);
+    } else {
+      parts.push('MANDATORY VIETNAMESE AUDIO RULE: Characters must only speak in native Vietnamese language (Tiếng Việt). ABSOLUTELY NO English speech or English words.');
+    }
+    if (isZoomOut1To3) {
+      parts.push('Camera Movement: Smooth cinematic camera zoom-out (pull-back shot) starting from the medium close-up of 1 character in the start frame and smoothly pulling back to the wide shot revealing all 3 family characters together in the end frame. Continuous 8-second vertical 9:16 3D animated CGI video clip, no camera cuts, no split screen.');
+    } else if (isZoomIn3To1) {
+      parts.push('Camera Movement: Smooth cinematic camera push-in (zoom-in shot) starting from the wide shot of all 3 characters in the start frame and smoothly zooming in to a medium close-up focused on 1 character in the end frame. Continuous 8-second vertical 9:16 3D animated CGI video clip, no camera cuts, no split screen.');
+    } else {
+      parts.push('One coherent 8-second continuous vertical 9:16 3D animated CGI video clip smoothly transitioning from start frame to end frame. Locked static camera, smooth cinematic depth, no camera cuts, no split screen.');
+    }
   }
 
   let finalPrompt = sanitizeDramaPromptForFlow(parts.join('\n'));
-  const actualIndex = (sceneIndex !== null && sceneIndex !== undefined)
-    ? sceneIndex
-    : (scene?.sceneIndex !== undefined ? scene.sceneIndex : (scene?.index !== undefined ? scene.index : null));
   if (actualIndex !== null && actualIndex !== undefined && !isNaN(Number(actualIndex))) {
     const seqStr = String(Number(actualIndex) + 1).padStart(3, '0') + '.';
     if (!finalPrompt.match(/^\d{1,4}[\.\-_:\s]/)) {
