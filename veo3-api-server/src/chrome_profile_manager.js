@@ -328,25 +328,44 @@ if (VIDEO_PROXY_CONFIG.enabled) {
   ensureLocalProxyServer().catch(() => {});
 }
 
-// Tọa độ chuẩn của cửa sổ Video (y hệt veo3_002 hiện tại)
+// Tọa độ chuẩn của cửa sổ Video — Nửa Màn Hình Trái (0..800 x 873)
 const VIDEO_WINDOW_PLACEMENT = {
-  bottom: 933,
-  left: -4,
+  bottom: 900,
+  left: 0,
   maximized: false,
-  right: 504,
+  right: 800,
   top: 27,
   work_area_bottom: 900,
   work_area_left: 0,
   work_area_right: 1600,
   work_area_top: 27
 };
-const VIDEO_WIN_X = -4;
+const VIDEO_WIN_X = 0;
 const VIDEO_WIN_Y = 27;
-const VIDEO_WIN_W = 508;
-const VIDEO_WIN_H = 906;
+const VIDEO_WIN_W = 800;
+const VIDEO_WIN_H = 873;
+
+// Tọa độ chuẩn của cửa sổ Ảnh — Nửa Màn Hình Phải (800..1600 x 873)
+const IMAGE_WINDOW_PLACEMENT = {
+  bottom: 900,
+  left: 800,
+  maximized: false,
+  right: 1600,
+  top: 27,
+  work_area_bottom: 900,
+  work_area_left: 0,
+  work_area_right: 1600,
+  work_area_top: 27
+};
+const IMAGE_WIN_X = 800;
+const IMAGE_WIN_Y = 27;
+const IMAGE_WIN_W = 800;
+const IMAGE_WIN_H = 873;
+const DEFAULT_IMAGE_FLOW_URL = 'https://flow.google.com/project/4a4d000c-94ca-435d-911d-36d060f55222/tool/42295196-bb3c-489d-9b8f-7c498fa782e4';
 
 // Khoá toàn cục khi đang chuyển đổi Chrome Box để các task video sau phải chờ mở xong & ready 100%
 let _switchingPromise = null;
+let _imageSwitchingPromise = null;
 
 /**
  * Tự động phát hiện màn hình XRDP đang hoạt động (:10, :11, ...)
@@ -386,17 +405,20 @@ function getActiveDisplay() {
 }
 
 /**
- * Kiểm tra trên màn hình XRDP đang hoạt động xem nút "CHẠY THỦ CÔNG" màu trắng sáng tại (180, 733) / (273, 720) đã hiện lên chưa
+ * Kiểm tra trên màn hình XRDP đang hoạt động xem nút "CHẠY THỦ CÔNG" màu trắng sáng đã hiện lên chưa
  */
-function isFlowBulkToolReadyOnScreen() {
+function isFlowBulkToolReadyOnScreen(mode = 'video') {
   try {
     const disp = getActiveDisplay();
+    const ptsStr = mode === 'image'
+      ? '[(900, 608), (920, 608), (1070, 608), (1090, 608)]'
+      : '[(180, 729), (260, 729), (540, 729), (620, 729)]';
     const pyCode = [
       'import subprocess, sys',
       'from PIL import Image',
       'subprocess.run(["scrot", "-o", "/tmp/check_flow_ready.png"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)',
       'im = Image.open("/tmp/check_flow_ready.png").convert("RGB")',
-      'pts = [(180, 733), (273, 720), (273, 742), (350, 733)]',
+      `pts = ${ptsStr}`,
       'bright = sum(1 for (x, y) in pts if x < im.width and y < im.height and all(c > 190 for c in im.getpixel((x, y))))',
       'print("READY" if bright >= 2 else "WAIT")'
     ].join('; ');
@@ -696,7 +718,7 @@ function scanChromeProfiles() {
       gaiaName: imgMeta.gaia_name || '',
       role: prevImg?.role || 'image',
       credits: typeof prevImg?.credits === 'number' ? prevImg.credits : 500,
-      flowUrl: prevImg?.flowUrl || 'https://flow.google.com/project/4a4d000c-94ca-435d-911d-36d060f55222',
+      flowUrl: (prevImg?.flowUrl && prevImg.flowUrl.includes('/tool/')) ? prevImg.flowUrl : DEFAULT_IMAGE_FLOW_URL,
       isActiveVideo: false,
       flowCreditsDetail: prevImg?.flowCreditsDetail || null,
       lastUsedAt: prevImg?.lastUsedAt || null
@@ -795,15 +817,23 @@ function enforceBoxWindowPlacement(boxDir) {
     pref.download.default_directory = path.join(os.homedir(), 'Downloads');
     pref.download.prompt_for_download = false;
     fs.writeFileSync(prefPath, JSON.stringify(pref), 'utf8');
+
+    const extDir = path.join(defaultDir, 'Extensions');
+    const extBakDir = path.join(defaultDir, 'Extensions_disabled_bak');
+    if (fs.existsSync(extDir) && !fs.existsSync(extBakDir)) {
+      try {
+        fs.renameSync(extDir, extBakDir);
+      } catch (_) {}
+    }
   } catch (err) {
     logger.warn(`[ProfileManager] Không thể ghi window_placement cho ${boxDir}: ${err.message}`);
   }
 }
 
 /**
- * Đóng mọi cửa sổ Video bên trái (x < 250) + tắt tiến trình của các Chrome Box cũ trong ~/chrome_boxes/
- * (Tuyệt đối KHÔNG đụng vào tiến trình ~/.config/google-chrome của nick Làm Ảnh bên phải!)
- * Sau đó bật Chrome Box mới với --user-data-dir riêng tại đúng vị trí 002 (-4, 27, 508x906)
+ * Đóng mọi cửa sổ Video nửa trái (x < 400) + tắt tiến trình của các Chrome Box cũ trong ~/chrome_boxes/
+ * (Tuyệt đối KHÔNG đụng vào tiến trình ~/.config/google-chrome của nick Làm Ảnh nửa phải!)
+ * Sau đó bật Chrome Box mới với --user-data-dir riêng tại nửa màn hình trái (0, 27, 800x873)
  */
 async function switchVideoChromeWindow(targetProfile) {
   if (_switchingPromise) {
@@ -829,12 +859,12 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
 
   logger.info(`[ProfileManager] 🔄 Đang chuyển sang Chrome Box độc lập "${targetProfile.name}" (${boxDir}) trên DISPLAY=${disp} → ${flowUrl}`);
 
-  // 1. Đóng cửa sổ Chrome bên trái (x < 250) nếu đang mở
+  // 1. Đóng cửa sổ Chrome nửa trái (x < 400) nếu đang mở
   const beforeWins = getOpenChromeWindows();
   const imageWinIds = new Set();
 
   for (const win of beforeWins) {
-    if (win.x < 250) {
+    if (win.x < 400) {
       try {
         logger.info(`[ProfileManager] 🗑️ Đóng cửa sổ Video cũ: ${win.winId} (${win.title}) tại x=${win.x}, y=${win.y}`);
         execSync(`DISPLAY=${disp} wmctrl -ic ${win.winId}`, { timeout: 3000 });
@@ -851,7 +881,7 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
 
   await new Promise(r => setTimeout(r, 1500));
 
-  // 3. Xoá lock file cũ và ép vị trí cửa sổ chuẩn 002
+  // 3. Xoá lock file cũ và ép vị trí cửa sổ nửa trái (0, 27, 800x873)
   for (const lockName of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
     try { fs.unlinkSync(path.join(boxDir, lockName)); } catch (_) {}
   }
@@ -863,6 +893,7 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
   // 4. Khởi chạy Chrome với --user-data-dir độc lập + Proxy Xoay + cờ tối ưu chống lag trên VPS
   const args = [
     `--user-data-dir=${boxDir}`,
+    '--disable-extensions',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-smooth-scrolling',
@@ -889,7 +920,7 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
     timeout: 5000
   });
 
-  // 5. Chờ cửa sổ mới xuất hiện và đặt chính xác vào (-4, 27, 508x906)
+  // 5. Chờ cửa sổ mới xuất hiện và đặt chính xác vào nửa màn hình trái (0, 27, 800x873)
   let newWin = null;
   for (let i = 0; i < 18; i++) {
     await new Promise(r => setTimeout(r, 500));
@@ -903,7 +934,7 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
       execSync(`DISPLAY=${disp} wmctrl -ir ${newWin.winId} -b remove,maximized_vert,maximized_horz`, { timeout: 3000 });
       execSync(`DISPLAY=${disp} wmctrl -ir ${newWin.winId} -e 0,${VIDEO_WIN_X},${VIDEO_WIN_Y},${VIDEO_WIN_W},${VIDEO_WIN_H}`, { timeout: 3000 });
       execSync(`DISPLAY=${disp} xdotool windowActivate ${newWin.winId}`, { timeout: 3000 });
-      logger.success(`[ProfileManager] ✅ Đã mở Chrome Box "${targetProfile.name}" (${newWin.winId}) qua Proxy IP ${proxyResult.ip || _proxyRuntimeState.currentIp || 'Active'} tại đúng vị trí 002 (${VIDEO_WIN_X}, ${VIDEO_WIN_Y}, ${VIDEO_WIN_W}x${VIDEO_WIN_H})`);
+      logger.success(`[ProfileManager] ✅ Đã mở Chrome Box "${targetProfile.name}" (${newWin.winId}) qua Proxy IP ${proxyResult.ip || _proxyRuntimeState.currentIp || 'Active'} tại nửa màn hình trái (${VIDEO_WIN_X}, ${VIDEO_WIN_Y}, ${VIDEO_WIN_W}x${VIDEO_WIN_H})`);
     } catch (e) {
       logger.warn(`[ProfileManager] Không thể resize cửa sổ mới ${newWin.winId}: ${e.message}`);
     }
@@ -937,7 +968,7 @@ async function _doSwitchVideoChromeWindow(targetProfile) {
   let ready = false;
   for (let attempt = 1; attempt <= 24; attempt++) {
     await new Promise(r => setTimeout(r, 1500));
-    if (isFlowBulkToolReadyOnScreen()) {
+    if (isFlowBulkToolReadyOnScreen('video')) {
       ready = true;
       logger.success(`[ProfileManager] 🎉 Giao diện Flow Tool của "${targetProfile.name}" đã READY (sau ${attempt * 1.5}s)!`);
       break;
@@ -1203,10 +1234,20 @@ async function ensureActiveVideoProfileHasCredits({ allowWindowSwitch = true } =
 
   if (active && active.credits >= 10) {
     const openWins = getOpenChromeWindows();
-    const hasVideoWinOpen = openWins.some(w => w.x < 250);
+    const hasVideoWinOpen = openWins.some(w => w.x < 400);
     if (!hasVideoWinOpen) {
-      logger.info(`[ProfileManager] 🖥️ Không thấy cửa sổ Chrome Video bên trái trên màn hình, tự động bật lại "${active.name}"...`);
+      logger.info(`[ProfileManager] 🖥️ Không thấy cửa sổ Chrome Video nửa trái trên màn hình, tự động bật lại "${active.name}"...`);
       await switchVideoChromeWindow(active);
+    } else {
+      // Đảm bảo cửa sổ Video bên trái có kích thước chuẩn 50% màn hình (0, 27, 800x873)
+      const vidWin = openWins.find(w => w.x < 400);
+      if (vidWin && (Math.abs(vidWin.x - VIDEO_WIN_X) > 30 || Math.abs(vidWin.w - VIDEO_WIN_W) > 50)) {
+        try {
+          const disp = getActiveDisplay();
+          execSync(`DISPLAY=${disp} wmctrl -ir ${vidWin.winId} -b remove,maximized_vert,maximized_horz`, { timeout: 3000 });
+          execSync(`DISPLAY=${disp} wmctrl -ir ${vidWin.winId} -e 0,${VIDEO_WIN_X},${VIDEO_WIN_Y},${VIDEO_WIN_W},${VIDEO_WIN_H}`, { timeout: 3000 });
+        } catch (_) {}
+      }
     }
     return active;
   }
@@ -1232,6 +1273,127 @@ async function ensureActiveVideoProfileHasCredits({ allowWindowSwitch = true } =
     await switchVideoChromeWindow(nextProfile);
   }
   return nextProfile;
+}
+
+let _imageOpeningPromise = null;
+
+/**
+ * Đảm bảo cửa sổ Chrome Làm Ảnh (Profile 6) luôn mở ở nửa màn hình bên phải (x=800, y=27, w=800, h=873)
+ * với --disable-extensions để không bị lỗi tiện ích mở rộng của Google Flow.
+ */
+async function ensureImageChromeWindowOpen() {
+  if (_imageOpeningPromise) {
+    try { return await _imageOpeningPromise; } catch (_) {}
+  }
+  _imageOpeningPromise = _doEnsureImageChromeWindowOpen();
+  try {
+    return await _imageOpeningPromise;
+  } finally {
+    _imageOpeningPromise = null;
+  }
+}
+
+async function _doEnsureImageChromeWindowOpen() {
+  const disp = getActiveDisplay();
+  const state = getProfilesState();
+  const imgProfile = state.profiles.find(p => p.role === 'image')
+                  || state.profiles.find(p => p.profileDir === 'Profile 6');
+
+  const openWins = getOpenChromeWindows();
+  const existingImgWin = openWins.find(w => w.x >= 400);
+
+  if (existingImgWin) {
+    if (Math.abs(existingImgWin.x - IMAGE_WIN_X) > 30 || Math.abs(existingImgWin.w - IMAGE_WIN_W) > 50) {
+      try {
+        execSync(`DISPLAY=${disp} wmctrl -ir ${existingImgWin.winId} -b remove,maximized_vert,maximized_horz`, { timeout: 3000 });
+        execSync(`DISPLAY=${disp} wmctrl -ir ${existingImgWin.winId} -e 0,${IMAGE_WIN_X},${IMAGE_WIN_Y},${IMAGE_WIN_W},${IMAGE_WIN_H}`, { timeout: 3000 });
+      } catch (_) {}
+    }
+    return imgProfile;
+  }
+
+  const profileDirName = imgProfile?.profileDir || 'Profile 6';
+  const userDataDir = imgProfile?.userDataDir || CHROME_MAIN_DIR;
+  const flowUrl = (imgProfile?.flowUrl && imgProfile.flowUrl.includes('/tool/'))
+    ? imgProfile.flowUrl.trim()
+    : DEFAULT_IMAGE_FLOW_URL;
+
+  logger.info(`[ProfileManager] 🖼️ Không thấy cửa sổ Chrome Ảnh nửa phải trên DISPLAY=${disp}, đang mở "${imgProfile?.name || profileDirName}" (${IMAGE_WIN_X}, ${IMAGE_WIN_Y}, ${IMAGE_WIN_W}x${IMAGE_WIN_H}) → ${flowUrl}`);
+
+  // Ghi window_placement nửa màn hình bên phải (800, 27, 800x873) vào Preferences của Profile 6
+  try {
+    const profFolder = path.join(userDataDir, profileDirName);
+    if (fs.existsSync(profFolder)) {
+      const prefPath = path.join(profFolder, 'Preferences');
+      let pref = {};
+      if (fs.existsSync(prefPath)) {
+        try { pref = JSON.parse(fs.readFileSync(prefPath, 'utf8')); } catch (_) { pref = {}; }
+      }
+      if (!pref.browser) pref.browser = {};
+      pref.browser.window_placement = { ...IMAGE_WINDOW_PLACEMENT };
+      if (!pref.download) pref.download = {};
+      pref.download.default_directory = path.join(os.homedir(), 'Downloads');
+      pref.download.prompt_for_download = false;
+      fs.writeFileSync(prefPath, JSON.stringify(pref), 'utf8');
+    }
+  } catch (e) {
+    logger.warn(`[ProfileManager] Không thể ghi Preferences cho Profile Ảnh: ${e.message}`);
+  }
+
+  for (const lockName of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+    try { fs.unlinkSync(path.join(userDataDir, lockName)); } catch (_) {}
+  }
+
+  const videoWinIds = new Set(openWins.map(w => w.winId));
+  const args = [
+    `--user-data-dir=${userDataDir}`,
+    `--profile-directory=${profileDirName}`,
+    '--disable-extensions',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-smooth-scrolling',
+    '--wm-window-animations-disabled',
+    '--animation-duration-scale=0',
+    '--disable-gpu-vsync',
+    '--disable-features=Translate,OptimizationHints,MediaRouter',
+    `--window-position=${IMAGE_WIN_X},${IMAGE_WIN_Y}`,
+    `--window-size=${IMAGE_WIN_W},${IMAGE_WIN_H}`,
+    flowUrl
+  ];
+
+  const escapedArgs = args.map(a => `'${String(a).replace(/'/g, `'\\''`)}'`).join(' ');
+  execSync(`DISPLAY=${disp} sh -c "setsid /opt/google/chrome/chrome ${escapedArgs} >/dev/null 2>&1 < /dev/null &"`, {
+    env: { ...process.env, DISPLAY: disp },
+    timeout: 5000
+  });
+
+  let newWin = null;
+  for (let i = 0; i < 18; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    const currentWins = getOpenChromeWindows();
+    newWin = currentWins.find(w => !videoWinIds.has(w.winId) || w.x >= 400);
+    if (newWin) break;
+  }
+
+  if (newWin) {
+    try {
+      execSync(`DISPLAY=${disp} wmctrl -ir ${newWin.winId} -b remove,maximized_vert,maximized_horz`, { timeout: 3000 });
+      execSync(`DISPLAY=${disp} wmctrl -ir ${newWin.winId} -e 0,${IMAGE_WIN_X},${IMAGE_WIN_Y},${IMAGE_WIN_W},${IMAGE_WIN_H}`, { timeout: 3000 });
+      logger.success(`[ProfileManager] ✅ Đã mở cửa sổ Chrome Ảnh "${imgProfile?.name || profileDirName}" (${newWin.winId}) tại nửa màn hình phải (${IMAGE_WIN_X}, ${IMAGE_WIN_Y}, ${IMAGE_WIN_W}x${IMAGE_WIN_H})`);
+    } catch (e) {
+      logger.warn(`[ProfileManager] Không thể resize cửa sổ Ảnh ${newWin.winId}: ${e.message}`);
+    }
+  }
+
+  for (let attempt = 1; attempt <= 20; attempt++) {
+    await new Promise(r => setTimeout(r, 1500));
+    if (isFlowBulkToolReadyOnScreen('image')) {
+      logger.success(`[ProfileManager] 🎉 Giao diện Flow Image Tool nửa phải đã READY (sau ${attempt * 1.5}s)!`);
+      break;
+    }
+  }
+
+  return imgProfile;
 }
 
 async function deductVideoCreditAndRotateIfNeeded(cost = 10, { allowWindowSwitch = true } = {}) {
@@ -1394,9 +1556,10 @@ function deletedSetContains(arr, id) {
   return Array.isArray(arr) && arr.includes(id);
 }
 
-// Tự động kiểm tra ngay khi khởi động server: nếu cửa sổ Chrome Video bên trái đang đóng thì tự bật lại ngay
+// Tự động kiểm tra ngay khi khởi động server: đảm bảo cả 2 cửa sổ Chrome (Video nửa trái & Ảnh nửa phải) đều mở chuẩn 50/50
 setTimeout(() => {
   ensureActiveVideoProfileHasCredits().catch(() => {});
+  ensureImageChromeWindowOpen().catch(() => {});
 }, 2000);
 
 module.exports = {
@@ -1408,6 +1571,7 @@ module.exports = {
   deleteChromeBox,
   switchVideoChromeWindow,
   ensureActiveVideoProfileHasCredits,
+  ensureImageChromeWindowOpen,
   deductVideoCreditAndRotateIfNeeded,
   fetchRealFlowCreditsForProfile,
   syncAllProfilesFlowCredits,
