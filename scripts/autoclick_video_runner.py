@@ -577,10 +577,13 @@ def _get_expected_flow_tool_url(mode="video"):
                 for p in profiles:
                     if p.get("isActiveImage") and p.get("flowUrl") and "/tool/" in p.get("flowUrl", ""):
                         return p["flowUrl"].strip()
+                for p in profiles:
+                    if p.get("role") == "image" and p.get("flowUrl") and "/tool/" in p.get("flowUrl", ""):
+                        return p["flowUrl"].strip()
     except Exception:
         pass
     if mode == "image":
-        return "https://flow.google.com/project/4a4d000c-94ca-435d-911d-36d060f55222/tool/0b32ee5f-3fde-4235-b517-05c3709f1304"
+        return "https://flow.google.com/project/4a4d000c-94ca-435d-911d-36d060f55222/tool/42295196-bb3c-489d-9b8f-7c498fa782e4"
     return "https://flow.google.com/project/baf080f7-106e-483e-a0bf-3c9b5d145807/tool/0b32ee5f-3fde-4235-b517-05c3709f1304"
 
 
