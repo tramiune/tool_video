@@ -5313,15 +5313,27 @@ function App() {
   const tryonPersonInputRef = useRef(null);
   const tryonGarmentInputRef = useRef(null);
 
-  const compressImageFile = (file, maxDim = 1024, quality = 0.82) => {
+  const compressImageFile = (file, maxDim = 1024, quality = 0.88) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = () => reject(new Error('Không thể đọc file ảnh'));
       reader.onload = (e) => {
+        const rawDataUrl = e.target.result;
         const img = new Image();
         img.onerror = () => reject(new Error('File ảnh không hợp lệ'));
         img.onload = () => {
           let { width, height } = img;
+          // Nếu ảnh gốc đã là JPEG nhỏ gọn (<= 135 KB) và kích thước <= maxDim thì giữ nguyên không nén lại
+          if (
+            file.type === 'image/jpeg' &&
+            file.size <= 135 * 1024 &&
+            width <= maxDim &&
+            height <= maxDim &&
+            typeof rawDataUrl === 'string'
+          ) {
+            resolve(rawDataUrl);
+            return;
+          }
           if (width > maxDim || height > maxDim) {
             if (width > height) {
               height = Math.round((height * maxDim) / width);
@@ -5335,11 +5347,15 @@ function App() {
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+          }
           ctx.drawImage(img, 0, 0, width, height);
           const dataUrl = canvas.toDataURL('image/jpeg', quality);
           resolve(dataUrl);
         };
-        img.src = e.target.result;
+        img.src = rawDataUrl;
       };
       reader.readAsDataURL(file);
     });
@@ -5384,11 +5400,23 @@ function App() {
 
     setTryonIsSubmitting(true);
     try {
-      // 1. Nén ảnh sang Base64 (~80-120KB) để lưu vào Firestore an toàn
-      const personDataUrl = await compressImageFile(tryonPersonFile);
+      // 1. Upload ảnh lên R2/Server lấy URL để không lưu Base64 vào Firestore
+      const filesToUpload = [tryonPersonFile];
+      if (tryonGarmentFile) filesToUpload.push(tryonGarmentFile);
+      let uploadedUrls = [];
+      try {
+        uploadedUrls = await uploadFilesLocally(filesToUpload);
+      } catch (upErr) {
+        console.warn('Upload R2/backend failed, fallback sang ảnh nén:', upErr);
+      }
+      const personDataUrl = (uploadedUrls && uploadedUrls[0])
+        ? uploadedUrls[0]
+        : await compressImageFile(tryonPersonFile);
       let garmentDataUrl = null;
       if (tryonGarmentFile) {
-        garmentDataUrl = await compressImageFile(tryonGarmentFile);
+        garmentDataUrl = (uploadedUrls && uploadedUrls[1])
+          ? uploadedUrls[1]
+          : await compressImageFile(tryonGarmentFile);
       }
 
       // 2. Xây dựng prompt & tỉ lệ khung hình cho từng công cụ

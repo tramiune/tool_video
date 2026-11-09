@@ -177,6 +177,8 @@ def image_to_data_uri(img_ref):
     """
     Chuyển URL ảnh (https://...) hoặc đường dẫn file cục bộ sang chuỗi data:image/jpeg;base64,...
     để vượt qua Content-Security-Policy (img-src data: blob:) của Google Flow iframe.
+    Tối ưu giữ độ nét cao (1024px, LANCZOS + UnsharpMask, JPEG 4:4:4 subsampling=0, progressive)
+    và bỏ qua nén lại lần 2 nếu ảnh đầu vào đã nhỏ gọn sẵn.
     """
     if not img_ref:
         return None
@@ -187,7 +189,7 @@ def image_to_data_uri(img_ref):
         import base64
         import io
         import urllib.request
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageFilter, ImageOps
 
         raw_bytes = None
         if s.startswith("http://") or s.startswith("https://"):
@@ -199,20 +201,48 @@ def image_to_data_uri(img_ref):
                 raw_bytes = f.read()
 
         if raw_bytes:
-            im = ImageOps.exif_transpose(Image.open(io.BytesIO(raw_bytes))).convert("RGB")
-            max_dim = 768
+            orig_im = Image.open(io.BytesIO(raw_bytes))
+            orig_fmt = (orig_im.format or "").upper()
+            im = ImageOps.exif_transpose(orig_im)
+
+            # 1) Chống nén chồng 2 lần (Double Compression):
+            # Nếu ảnh gốc đã là JPEG chuẩn (không bị xoay EXIF), kích thước <= 1280px và dung lượng <= 135 KB (~180 KB Base64),
+            # giữ nguyên 100% byte gốc chuyển thẳng sang Base64 để không làm giảm chất lượng!
+            max_dim = 1024
+            if (
+                orig_fmt == "JPEG"
+                and im.size == orig_im.size
+                and max(im.width, im.height) <= 1280
+                and len(raw_bytes) <= 135 * 1024
+            ):
+                b64 = base64.b64encode(raw_bytes).decode("ascii")
+                sys.stderr.write(
+                    f"[AutoClick] 🖼️ Giữ nguyên ảnh JPEG gốc không nén lại ({len(b64) // 1024} KB base64, {im.width}x{im.height}).\n"
+                )
+                return f"data:image/jpeg;base64,{b64}"
+
+            im = im.convert("RGB")
+            # 2) Giữ độ phân giải 1024px + bù độ sắc nét viền (UnsharpMask) sau khi thu nhỏ bằng LANCZOS
             if max(im.width, im.height) > max_dim:
                 resample = getattr(Image, "Resampling", Image).LANCZOS
                 scale = max_dim / float(max(im.width, im.height))
                 im = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))), resample)
-            buf = io.BytesIO()
-            im.save(buf, format="JPEG", quality=80, optimize=True)
-            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            if len(b64) > 90000:
+                im = im.filter(ImageFilter.UnsharpMask(radius=1.0, percent=55, threshold=3))
+
+            # 3) Nén JPEG chất lượng cao (4:4:4 subsampling=0 giữ 100% chi tiết màu sắc + progressive Huffman)
+            # Ngưỡng Base64 an toàn cho <textarea> Bulk & Firestore: ~180 KB (180,000 ký tự)
+            max_b64_len = 180000
+            b64 = None
+            for q, sub in ((88, 0), (84, 0), (80, 1), (75, 2)):
                 buf = io.BytesIO()
-                im.save(buf, format="JPEG", quality=72, optimize=True)
+                im.save(buf, format="JPEG", quality=q, subsampling=sub, progressive=True, optimize=True)
                 b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            sys.stderr.write(f"[AutoClick] 🖼️ Đã chuyển ảnh sang data:image/jpeg ({len(b64) // 1024} KB base64, {im.width}x{im.height}) vượt CSP Flow.\n")
+                if len(b64) <= max_b64_len:
+                    break
+
+            sys.stderr.write(
+                f"[AutoClick] 🖼️ Đã nén giữ nét sang data:image/jpeg ({len(b64) // 1024} KB base64, {im.width}x{im.height}) vượt CSP Flow.\n"
+            )
             return f"data:image/jpeg;base64,{b64}"
     except Exception as e:
         sys.stderr.write(f"[AutoClick] ⚠️ Lỗi chuyển ảnh sang data URI ({e}), giữ nguyên link gốc...\n")
