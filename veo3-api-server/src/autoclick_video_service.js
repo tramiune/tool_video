@@ -345,20 +345,25 @@ async function _executeSingleVideoViaAutoClick(task, taskId) {
       logger.info(`[AutoClick Video] Script kết thúc với exit code: ${code}`);
 
       if (code !== 0) {
-        let errMsg = `AutoClick script failed (code ${code})`;
+        let rawErr = `Tiến trình tạo video gặp sự cố (mã ${code})`;
         try {
           const parsed = JSON.parse(stdout.trim());
-          if (parsed.error) errMsg = parsed.error;
-        } catch (_) {
-          if (stderr) errMsg += `: ${stderr.slice(-300)}`;
-        }
-        logger.error(`[AutoClick Video] ❌ Task ${taskId} thất bại: ${errMsg}`);
-        if (code === 2 || errMsg.includes('FLOW_TASK_ERROR')) {
+          if (parsed.error) rawErr = String(parsed.error);
+        } catch (_) {}
+        const isFlowErr = code === 2 || rawErr.includes('FLOW_TASK_ERROR');
+        const cleanMsg = rawErr
+          .replace(/^FLOW_TASK_ERROR:\s*/i, '')
+          .replace(/Google\s*Flow/gi, 'Hệ thống AI')
+          .replace(/chính sách an toàn của Google/gi, 'tiêu chuẩn an toàn của hệ thống')
+          .replace(/AutoClick[^:]*/gi, 'Hệ thống xử lý')
+          .trim() || 'Không thể tạo video này. Vui lòng thử lại.';
+        logger.error(`[AutoClick Video] ❌ Task ${taskId} thất bại: ${rawErr}`);
+        if (isFlowErr) {
           _consecutiveFlowErrors += 1;
-          logger.warn(`[AutoClick Video] ⚠️ Liên tiếp ${_consecutiveFlowErrors}/2 task bị báo LỖI trực tiếp trên Google Flow.`);
+          logger.warn(`[AutoClick Video] ⚠️ Liên tiếp ${_consecutiveFlowErrors}/2 task bị báo LỖI trực tiếp.`);
           if (_consecutiveFlowErrors >= 2 && _activeVideoCount <= 1) {
             _consecutiveFlowErrors = 0;
-            logger.info(`[AutoClick Video] 🔍 Kiểm tra lại số dư Flow thực tế trên Google One xem nick có thực sự hết credit không...`);
+            logger.info(`[AutoClick Video] 🔍 Kiểm tra lại số dư thực tế xem nick có hết credit không...`);
             try {
               await deductVideoCreditAndRotateIfNeeded(0, { allowWindowSwitch: _activeVideoCount <= 1 });
             } catch (rotErr) {
@@ -366,7 +371,9 @@ async function _executeSingleVideoViaAutoClick(task, taskId) {
             }
           }
         }
-        return reject(new Error(errMsg));
+        const errObj = new Error(cleanMsg);
+        if (isFlowErr) errObj.code = 'FLOW_TASK_ERROR';
+        return reject(errObj);
       }
 
       try {
@@ -374,7 +381,7 @@ async function _executeSingleVideoViaAutoClick(task, taskId) {
         const filePath = result.file_path;
 
         if (!filePath || !fs.existsSync(filePath)) {
-          return reject(new Error(`File không tồn tại trên đĩa: ${filePath}`));
+          return reject(new Error('Tác phẩm đã xử lý nhưng hệ thống chưa lưu được kết quả. Vui lòng thử lại.'));
         }
 
         const fileSizeMB = (result.size / 1024 / 1024).toFixed(2);
@@ -552,15 +559,22 @@ async function _executeSingleImageViaAutoClick(task, taskId) {
       logger.info(`[AutoClick Image] Script kết thúc với exit code: ${code}`);
 
       if (code !== 0) {
-        let errMsg = `AutoClick Image script failed (code ${code})`;
+        let rawErr = `Tiến trình tạo hình ảnh gặp sự cố (mã ${code})`;
         try {
           const parsed = JSON.parse(stdout.trim());
-          if (parsed.error) errMsg = parsed.error;
-        } catch (_) {
-          if (stderr) errMsg += `: ${stderr.slice(-300)}`;
-        }
-        logger.error(`[AutoClick Image] ❌ Task ảnh ${taskId} thất bại: ${errMsg}`);
-        return reject(new Error(errMsg));
+          if (parsed.error) rawErr = String(parsed.error);
+        } catch (_) {}
+        const isFlowErr = code === 2 || rawErr.includes('FLOW_TASK_ERROR');
+        const cleanMsg = rawErr
+          .replace(/^FLOW_TASK_ERROR:\s*/i, '')
+          .replace(/Google\s*Flow/gi, 'Hệ thống AI')
+          .replace(/chính sách an toàn của Google/gi, 'tiêu chuẩn an toàn của hệ thống')
+          .replace(/AutoClick[^:]*/gi, 'Hệ thống xử lý')
+          .trim() || 'Không thể tạo hình ảnh này. Vui lòng thử lại.';
+        logger.error(`[AutoClick Image] ❌ Task ảnh ${taskId} thất bại: ${rawErr}`);
+        const errObj = new Error(cleanMsg);
+        if (isFlowErr) errObj.code = 'FLOW_TASK_ERROR';
+        return reject(errObj);
       }
 
       try {
@@ -568,7 +582,7 @@ async function _executeSingleImageViaAutoClick(task, taskId) {
         const filePath = result.file_path;
 
         if (!filePath || !fs.existsSync(filePath)) {
-          return reject(new Error(`File ảnh không tồn tại trên đĩa: ${filePath}`));
+          return reject(new Error('Hình ảnh đã xử lý nhưng hệ thống chưa lưu được kết quả. Vui lòng thử lại.'));
         }
 
         const fileSizeKB = (result.size / 1024).toFixed(1);

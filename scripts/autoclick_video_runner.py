@@ -910,9 +910,9 @@ def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", t
                             time.sleep(3.5)
                             continue
                         media_label = "ảnh" if mode == "image" else "video"
-                        sys.stderr.write(f"[AutoClick] ❌ FLOW_TASK_ERROR: Google Flow đã dừng chạy ({mode}) sau {elapsed}s mà không xuất file {media_label}.\n")
+                        sys.stderr.write(f"[AutoClick] ❌ FLOW_TASK_ERROR: Tiến trình tạo {media_label} đã dừng sau {elapsed}s mà không xuất file.\n")
                         return {
-                            "error_fast_fail": f"FLOW_TASK_ERROR: Google Flow từ chối tạo {media_label} này (ảnh hoặc nội dung câu lệnh có thể vi phạm chính sách an toàn của Google) sau {elapsed}s."
+                            "error_fast_fail": f"FLOW_TASK_ERROR: Không thể tạo {media_label} này (hình ảnh hoặc nội dung câu lệnh chưa phù hợp với tiêu chuẩn an toàn của hệ thống). Vui lòng đổi ảnh hoặc điều chỉnh nội dung rồi thử lại."
                         }
                 else:
                     not_running_streak = 0
@@ -926,7 +926,7 @@ def wait_for_file_download(downloads_dir, initial_files, submitted_at, stt="", t
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AutoClick Video & Image Runner for Google Flow (50/50 Split Screen)")
+    parser = argparse.ArgumentParser(description="AutoClick Video & Image Runner (50/50 Split Screen)")
     parser.add_argument("--mode", choices=["video", "image"], default="video", help="Chế độ chạy: video (nửa trái) hoặc image (nửa phải)")
     parser.add_argument("--prompt", required=True, help="Nội dung prompt")
     parser.add_argument("--stt", default="", help="Mã số thứ tự (ví dụ: 1001)")
@@ -1004,7 +1004,7 @@ def main():
         media_label = "ảnh" if mode == "image" else "video"
         result = {
             "status": "error",
-            "error": f"Timeout {timeout_sec}s kể từ lúc submit mà không thấy file {media_label} tải về máy tính.",
+            "error": f"Hệ thống xử lý {media_label} quá thời gian chờ ({timeout_sec}s). Vui lòng thử lại.",
             "submitted_at": submitted_at,
             "elapsed": round(time.time() - submitted_at, 1)
         }

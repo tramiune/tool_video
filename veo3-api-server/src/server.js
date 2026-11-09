@@ -573,13 +573,13 @@ async function acquireGenerationSlot(type) {
   await acquireGenerationSlot(type);
 }
 
-// Requeue a task after a throttle/429 so it retries when Google calms down,
+// Requeue a task after a throttle/429 so it retries when the system calms down,
 // instead of being marked failed and burning the user's / AutoTool's attempts.
 async function requeueThrottledTask(task, type) {
   const retryCount = Number(task.retryCount) || 0;
   if (retryCount >= 10) {
     const failure = getFriendlyTaskFailure(
-      new Error('Google đang giới hạn tài khoản vì quá nhiều yêu cầu. Hãy chờ một lúc rồi thử lại.'),
+      new Error('Hệ thống đang xử lý nhiều yêu cầu cùng lúc. Hãy chờ một lúc rồi thử lại.'),
       type
     );
     task.status = 'failed';
@@ -677,8 +677,36 @@ function getTaskFailureText(error) {
   return [error?.code, error?.message, error].filter(Boolean).map(String).join(' | ');
 }
 
+function sanitizeUserErrorText(text, type = 'video') {
+  const label = type === 'video' ? 'video' : 'hình ảnh';
+  let s = String(text || '').trim();
+  if (!s) return `Không tạo được ${label}. Hãy thử lại.`;
+  s = s
+    .replace(/^FLOW_TASK_ERROR\s*\|\s*/i, '')
+    .replace(/^FLOW_TASK_ERROR:\s*/i, '')
+    .replace(/FLOW_TASK_ERROR/gi, '')
+    .replace(/Google\s*Flow/gi, 'Hệ thống AI')
+    .replace(/\bFlow\b/g, 'Hệ thống AI')
+    .replace(/chính sách an toàn của Google/gi, 'tiêu chuẩn an toàn của hệ thống')
+    .replace(/bị Google giới hạn/gi, 'đang bận xử lý nhiều yêu cầu')
+    .replace(/Google đang giới hạn tài khoản/gi, 'Hệ thống đang xử lý nhiều yêu cầu')
+    .replace(/\bcủa Google\b/gi, 'của hệ thống')
+    .replace(/\bGoogle\b/gi, 'hệ thống')
+    .replace(/AutoClick[^:]*/gi, 'Hệ thống xử lý')
+    .replace(/PyAutoGUI/gi, 'Hệ thống')
+    .replace(/tải về máy tính/gi, 'trả về kết quả')
+    .replace(/trên đĩa:?.*/gi, '')
+    .replace(/sau\s+\d+(\.\d+)?s\.?$/i, '')
+    .trim();
+  if (!s || /^(Error|Exception|failed)/i.test(s)) {
+    return `Không tạo được ${label}. Vui lòng thử lại.`;
+  }
+  return s;
+}
+
 function getFriendlyTaskFailure(error, type = 'video') {
   const rawCode = getTaskFailureText(error) || 'TASK_FAILED';
+  const label = type === 'video' ? 'video' : 'hình ảnh';
 
   if (/CHILD_DANGER|PUBLIC_ERROR_MINOR/i.test(rawCode)) {
     return { code: rawCode, message: 'Nội dung có yếu tố người chưa thành niên không phù hợp. Hãy đổi ảnh hoặc nội dung.' };
@@ -695,11 +723,14 @@ function getFriendlyTaskFailure(error, type = 'video') {
   if (/PUBLIC_ERROR_SEXUAL/i.test(rawCode)) {
     return { code: rawCode, message: 'Nội dung có yếu tố nhạy cảm và bị bộ lọc từ chối. Hãy đổi ảnh hoặc prompt.' };
   }
-  if (/DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(rawCode)) {
-    return { code: rawCode, message: `${type === 'video' ? 'Video' : 'Ảnh'} bị bộ lọc an toàn từ chối. Hãy đổi ảnh hoặc nội dung.` };
+  if (/FLOW_TASK_ERROR|từ chối tạo|tiêu chuẩn an toàn|chính sách an toàn|DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(rawCode)) {
+    return {
+      code: 'FLOW_TASK_ERROR',
+      message: `Không thể tạo ${label} này (hình ảnh hoặc nội dung câu lệnh chưa phù hợp với tiêu chuẩn an toàn của hệ thống). Vui lòng đổi ảnh hoặc điều chỉnh nội dung rồi thử lại.`
+    };
   }
   if (/PUBLIC_ERROR_MODEL_ACCESS_DENIED/i.test(rawCode)) {
-    return { code: rawCode, message: 'Mẫu AI này tạm thời không khả dụng với phiên đang dùng. Hãy thử lại sau giây lát.' };
+    return { code: rawCode, message: 'Mẫu AI này tạm thời không khả dụng. Hãy thử lại sau giây lát.' };
   }
   if (/PUBLIC_ERROR_USER_REQUESTS_THROTTLED/i.test(rawCode)) {
     return { code: rawCode, message: 'Bạn đang gửi yêu cầu hơi nhanh. Hãy chờ vài giây rồi thử lại.' };
@@ -710,34 +741,37 @@ function getFriendlyTaskFailure(error, type = 'video') {
   if (/INVALID_ARGUMENT|invalid argument/i.test(rawCode)) {
     return { code: rawCode, message: 'Yêu cầu có tham số không hợp lệ (ảnh hoặc tỷ lệ). Hãy kiểm tra lại rồi thử.' };
   }
-  if (/VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Could not capture URL|Upload R2 failed|No successful media generated/i.test(rawCode)) {
-    return { code: rawCode, message: 'Tác phẩm đã xử lý nhưng máy chủ không lưu được kết quả. Hãy bấm Thử lại.' };
+  if (/VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Could not capture URL|Upload R2 failed|No successful media generated|không tồn tại trên đĩa|chưa lưu được kết quả/i.test(rawCode)) {
+    return { code: rawCode, message: 'Tác phẩm đã xử lý nhưng hệ thống chưa lưu được kết quả. Hãy bấm Thử lại.' };
   }
   if (/Failed to resolve media download link/i.test(rawCode)) {
-    return { code: rawCode, message: 'Video đã tạo xong nhưng không tải được về. Hãy bấm Thử lại.' };
+    return { code: rawCode, message: 'Video đã tạo xong nhưng không tải được kết quả. Hãy bấm Thử lại.' };
   }
-  if (/TIMED_OUT|TIMEOUT|timeout/i.test(rawCode)) {
-    return { code: rawCode, message: 'Hệ thống xử lý quá thời gian. Hãy bấm Thử lại.' };
+  if (/TIMED_OUT|TIMEOUT|timeout|quá thời gian chờ/i.test(rawCode)) {
+    return { code: rawCode, message: 'Hệ thống xử lý quá thời gian chờ. Hãy bấm Thử lại.' };
   }
   if (/Generation job finished with state: FAILED/i.test(rawCode)) {
     return { code: rawCode, message: 'Tiến trình tạo bị gián đoạn trên máy chủ. Hãy bấm Thử lại.' };
   }
   if (/UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED/i.test(rawCode)) {
-    return { code: rawCode, message: 'Hệ thống tạm thời bị Google giới hạn. Hãy chờ khoảng 30 giây rồi thử lại.' };
+    return { code: rawCode, message: 'Hệ thống đang bận xử lý nhiều yêu cầu. Hãy chờ khoảng 30 giây rồi thử lại.' };
   }
   if (/OAuth token|capture token|UNAUTHENTICATED|UNAUTHORIZED|\b401\b/i.test(rawCode)) {
     return { code: rawCode, message: 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Hãy thử lại sau.' };
   }
   if (/QUOTA|RESOURCE_EXHAUSTED|\b429\b/i.test(rawCode)) {
-    return { code: rawCode, message: 'Hạn mức của hệ thống đang tạm hết. Hãy thử lại sau.' };
+    return { code: rawCode, message: 'Hạn mức xử lý của hệ thống đang tạm đầy. Hãy thử lại sau.' };
   }
   if (/Requested entity was not found|\bNOT_FOUND\b|\b404\b/i.test(rawCode)) {
     return { code: rawCode, message: 'Mẫu AI tạm thời không khả dụng. Hãy thử lại sau.' };
   }
-  if (/\bINTERNAL\b|Internal error|INTERNAL_ERROR/i.test(rawCode)) {
-    return { code: rawCode, message: 'Hệ thống đang quá tải hoặc gặp sự cố nội bộ. Hãy bấm Thử lại.' };
+  if (/\bINTERNAL\b|Internal error|INTERNAL_ERROR|AutoClick|gặp sự cố/i.test(rawCode)) {
+    return { code: rawCode, message: 'Hệ thống đang quá tải hoặc gặp sự cố tạm thời. Hãy bấm Thử lại.' };
   }
-  return { code: rawCode, message: error?.message || String(error || 'Không tạo được tác phẩm. Hãy thử lại.') };
+  return {
+    code: 'TASK_FAILED',
+    message: sanitizeUserErrorText(error?.message || String(error || `Không tạo được ${label}. Hãy thử lại.`), type)
+  };
 }
 
 function isRetryableTaskFailure(task) {

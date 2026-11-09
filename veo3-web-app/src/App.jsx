@@ -112,6 +112,28 @@ async function authFetch(user, url, options = {}) {
   return res;
 }
 
+const sanitizeDisplayError = (text) => {
+  let s = String(text || '').trim();
+  if (!s) return 'Đã xảy ra sự cố không xác định.';
+  s = s
+    .replace(/^FLOW_TASK_ERROR\s*\|\s*/i, '')
+    .replace(/^FLOW_TASK_ERROR:\s*/i, '')
+    .replace(/FLOW_TASK_ERROR/gi, '')
+    .replace(/Google\s*Flow/gi, 'Hệ thống AI')
+    .replace(/\bFlow\b/g, 'Hệ thống AI')
+    .replace(/chính sách an toàn của Google/gi, 'tiêu chuẩn an toàn của hệ thống')
+    .replace(/bị Google giới hạn/gi, 'đang bận xử lý nhiều yêu cầu')
+    .replace(/\bcủa Google\b/gi, 'của hệ thống')
+    .replace(/\bGoogle\b/gi, 'hệ thống')
+    .replace(/AutoClick[^:]*/gi, 'Hệ thống xử lý')
+    .replace(/PyAutoGUI/gi, 'Hệ thống')
+    .replace(/tải về máy tính/gi, 'trả về kết quả')
+    .replace(/trên đĩa:?.*/gi, '')
+    .replace(/sau\s+\d+(\.\d+)?s\.?$/i, '')
+    .trim();
+  return s || 'Đã xảy ra sự cố trong quá trình tạo tác phẩm. Hãy thử lại.';
+};
+
 const getTaskErrorText = (task) => {
   const raw = [task?.errorCode, task?.error].filter(Boolean).map(String).join(' | ');
   if (!raw) return 'Đã xảy ra sự cố không xác định.';
@@ -120,16 +142,18 @@ const getTaskErrorText = (task) => {
   if (/IP_INPUT_IMAGE|IP_PROHIBITED/i.test(raw)) return 'Ảnh đầu vào có thể chứa nội dung được bảo hộ. Hãy đổi ảnh khác.';
   if (/PROMINENT/i.test(raw)) return 'Ảnh có thể giống người nổi tiếng. Hãy đổi ảnh khác.';
   if (/PUBLIC_ERROR_SEXUAL/i.test(raw)) return 'Nội dung có yếu tố nhạy cảm và bị bộ lọc từ chối. Hãy đổi ảnh hoặc prompt.';
-  if (/DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(raw)) return 'Nội dung bị bộ lọc an toàn từ chối. Hãy đổi ảnh hoặc prompt.';
-  if (/VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Could not capture URL|Upload R2 failed|No successful media generated/i.test(raw)) return 'Tác phẩm đã xử lý nhưng máy chủ không lưu được kết quả. Hãy bấm Thử lại.';
-  if (/TIMED_OUT|TIMEOUT|timeout/i.test(raw)) return 'Hệ thống xử lý quá thời gian. Hãy bấm Thử lại.';
+  if (/FLOW_TASK_ERROR|từ chối tạo|tiêu chuẩn an toàn|chính sách an toàn|DANGER_FILTER|UNSAFE|INAPPROPRIATE|SAFETY|MEDIA_GENERATION_STATUS_FILTERED/i.test(raw)) {
+    return 'Không thể tạo tác phẩm này (hình ảnh hoặc nội dung câu lệnh chưa phù hợp với tiêu chuẩn an toàn của hệ thống). Vui lòng đổi ảnh hoặc điều chỉnh nội dung rồi thử lại.';
+  }
+  if (/VIDEO_DOWNLOAD_FAILED|IMAGE_URL_CAPTURE_FAILED|IMAGE_UPLOAD_R2_FAILED|Could not capture URL|Upload R2 failed|No successful media generated|không tồn tại trên đĩa|chưa lưu được kết quả/i.test(raw)) return 'Tác phẩm đã xử lý nhưng hệ thống chưa lưu được kết quả. Hãy bấm Thử lại.';
+  if (/TIMED_OUT|TIMEOUT|timeout|quá thời gian chờ/i.test(raw)) return 'Hệ thống xử lý quá thời gian chờ. Hãy bấm Thử lại.';
   if (/Generation job finished with state: FAILED/i.test(raw)) return 'Tiến trình tạo bị gián đoạn trên máy chủ. Hãy bấm Thử lại.';
-  if (/UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED/i.test(raw)) return 'Hệ thống tạm thời bị Google giới hạn. Hãy chờ khoảng 30 giây rồi thử lại.';
+  if (/UNUSUAL_ACTIVITY|reCAPTCHA|PERMISSION_DENIED/i.test(raw)) return 'Hệ thống đang bận xử lý nhiều yêu cầu. Hãy chờ khoảng 30 giây rồi thử lại.';
   if (/OAuth token|capture token|UNAUTHENTICATED|\b401\b/i.test(raw)) return 'Phiên kết nối của máy chủ tạm thời bị gián đoạn. Hãy thử lại sau.';
-  if (/QUOTA|RESOURCE_EXHAUSTED|\b429\b/i.test(raw)) return 'Hạn mức của hệ thống đang tạm hết. Hãy thử lại sau.';
+  if (/QUOTA|RESOURCE_EXHAUSTED|\b429\b/i.test(raw)) return 'Hạn mức xử lý của hệ thống đang tạm đầy. Hãy thử lại sau.';
   if (/Requested entity was not found|\bNOT_FOUND\b|\b404\b/i.test(raw)) return 'Mẫu AI tạm thời không khả dụng. Hãy thử lại sau.';
-  if (/\bINTERNAL\b|Internal error|INTERNAL_ERROR/i.test(raw)) return 'Hệ thống đang quá tải hoặc gặp sự cố nội bộ. Hãy bấm Thử lại.';
-  return String(task.error || raw);
+  if (/\bINTERNAL\b|Internal error|INTERNAL_ERROR|AutoClick/i.test(raw)) return 'Hệ thống đang quá tải hoặc gặp sự cố tạm thời. Hãy bấm Thử lại.';
+  return sanitizeDisplayError(task?.error || raw);
 };
 
 const canRetryTask = (task) => {
