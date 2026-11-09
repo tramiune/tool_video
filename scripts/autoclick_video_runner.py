@@ -583,8 +583,8 @@ def _get_expected_flow_tool_url(mode="video"):
     except Exception:
         pass
     if mode == "image":
-        return "https://flow.google.com/project/4a4d000c-94ca-435d-911d-36d060f55222/tool/42295196-bb3c-489d-9b8f-7c498fa782e4"
-    return "https://flow.google.com/project/baf080f7-106e-483e-a0bf-3c9b5d145807/tool/0b32ee5f-3fde-4235-b517-05c3709f1304"
+        return "https://flow.google.com/project/479ede26-9ee3-445d-aac7-aefe81b136ce/tool/42295196-bb3c-489d-9b8f-7c498fa782e4"
+    return "https://flow.google.com/project/669b4b38-58c7-4e44-9d45-f75a2e8c7703/tool/0b32ee5f-3fde-4235-b517-05c3709f1304"
 
 
 def wait_until_submit_button_ready(mode="video", max_wait_sec=25):

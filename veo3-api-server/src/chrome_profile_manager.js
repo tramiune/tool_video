@@ -361,7 +361,7 @@ const IMAGE_WIN_X = 800;
 const IMAGE_WIN_Y = 27;
 const IMAGE_WIN_W = 800;
 const IMAGE_WIN_H = 873;
-const DEFAULT_IMAGE_FLOW_URL = 'https://flow.google.com/project/4a4d000c-94ca-435d-911d-36d060f55222/tool/42295196-bb3c-489d-9b8f-7c498fa782e4';
+const DEFAULT_IMAGE_FLOW_URL = 'https://flow.google.com/project/479ede26-9ee3-445d-aac7-aefe81b136ce/tool/42295196-bb3c-489d-9b8f-7c498fa782e4';
 
 // Khoá toàn cục khi đang chuyển đổi Chrome Box để các task video sau phải chờ mở xong & ready 100%
 let _switchingPromise = null;
