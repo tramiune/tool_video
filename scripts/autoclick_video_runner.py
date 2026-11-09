@@ -518,11 +518,20 @@ def check_and_dismiss_chrome_popups(im=None, holds_lock=False, mode="video"):
 
 
 def maybe_reload_tab_if_bloated(mode="video"):
-    """Nếu tiến trình renderer ngốn > 1.6GB RAM VÀ hiện tại đang IDLE (không có task nào ĐANG CHẠY), tự động Ctrl+R làm mới."""
+    """Nếu tiến trình renderer ngốn > 1.6GB RAM VÀ hiện tại đang IDLE (không có task nào ĐANG CHẠY và chỉ có 1 runner), tự động Ctrl+R làm mới."""
     if sys.platform == "darwin":
         return
     cfg = IMAGE_COORDS if mode == "image" else VIDEO_COORDS
     try:
+        # Không bao giờ Ctrl+R nếu đang có nhiều hơn 1 tiến trình runner cùng mode chạy song song
+        ps_out = subprocess.check_output(["ps", "-eo", "args"], text=True, stderr=subprocess.DEVNULL)
+        same_mode_runners = sum(
+            1 for l in ps_out.splitlines()
+            if "autoclick_video_runner.py" in l and f"--mode {mode}" in l
+        )
+        if same_mode_runners > 1:
+            return
+
         out = subprocess.check_output(["ps", "-eo", "rss,args"], text=True, stderr=subprocess.DEVNULL)
         max_rss_kb = 0
         for line in out.splitlines():
@@ -614,7 +623,7 @@ def _get_expected_flow_tool_url(mode="video"):
         pass
     if mode == "image":
         return "https://flow.google.com/project/479ede26-9ee3-445d-aac7-aefe81b136ce/tool/42295196-bb3c-489d-9b8f-7c498fa782e4"
-    return "https://flow.google.com/project/669b4b38-58c7-4e44-9d45-f75a2e8c7703/tool/0b32ee5f-3fde-4235-b517-05c3709f1304"
+    return "https://flow.google.com/project/20af0d8b-a5c8-46b3-b201-a370ad5558e3/tool/0b32ee5f-3fde-4235-b517-05c3709f1304"
 
 
 def wait_until_submit_button_ready(mode="video", max_wait_sec=25):
