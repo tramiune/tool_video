@@ -402,11 +402,11 @@ const MEO_COMPOSER_TOOLS = [
     accent: '#fbbf24',
     accentBg: 'rgba(251, 191, 36, 0.16)',
     accentBorder: 'rgba(251, 191, 36, 0.38)',
-    label: 'Tách Prompt từ Video',
+    label: 'Video thành Prompt',
     videoPlaceholder: 'Ghi chú thêm về sản phẩm / nhân vật trong video mẫu (tuỳ chọn)...',
     imagePlaceholder: 'Ghi chú thêm về sản phẩm / nhân vật trong video mẫu (tuỳ chọn)...',
     promptPrefix: '',
-    badgeText: 'Bóc tách Kịch bản & Prompt từng cảnh từ Video mẫu',
+    badgeText: 'Chuyển Video mẫu thành Kịch bản & Prompt từng cảnh',
   },
   {
     id: 'mother-in-law',
@@ -1264,8 +1264,8 @@ function App() {
       return;
     }
     if (!hasAnyMonthlyAccess) {
-      showAccessDeniedToast('Tính năng Tách Prompt từ Video dành cho tất cả Gói Tháng (từ 69k/tháng)!');
-      setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Tách Prompt từ Video!');
+      showAccessDeniedToast('Tính năng Video thành Prompt dành cho tất cả Gói Tháng (từ 69k/tháng)!');
+      setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Video thành Prompt!');
       setShowPricingModal(true);
       return;
     }
@@ -1286,7 +1286,7 @@ function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 402) {
-        const msgText = data?.error || 'Tính năng Tách Prompt từ Video dành cho các Gói Tháng (từ 69k/tháng).';
+        const msgText = data?.error || 'Tính năng Video thành Prompt dành cho các Gói Tháng (từ 69k/tháng).';
         setPricingModalBanner(msgText);
         setShowPricingModal(true);
         return;
@@ -8230,8 +8230,8 @@ function App() {
                       type="button"
                       onClick={(e) => {
                         if (tool.id === 'reverse-video' && !hasAnyMonthlyAccess) {
-                          showAccessDeniedToast('Tính năng Tách Prompt từ Video dành cho tất cả Gói Tháng (chỉ từ 69k/tháng)!');
-                          setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Tách Prompt từ Video!');
+                          showAccessDeniedToast('Tính năng Video thành Prompt dành cho tất cả Gói Tháng (chỉ từ 69k/tháng)!');
+                          setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Video thành Prompt!');
                           setShowPricingModal(true);
                           return;
                         }
@@ -8284,6 +8284,24 @@ function App() {
                         <ToolIcon size={12} strokeWidth={2.2} />
                       </span>
                       <span>{tool.label}</span>
+                      {tool.id === 'reverse-video' && (
+                        <span
+                          style={{
+                            fontSize: '0.58rem',
+                            fontWeight: 800,
+                            letterSpacing: '0.03em',
+                            color: '#fff',
+                            background: 'linear-gradient(135deg, #f43f5e 0%, #f59e0b 100%)',
+                            padding: '1px 6px',
+                            borderRadius: '999px',
+                            boxShadow: '0 0 8px rgba(244, 63, 94, 0.45)',
+                            lineHeight: 1.35,
+                            marginLeft: '1px',
+                          }}
+                        >
+                          MỚI
+                        </span>
+                      )}
                       {isLockedTool && (
                         <span
                           style={{
