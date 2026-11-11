@@ -4340,85 +4340,93 @@ async function cleanupOldTasks() {
   const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
   logger.info(`Running periodic cleanup for tasks created before ${new Date(oneDayAgo).toISOString()}...`);
   try {
-    const snapshot = await db.collection('tasks')
-      .where('createdAt', '<', oneDayAgo)
-      .get();
-    
-    if (snapshot.empty) {
-      logger.info('No expired tasks to clean up.');
-    } else {
-      logger.info(`Found ${snapshot.size} expired tasks. Starting media deletion from R2 & doc deletion from Firestore...`);
+    let totalTasksDeleted = 0;
+    while (true) {
+      const snapshot = await db.collection('tasks')
+        .where('createdAt', '<', oneDayAgo)
+        .limit(400)
+        .get();
+
+      if (snapshot.empty) break;
+
       const batch = db.batch();
+      const r2Base = (process.env.R2_PUBLIC_BASE || '').replace(/\/+$/, '');
       for (const doc of snapshot.docs) {
-        const data = doc.data();
+        const data = doc.data() || {};
         const filesToDelete = [];
         if (data.mediaUrl) filesToDelete.push(data.mediaUrl);
         if (data.startImage && typeof data.startImage === 'string') filesToDelete.push(data.startImage);
         if (data.endImage && typeof data.endImage === 'string') filesToDelete.push(data.endImage);
         if (data.media && Array.isArray(data.media)) {
           for (const m of data.media) {
-            if (m.url) filesToDelete.push(m.url);
+            if (m && m.url) filesToDelete.push(m.url);
           }
         }
 
-          // Delete files from R2
-          for (const url of filesToDelete) {
-            if (url && url.startsWith(process.env.R2_PUBLIC_BASE)) {
-              const fileKey = url.replace(`${process.env.R2_PUBLIC_BASE}/`, '');
-              const isOurFolder = fileKey.startsWith('meo3/videos/') || fileKey.startsWith('meo3/images/') || fileKey.startsWith('meo3/inputs/');
-              if (isOurFolder) {
-                try {
-                  await deleteFromR2(fileKey);
-                  logger.info(`Deleted file from Cloudflare R2: ${fileKey}`);
-                } catch (r2Err) {
-                }
-              }
+        for (const url of filesToDelete) {
+          if (r2Base && typeof url === 'string' && url.startsWith(`${r2Base}/`)) {
+            const fileKey = url.slice(r2Base.length + 1);
+            const isOurFolder =
+              fileKey.startsWith('meo3/') ||
+              fileKey.startsWith('aqua/') ||
+              fileKey.startsWith('outputs/') ||
+              fileKey.startsWith('inputs/');
+            if (isOurFolder) {
+              try {
+                await deleteFromR2(fileKey);
+              } catch (r2Err) {}
             }
           }
+        }
 
-        // Add to Firestore batch delete
         batch.delete(doc.ref);
       }
 
       await batch.commit();
-      logger.success(`Successfully deleted ${snapshot.size} expired tasks from Firestore and matching media files from Cloudflare R2.`);
+      totalTasksDeleted += snapshot.size;
+      if (snapshot.size < 400) break;
     }
 
-    // Clean up expired audio_tasks docs (media is hosted upstream on audio.aidancing.net,
-    // so we only remove the Firestore records after 24h).
-    const audioSnap = await db.collection('audio_tasks')
-      .where('createdAt', '<', oneDayAgo)
-      .get();
-    if (!audioSnap.empty) {
+    if (totalTasksDeleted > 0) {
+      logger.success(`Successfully deleted ${totalTasksDeleted} expired tasks from Firestore and matching media files from Cloudflare R2.`);
+    } else {
+      logger.info('No expired tasks to clean up.');
+    }
+
+    // Clean up expired audio_tasks docs after 24h in batches of 400
+    let totalAudioDeleted = 0;
+    while (true) {
+      const audioSnap = await db.collection('audio_tasks')
+        .where('createdAt', '<', oneDayAgo)
+        .limit(400)
+        .get();
+      if (audioSnap.empty) break;
       const audioBatch = db.batch();
       for (const doc of audioSnap.docs) {
         audioBatch.delete(doc.ref);
       }
       await audioBatch.commit();
-      logger.success(`Successfully deleted ${audioSnap.size} expired audio_tasks from Firestore.`);
+      totalAudioDeleted += audioSnap.size;
+      if (audioSnap.size < 400) break;
+    }
+    if (totalAudioDeleted > 0) {
+      logger.success(`Successfully deleted ${totalAudioDeleted} expired audio_tasks from Firestore.`);
     }
   } catch (err) {
     logger.error('Error during expired tasks cleanup', err);
   }
 }
 
-function scheduleDailyCleanup(hour = 23, minute = 50) {
-  const now = new Date();
-  const nextRun = new Date(now);
-  nextRun.setHours(hour, minute, 0, 0);
-  if (nextRun <= now) {
-    nextRun.setDate(nextRun.getDate() + 1);
-  }
-
-  const delay = nextRun.getTime() - now.getTime();
-  logger.info(`Scheduled cleanup at ${nextRun.toString()} (in ${Math.round(delay / 60000)} minutes)`);
-
+function scheduleDailyCleanup() {
+  // Chạy ngay sau khi khởi động 15 giây để dọn sạch các task đã quá hạn 24h
   setTimeout(() => {
-    cleanupOldTasks().catch(err => logger.error('Scheduled cleanup failed', err));
-    setInterval(() => {
-      cleanupOldTasks().catch(err => logger.error('Scheduled cleanup failed', err));
-    }, 24 * 60 * 60 * 1000);
-  }, delay);
+    cleanupOldTasks().catch(err => logger.error('Startup cleanup failed', err));
+  }, 15000);
+
+  // Quét dọn định kỳ mỗi 1 tiếng (3600s) để task nào quá 24h là xoá khỏi Firestore & R2 ngay
+  setInterval(() => {
+    cleanupOldTasks().catch(err => logger.error('Hourly cleanup failed', err));
+  }, 60 * 60 * 1000);
 }
 
 // Start HTTP + Socket.io Server
