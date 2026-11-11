@@ -1699,12 +1699,17 @@ async function requireDramaAccess(req, res, next) {
       ['drama_500k', 'master_499k', 'vip_399k', 'pro_299k', 'pro_499k', 'master_899k'].includes(userData.tier) &&
       (!userData.expiryDate || Number(userData.expiryDate) > Date.now());
     const hasDramaVideoAccess = isAdmin || userData.hasDramaAccess === true || isActiveDramaTier;
+    const isActiveMonthlyTier =
+      Boolean(userData.tier && userData.tier !== 'free') &&
+      (!userData.expiryDate || Number(userData.expiryDate) > Date.now());
+    const hasMonthlySubAccess = isAdmin || hasDramaVideoAccess || isActiveMonthlyTier;
     req.authUser = {
       uid: decoded.uid,
       email: decoded.email || userData.email || null,
       isAdmin,
       isSuperAdmin: isAdmin,
-      hasDramaVideoAccess
+      hasDramaVideoAccess,
+      hasMonthlySubAccess
     };
     next();
   } catch (error) {
@@ -2752,6 +2757,7 @@ function buildMeo3BridgeHeaders(authUser) {
     'X-Meo3-User-Id': String(authUser?.uid || ''),
     'X-Meo3-User-Email': String(authUser?.email || 'user@meo3.cloud'),
     'X-Meo3-Drama-Sub': authUser?.hasDramaVideoAccess ? '1' : '0',
+    'X-Meo3-Monthly-Sub': (authUser?.hasMonthlySubAccess || authUser?.hasDramaVideoAccess) ? '1' : '0',
     'X-Meo3-Is-Admin': authUser?.isSuperAdmin ? '1' : '0'
   };
 }
@@ -2961,6 +2967,35 @@ app.post('/api/drama/fashion-mirror/jobs/:id/cancel', requireDramaAccess, async 
     const data = await resp.json().catch(() => ({ error: 'Cancel failed' }));
     return res.status(resp.status).json(data);
   } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Reverse-Engineer Video to Shot-by-Shot Prompts proxy route (available for all active monthly packages 69k+)
+app.post('/api/drama/reverse-video/analyze', requireDramaAccess, upload.single('video'), async (req, res) => {
+  try {
+    let videoUrl = String(req.body?.videoUrl || '').trim();
+    if (req.file) {
+      const uploaded = await uploadTempFilesToR2List([req.file], 'meo3/reverse-video/inputs');
+      if (uploaded[0]) videoUrl = uploaded[0];
+    }
+
+    const formBody = new URLSearchParams();
+    formBody.append('videoUrl', videoUrl);
+    formBody.append('customNote', String(req.body?.customNote || '').trim());
+
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/reverse-video/analyze`, {
+      method: 'POST',
+      headers: {
+        ...buildMeo3BridgeHeaders(req.authUser),
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: formBody.toString()
+    });
+    const data = await resp.json().catch(() => ({ error: 'Reverse video analyze failed' }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    logger.error('Reverse video analyze proxy failed', error);
     return res.status(500).json({ error: error.message });
   }
 });

@@ -397,6 +397,18 @@ const MEO_COMPOSER_TOOLS = [
     badgeText: '',
   },
   {
+    id: 'reverse-video',
+    icon: Video,
+    accent: '#fbbf24',
+    accentBg: 'rgba(251, 191, 36, 0.16)',
+    accentBorder: 'rgba(251, 191, 36, 0.38)',
+    label: 'Tách Prompt từ Video',
+    videoPlaceholder: 'Ghi chú thêm về sản phẩm / nhân vật trong video mẫu (tuỳ chọn)...',
+    imagePlaceholder: 'Ghi chú thêm về sản phẩm / nhân vật trong video mẫu (tuỳ chọn)...',
+    promptPrefix: '',
+    badgeText: 'Bóc tách Kịch bản & Prompt từng cảnh từ Video mẫu',
+  },
+  {
     id: 'mother-in-law',
     icon: Clapperboard,
     accent: '#c084fc',
@@ -1215,6 +1227,85 @@ function App() {
         userTier === 'master_499k' ||
         userTier === 'drama_500k' ||
         userTier === 'vip_399k'));
+  const hasAnyMonthlyAccess =
+    currentUserIsAdmin ||
+    hasFullToolAccess ||
+    (!isSubExpired && Boolean(userTier && userTier !== 'free'));
+
+  // States cho tính năng Tách Prompt từ Video (reverse-video / rea-video)
+  const [reverseVideoFile, setReverseVideoFile] = useState(null);
+  const [reverseVideoPreviewUrl, setReverseVideoPreviewUrl] = useState(null);
+  const [reverseVideoNote, setReverseVideoNote] = useState('');
+  const [reverseVideoAnalyzing, setReverseVideoAnalyzing] = useState(false);
+  const [reverseVideoResult, setReverseVideoResult] = useState(null);
+  const [reverseVideoError, setReverseVideoError] = useState(null);
+  const reverseVideoInputRef = useRef(null);
+
+  const handleSelectReverseVideoFile = (file) => {
+    if (reverseVideoPreviewUrl) {
+      try {
+        URL.revokeObjectURL(reverseVideoPreviewUrl);
+      } catch (_) {}
+    }
+    if (!file) {
+      setReverseVideoFile(null);
+      setReverseVideoPreviewUrl(null);
+      return;
+    }
+    setReverseVideoFile(file);
+    setReverseVideoPreviewUrl(URL.createObjectURL(file));
+    setReverseVideoError(null);
+  };
+
+  const handleAnalyzeReverseVideo = async () => {
+    if (reverseVideoAnalyzing) return;
+    if (!user?.uid) {
+      showAccessDeniedToast('Vui lòng đăng nhập để sử dụng tính năng này.');
+      return;
+    }
+    if (!hasAnyMonthlyAccess) {
+      showAccessDeniedToast('Tính năng Tách Prompt từ Video dành cho tất cả Gói Tháng (từ 69k/tháng)!');
+      setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Tách Prompt từ Video!');
+      setShowPricingModal(true);
+      return;
+    }
+    if (!reverseVideoFile) {
+      showAccessDeniedToast('Vui lòng chọn 1 video mẫu (.mp4, .mov, .webm) để bóc tách Prompt!');
+      reverseVideoInputRef.current?.click();
+      return;
+    }
+    setReverseVideoAnalyzing(true);
+    setReverseVideoError(null);
+    try {
+      const fd = new FormData();
+      fd.append('video', reverseVideoFile);
+      fd.append('customNote', reverseVideoNote.trim());
+      const res = await authFetch(user, `${API_BASE}/api/drama/reverse-video/analyze`, {
+        method: 'POST',
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 402) {
+        const msgText = data?.error || 'Tính năng Tách Prompt từ Video dành cho các Gói Tháng (từ 69k/tháng).';
+        setPricingModalBanner(msgText);
+        setShowPricingModal(true);
+        return;
+      }
+      if (!res.ok || !data?.analysis) {
+        const errMsg = data?.error || data?.detail || 'Không thể bóc tách video, vui lòng thử lại.';
+        setReverseVideoError(errMsg);
+        showAccessDeniedToast(errMsg);
+        return;
+      }
+      setReverseVideoResult(data.analysis);
+    } catch (err) {
+      const errMsg = err?.message || 'Lỗi kết nối máy chủ khi phân tích video.';
+      setReverseVideoError(errMsg);
+      showAccessDeniedToast(errMsg);
+    } finally {
+      setReverseVideoAnalyzing(false);
+    }
+  };
 
   const showAccessDeniedToast = (msg) => {
     setToastMessage(msg);
@@ -8126,14 +8217,25 @@ function App() {
               >
                 {MEO_COMPOSER_TOOLS.map((tool) => {
                   const isSelected = activeComposerToolId === tool.id;
-                  const isLockedTool = tool.id !== 'text-to-video' && !hasFullToolAccess;
+                  const isLockedTool =
+                    tool.id === 'text-to-video'
+                      ? false
+                      : tool.id === 'reverse-video'
+                      ? !hasAnyMonthlyAccess
+                      : !hasFullToolAccess;
                   const ToolIcon = tool.icon;
                   return (
                     <button
                       key={tool.id}
                       type="button"
                       onClick={(e) => {
-                        if (tool.id !== 'text-to-video' && !hasFullToolAccess) {
+                        if (tool.id === 'reverse-video' && !hasAnyMonthlyAccess) {
+                          showAccessDeniedToast('Tính năng Tách Prompt từ Video dành cho tất cả Gói Tháng (chỉ từ 69k/tháng)!');
+                          setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Tách Prompt từ Video!');
+                          setShowPricingModal(true);
+                          return;
+                        }
+                        if (tool.id !== 'text-to-video' && tool.id !== 'reverse-video' && !hasFullToolAccess) {
                           showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
                           setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
                           setShowPricingModal(true);
@@ -8306,7 +8408,534 @@ function App() {
             )}
           </div>
 
-          {activeComposerToolId === 'mother-in-law' ? (
+          {activeComposerToolId === 'reverse-video' ? (
+            /* Luồng Bóc tách Kịch bản & Prompt từ Video mẫu (rea-video) */
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                padding: '4px 2px 2px',
+              }}
+            >
+              <input
+                ref={reverseVideoInputRef}
+                type="file"
+                accept="video/mp4,video/quicktime,video/webm,video/*"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  if (f) handleSelectReverseVideoFile(f);
+                  e.target.value = '';
+                }}
+              />
+
+              {reverseVideoError && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    padding: '6px 10px',
+                    borderRadius: '10px',
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(248, 113, 113, 0.3)',
+                    color: '#fca5a5',
+                    fontSize: '0.74rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  <span>⚠️ {reverseVideoError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setReverseVideoError(null)}
+                    style={{ background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
+              {/* Bảng kết quả bóc tách từng cảnh */}
+              {reverseVideoResult && Array.isArray(reverseVideoResult.shots) && reverseVideoResult.shots.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    maxHeight: '44vh',
+                    overflowY: 'auto',
+                    padding: '8px',
+                    borderRadius: '14px',
+                    background: 'rgba(15, 23, 42, 0.78)',
+                    border: '1px solid rgba(251, 191, 36, 0.3)',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      flexWrap: 'wrap',
+                      paddingBottom: '4px',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                          color: '#fde68a',
+                          background: 'rgba(251, 191, 36, 0.16)',
+                          border: '1px solid rgba(251, 191, 36, 0.4)',
+                          padding: '2px 9px',
+                          borderRadius: '999px',
+                        }}
+                      >
+                        ✨ Đã bóc tách {reverseVideoResult.shotCount || reverseVideoResult.shots.length} cảnh ({reverseVideoResult.analyzedDuration || reverseVideoResult.duration}s • {reverseVideoResult.aspectRatio || '9:16'})
+                      </span>
+                      <span style={{ fontSize: '0.71rem', color: '#cbd5e1' }}>
+                        {reverseVideoResult.videoSummary}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReverseVideoResult(null)}
+                      style={{
+                        padding: '3px 9px',
+                        borderRadius: '999px',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        background: 'rgba(255,255,255,0.06)',
+                        color: '#94a3b8',
+                        fontSize: '0.68rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Đóng kết quả
+                    </button>
+                  </div>
+
+                  {reverseVideoResult.recommendedWorkflow && (
+                    <div
+                      style={{
+                        fontSize: '0.71rem',
+                        color: '#a7f3d0',
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                        borderRadius: '10px',
+                        padding: '5px 9px',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      💡 <strong>Quy trình gợi ý:</strong> {reverseVideoResult.recommendedWorkflow}
+                    </div>
+                  )}
+
+                  {reverseVideoResult.shots.map((shot, sIdx) => {
+                    const needsImg = shot.needsInputImage !== false;
+                    return (
+                      <div
+                        key={shot.index || sIdx}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '7px',
+                          padding: '9px 10px',
+                          borderRadius: '12px',
+                          background: 'rgba(30, 41, 59, 0.65)',
+                          border: '1px solid rgba(255, 255, 255, 0.09)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                          {shot.firstFrameUrl && (
+                            <a
+                              href={shot.firstFrameUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Bấm để xem ảnh Frame đầu của cảnh này"
+                              style={{
+                                width: '56px',
+                                height: '74px',
+                                borderRadius: '8px',
+                                overflow: 'hidden',
+                                flexShrink: 0,
+                                border: '1px solid rgba(251, 191, 36, 0.45)',
+                                background: '#0f172a',
+                                display: 'block',
+                              }}
+                            >
+                              <img
+                                src={shot.firstFrameUrl}
+                                alt={`Cảnh ${shot.index}`}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                              />
+                            </a>
+                          )}
+                          <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#f8fafc' }}>
+                                {shot.title || `Cảnh ${shot.index}`}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.66rem',
+                                  fontWeight: 700,
+                                  color: '#38bdf8',
+                                  background: 'rgba(56, 189, 248, 0.14)',
+                                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                                  padding: '1px 7px',
+                                  borderRadius: '999px',
+                                }}
+                              >
+                                ⏱ {shot.timeRange || `${shot.startSec}s - ${shot.endSec}s`}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.66rem',
+                                  fontWeight: 700,
+                                  color: needsImg ? '#fde68a' : '#7dd3fc',
+                                  background: needsImg ? 'rgba(245, 158, 11, 0.18)' : 'rgba(14, 165, 233, 0.16)',
+                                  border: `1px solid ${needsImg ? 'rgba(251, 191, 36, 0.45)' : 'rgba(56, 189, 248, 0.4)'}`,
+                                  padding: '1px 8px',
+                                  borderRadius: '999px',
+                                }}
+                              >
+                                {needsImg ? '🖼️ Cần Ảnh đầu vào (Image-to-Video)' : '✍️ Chỉ cần Prompt chữ (Text-to-Video)'}
+                              </span>
+                            </div>
+                            {shot.cameraMotion && (
+                              <div style={{ fontSize: '0.69rem', color: '#94a3b8' }}>
+                                🎥 {shot.cameraMotion}
+                              </div>
+                            )}
+                            {shot.inputRequirementNote && (
+                              <div
+                                style={{
+                                  fontSize: '0.69rem',
+                                  color: needsImg ? '#fef08a' : '#bae6fd',
+                                  background: needsImg ? 'rgba(251, 191, 36, 0.08)' : 'rgba(56, 189, 248, 0.08)',
+                                  borderRadius: '7px',
+                                  padding: '3px 7px',
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                📌 <strong>Đầu vào:</strong> {shot.inputRequirementNote}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Hộp 1: Prompt tạo Ảnh đầu cảnh */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            padding: '6px 8px',
+                            borderRadius: '9px',
+                            background: 'rgba(15, 23, 42, 0.65)',
+                            border: '1px solid rgba(168, 85, 247, 0.28)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#d8b4fe' }}>
+                              🖼️ Prompt tạo Ảnh đầu cảnh (Start Frame):
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(shot.imagePrompt || '');
+                                  showAccessDeniedToast(`✅ Đã copy Prompt Ảnh Cảnh ${shot.index}!`);
+                                }}
+                                style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '999px',
+                                  border: '1px solid rgba(255,255,255,0.16)',
+                                  background: 'rgba(255,255,255,0.06)',
+                                  color: '#e2e8f0',
+                                  fontSize: '0.66rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                📋 Copy
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (reverseVideoResult.aspectRatio === '9:16' || reverseVideoResult.aspectRatio === '16:9' || reverseVideoResult.aspectRatio === '1:1') {
+                                    setAspectRatio(reverseVideoResult.aspectRatio);
+                                  }
+                                  setActiveComposerToolId('text-to-video');
+                                  setActiveTab('image');
+                                  setPrompt(shot.imagePrompt || '');
+                                }}
+                                style={{
+                                  padding: '2px 9px',
+                                  borderRadius: '999px',
+                                  border: '1px solid rgba(192, 132, 252, 0.45)',
+                                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.28) 0%, rgba(236, 72, 153, 0.24) 100%)',
+                                  color: '#f3e8ff',
+                                  fontSize: '0.66rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                🖼️ Đẩy sang Tạo Ảnh
+                              </button>
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '0.69rem',
+                              color: '#cbd5e1',
+                              lineHeight: 1.38,
+                              userSelect: 'all',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {shot.imagePrompt}
+                          </div>
+                        </div>
+
+                        {/* Hộp 2: Prompt tạo Video */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            padding: '6px 8px',
+                            borderRadius: '9px',
+                            background: 'rgba(15, 23, 42, 0.65)',
+                            border: '1px solid rgba(56, 189, 248, 0.28)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#7dd3fc' }}>
+                              🎬 Prompt tạo Video (Animation / Camera):
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(shot.videoPrompt || '');
+                                  showAccessDeniedToast(`✅ Đã copy Prompt Video Cảnh ${shot.index}!`);
+                                }}
+                                style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '999px',
+                                  border: '1px solid rgba(255,255,255,0.16)',
+                                  background: 'rgba(255,255,255,0.06)',
+                                  color: '#e2e8f0',
+                                  fontSize: '0.66rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                📋 Copy
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (reverseVideoResult.aspectRatio === '9:16' || reverseVideoResult.aspectRatio === '16:9' || reverseVideoResult.aspectRatio === '1:1') {
+                                    setAspectRatio(reverseVideoResult.aspectRatio);
+                                  }
+                                  setActiveComposerToolId('text-to-video');
+                                  setActiveTab('video');
+                                  setPrompt(shot.videoPrompt || '');
+                                }}
+                                style={{
+                                  padding: '2px 9px',
+                                  borderRadius: '999px',
+                                  border: '1px solid rgba(56, 189, 248, 0.45)',
+                                  background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.28) 0%, rgba(37, 99, 235, 0.24) 100%)',
+                                  color: '#e0f2fe',
+                                  fontSize: '0.66rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                🎬 Đẩy sang Tạo Video
+                              </button>
+                              {shot.firstFrameUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (reverseVideoResult.aspectRatio === '9:16' || reverseVideoResult.aspectRatio === '16:9' || reverseVideoResult.aspectRatio === '1:1') {
+                                      setAspectRatio(reverseVideoResult.aspectRatio);
+                                    }
+                                    setStartFile(null);
+                                    setStartLibraryUrl(shot.firstFrameUrl);
+                                    setActiveComposerToolId('text-to-video');
+                                    setActiveTab('video');
+                                    setPrompt(shot.videoPrompt || '');
+                                  }}
+                                  style={{
+                                    padding: '2px 9px',
+                                    borderRadius: '999px',
+                                    border: '1px solid rgba(52, 211, 153, 0.45)',
+                                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.28) 0%, rgba(5, 150, 105, 0.24) 100%)',
+                                    color: '#d1fae5',
+                                    fontSize: '0.66rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  📌 Dùng kèm Ảnh cắt cảnh này
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '0.69rem',
+                              color: '#cbd5e1',
+                              lineHeight: 1.38,
+                              userSelect: 'all',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {shot.videoPrompt}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Thanh điều khiển chọn video mẫu + ghi chú + nút Bóc tách */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                  padding: '2px 4px',
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={reverseVideoAnalyzing}
+                  onClick={() => reverseVideoInputRef.current?.click()}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '999px',
+                    border: reverseVideoFile
+                      ? '1px solid rgba(52, 211, 153, 0.5)'
+                      : '1px solid rgba(251, 191, 36, 0.45)',
+                    background: reverseVideoFile
+                      ? 'rgba(16, 185, 129, 0.14)'
+                      : 'rgba(251, 191, 36, 0.12)',
+                    color: reverseVideoFile ? '#6ee7b7' : '#fde68a',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: reverseVideoAnalyzing ? 'default' : 'pointer',
+                    maxWidth: '220px',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Upload size={13} style={{ flexShrink: 0 }} />
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {reverseVideoFile ? reverseVideoFile.name : 'Tải video mẫu (.mp4/.mov)'}
+                  </span>
+                </button>
+
+                {reverseVideoFile && !reverseVideoAnalyzing && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectReverseVideoFile(null)}
+                    title="Xóa video đã chọn"
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '999px',
+                      border: '1px solid rgba(248, 113, 113, 0.35)',
+                      background: 'rgba(239, 68, 68, 0.14)',
+                      color: '#fca5a5',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+
+                <input
+                  type="text"
+                  value={reverseVideoNote}
+                  disabled={reverseVideoAnalyzing}
+                  onChange={(e) => setReverseVideoNote(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleAnalyzeReverseVideo();
+                    }
+                  }}
+                  placeholder="Mô tả thêm về chủ đề / sản phẩm muốn làm lại (tuỳ chọn)..."
+                  style={{
+                    flex: '1 1 180px',
+                    minWidth: '150px',
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '999px',
+                    padding: '6px 12px',
+                    color: '#f8fafc',
+                    fontSize: '0.76rem',
+                    outline: 'none',
+                  }}
+                />
+
+                <button
+                  type="button"
+                  disabled={reverseVideoAnalyzing}
+                  onClick={handleAnalyzeReverseVideo}
+                  style={{
+                    padding: '6px 15px',
+                    borderRadius: '999px',
+                    border: '1px solid rgba(251, 191, 36, 0.5)',
+                    background: reverseVideoAnalyzing
+                      ? 'rgba(245, 158, 11, 0.25)'
+                      : 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                    color: '#fff',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: reverseVideoAnalyzing ? 'default' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    boxShadow: '0 2px 12px rgba(245, 158, 11, 0.3)',
+                  }}
+                >
+                  {reverseVideoAnalyzing ? (
+                    <>
+                      <Loader size={14} className="spin" />
+                      <span>Đang cắt cảnh &amp; tách Prompt...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} />
+                      <span>Bóc tách Prompt</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : activeComposerToolId === 'mother-in-law' ? (
             /* Luồng Mẹ chồng nàng dâu 1 nút duy nhất: Ấn Tạo Video -> Tự tạo kịch bản 6 cảnh -> Tự dựng video luôn */
             <div
               style={{
