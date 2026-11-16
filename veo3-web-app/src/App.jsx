@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid, ArrowUp, ArrowDown, Volume2, Shirt, Wand2, UtensilsCrossed, ShoppingBag, Box, Lock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Video, Image as ImageIcon, LogOut, Plus, ArrowRight, Play, X, Loader, Download, Trash2, Upload, AlertCircle, Users, DollarSign, Clock, ArrowLeft, ShieldCheck, ShieldAlert, Check, RotateCcw, Sparkles, Clapperboard, LayoutGrid, ArrowUp, ArrowDown, Volume2, Shirt, Wand2, UtensilsCrossed, ShoppingBag, Box, Lock, ChevronLeft, ChevronRight, MessageSquare, Send, Copy } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -399,15 +399,15 @@ const MEO_COMPOSER_TOOLS = [
   },
   {
     id: 'reverse-video',
-    icon: Video,
+    icon: Wand2,
     accent: '#fbbf24',
     accentBg: 'rgba(251, 191, 36, 0.16)',
     accentBorder: 'rgba(251, 191, 36, 0.38)',
-    label: 'Video thành Prompt',
-    videoPlaceholder: 'Ghi chú thêm về sản phẩm / nhân vật trong video mẫu (tuỳ chọn)...',
-    imagePlaceholder: 'Ghi chú thêm về sản phẩm / nhân vật trong video mẫu (tuỳ chọn)...',
+    label: 'Tạo Prompt',
+    videoPlaceholder: 'Mô tả ý tưởng video bạn muốn làm... (VD: cô gái uống cà phê ngắm mưa lúc hoàng hôn)',
+    imagePlaceholder: 'Mô tả ý tưởng hình ảnh bạn muốn tạo...',
     promptPrefix: '',
-    badgeText: 'Chuyển Video mẫu thành Kịch bản & Prompt từng cảnh',
+    badgeText: 'Chế độ Tạo Prompt AI (Trò chuyện AI & Bóc tách Video mẫu)',
   },
   {
     id: 'mother-in-law',
@@ -1264,6 +1264,98 @@ function App() {
     currentUserIsAdmin ||
     hasFullToolAccess ||
     (!isSubExpired && Boolean(userTier && userTier !== 'free'));
+
+  // States cho tính năng Tạo Prompt AI (Trò chuyện AI & Tách Prompt từ Video mẫu)
+  const [promptGenSubTab, setPromptGenSubTab] = useState('chat');
+  const [chatPromptMessages, setChatPromptMessages] = useState([
+    {
+      role: 'assistant',
+      content: 'Xin chào! Tôi là Trợ lý Sáng tạo Prompt chuyên sâu cho Google Veo 3 (8s) và Tạo Ảnh AI. Hãy chia sẻ ý tưởng video của bạn (bối cảnh, nhân vật, hành động, phong cách mong muốn), tôi sẽ phân tích và sinh ra cặp Prompt Ảnh & Prompt Video tối ưu nhất cho bạn!',
+    }
+  ]);
+  const [chatPromptInput, setChatPromptInput] = useState('');
+  const [chatPromptLoading, setChatPromptLoading] = useState(false);
+  const chatPromptEndRef = useRef(null);
+
+  const handleSendChatPrompt = async (presetText) => {
+    const textToSend = (presetText || chatPromptInput).trim();
+    if (!textToSend || chatPromptLoading) return;
+    if (!user?.uid) {
+      showAccessDeniedToast('Vui lòng đăng nhập để sử dụng tính năng này.');
+      return;
+    }
+    if (!hasAnyMonthlyAccess) {
+      showAccessDeniedToast('Tính năng Tạo Prompt dành cho tất cả Gói Tháng (từ 69k/tháng)!');
+      setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Tạo Prompt!');
+      setShowPricingModal(true);
+      return;
+    }
+
+    const newMsgs = [
+      ...chatPromptMessages,
+      { role: 'user', content: textToSend }
+    ];
+    setChatPromptMessages(newMsgs);
+    setChatPromptInput('');
+    setChatPromptLoading(true);
+
+    try {
+      const apiMessages = newMsgs.map(m => ({
+        role: m.role,
+        content: m.content || m.data?.reply || ''
+      }));
+
+      const res = await authFetch(user, `${API_BASE}/api/drama/chat-prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: apiMessages,
+          aspectRatio: aspectRatio || '9:16',
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 402) {
+        const msgText = json?.error || 'Tính năng Tạo Prompt chỉ dành cho các Gói Tháng (từ 69k/tháng).';
+        setPricingModalBanner(msgText);
+        setShowPricingModal(true);
+        return;
+      }
+
+      if (!res.ok || !json?.ok) {
+        const errMsg = json?.error || 'Không thể tạo Prompt lúc này, vui lòng thử lại.';
+        showAccessDeniedToast(errMsg);
+        return;
+      }
+
+      const resData = json.data || {};
+      setChatPromptMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: resData.reply || 'Đã tạo xong Prompt tối ưu cho Veo 3 8s!',
+          data: resData
+        }
+      ]);
+      setTimeout(() => {
+        chatPromptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (err) {
+      showAccessDeniedToast(err?.message || 'Lỗi kết nối khi gửi yêu cầu.');
+    } finally {
+      setChatPromptLoading(false);
+    }
+  };
+
+  const handleResetChatPrompt = () => {
+    setChatPromptMessages([
+      {
+        role: 'assistant',
+        content: 'Xin chào! Tôi là Trợ lý Sáng tạo Prompt chuyên sâu cho Google Veo 3 (8s) và Tạo Ảnh AI. Hãy chia sẻ ý tưởng video của bạn (bối cảnh, nhân vật, hành động, phong cách mong muốn), tôi sẽ phân tích và sinh ra cặp Prompt Ảnh & Prompt Video tối ưu nhất cho bạn!',
+      }
+    ]);
+    setChatPromptInput('');
+  };
 
   // States cho tính năng Tách Prompt từ Video (reverse-video / rea-video)
   const [reverseVideoFile, setReverseVideoFile] = useState(null);
@@ -8590,7 +8682,7 @@ function App() {
           </div>
 
           {activeComposerToolId === 'reverse-video' ? (
-            /* Luồng Bóc tách Kịch bản & Prompt từ Video mẫu (rea-video) */
+            /* Luồng Tạo Prompt AI: 2 chế độ (Trò chuyện AI & Bóc tách Video mẫu) */
             <div
               style={{
                 display: 'flex',
@@ -8599,6 +8691,409 @@ function App() {
                 padding: '4px 2px 2px',
               }}
             >
+              {/* Segmented Control chuyển đổi 2 chế độ */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                  paddingBottom: '2px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    padding: '3px',
+                    borderRadius: '12px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.09)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setPromptGenSubTab('chat')}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      borderRadius: '9px',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: promptGenSubTab === 'chat'
+                        ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.32) 0%, rgba(234, 88, 12, 0.3) 100%)'
+                        : 'transparent',
+                      color: promptGenSubTab === 'chat' ? '#fde68a' : '#94a3b8',
+                      boxShadow: promptGenSubTab === 'chat' ? '0 1px 6px rgba(245, 158, 11, 0.25)' : 'none',
+                    }}
+                  >
+                    <MessageSquare size={13} />
+                    <span>Trò chuyện AI (Tạo Prompt)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPromptGenSubTab('video')}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      borderRadius: '9px',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: promptGenSubTab === 'video'
+                        ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.32) 0%, rgba(234, 88, 12, 0.3) 100%)'
+                        : 'transparent',
+                      color: promptGenSubTab === 'video' ? '#fde68a' : '#94a3b8',
+                      boxShadow: promptGenSubTab === 'video' ? '0 1px 6px rgba(245, 158, 11, 0.25)' : 'none',
+                    }}
+                  >
+                    <Video size={13} />
+                    <span>Từ Video mẫu (Bóc tách cảnh)</span>
+                  </button>
+                </div>
+
+                {promptGenSubTab === 'chat' && chatPromptMessages.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleResetChatPrompt}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      color: '#94a3b8',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <RotateCcw size={11} />
+                    <span>Làm mới đoạn chat</span>
+                  </button>
+                )}
+              </div>
+
+              {promptGenSubTab === 'chat' ? (
+                /* CHẾ ĐỘ 1: TRÒ CHUYỆN AI SINH PROMPT VEO 3 8S */
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  {/* Khung tin nhắn cuộn */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                      maxHeight: '40vh',
+                      overflowY: 'auto',
+                      padding: '10px 12px',
+                      borderRadius: '14px',
+                      background: 'rgba(15, 23, 42, 0.72)',
+                      border: '1px solid rgba(251, 191, 36, 0.25)',
+                    }}
+                  >
+                    {chatPromptMessages.length <= 1 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '4px 2px' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600 }}>
+                          💡 Gợi ý chủ đề nhanh (bấm để thử ngay):
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {[
+                            '💄 Quảng cáo son môi đỏ nhung thoa trước gương, thần thái tự tin',
+                            '☕ Cô gái ngắm mưa qua cửa kính quán cà phê lúc hoàng hôn',
+                            '🍜 Food review bát phở bò bốc khói nghi ngút, cận cảnh sóng sánh',
+                            '🏎️ Siêu xe thể thao màu đen drift ven biển hoàng hôn cực ngầu',
+                            '🏙️ Flycam lượn qua thành phố tương lai cyberpunk ánh đèn neon',
+                          ].map((sug, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => handleSendChatPrompt(sug)}
+                              style={{
+                                padding: '4px 10px',
+                                borderRadius: '999px',
+                                border: '1px solid rgba(251, 191, 36, 0.3)',
+                                background: 'rgba(251, 191, 36, 0.08)',
+                                color: '#fde68a',
+                                fontSize: '0.71rem',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                lineHeight: 1.3,
+                              }}
+                            >
+                              {sug}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {chatPromptMessages.map((msg, idx) => {
+                      const isUser = msg.role === 'user';
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: isUser ? 'flex-end' : 'flex-start',
+                            gap: '4px',
+                          }}
+                        >
+                          <div
+                            style={{
+                              maxWidth: isUser ? '85%' : '98%',
+                              padding: isUser ? '8px 14px' : '10px 14px',
+                              borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                              background: isUser
+                                ? 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)'
+                                : 'rgba(30, 41, 59, 0.88)',
+                              border: isUser ? 'none' : '1px solid rgba(255, 255, 255, 0.09)',
+                              color: '#fff',
+                              fontSize: '0.78rem',
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            <div>{msg.content}</div>
+
+                            {/* Khối Prompt Ảnh (Start Frame) */}
+                            {msg.data?.imagePrompt && (
+                              <div
+                                style={{
+                                  marginTop: '10px',
+                                  padding: '9px 10px',
+                                  borderRadius: '10px',
+                                  background: 'rgba(15, 23, 42, 0.85)',
+                                  border: '1px solid rgba(192, 132, 252, 0.35)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '6px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#d8b4fe' }}>
+                                    🖼️ Prompt Ảnh Start Frame (Tạo ảnh đầu cảnh):
+                                  </span>
+                                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(msg.data?.imagePrompt || '');
+                                        showAccessDeniedToast('✅ Đã copy Prompt Ảnh!');
+                                      }}
+                                      style={{
+                                        padding: '2px 8px',
+                                        borderRadius: '999px',
+                                        border: '1px solid rgba(255, 255, 255, 0.16)',
+                                        background: 'rgba(255, 255, 255, 0.08)',
+                                        color: '#f3e8ff',
+                                        fontSize: '0.67rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <Copy size={11} /> Copy
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveComposerToolId('text-to-video');
+                                        setActiveTab('image');
+                                        setPrompt(msg.data?.imagePrompt || '');
+                                        showAccessDeniedToast('✅ Đã chuyển Prompt sang tab Tạo Ảnh!');
+                                      }}
+                                      style={{
+                                        padding: '2px 9px',
+                                        borderRadius: '999px',
+                                        border: '1px solid rgba(192, 132, 252, 0.5)',
+                                        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.3) 0%, rgba(236, 72, 153, 0.3) 100%)',
+                                        color: '#f3e8ff',
+                                        fontSize: '0.67rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      🖼️ Đẩy sang Tạo Ảnh
+                                    </button>
+                                  </div>
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    color: '#e2e8f0',
+                                    lineHeight: 1.4,
+                                    userSelect: 'all',
+                                    wordBreak: 'break-word',
+                                  }}
+                                >
+                                  {msg.data.imagePrompt}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Khối Prompt Video (Veo 3 8s) */}
+                            {msg.data?.videoPrompt && (
+                              <div
+                                style={{
+                                  marginTop: '8px',
+                                  padding: '9px 10px',
+                                  borderRadius: '10px',
+                                  background: 'rgba(15, 23, 42, 0.85)',
+                                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '6px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#7dd3fc' }}>
+                                    🎬 Prompt Video Veo 3 (Tối ưu 8 giây):
+                                  </span>
+                                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(msg.data?.videoPrompt || '');
+                                        showAccessDeniedToast('✅ Đã copy Prompt Video!');
+                                      }}
+                                      style={{
+                                        padding: '2px 8px',
+                                        borderRadius: '999px',
+                                        border: '1px solid rgba(255, 255, 255, 0.16)',
+                                        background: 'rgba(255, 255, 255, 0.08)',
+                                        color: '#e0f2fe',
+                                        fontSize: '0.67rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <Copy size={11} /> Copy
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveComposerToolId('text-to-video');
+                                        setActiveTab('video');
+                                        setPrompt(msg.data?.videoPrompt || '');
+                                        showAccessDeniedToast('✅ Đã chuyển Prompt sang tab Tạo Video!');
+                                      }}
+                                      style={{
+                                        padding: '2px 9px',
+                                        borderRadius: '999px',
+                                        border: '1px solid rgba(56, 189, 248, 0.5)',
+                                        background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(37, 99, 235, 0.3) 100%)',
+                                        color: '#e0f2fe',
+                                        fontSize: '0.67rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      🎬 Đẩy sang Tạo Video
+                                    </button>
+                                  </div>
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    color: '#e2e8f0',
+                                    lineHeight: 1.4,
+                                    userSelect: 'all',
+                                    wordBreak: 'break-word',
+                                  }}
+                                >
+                                  {msg.data.videoPrompt}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {chatPromptLoading && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontSize: '0.74rem', padding: '4px 6px' }}>
+                        <Loader size={14} className="animate-spin" />
+                        <span>AI đang phân tích ý tưởng &amp; thiết kế Prompt Veo 3 8s...</span>
+                      </div>
+                    )}
+                    <div ref={chatPromptEndRef} />
+                  </div>
+
+                  {/* Thanh nhập chat */}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      value={chatPromptInput}
+                      disabled={chatPromptLoading}
+                      onChange={(e) => setChatPromptInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendChatPrompt();
+                        }
+                      }}
+                      placeholder="Nhập ý tưởng video bạn muốn làm (hoặc yêu cầu chỉnh sửa prompt)..."
+                      style={{
+                        flex: 1,
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(251, 191, 36, 0.35)',
+                        borderRadius: '999px',
+                        padding: '7px 14px',
+                        color: '#f8fafc',
+                        fontSize: '0.78rem',
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={chatPromptLoading || !chatPromptInput.trim()}
+                      onClick={() => handleSendChatPrompt()}
+                      style={{
+                        padding: '7px 16px',
+                        borderRadius: '999px',
+                        border: '1px solid rgba(251, 191, 36, 0.5)',
+                        background: !chatPromptInput.trim() || chatPromptLoading
+                          ? 'rgba(251, 191, 36, 0.15)'
+                          : 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                        color: !chatPromptInput.trim() || chatPromptLoading ? '#94a3b8' : '#fff',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: !chatPromptInput.trim() || chatPromptLoading ? 'default' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        whiteSpace: 'nowrap',
+                        boxShadow: !chatPromptInput.trim() || chatPromptLoading ? 'none' : '0 2px 10px rgba(245, 158, 11, 0.3)',
+                      }}
+                    >
+                      {chatPromptLoading ? <Loader size={13} className="animate-spin" /> : <Send size={13} />}
+                      <span>Gửi</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* CHẾ ĐỘ 2: TỪ VIDEO MẪU */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <input
                 ref={reverseVideoInputRef}
                 type="file"
@@ -9115,6 +9610,8 @@ function App() {
                   )}
                 </button>
               </div>
+                </div>
+              )}
             </div>
           ) : activeComposerToolId === 'mother-in-law' ? (
             /* Luồng Mẹ chồng nàng dâu 1 nút duy nhất: Ấn Tạo Video -> Tự tạo kịch bản 6 cảnh -> Tự dựng video luôn */
