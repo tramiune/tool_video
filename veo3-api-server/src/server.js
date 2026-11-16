@@ -327,11 +327,6 @@ const extensionBridge = {
   },
 
   async generateImage(task, timeoutMs = 180000) {
-    const provider = await getActiveGenerationProvider();
-    if (provider === 'snapgen') {
-      logger.info(`[Bridge] Chạy image task ${task.id} qua SnapGen API (Nano Banana Pro)...`);
-      return generateImageViaSnapGen(task);
-    }
     logger.info(`[Bridge] Chạy image task ${task.id} qua AutoClick Image Runner (PyAutoGUI)...`);
     return generateImageViaAutoClick(task);
   },
@@ -4105,32 +4100,19 @@ async function runImageTask(taskId) {
       }
 
       const watermarkText = await resolveTaskWatermarkText(task);
-      const provider = await getActiveGenerationProvider();
-      logger.info(`[Image] Dispatching task ${taskId} using provider: [${provider.toUpperCase()}]...`);
+      logger.info(`[Image] Dispatching task ${taskId} using AutoClick Image Runner (PyAutoGUI)...`);
 
-      let result;
-      if (provider === 'snapgen') {
-        result = await generateImageViaSnapGen({
-          id: taskId,
-          prompt: task.prompt,
-          model: task.model || 'nano_banana_pro',
-          aspectRatio: task.aspectRatio || '9:16',
-          referenceImages: resolvedRefs,
-          watermarkText
-        });
-      } else {
-        result = await generateImageViaAutoClick({
-          id: taskId,
-          seq: task.seq,
-          prompt: task.prompt,
-          model: task.model || 'nano_banana_pro',
-          aspectRatio: task.aspectRatio || '9:16',
-          referenceImages: resolvedRefs,
-          sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
-          projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
-          watermarkText
-        });
-      }
+      const result = await generateImageViaAutoClick({
+        id: taskId,
+        seq: task.seq,
+        prompt: task.prompt,
+        model: task.model || 'nano_banana_pro',
+        aspectRatio: task.aspectRatio || '9:16',
+        referenceImages: resolvedRefs,
+        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
+        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
+        watermarkText
+      });
 
       const r2Url = result.r2Url || result.url || await uploadToR2(result.buffer, `meo3/images/${taskId}_${Date.now()}.jpg`, 'image/jpeg');
       logger.success(`[Image] Task ${taskId} completed via [${provider.toUpperCase()}] → ${r2Url}`);
