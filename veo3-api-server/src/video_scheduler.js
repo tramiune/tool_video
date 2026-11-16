@@ -1,3 +1,13 @@
+let _supabaseModule = null;
+function getSupabaseModule() {
+  if (!_supabaseModule) {
+    try {
+      _supabaseModule = require('./supabase_client');
+    } catch (_) {}
+  }
+  return _supabaseModule;
+}
+
 const VIDEO_LIMITS_BY_TIER = Object.freeze({
   free: 1,
   hocvien: 1,
@@ -40,7 +50,26 @@ class UserVideoLimitProvider {
   async loadLimit(userId, now, version) {
     try {
       const snapshot = await this.db.collection('users').doc(userId).get();
-      const data = snapshot.exists ? snapshot.data() : {};
+      let data = snapshot.exists ? snapshot.data() : null;
+
+      // Nếu không có trong Firestore (user mới từ Supabase), kiểm tra từ Supabase
+      if (!data) {
+        const supa = getSupabaseModule();
+        if (supa) {
+          try {
+            const sub = await supa.getSupabaseUserSubscription(userId);
+            if (sub && (sub.isAdmin || (sub.tier && sub.tier !== 'free'))) {
+              data = {
+                tier: sub.tier,
+                isAdmin: sub.isAdmin,
+                expiryDate: Date.now() + 24 * 60 * 60 * 1000
+              };
+            }
+          } catch (_) {}
+        }
+      }
+      if (!data) data = {};
+
       // Admin users are not subject to per-user video limits
       if (data.isAdmin === true) {
         const expiresAt = Date.now() + this.ttlMs;

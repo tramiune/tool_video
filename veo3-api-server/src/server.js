@@ -16,6 +16,12 @@ const captchaService = require('./captcha_service');
 const browserManager = require('./browser_manager');
 const apiClient = require('./api_client');
 const { db, auth } = require('./firebase_worker');
+const {
+  supabase,
+  verifySupabaseToken,
+  getSupabaseUserSubscription,
+  ensureSupabaseProfile
+} = require('./supabase_client');
 const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
 const telegram = require('./telegram');
 const audioClient = require('./audio_client');
@@ -1574,11 +1580,27 @@ app.get('/api/tasks/:id', async (req, res) => {
 async function requireUser(req, res, next) {
   try {
     const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
-    if (!match) return res.status(401).json({ error: 'Missing Firebase ID token' });
-    const decoded = await auth.verifyIdToken(match[1]);
-    req.authUser = { uid: decoded.uid, email: decoded.email || null };
+    if (!match) return res.status(401).json({ error: 'Missing authorization token' });
+    const token = match[1];
 
-    // Session validation (anti-account-sharing)
+    // 1. Thử xác thực qua Supabase Auth (dùng chung tài khoản với aquaai.vn)
+    try {
+      const supaUser = await verifySupabaseToken(token);
+      if (supaUser) {
+        req.authUser = {
+          uid: supaUser.uid,
+          email: supaUser.email || null,
+          isSupabase: true
+        };
+        return next();
+      }
+    } catch (_) {}
+
+    // 2. Fallback xác thực qua Firebase Auth cũ
+    const decoded = await auth.verifyIdToken(token);
+    req.authUser = { uid: decoded.uid, email: decoded.email || null, isSupabase: false };
+
+    // Session validation (anti-account-sharing cho Firebase)
     const sessionToken = req.headers['x-session-token'];
     if (sessionToken) {
       const valid = await validateSession(decoded.uid, sessionToken);
@@ -1589,9 +1611,36 @@ async function requireUser(req, res, next) {
 
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid Firebase ID token' });
+    return res.status(401).json({ error: 'Invalid authorization token' });
   }
 }
+
+// ─── AUTH / ME (hỗ trợ kiểm tra user và subscription liên thông) ─────────────
+app.get('/api/auth/me', requireUser, async (req, res) => {
+  try {
+    if (req.authUser.isSupabase) {
+      const sub = await getSupabaseUserSubscription(req.authUser.uid, req.authUser.email);
+      return res.json({
+        success: true,
+        user: req.authUser,
+        subscription: sub,
+        isSupabase: true
+      });
+    }
+
+    // Firebase fallback
+    const userSnapshot = await db.collection('users').doc(req.authUser.uid).get();
+    const userData = userSnapshot.exists ? userSnapshot.data() : {};
+    return res.json({
+      success: true,
+      user: req.authUser,
+      data: userData,
+      isSupabase: false
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─── SESSION INIT (anti-account-sharing) ─────────────────────────────────────
 app.post('/api/session/init', requireUser, async (req, res) => {
@@ -1657,19 +1706,35 @@ app.post('/api/tasks/:id/retry', requireUser, async (req, res) => {
 async function requireAdmin(req, res, next) {
   try {
     const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
-    if (!match) return res.status(401).json({ error: 'Missing Firebase ID token' });
-    const decoded = await auth.verifyIdToken(match[1]);
+    if (!match) return res.status(401).json({ error: 'Missing authorization token' });
+    const token = match[1];
+    const ADMIN_EMAILS = ['traderfinn0312@gmail.com'];
+
+    // 1. Thử xác thực qua Supabase
+    try {
+      const supaUser = await verifySupabaseToken(token);
+      if (supaUser) {
+        const email = String(supaUser.email || '').toLowerCase();
+        if (!ADMIN_EMAILS.includes(email)) {
+          return res.status(403).json({ error: 'Admin access required' });
+        }
+        req.authUser = { uid: supaUser.uid, email: supaUser.email, isSupabase: true, isAdmin: true, isSuperAdmin: true };
+        return next();
+      }
+    } catch (_) {}
+
+    // 2. Fallback xác thực qua Firebase
+    const decoded = await auth.verifyIdToken(token);
     const userSnapshot = await db.collection('users').doc(decoded.uid).get();
     const userData = userSnapshot.exists ? userSnapshot.data() : {};
     const email = String(decoded.email || userData.email || '').toLowerCase();
-    const ADMIN_EMAILS = ['traderfinn0312@gmail.com'];
     if (userData.isAdmin !== true && !ADMIN_EMAILS.includes(email)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    req.authUser = { uid: decoded.uid, email: decoded.email || userData.email || null };
+    req.authUser = { uid: decoded.uid, email: decoded.email || userData.email || null, isSupabase: false, isAdmin: true, isSuperAdmin: true };
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid Firebase ID token' });
+    return res.status(401).json({ error: 'Invalid authorization token' });
   }
 }
 
@@ -1688,8 +1753,31 @@ async function requireDramaAccess(req, res, next) {
       return next();
     }
     const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
-    if (!match) return res.status(401).json({ error: 'Missing Firebase ID token' });
-    const decoded = await auth.verifyIdToken(match[1]);
+    if (!match) return res.status(401).json({ error: 'Missing authorization token' });
+    const token = match[1];
+
+    // 1. Thử xác thực qua Supabase và kiểm tra subscription
+    try {
+      const supaUser = await verifySupabaseToken(token);
+      if (supaUser) {
+        const sub = await getSupabaseUserSubscription(supaUser.uid, supaUser.email);
+        req.authUser = {
+          uid: supaUser.uid,
+          email: supaUser.email || null,
+          isAdmin: sub.isAdmin,
+          isSuperAdmin: sub.isSuperAdmin,
+          hasDramaVideoAccess: sub.hasDramaVideoAccess,
+          hasMonthlySubAccess: sub.hasMonthlySubAccess,
+          tier: sub.tier,
+          noWatermark: sub.noWatermark,
+          isSupabase: true
+        };
+        return next();
+      }
+    } catch (_) {}
+
+    // 2. Fallback xác thực qua Firebase cũ
+    const decoded = await auth.verifyIdToken(token);
     const userSnapshot = await db.collection('users').doc(decoded.uid).get();
     const userData = userSnapshot.exists ? userSnapshot.data() : {};
     const email = String(decoded.email || userData.email || '').toLowerCase();
@@ -1709,11 +1797,12 @@ async function requireDramaAccess(req, res, next) {
       isAdmin,
       isSuperAdmin: isAdmin,
       hasDramaVideoAccess,
-      hasMonthlySubAccess
+      hasMonthlySubAccess,
+      isSupabase: false
     };
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid Firebase ID token' });
+    return res.status(401).json({ error: 'Invalid authorization token' });
   }
 }
 
@@ -3683,6 +3772,118 @@ function startFirestoreListener() {
     });
 }
 
+function createSupabaseDocRef(taskId) {
+  return {
+    id: taskId,
+    update: async (updates) => {
+      try {
+        const dbUpdates = {};
+        if (updates.status !== undefined) dbUpdates.status = updates.status;
+        if (updates.mediaUrl !== undefined) dbUpdates.media_url = updates.mediaUrl;
+        if (updates.media !== undefined) dbUpdates.media = updates.media;
+        if (updates.error !== undefined) dbUpdates.error = updates.error;
+        if (updates.errorCode !== undefined) dbUpdates.error_code = updates.errorCode;
+        if (updates.progress !== undefined) dbUpdates.progress = updates.progress;
+        if (updates.referenceImages !== undefined) dbUpdates.reference_images = updates.referenceImages;
+        dbUpdates.updated_at = Date.now();
+
+        const { error } = await supabase.from('tasks').update(dbUpdates).eq('id', taskId);
+        if (error) logger.error(`[Supabase Task] Failed to update task ${taskId}:`, error.message);
+      } catch (err) {
+        logger.error(`[Supabase Task] Exception updating task ${taskId}:`, err.message);
+      }
+    }
+  };
+}
+
+function processSupabaseTask(taskData) {
+  const taskId = taskData.id;
+  if (!tasks[taskId] || tasks[taskId].status === 'failed') {
+    const rawPromptLen = String(taskData.prompt || '').trim().length;
+    const docRef = createSupabaseDocRef(taskId);
+
+    if (rawPromptLen > 3500) {
+      const errMsg = `Câu lệnh (Prompt) của bạn quá dài (${rawPromptLen}/3500 ký tự). Vui lòng rút gọn xuống dưới 3500 ký tự để tạo video không bị lỗi!`;
+      logger.warn(`[Supabase Task] Rejected overly long prompt (${rawPromptLen} chars) for task ${taskId}`);
+      docRef.update({ status: 'failed', error: errMsg }).catch(() => {});
+      return;
+    }
+
+    tasks[taskId] = {
+      id: taskId,
+      docRef,
+      media: taskData.media || [],
+      error: null,
+      userId: taskData.user_id,
+      userEmail: taskData.user_email,
+      prompt: taskData.prompt,
+      type: taskData.type,
+      model: taskData.model,
+      aspectRatio: taskData.aspect_ratio || '16:9',
+      durationSeconds: taskData.duration_seconds || 8,
+      startImage: taskData.start_image,
+      endImage: taskData.end_image,
+      referenceImages: taskData.reference_images || [],
+      watermarkText: taskData.watermark_text,
+      createdAt: Number(taskData.created_at) || Date.now(),
+      status: 'queued',
+      isSupabase: true
+    };
+
+    if (taskData.type === 'video') {
+      videoScheduler.enqueue(taskId);
+      logger.info(`Task queued from Supabase: ${taskId} (type: video, prompt: "${String(taskData.prompt || '').substring(0, 20)}...")`);
+    } else {
+      imageQueue.push(taskId);
+      logger.info(`Task queued from Supabase: ${taskId} (type: image, prompt: "${String(taskData.prompt || '').substring(0, 20)}...")`);
+      drainImageQueue();
+    }
+  }
+}
+
+async function checkPendingSupabaseTasks() {
+  try {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(50);
+
+    if (data && data.length > 0) {
+      for (const t of data) {
+        processSupabaseTask(t);
+      }
+    }
+  } catch (err) {
+    logger.warn('[Supabase Listener] Poll error:', err.message);
+  }
+}
+
+function startSupabaseListener() {
+  logger.info("Starting Supabase Listener for tasks...");
+
+  // 1. Quét ngay khi khởi động
+  checkPendingSupabaseTasks();
+
+  // 2. Lắng nghe Realtime qua Supabase WebSocket
+  supabase
+    .channel('tasks-backend-worker')
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'tasks'
+    }, (payload) => {
+      if (payload.new && payload.new.status === 'pending') {
+        processSupabaseTask(payload.new);
+      }
+    })
+    .subscribe();
+
+  // 3. Polling dự phòng mỗi 5s đề phòng websocket bị rớt mạng
+  setInterval(checkPendingSupabaseTasks, 5000);
+}
+
 // ─── IMAGE WORKER (concurrent) ──────────────────────────────────────────────
 
 function drainImageQueue() {
@@ -4438,6 +4639,7 @@ startCookieSyncListener().then(() => {
   rehydrateTasks().then(() => {
     // Start Firestore Listener
     startFirestoreListener();
+    startSupabaseListener();
     resumeAutoToolJobs().catch(err => logger.error('[AutoTool] Resume failed', err));
     drama.resumeDramaJobs().catch(err => logger.error('[Drama] Resume failed', err));
     sumo.resumeSumoJobs().catch(err => logger.error('[Sumo] Resume failed', err));

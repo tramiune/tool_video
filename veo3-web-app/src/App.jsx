@@ -4,6 +4,7 @@ import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, googleProvider, db, storage } from './lib/firebase';
+import { supabase } from './lib/supabase';
 import './index.css';
 import BeforeAfterPanel from './BeforeAfterPanel';
 
@@ -738,81 +739,54 @@ function App() {
       return;
     }
     previousPendingPaymentRef.current = undefined;
-    const userDocRef = doc(db, 'users', user.uid);
-    
-    // Auto-create user doc if missing
-    setDoc(userDocRef, { email: user.email || 'guest@meo3.cloud', createdAt: Date.now() }, { merge: true }).catch(err => {
-      console.error("Auto-create user document failed:", err);
-    });
 
-    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
-      const emailIsAdmin = user.email && user.email.toLowerCase().includes('traderfinn0312');
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const nextPendingPayment = data.pendingPayment || null;
-        const previousPendingPayment = previousPendingPaymentRef.current;
+    let isCancelled = false;
 
-        if (
-          previousPendingPayment &&
-          !nextPendingPayment &&
-          data.tier === previousPendingPayment.tier &&
-          Number(data.updatedAt || 0) >= Number(previousPendingPayment.createdAt || 0)
-        ) {
-          const transactionId = previousPendingPayment.code;
-          const storageKey = `meta_purchase_${transactionId}`;
-          if (transactionId && !safeGetLocalStorage(storageKey)) {
-            window.fbq?.('track', 'Purchase', {
-              value: Number(previousPendingPayment.amount || 0),
-              currency: 'VND',
-              content_name: previousPendingPayment.tier,
-              order_id: transactionId
-            });
-            window.ttq?.track('CompletePayment', {
-              value: Number(previousPendingPayment.amount || 0),
-              currency: 'VND',
-              content_name: previousPendingPayment.tier,
-              content_type: 'product',
-              contents: [
-                {
-                  content_id: previousPendingPayment.tier,
-                  content_name: previousPendingPayment.tier,
-                  quantity: 1,
-                  price: Number(previousPendingPayment.amount || 0)
-                }
-              ]
-            });
-            safeSetLocalStorage(storageKey, '1');
-          }
+    const fetchSubscription = async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Failed to fetch auth/me');
+        const json = await res.json();
+        if (isCancelled) return;
+
+        const sub = json.subscription || {};
+        const emailIsAdmin = user.email && user.email.toLowerCase().includes('traderfinn0312');
+        const isAdmin = sub.isAdmin || emailIsAdmin || false;
+
+        setUserTier(sub.tier || 'free');
+        setCurrentUserIsAdmin(isAdmin);
+        setCurrentUserHasDramaAccess(sub.hasDramaVideoAccess || isAdmin || false);
+
+        if (sub.activePackage?.created_at) {
+          const exp = new Date(sub.activePackage.created_at).getTime() + 30 * 24 * 60 * 60 * 1000;
+          setUserExpiryDate(exp);
+        } else {
+          setUserExpiryDate(null);
         }
-
-        previousPendingPaymentRef.current = nextPendingPayment;
-        setUserTier(data.tier || 'free');
-        setUserExpiryDate(data.expiryDate || null);
-        setUserTrialVideoUsed(Boolean(data.trialVideoUsed));
-        setUserTrialImageUsed(Boolean(data.trialImageUsed));
-        setPendingPayment(nextPendingPayment);
-        const subExpired = data.tier && data.tier !== 'free' && data.expiryDate && data.expiryDate < Date.now();
-        setCurrentUserIsAdmin(data.isAdmin || emailIsAdmin || false);
-        setCurrentUserHasDramaAccess(
-          (!subExpired && (data.tier === 'master_499k' || data.tier === 'drama_500k' || data.tier === 'vip_399k')) ||
-          data.hasDramaAccess ||
-          data.isAdmin ||
-          emailIsAdmin ||
-          false
-        );
-      } else {
-        previousPendingPaymentRef.current = null;
-        setUserTier('free');
-        setUserExpiryDate(null);
-        setUserTrialVideoUsed(false);
-        setUserTrialImageUsed(false);
-        setPendingPayment(null);
-        setCurrentUserIsAdmin(emailIsAdmin || false);
-        setCurrentUserHasDramaAccess(emailIsAdmin || false);
+        setUserProfileLoaded(true);
+      } catch (err) {
+        console.warn('Fetch subscription error:', err);
+        if (!isCancelled) {
+          const emailIsAdmin = user.email && user.email.toLowerCase().includes('traderfinn0312');
+          setCurrentUserIsAdmin(emailIsAdmin || false);
+          setCurrentUserHasDramaAccess(emailIsAdmin || false);
+          setUserProfileLoaded(true);
+        }
       }
-      setUserProfileLoaded(true);
-    });
-    return () => unsubscribe();
+    };
+
+    fetchSubscription();
+
+    // Polling định kỳ kiểm tra gói cước từ Supabase
+    const interval = setInterval(fetchSubscription, 10000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
   }, [user]);
 
   // Listen to hash changes and guard admin-only views.
@@ -5561,26 +5535,29 @@ function App() {
         if (garmentDataUrl) refImages.push(garmentDataUrl);
       }
 
-      // 3. Ghi trực tiếp task vào Firestore (hoàn toàn qua Firebase, không cần server API trung gian)
-      const docRef = await addDoc(collection(db, 'tasks'), {
-        userId: user.uid,
-        userEmail: user.email || 'guest@meo3.cloud',
+      // 3. Ghi trực tiếp task vào Supabase tasks
+      const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const { error: insErr } = await supabase.from('tasks').insert({
+        id: taskId,
+        user_id: user.uid,
+        user_email: user.email || 'guest@meo3.cloud',
         prompt: promptText,
         type: 'image',
         status: 'pending',
-        mediaUrl: null,
+        media_url: null,
         error: null,
         model: tryonModel || 'nano_banana_pro',
-        aspectRatio: finalAspectRatio,
-        referenceImages: refImages,
-        toolType: tryonToolType,
-        createdAt: Date.now()
+        aspect_ratio: finalAspectRatio,
+        reference_images: refImages,
+        tool_type: tryonToolType,
+        created_at: Date.now(),
+        app: 'meo3'
       });
+      if (insErr) throw insErr;
 
-      console.log("VTON Task created directly in Firestore:", docRef.id);
+      console.log("VTON Task created directly in Supabase:", taskId);
       if (activeUserTier === 'free') {
         setUserTrialImageUsed(true);
-        setDoc(doc(db, 'users', user.uid), { trialImageUsed: true }, { merge: true }).catch(() => {});
       }
       trackTikTokEvent('generate_tryon', { toolType: tryonToolType });
       
@@ -6857,33 +6834,50 @@ function App() {
     };
   }, []);
 
-  // Auth Listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
+  // Helper map Supabase user to standard App user interface
+  const mapSupabaseUser = (session) => {
+    if (!session || !session.user) return null;
+    const supaUser = session.user;
+    return {
+      uid: supaUser.id,
+      id: supaUser.id,
+      email: supaUser.email,
+      displayName: supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0],
+      photoURL: supaUser.user_metadata?.avatar_url || supaUser.user_metadata?.picture || '',
+      getIdToken: async () => {
+        const cur = (await supabase.auth.getSession()).data?.session;
+        return cur?.access_token || session.access_token;
+      },
+      rawUser: supaUser
+    };
+  };
 
-      if (currentUser && safeGetSessionStorage('is_from_tiktok') === 'true') {
-        const trackKey = `tracked_login_${currentUser.uid}`;
-        if (!safeGetLocalStorage(trackKey)) {
-          safeSetLocalStorage(trackKey, 'true');
-          const source = safeGetSessionStorage('webview_source') || 'other';
-          fetch(`${API_BASE}/api/track/login`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              uid: currentUser.uid,
-              email: currentUser.email || 'no-email',
-              displayName: currentUser.displayName || 'no-name',
-              source
-            })
-          }).catch(err => console.error('Failed to send tracking login:', err));
-        }
+  // Auth Listener (Supabase Auth - Shared with aquaai.vn)
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      const mapped = mapSupabaseUser(session);
+      setUser(mapped);
+      setLoading(false);
+      if (mapped) initSessionOnServer(mapped);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      const mapped = mapSupabaseUser(session);
+      setUser(mapped);
+      setLoading(false);
+      if (mapped && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+        initSessionOnServer(mapped);
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe?.();
+    };
   }, []);
 
   // LocalStorage Persist Sync
@@ -6895,61 +6889,146 @@ function App() {
     safeSetLocalStorage('aspectRatio', aspectRatio);
   }, [aspectRatio]);
 
-  // Tasks Listener
+  // Tasks Listener (Supabase Postgres & Realtime)
   useEffect(() => {
     if (!user) {
       setTasks([]);
       return;
     }
 
-    const q = query(
-      collection(db, 'tasks'),
-      where('userId', '==', user.uid)
-    );
+    let isMounted = true;
+    let channel = null;
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const tasksData = [];
-      snapshot.forEach((doc) => {
-        tasksData.push({ id: doc.id, ...doc.data() });
-      });
-      // Sort in descending order by createdAt manually to avoid composite index error
-      tasksData.sort((a, b) => b.createdAt - a.createdAt);
-      setTasks(tasksData);
-    }, (error) => {
-      console.error("Firestore error:", error);
-    });
+    const fetchTasks = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('user_id', user.uid)
+          .order('created_at', { ascending: false })
+          .limit(100);
 
-    return () => unsubscribe();
+        if (error) throw error;
+        if (isMounted && data) {
+          const mapped = data.map(t => ({
+            id: t.id,
+            userId: t.user_id,
+            userEmail: t.user_email,
+            prompt: t.prompt,
+            type: t.type,
+            status: t.status,
+            mediaUrl: t.media_url,
+            media: t.media || [],
+            error: t.error,
+            errorCode: t.error_code,
+            model: t.model,
+            aspectRatio: t.aspect_ratio,
+            durationSeconds: t.duration_seconds,
+            startImage: t.start_image,
+            endImage: t.end_image,
+            referenceImages: t.reference_images || [],
+            createdAt: Number(t.created_at) || Date.now(),
+            progress: t.progress
+          }));
+          setTasks(mapped);
+        }
+      } catch (err) {
+        console.error("Fetch Supabase tasks error:", err);
+      }
+    };
+
+    fetchTasks();
+
+    // Lắng nghe Realtime
+    try {
+      channel = supabase
+        .channel(`user-tasks-${user.uid}`)
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'tasks',
+          filter: `user_id=eq.${user.uid}`
+        }, (payload) => {
+          if (!isMounted) return;
+          const t = payload.new;
+          if (payload.eventType === 'INSERT' && t) {
+            const mappedTask = {
+              id: t.id,
+              userId: t.user_id,
+              prompt: t.prompt,
+              type: t.type,
+              status: t.status,
+              mediaUrl: t.media_url,
+              media: t.media || [],
+              error: t.error,
+              model: t.model,
+              aspectRatio: t.aspect_ratio,
+              durationSeconds: t.duration_seconds,
+              startImage: t.start_image,
+              endImage: t.end_image,
+              referenceImages: t.reference_images || [],
+              createdAt: Number(t.created_at) || Date.now()
+            };
+            setTasks(prev => [mappedTask, ...prev.filter(item => item.id !== mappedTask.id)]);
+          } else if (payload.eventType === 'UPDATE' && t) {
+            setTasks(prev => prev.map(item => {
+              if (item.id === t.id) {
+                return {
+                  ...item,
+                  status: t.status,
+                  mediaUrl: t.media_url,
+                  media: t.media || [],
+                  error: t.error,
+                  errorCode: t.error_code,
+                  progress: t.progress
+                };
+              }
+              return item;
+            }));
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            setTasks(prev => prev.filter(item => item.id !== payload.old.id));
+          }
+        })
+        .subscribe();
+    } catch (e) {
+      console.warn("Realtime tasks subscribe failed:", e);
+    }
+
+    return () => {
+      isMounted = false;
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const handleLogin = async () => {
     trackTikTokEvent('click_login');
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      // Init session on server (anti-account-sharing)
-      if (result?.user) {
-        initSessionOnServer(result.user);
-      }
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
     } catch (error) {
       console.error("Login failed:", error);
       alert("Đăng nhập chưa thành công. Cậu vui lòng kiểm tra lại kết nối và thử lại nhé! 🔐");
     }
   };
 
-  const handleLogout = () => {
-    signOut(auth);
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('SignOut error:', e);
+    }
+    setUser(null);
   };
 
   const handleDeleteTask = async (taskId) => {
     try {
-      const taskToDelete = tasks.find(t => t.id === taskId);
-      if (user && taskToDelete && taskToDelete.status !== 'failed') {
-        const trialField = taskToDelete.type === 'video' ? { trialVideoUsed: true } : taskToDelete.type === 'image' ? { trialImageUsed: true } : null;
-        if (trialField) {
-          await setDoc(doc(db, 'users', user.uid), trialField, { merge: true }).catch(() => {});
-        }
-      }
-      await deleteDoc(doc(db, 'tasks', taskId));
+      await supabase.from('tasks').delete().eq('id', taskId);
+      setTasks(prev => prev.filter(t => t.id !== taskId));
     } catch (e) {
       console.error("Error deleting task:", e);
     }
@@ -7281,31 +7360,33 @@ function App() {
         }
       }
 
-      console.log("Writing task to Firestore...");
-      const docRef = await addDoc(collection(db, 'tasks'), {
-        userId: user.uid,
-        userEmail: user.email || 'guest@meo3.cloud',
+      console.log("Writing task to Supabase tasks...");
+      const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const { error: insErr } = await supabase.from('tasks').insert({
+        id: taskId,
+        user_id: user.uid,
+        user_email: user.email || 'guest@meo3.cloud',
         prompt: currentPrompt.trim(),
         type: activeTab,
         status: 'pending',
-        mediaUrl: null,
+        media_url: null,
         error: null,
         model: activeTab === 'video' ? 'veo_3_1_lite' : 'imagen_4',
-        aspectRatio: aspectRatio,
-        durationSeconds: activeTab === 'video' ? videoDuration : null,
-        startImage: startFrameUrl,
-        endImage: endFrameUrl,
-        referenceImages: referenceImagesUrls,
-        createdAt: Date.now()
+        aspect_ratio: aspectRatio,
+        duration_seconds: activeTab === 'video' ? videoDuration : null,
+        start_image: startFrameUrl,
+        end_image: endFrameUrl,
+        reference_images: referenceImagesUrls,
+        created_at: Date.now(),
+        app: 'meo3'
       });
-      console.log("Task successfully written to Firestore! Doc ID:", docRef.id);
+      if (insErr) throw insErr;
+      console.log("Task successfully written to Supabase! Doc ID:", taskId);
       if (activeUserTier === 'free') {
         if (activeTab === 'video') {
           setUserTrialVideoUsed(true);
-          setDoc(doc(db, 'users', user.uid), { trialVideoUsed: true }, { merge: true }).catch(() => {});
         } else if (activeTab === 'image') {
           setUserTrialImageUsed(true);
-          setDoc(doc(db, 'users', user.uid), { trialImageUsed: true }, { merge: true }).catch(() => {});
         }
       }
       trackTikTokEvent(activeTab === 'video' ? 'generate_video' : 'generate_image', { prompt: currentPrompt.trim() });
