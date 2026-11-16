@@ -10,18 +10,34 @@ const MAX_LEN = 3800;
 
 async function getTodayTotal() {
   try {
-    const { db } = require('./firebase_worker');
+    const { supabase } = require('./supabase_client');
     const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const snap = await db.collection('payments')
-      .where('createdAt', '>=', startOfDay)
-      .get();
+    // Tính đầu ngày theo múi giờ Việt Nam (UTC+7)
+    const vnOffset = 7 * 60 * 60 * 1000;
+    const vnNow = new Date(now.getTime() + vnOffset);
+    const startOfDayVn = new Date(Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate(), 0, 0, 0) - vnOffset);
+
+    const { data, error } = await supabase
+      .from('topups')
+      .select('amount, transfer_content')
+      .eq('status', 'success')
+      .eq('app', 'meo3')
+      .gt('amount', 0)
+      .gte('created_at', startOfDayVn.toISOString());
+
+    if (error) {
+      console.error('[Telegram] Failed to compute today total from Supabase:', error.message);
+      return { total: 0, count: 0 };
+    }
+
     let total = 0;
     let count = 0;
-    snap.forEach(d => {
-      total += Number(d.data().amount || 0);
+    (data || []).forEach(d => {
+      if (d.transfer_content && d.transfer_content.startsWith('MIGRATION_')) return;
+      total += Number(d.amount || 0);
       count++;
     });
+
     return { total, count };
   } catch (e) {
     console.error('[Telegram] Failed to compute today total:', e.message);
