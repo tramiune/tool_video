@@ -636,5 +636,6 @@ async function _executeSingleImageViaAutoClick(task, taskId) {
 
 module.exports = {
   generateVideoViaAutoClick,
-  generateImageViaAutoClick
+  generateImageViaAutoClick,
+  applyWatermarkToFile
 };

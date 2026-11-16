@@ -32,6 +32,7 @@ const drama = require('./drama');
 const sumo  = require('./sumo');
 const { UserVideoLimitProvider, PerUserVideoScheduler } = require('./video_scheduler');
 const { generateVideoViaAutoClick, generateImageViaAutoClick } = require('./autoclick_video_service');
+const { generateVideoViaSnapGen, generateImageViaSnapGen, getActiveGenerationProvider, setGenerationProvider } = require('./snapgen_service');
 const chromeProfileManager = require('./chrome_profile_manager');
 
 process.on("uncaughtException", (err) => { 
@@ -316,11 +317,21 @@ const extensionBridge = {
   get clientCount() { return _extClients.size; },
 
   async generateVideo(task, timeoutMs = 330000) {
+    const provider = await getActiveGenerationProvider();
+    if (provider === 'snapgen') {
+      logger.info(`[Bridge] Chạy video task ${task.id} qua SnapGen API (Veo 3.1 Lite)...`);
+      return generateVideoViaSnapGen(task);
+    }
     logger.info(`[Bridge] Chạy video task ${task.id} qua AutoClick Video Runner (PyAutoGUI)...`);
     return generateVideoViaAutoClick(task);
   },
 
   async generateImage(task, timeoutMs = 180000) {
+    const provider = await getActiveGenerationProvider();
+    if (provider === 'snapgen') {
+      logger.info(`[Bridge] Chạy image task ${task.id} qua SnapGen API (Nano Banana Pro)...`);
+      return generateImageViaSnapGen(task);
+    }
     logger.info(`[Bridge] Chạy image task ${task.id} qua AutoClick Image Runner (PyAutoGUI)...`);
     return generateImageViaAutoClick(task);
   },
@@ -1454,6 +1465,29 @@ Identity preservation is the highest priority.`;
   } catch (err) {
     logger.error('Image Tool API failed', err);
     telegram.notifyError('Image Tool API failed', err).catch(() => {});
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API lấy & cấu hình chế độ tạo Media (SnapGen API vs AutoClick PyAutoGUI)
+app.get('/api/system/mode', async (req, res) => {
+  try {
+    const mode = await getActiveGenerationProvider();
+    res.json({ success: true, mode });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/system/mode', async (req, res) => {
+  try {
+    const mode = req.body?.mode;
+    if (!mode || !['snapgen', 'autoclick'].includes(mode)) {
+      return res.status(400).json({ error: 'Mode phải là "snapgen" hoặc "autoclick"' });
+    }
+    const updated = await setGenerationProvider(mode);
+    res.json({ success: true, mode: updated });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -4067,20 +4101,35 @@ async function runImageTask(taskId) {
       }
 
       const watermarkText = await resolveTaskWatermarkText(task);
-      const result = await generateImageViaAutoClick({
-        id: taskId,
-        seq: task.seq,
-        prompt: task.prompt,
-        model: task.model || 'nano_banana_pro',
-        aspectRatio: task.aspectRatio || '9:16',
-        referenceImages: resolvedRefs,
-        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
-        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
-        watermarkText
-      });
+      const provider = await getActiveGenerationProvider();
+      logger.info(`[Image] Dispatching task ${taskId} using provider: [${provider.toUpperCase()}]...`);
+
+      let result;
+      if (provider === 'snapgen') {
+        result = await generateImageViaSnapGen({
+          id: taskId,
+          prompt: task.prompt,
+          model: task.model || 'nano_banana_pro',
+          aspectRatio: task.aspectRatio || '9:16',
+          referenceImages: resolvedRefs,
+          watermarkText
+        });
+      } else {
+        result = await generateImageViaAutoClick({
+          id: taskId,
+          seq: task.seq,
+          prompt: task.prompt,
+          model: task.model || 'nano_banana_pro',
+          aspectRatio: task.aspectRatio || '9:16',
+          referenceImages: resolvedRefs,
+          sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
+          projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
+          watermarkText
+        });
+      }
 
       const r2Url = result.r2Url || result.url || await uploadToR2(result.buffer, `meo3/images/${taskId}_${Date.now()}.jpg`, 'image/jpeg');
-      logger.success(`[Image] Task ${taskId} completed via AutoClick Image Runner → ${r2Url}`);
+      logger.success(`[Image] Task ${taskId} completed via [${provider.toUpperCase()}] → ${r2Url}`);
 
       const finalMedia = [{ mediaId: result.mediaId || taskId, status: 'success', url: r2Url }];
       await task.docRef.update({
@@ -4341,23 +4390,36 @@ async function runVideoTask(taskId) {
     task.status = 'generating';
 
     // Cơ chế AutoClick Video mới (PyAutoGUI + Poll Downloads 5 phút + Upload R2 + Xóa file)
-    logger.info(`[Video] Dispatching task ${taskId} to AutoClick Video Runner (PyAutoGUI)...`);
+    const provider = await getActiveGenerationProvider();
+    logger.info(`[Video] Dispatching task ${taskId} using provider: [${provider.toUpperCase()}]...`);
     try {
       const watermarkText = await resolveTaskWatermarkText(task);
-      const result = await generateVideoViaAutoClick({
-        id: taskId,
-        prompt: task.prompt,
-        model: 'veo_3_1_t2v_lite_low_priority',
-        aspectRatio: task.aspectRatio || '9:16',
-        startImage: task.startImage,
-        endImage: task.endImage,
-        sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
-        projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
-        watermarkText
-      });
+      let result;
+      if (provider === 'snapgen') {
+        result = await generateVideoViaSnapGen({
+          id: taskId,
+          prompt: task.prompt,
+          aspectRatio: task.aspectRatio || '9:16',
+          startImage: task.startImage,
+          endImage: task.endImage,
+          watermarkText
+        });
+      } else {
+        result = await generateVideoViaAutoClick({
+          id: taskId,
+          prompt: task.prompt,
+          model: 'veo_3_1_t2v_lite_low_priority',
+          aspectRatio: task.aspectRatio || '9:16',
+          startImage: task.startImage,
+          endImage: task.endImage,
+          sceneIndex: task.sceneIndex !== undefined ? task.sceneIndex : null,
+          projectId: task.projectId || process.env.GFLOW_PROJECT_1 || null,
+          watermarkText
+        });
+      }
 
       const r2Url = result.r2Url;
-      logger.success(`[Video] Task ${taskId} completed via AutoClick Video Runner → ${r2Url}`);
+      logger.success(`[Video] Task ${taskId} completed via [${provider.toUpperCase()}] → ${r2Url}`);
 
       const finalMedia = [{ mediaId: result.mediaId || taskId, status: 'success', url: r2Url }];
       await task.docRef.update({
