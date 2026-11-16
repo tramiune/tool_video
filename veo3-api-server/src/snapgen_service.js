@@ -137,19 +137,33 @@ async function generateVideoViaSnapGen(task) {
   fd.append('model', 'veo-3.1-lite');
   fd.append('aspect_ratio', task.aspectRatio || '9:16');
 
-  // Nếu có ảnh Start
+  // Nếu có ảnh Start (ưu tiên Start Frame cố định) hoặc ảnh tham chiếu
   const startImgInput = task.startImage || task.image;
+  const refImages = Array.isArray(task.referenceImages) ? task.referenceImages : (task.referenceImage ? [task.referenceImage] : []);
+
   if (startImgInput) {
     try {
       const buf = await loadImageBuffer(startImgInput);
       if (buf && buf.length > 0) {
         const blob = new Blob([buf], { type: 'image/jpeg' });
         fd.append('files', blob, 'start_image.jpg');
-        fd.append('mode_image', 'ingredient');
-        logger.info(`[SnapGen Video] Đã gắn ảnh Start (${(buf.length / 1024).toFixed(1)} KB)`);
+        fd.append('mode_image', 'frame');
+        logger.info(`[SnapGen Video] Đã gắn ảnh Start Frame (mode_image: frame, ${(buf.length / 1024).toFixed(1)} KB)`);
       }
     } catch (imgErr) {
       logger.warn(`[SnapGen Video] Không thể đính kèm ảnh Start: ${imgErr.message}`);
+    }
+  } else if (refImages.length > 0) {
+    try {
+      const buf = await loadImageBuffer(refImages[0]);
+      if (buf && buf.length > 0) {
+        const blob = new Blob([buf], { type: 'image/jpeg' });
+        fd.append('files', blob, 'ref_image.jpg');
+        fd.append('mode_image', 'ingredient');
+        logger.info(`[SnapGen Video] Đã gắn ảnh tham chiếu (mode_image: ingredient, ${(buf.length / 1024).toFixed(1)} KB)`);
+      }
+    } catch (refErr) {
+      logger.warn(`[SnapGen Video] Không thể đính kèm ảnh tham chiếu: ${refErr.message}`);
     }
   }
 
