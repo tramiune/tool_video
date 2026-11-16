@@ -1181,13 +1181,33 @@ function App() {
     }
   }, [userTier, selectedTierForPay]);
 
-  // Khi đang mở modal quét QR thanh toán, tăng tốc kiểm tra trạng thái mỗi 2.5 giây
+  // Khi đang mở modal quét QR thanh toán, tăng tốc kiểm tra trạng thái mỗi 2 giây
   useEffect(() => {
     if (!selectedTierForPay || !user) return;
     let cancelled = false;
 
     const checkPaymentSuccess = async () => {
       try {
+        // 1. Kiểm tra trực tiếp trạng thái của mã đơn nạp trên Supabase
+        if (pendingPayment && pendingPayment.code) {
+          const { data: topup, error: topupErr } = await supabase
+            .from('topups')
+            .select('status, package_id')
+            .eq('transfer_content', pendingPayment.code)
+            .maybeSingle();
+
+          if (!cancelled && topup && topup.status === 'success') {
+            setSelectedTierForPay(null);
+            setPendingPayment(null);
+            setShowPricingModal(false);
+            setUserTier(topup.package_id || selectedTierForPay);
+            setUserExpiryDate(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            alert("✨ Chúc mừng bạn! Giao dịch thanh toán đã hoàn tất và tài khoản của bạn đã được nâng cấp thành công. Bắt đầu sáng tạo thôi nào! 🎉");
+            return;
+          }
+        }
+
+        // 2. Dự phòng kiểm tra qua endpoint auth/me
         const token = await user.getIdToken();
         const res = await fetch(`${API_BASE}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -1197,28 +1217,26 @@ function App() {
         if (cancelled) return;
 
         const sub = json.subscription || {};
-        if (sub.tier && sub.tier === selectedTierForPay) {
-          setUserTier(sub.tier);
-          if (sub.activePackage?.created_at) {
-            const exp = new Date(sub.activePackage.created_at).getTime() + 30 * 24 * 60 * 60 * 1000;
-            setUserExpiryDate(exp);
+        if (sub.tier && (sub.tier === selectedTierForPay || sub.isAdmin)) {
+          if (sub.tier === selectedTierForPay) {
+            setUserTier(sub.tier);
+            if (sub.activePackage?.created_at) {
+              const exp = new Date(sub.activePackage.created_at).getTime() + 30 * 24 * 60 * 60 * 1000;
+              setUserExpiryDate(exp);
+            }
           }
-          setSelectedTierForPay(null);
-          setPendingPayment(null);
-          setShowPricingModal(false);
-          alert("✨ Chúc mừng bạn! Giao dịch thanh toán đã hoàn tất và tài khoản của bạn đã được nâng cấp thành công. Bắt đầu sáng tạo thôi nào! 🎉");
         }
       } catch (e) {
         // bỏ qua lỗi mạng tạm thời trong lúc poll
       }
     };
 
-    const interval = setInterval(checkPaymentSuccess, 2500);
+    const interval = setInterval(checkPaymentSuccess, 2000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [selectedTierForPay, user]);
+  }, [selectedTierForPay, pendingPayment, user]);
 
   // Close all dropdowns/popups when clicking outside them
   useEffect(() => {
