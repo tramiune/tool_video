@@ -97,7 +97,7 @@ IMAGE_COORDS = {
     "overlay_box": (1200, 145, 1565, 575),
     "allow_btns": [(1442, 224), (1150, 224)],
     "reload_click": (920, 240),
-    "welcome_modal_btn": (1200, 750),
+    "welcome_modal_btn": (1200, 790),
 }
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
@@ -427,7 +427,7 @@ def is_chrome_overlay_menu_open(im=None, mode="video"):
 
 def check_and_dismiss_welcome_modal(im=None, mode="image"):
     """
-    Tự động phát hiện và tắt hộp thoại chào mừng 'Studio Ảnh Thông Minh' (nút tím 'Bắt đầu trải nghiệm ngay' tại 1200, 750)
+    Tự động phát hiện và tắt hộp thoại chào mừng 'Studio Ảnh Thông Minh' (nút tím 'Bắt đầu trải nghiệm ngay' tại 1200, 790)
     nếu cửa sổ Tạo Ảnh vừa mới mở hoặc vừa reload.
     """
     if sys.platform == "darwin" or mode != "image":
@@ -437,11 +437,20 @@ def check_and_dismiss_welcome_modal(im=None, mode="image"):
             im = capture_screen_rgb(max_age_sec=0.5)
         if im is None:
             return False
-        # Kiểm tra màu tím đặc trưng RGB(79, 57, 246) tại (1160, 350) và tại nút bấm (1200, 750)
+        # Kiểm tra màu tím đặc trưng RGB(79, 57, 246) tại (1160, 350) và tại nút bấm (1200, 790 hoặc dải Y 780-795)
         r1, g1, b1 = im.getpixel((1160, 350))
-        r2, g2, b2 = im.getpixel((1200, 750))
+        btn_y = 790
+        for y_test in (790, 785, 780, 795):
+            r2, g2, b2 = im.getpixel((1200, y_test))
+            if b2 > 190 and r2 < 120:
+                btn_y = y_test
+                break
+        else:
+            r2, g2, b2 = (0, 0, 0)
+
         if b1 > 190 and r1 < 120 and b2 > 190 and r2 < 120:
-            bx, by = IMAGE_COORDS["welcome_modal_btn"]
+            bx = 1200
+            by = btn_y
             sys.stderr.write(f"[AutoClick] 🛡️ Phát hiện hộp thoại chào mừng 'Studio Ảnh Thông Minh', tự động bấm 'Bắt đầu trải nghiệm ngay' ({bx}, {by})...\n")
             activate_chrome(mode="image")
             pyautogui.moveTo(bx, by, duration=0.15)
