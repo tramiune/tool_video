@@ -1175,9 +1175,50 @@ function App() {
   useEffect(() => {
     if (selectedTierForPay && userTier === selectedTierForPay) {
       setSelectedTierForPay(null);
+      setPendingPayment(null);
+      setShowPricingModal(false);
       alert("✨ Chúc mừng bạn! Giao dịch thanh toán đã hoàn tất và tài khoản của bạn đã được nâng cấp thành công. Bắt đầu sáng tạo thôi nào! 🎉");
     }
-  }, [userTier]);
+  }, [userTier, selectedTierForPay]);
+
+  // Khi đang mở modal quét QR thanh toán, tăng tốc kiểm tra trạng thái mỗi 2.5 giây
+  useEffect(() => {
+    if (!selectedTierForPay || !user) return;
+    let cancelled = false;
+
+    const checkPaymentSuccess = async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+
+        const sub = json.subscription || {};
+        if (sub.tier && sub.tier === selectedTierForPay) {
+          setUserTier(sub.tier);
+          if (sub.activePackage?.created_at) {
+            const exp = new Date(sub.activePackage.created_at).getTime() + 30 * 24 * 60 * 60 * 1000;
+            setUserExpiryDate(exp);
+          }
+          setSelectedTierForPay(null);
+          setPendingPayment(null);
+          setShowPricingModal(false);
+          alert("✨ Chúc mừng bạn! Giao dịch thanh toán đã hoàn tất và tài khoản của bạn đã được nâng cấp thành công. Bắt đầu sáng tạo thôi nào! 🎉");
+        }
+      } catch (e) {
+        // bỏ qua lỗi mạng tạm thời trong lúc poll
+      }
+    };
+
+    const interval = setInterval(checkPaymentSuccess, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [selectedTierForPay, user]);
 
   // Close all dropdowns/popups when clicking outside them
   useEffect(() => {
@@ -2120,19 +2161,20 @@ function App() {
   const handleSelectTierForPay = async (tierKey) => {
     if (!user) return;
     setQrLoading(true);
-    trackTikTokEvent('select_tier', { tier: tierKey, cost: getUpgradeCost(tierKey) });
+    const cost = getUpgradeCost(tierKey);
+    trackTikTokEvent('select_tier', { tier: tierKey, cost });
     
     // Nếu đã có giao dịch đang chờ trùng với gói đang chọn thì tái sử dụng, không sinh code mới
     if (pendingPayment && pendingPayment.tier === tierKey && pendingPayment.code) {
-      trackTikTokEvent('open_payment_qr', { tier: tierKey, cost: getUpgradeCost(tierKey) });
+      trackTikTokEvent('open_payment_qr', { tier: tierKey, cost });
       setSelectedTierForPay(tierKey);
       window.fbq?.('track', 'InitiateCheckout', {
-        value: getUpgradeCost(tierKey),
+        value: cost,
         currency: 'VND',
         content_name: tierKey
       });
       window.ttq?.track('InitiateCheckout', {
-        value: getUpgradeCost(tierKey),
+        value: cost,
         currency: 'VND',
         content_name: tierKey,
         content_type: 'product',
@@ -2141,50 +2183,72 @@ function App() {
             content_id: tierKey,
             content_name: tierKey,
             quantity: 1,
-            price: getUpgradeCost(tierKey)
+            price: cost
           }
         ]
       });
       return;
     }
     
-    // Generate code e.g. VE123456
+    // Sinh mã giao dịch chuẩn e.g. VE123456
     const code = `VE${Math.floor(100000 + Math.random() * 900000)}`;
+    const newPending = {
+      code,
+      tier: tierKey,
+      amount: cost,
+      createdAt: Date.now()
+    };
+
+    setPendingPayment(newPending);
+    setSelectedTierForPay(tierKey);
+
+    // 1. Lưu bản ghi pending vào Supabase (hệ thống dùng chung với aquaai.vn)
+    try {
+      await supabase.from('topups').insert({
+        user_id: user.uid,
+        package_id: tierKey,
+        package_name: `Gói ${tierKey}`,
+        amount: cost,
+        coins: 0,
+        transfer_content: code,
+        status: 'pending',
+        app: 'meo3',
+        created_at: new Date().toISOString()
+      });
+    } catch (sbErr) {
+      console.warn("Failed to insert pending topup into Supabase:", sbErr);
+    }
+
+    // 2. Lưu dự phòng vào Firestore để fallback
     try {
       const userDocRef = doc(db, 'users', user.uid);
       await setDoc(userDocRef, {
-        pendingPayment: {
-          code,
-          tier: tierKey,
-          amount: getUpgradeCost(tierKey),
-          createdAt: Date.now()
-        }
+        pendingPayment: newPending
       }, { merge: true });
-      setSelectedTierForPay(tierKey);
-      trackTikTokEvent('open_payment_qr', { tier: tierKey, cost: getUpgradeCost(tierKey) });
-      window.fbq?.('track', 'InitiateCheckout', {
-        value: getUpgradeCost(tierKey),
-        currency: 'VND',
-        content_name: tierKey
-      });
-      window.ttq?.track('InitiateCheckout', {
-        value: getUpgradeCost(tierKey),
-        currency: 'VND',
-        content_name: tierKey,
-        content_type: 'product',
-        contents: [
-          {
-            content_id: tierKey,
-            content_name: tierKey,
-            quantity: 1,
-            price: getUpgradeCost(tierKey)
-          }
-        ]
-      });
-    } catch (e) {
-      console.error("Failed to generate payment intent:", e);
-      alert("Hệ thống chưa thể khởi tạo mã giao dịch lúc này: " + e.message + ". Bạn vui lòng bấm thử lại nhé! 🥺");
+    } catch (fsErr) {
+      console.warn("Failed to set pending payment in Firestore:", fsErr);
     }
+
+    trackTikTokEvent('open_payment_qr', { tier: tierKey, cost });
+    window.fbq?.('track', 'InitiateCheckout', {
+      value: cost,
+      currency: 'VND',
+      content_name: tierKey
+    });
+    window.ttq?.track('InitiateCheckout', {
+      value: cost,
+      currency: 'VND',
+      content_name: tierKey,
+      content_type: 'product',
+      contents: [
+        {
+          content_id: tierKey,
+          content_name: tierKey,
+          quantity: 1,
+          price: cost
+        }
+      ]
+    });
   };
 
   const handleCopyText = (text) => {

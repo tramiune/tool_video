@@ -20,7 +20,9 @@ const {
   supabase,
   verifySupabaseToken,
   getSupabaseUserSubscription,
-  ensureSupabaseProfile
+  ensureSupabaseProfile,
+  processSupabasePayment,
+  recordClaimedPaymentToSupabase
 } = require('./supabase_client');
 const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
 const telegram = require('./telegram');
@@ -3306,7 +3308,8 @@ app.post('/api/payment-webhook', async (req, res) => {
 
     for (const tx of transactions) {
       const content = tx.content || tx.description || tx.transferContent || '';
-      logger.info(`Received payment webhook. Content: "${content}", Amount: ${tx.amount}`);
+      const amount = Number(tx.amount || 0);
+      logger.info(`Received payment webhook. Content: "${content}", Amount: ${amount}`);
 
       const match = content.match(/VE\d{5,6}/i);
       if (!match) {
@@ -3317,12 +3320,61 @@ app.post('/api/payment-webhook', async (req, res) => {
       const paymentCode = match[0].toUpperCase();
       logger.info(`Matched payment code: ${paymentCode}`);
 
+      // 1. Ưu tiên xử lý và kích hoạt trên SUPABASE
+      const supabaseResult = await processSupabasePayment({
+        paymentCode,
+        amount,
+        description: content
+      });
+
+      if (supabaseResult && supabaseResult.success) {
+        const userId = supabaseResult.userId;
+        const tier = supabaseResult.tier;
+        const email = supabaseResult.email;
+
+        userVideoLimits.invalidate(userId);
+        videoScheduler.scheduleDrain();
+        processedCount++;
+
+        logger.info(`[Payment] Activated tier ${tier} on Supabase for user ${userId} (${email || 'no-email'}) via ${paymentCode}`);
+
+        // Đồng bộ cập nhật thêm vào Firestore để fallback
+        try {
+          const userDocRef = db.collection('users').doc(userId);
+          const userSnap = await userDocRef.get();
+          if (userSnap.exists) {
+            const newExpiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
+            await userDocRef.update({
+              tier: tier,
+              expiryDate: newExpiryDate,
+              pendingPayment: null,
+              updatedAt: Date.now()
+            });
+          }
+        } catch (fsErr) {
+          logger.warn(`[Payment] Sync to Firestore warning: ${fsErr.message}`);
+        }
+
+        // Send Telegram notification
+        telegram.notifyPayment({
+          userId: userId,
+          email: email,
+          tier: tier,
+          amount: amount,
+          code: paymentCode
+        }).catch(e => logger.error('Telegram notifyPayment failed:', e.message));
+
+        continue;
+      }
+
+      // 2. Fallback: Nếu chưa có trong Supabase topups, kiểm tra Firestore users cũ
+      logger.info(`[Payment] Checking legacy Firestore for code: ${paymentCode}`);
       const usersSnapshot = await db.collection('users')
         .where('pendingPayment.code', '==', paymentCode)
         .get();
 
       if (usersSnapshot.empty) {
-        logger.warn(`No user found with pending payment code: ${paymentCode}`);
+        logger.warn(`No pending payment found for code ${paymentCode} on both Supabase and Firestore`);
         continue;
       }
 
@@ -3331,8 +3383,8 @@ app.post('/api/payment-webhook', async (req, res) => {
       const pending = userData.pendingPayment;
       
       // Verification: Check if amount matches
-      if (tx.amount < pending.amount) {
-         logger.warn(`Amount mismatch! Expected ${pending.amount}, got ${tx.amount}. Ignoring upgrade.`);
+      if (amount < pending.amount) {
+         logger.warn(`Amount mismatch! Expected ${pending.amount}, got ${amount}. Ignoring upgrade.`);
          continue;
       }
 
@@ -3351,49 +3403,24 @@ app.post('/api/payment-webhook', async (req, res) => {
       userVideoLimits.invalidate(userDoc.id);
       videoScheduler.scheduleDrain();
 
-      logger.info(`Automatically upgraded user ${userDoc.id} to tier ${pending.tier} via Webhook!`);
+      // Đồng bộ ngay sang Supabase topups để lưu vĩnh viễn và hiển thị trên Admin aquaai.vn
+      await recordClaimedPaymentToSupabase({
+        userId: userDoc.id,
+        tier: pending.tier,
+        amount: amount || pending.amount,
+        code: paymentCode,
+        email: userData.email || ''
+      });
+
+      logger.info(`Automatically upgraded user ${userDoc.id} to tier ${pending.tier} via Legacy Firestore Webhook!`);
       processedCount++;
-
-      // Record payment + update stats for the admin panel
-      try {
-        const paymentDoc = await db.collection('payments').add({
-          userId: userDoc.id,
-          email: userData.email || null,
-          tier: pending.tier,
-          amount: Number(tx.amount || pending.amount || 0),
-          code: paymentCode,
-          source: 'webhook',
-          createdAt: Date.now()
-        });
-        logger.info(`Payment recorded: ${paymentDoc.id}`);
-
-        // Update aggregate stats (single doc, cheap read for admin)
-        const statsRef = db.collection('stats').doc('payments');
-        await db.runTransaction(async (t) => {
-          const snap = await t.get(statsRef);
-          const data = snap.exists ? snap.data() : {};
-          const today = new Date();
-          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-          const isToday = data.date === todayStr;
-          t.set(statsRef, {
-            totalAmount: (data.totalAmount || 0) + Number(tx.amount || 0),
-            totalCount: (data.totalCount || 0) + 1,
-            todayAmount: isToday ? (data.todayAmount || 0) + Number(tx.amount || 0) : Number(tx.amount || 0),
-            todayCount: isToday ? (data.todayCount || 0) + 1 : 1,
-            date: todayStr,
-            updatedAt: Date.now()
-          });
-        });
-      } catch (payErr) {
-        logger.error('Failed to record payment/stats:', payErr.message);
-      }
 
       // Send Telegram notification
       telegram.notifyPayment({
         userId: userDoc.id,
         email: userData.email,
         tier: pending.tier,
-        amount: tx.amount || pending.amount,
+        amount: amount || pending.amount,
         code: paymentCode
       }).catch(e => logger.error('Telegram notifyPayment failed:', e.message));
     }

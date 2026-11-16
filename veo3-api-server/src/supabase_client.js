@@ -241,11 +241,115 @@ async function ensureSupabaseProfile(userId, email, fullName = '', avatarUrl = '
   }
 }
 
+/**
+ * Xử lý webhook thanh toán từ Casso cho bảng topups của Supabase
+ * @param {object} param0
+ * @param {string} param0.paymentCode - Mã dạng VE123456
+ * @param {number} param0.amount - Số tiền thực nhận
+ * @param {string} param0.description - Nội dung giao dịch
+ */
+async function processSupabasePayment({ paymentCode, amount, description = '' }) {
+  if (!paymentCode) return { success: false, reason: 'No payment code' };
+
+  try {
+    // 1. Tìm đơn topup tương ứng trong Supabase
+    const { data: topups, error: topupErr } = await supabase
+      .from('topups')
+      .select('id, user_id, package_id, package_name, amount, status, created_at')
+      .eq('transfer_content', paymentCode)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (topupErr) {
+      logger.error(`[Supabase Payment] Query error for ${paymentCode}:`, topupErr.message);
+    }
+
+    const topup = (topups && topups.length > 0) ? topups[0] : null;
+
+    if (topup) {
+      const expectedAmount = Number(topup.amount || 0);
+      const receivedAmount = Number(amount || 0);
+
+      if (receivedAmount < expectedAmount) {
+        logger.warn(`[Supabase Payment] Amount mismatch for ${paymentCode}! Expected ${expectedAmount}, got ${receivedAmount}`);
+        return { success: false, reason: 'Amount mismatch', expectedAmount, receivedAmount, topup };
+      }
+
+      // Kích hoạt giao dịch thành công trên Supabase
+      const { error: updErr } = await supabase
+        .from('topups')
+        .update({
+          status: 'success',
+          amount: receivedAmount,
+          created_at: new Date().toISOString()
+        })
+        .eq('id', topup.id);
+
+      if (updErr) {
+        logger.error(`[Supabase Payment] Update error for ${paymentCode}:`, updErr.message);
+        return { success: false, error: updErr.message };
+      }
+
+      logger.success(`[Supabase Payment] Successfully activated ${topup.package_id} for user ${topup.user_id} via ${paymentCode}!`);
+
+      let userEmail = '';
+      try {
+        const { data: prof } = await supabase.from('profiles').select('email').eq('id', topup.user_id).maybeSingle();
+        if (prof && prof.email) userEmail = prof.email;
+      } catch (e) {}
+
+      return {
+        success: true,
+        userId: topup.user_id,
+        tier: topup.package_id,
+        amount: receivedAmount,
+        email: userEmail,
+        isSupabase: true
+      };
+    }
+
+    return { success: false, reason: 'Not found in Supabase topups' };
+  } catch (err) {
+    logger.error(`[Supabase Payment] Exception for ${paymentCode}:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Ghi nhận thanh toán vào Supabase khi kích hoạt từ Firestore fallback
+ */
+async function recordClaimedPaymentToSupabase({ userId, tier, amount, code, email = '' }) {
+  try {
+    await ensureSupabaseProfile(userId, email);
+
+    const { error } = await supabase.from('topups').insert({
+      user_id: userId,
+      package_id: tier,
+      package_name: `Gói ${tier}`,
+      amount: Number(amount || 0),
+      coins: 0,
+      transfer_content: code,
+      status: 'success',
+      created_at: new Date().toISOString(),
+      app: 'meo3'
+    });
+    if (error) {
+      logger.error('[Supabase Payment] recordClaimedPaymentToSupabase error:', error.message);
+    } else {
+      logger.success(`[Supabase Payment] Synced payment to Supabase for ${userId} (${tier})`);
+    }
+  } catch (err) {
+    logger.error('[Supabase Payment] recordClaimedPaymentToSupabase exception:', err.message);
+  }
+}
+
 module.exports = {
   supabase,
   verifySupabaseToken,
   getSupabaseUserSubscription,
   ensureSupabaseProfile,
+  processSupabasePayment,
+  recordClaimedPaymentToSupabase,
   DRAMA_PACKAGE_IDS,
   ALL_MONTHLY_PACKAGE_IDS,
   NO_WATERMARK_PACKAGE_IDS,
