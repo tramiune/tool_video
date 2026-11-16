@@ -3844,7 +3844,11 @@ function createSupabaseDocRef(taskId) {
         if (updates.media !== undefined) dbUpdates.media = updates.media;
         if (updates.error !== undefined) dbUpdates.error = updates.error;
         if (updates.errorCode !== undefined) dbUpdates.error_code = updates.errorCode;
-        if (updates.progress !== undefined) dbUpdates.progress = updates.progress;
+        if (updates.progress !== undefined) {
+          const raw = String(updates.progress).replace(/[^0-9]/g, '');
+          const p = parseInt(raw, 10);
+          dbUpdates.progress = isNaN(p) ? 0 : p;
+        }
         if (updates.referenceImages !== undefined) dbUpdates.reference_images = updates.referenceImages;
         dbUpdates.updated_at = Date.now();
 
