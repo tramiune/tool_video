@@ -3145,6 +3145,25 @@ app.post('/api/drama/fashion-mirror/jobs/:id/cancel', requireDramaAccess, async 
   }
 });
 
+// Chat Prompt AI (Trò chuyện AI sinh Prompt Veo 3 8s & Start Frame Image - gói tháng từ 69k)
+app.post('/api/drama/chat-prompt', requireDramaAccess, async (req, res) => {
+  try {
+    const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/chat-prompt`, {
+      method: 'POST',
+      headers: {
+        ...buildMeo3BridgeHeaders(req.authUser),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(req.body || {})
+    });
+    const data = await resp.json().catch(() => ({ error: 'Chat prompt request failed' }));
+    return res.status(resp.status).json(data);
+  } catch (error) {
+    logger.error('Chat prompt proxy failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Reverse-Engineer Video to Shot-by-Shot Prompts proxy route (available for all active monthly packages 69k+)
 app.post('/api/drama/reverse-video/analyze', requireDramaAccess, upload.single('video'), async (req, res) => {
   try {
