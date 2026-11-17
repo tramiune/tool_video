@@ -68,6 +68,12 @@ function clearLocalSessionId() {
   safeRemoveLocalStorage(SESSION_STORAGE_KEY);
 }
 
+function resetLocalSessionId() {
+  const id = generateSessionId();
+  safeSetLocalStorage(SESSION_STORAGE_KEY, id);
+  return id;
+}
+
 async function initSessionOnServer(user) {
   try {
     const sessionId = getLocalSessionId();
@@ -80,6 +86,9 @@ async function initSessionOnServer(user) {
       },
       body: JSON.stringify({ sessionId })
     });
+    try {
+      await supabase.auth.signOut({ scope: 'others' });
+    } catch (_) {}
   } catch (err) {
     console.warn('Session init failed:', err);
   }
@@ -105,7 +114,9 @@ async function authFetch(user, url, options = {}) {
     const body = await res.json().catch(() => ({}));
     if (body.error === 'SESSION_EXPIRED') {
       clearLocalSessionId();
-      signOut(auth);
+      try { await supabase.auth.signOut(); } catch (_) {}
+      try { signOut(auth); } catch (_) {}
+      alert('Tài khoản của bạn vừa đăng nhập ở một thiết bị khác. Bạn đã bị đăng xuất.');
       window.location.reload();
       throw new Error('Tài khoản đang được đăng nhập ở thiết bị khác. Bạn đã bị đăng xuất.');
     }
@@ -7054,6 +7065,70 @@ function App() {
     };
   }, []);
 
+  // Realtime session kick-out (chỉ cho phép 1 thiết bị đăng nhập tại 1 thời điểm)
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    let isKicked = false;
+    const kickOut = async () => {
+      if (isKicked) return;
+      isKicked = true;
+      clearLocalSessionId();
+      try { await supabase.auth.signOut(); } catch (_) {}
+      try { signOut(auth); } catch (_) {}
+      alert('Tài khoản của bạn vừa đăng nhập ở một thiết bị khác. Bạn đã bị đăng xuất.');
+      window.location.reload();
+    };
+
+    const verifyRemoteSession = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('meo3_session_id')
+          .eq('id', user.uid)
+          .maybeSingle();
+        const local = getLocalSessionId();
+        if (data?.meo3_session_id && local && data.meo3_session_id !== local) {
+          kickOut();
+        }
+      } catch (_) {}
+    };
+
+    verifyRemoteSession();
+
+    const channel = supabase
+      .channel(`meo3-session-${user.uid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${user.uid}`
+        },
+        (payload) => {
+          const remote = payload.new?.meo3_session_id;
+          const local = getLocalSessionId();
+          if (remote && local && remote !== local) {
+            kickOut();
+          }
+        }
+      )
+      .subscribe();
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        verifyRemoteSession();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [user?.uid]);
+
   // LocalStorage Persist Sync
   useEffect(() => {
     safeSetLocalStorage('activeTab', activeTab);
@@ -7176,6 +7251,7 @@ function App() {
 
   const handleLogin = async () => {
     trackTikTokEvent('click_login');
+    resetLocalSessionId();
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -7191,11 +7267,13 @@ function App() {
   };
 
   const handleLogout = async () => {
+    clearLocalSessionId();
     try {
       await supabase.auth.signOut();
     } catch (e) {
       console.warn('SignOut error:', e);
     }
+    try { signOut(auth); } catch (_) {}
     setUser(null);
   };
 

@@ -636,17 +636,28 @@ function setSessionId(userId, sessionId) {
   sessionCache.set(userId, { sessionId, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
 }
 
-async function validateSession(userId, sessionId) {
+async function validateSession(userId, sessionId, isSupabase = false) {
   if (!userId || !sessionId) return false;
   const cached = sessionCache.get(userId);
   if (cached && cached.expiresAt > Date.now()) return cached.sessionId === sessionId;
-  // Cache miss → fetch from Firestore
   try {
-    const userSnap = await db.collection('users').doc(userId).get();
-    const data = userSnap.exists ? userSnap.data() : {};
-    const storedSessionId = data.sessionId || null;
-    sessionCache.set(userId, { sessionId: storedSessionId, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
-    return storedSessionId === sessionId;
+    if (isSupabase) {
+      const { data, error } = await supabase.from('profiles').select('meo3_session_id').eq('id', userId).maybeSingle();
+      const stored = data?.meo3_session_id || null;
+      if (!stored) {
+        sessionCache.set(userId, { sessionId, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
+        return true;
+      }
+      sessionCache.set(userId, { sessionId: stored, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
+      return stored === sessionId;
+    } else {
+      const userSnap = await db.collection('users').doc(userId).get();
+      const data = userSnap.exists ? userSnap.data() : {};
+      const storedSessionId = data.sessionId || null;
+      if (!storedSessionId) return true;
+      sessionCache.set(userId, { sessionId: storedSessionId, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
+      return storedSessionId === sessionId;
+    }
   } catch (err) {
     logger.warn(`[Session] Failed to validate session for ${userId}: ${err.message}`);
     return false;
@@ -1623,6 +1634,16 @@ async function requireUser(req, res, next) {
           email: supaUser.email || null,
           isSupabase: true
         };
+
+        // Session validation (anti-account-sharing cho Supabase trên meo3)
+        const sessionToken = req.headers['x-session-token'];
+        if (sessionToken) {
+          const valid = await validateSession(supaUser.uid, sessionToken, true);
+          if (!valid) {
+            return res.status(401).json({ error: 'SESSION_EXPIRED', message: 'Tài khoản đang được đăng nhập ở thiết bị khác.' });
+          }
+        }
+
         return next();
       }
     } catch (_) {}
@@ -1634,7 +1655,7 @@ async function requireUser(req, res, next) {
     // Session validation (anti-account-sharing cho Firebase)
     const sessionToken = req.headers['x-session-token'];
     if (sessionToken) {
-      const valid = await validateSession(decoded.uid, sessionToken);
+      const valid = await validateSession(decoded.uid, sessionToken, false);
       if (!valid) {
         return res.status(401).json({ error: 'SESSION_EXPIRED', message: 'Tài khoản đang được đăng nhập ở thiết bị khác.' });
       }
@@ -1681,9 +1702,13 @@ app.post('/api/session/init', requireUser, async (req, res) => {
       return res.status(400).json({ error: 'Missing sessionId' });
     }
     const userId = req.authUser.uid;
-    await db.collection('users').doc(userId).set({ sessionId }, { merge: true });
+    if (req.authUser.isSupabase) {
+      await supabase.from('profiles').update({ meo3_session_id: sessionId }).eq('id', userId);
+    } else {
+      await db.collection('users').doc(userId).set({ sessionId }, { merge: true });
+    }
     setSessionId(userId, sessionId);
-    logger.info(`[Session] Initialized session for user ${userId}`);
+    logger.info(`[Session] Initialized session for user ${userId} (${req.authUser.isSupabase ? 'Supabase' : 'Firebase'})`);
     res.json({ success: true });
   } catch (err) {
     logger.error('[Session] Init error:', err);
