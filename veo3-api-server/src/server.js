@@ -4172,6 +4172,7 @@ async function runImageTask(taskId) {
         task.docRef.update({ referenceImages: resolvedRefs }).catch(() => {});
       }
 
+      const provider = 'autoclick';
       const watermarkText = await resolveTaskWatermarkText(task);
       logger.info(`[Image] Dispatching task ${taskId} using AutoClick Image Runner (PyAutoGUI)...`);
 
