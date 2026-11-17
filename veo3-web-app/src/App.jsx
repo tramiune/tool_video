@@ -8967,6 +8967,7 @@ function App() {
                                 {msg.data.scenes.map((scene, sIdx) => {
                                   const sceneNum = scene.sceneIndex || (sIdx + 1);
                                   const sceneTitle = scene.title || `Cảnh ${sceneNum} (${(sceneNum - 1) * 8}-${sceneNum * 8}s)`;
+                                  const needsImg = scene.needsInputImage !== false;
                                   return (
                                     <div
                                       key={sIdx}
@@ -8984,6 +8985,19 @@ function App() {
                                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
                                         <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#fef08a' }}>
                                           📍 {sceneTitle}
+                                        </span>
+                                        <span
+                                          style={{
+                                            fontSize: '0.64rem',
+                                            fontWeight: 700,
+                                            color: needsImg ? '#fde68a' : '#7dd3fc',
+                                            background: needsImg ? 'rgba(245, 158, 11, 0.18)' : 'rgba(14, 165, 233, 0.16)',
+                                            border: `1px solid ${needsImg ? 'rgba(251, 191, 36, 0.45)' : 'rgba(56, 189, 248, 0.35)'}`,
+                                            padding: '1px 8px',
+                                            borderRadius: '999px',
+                                          }}
+                                        >
+                                          {needsImg ? '🖼️ Cần Ảnh đầu vào (Image-to-Video)' : '✍️ Chỉ cần chữ (Text-to-Video)'}
                                         </span>
                                       </div>
 
@@ -9066,13 +9080,28 @@ function App() {
                                             border: '1px solid rgba(56, 189, 248, 0.3)',
                                             display: 'flex',
                                             flexDirection: 'column',
-                                            gap: '5px',
+                                            gap: '6px',
                                           }}
                                         >
                                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
-                                            <span style={{ fontSize: '0.69rem', fontWeight: 700, color: '#7dd3fc' }}>
-                                              🎬 Prompt Video Veo 3 (8s):
-                                            </span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                              <span style={{ fontSize: '0.69rem', fontWeight: 700, color: '#7dd3fc' }}>
+                                                🎬 Prompt Video Veo 3 (8s):
+                                              </span>
+                                              <span
+                                                style={{
+                                                  fontSize: '0.62rem',
+                                                  fontWeight: 700,
+                                                  color: needsImg ? '#fde68a' : '#7dd3fc',
+                                                  background: needsImg ? 'rgba(245, 158, 11, 0.2)' : 'rgba(14, 165, 233, 0.16)',
+                                                  border: `1px solid ${needsImg ? 'rgba(251, 191, 36, 0.45)' : 'rgba(56, 189, 248, 0.35)'}`,
+                                                  padding: '1px 7px',
+                                                  borderRadius: '999px',
+                                                }}
+                                              >
+                                                {needsImg ? '🖼️ Dùng ảnh vừa tạo ở trên (Image-to-Video)' : '✍️ Không cần ảnh (Text-to-Video)'}
+                                              </span>
+                                            </div>
                                             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                                               <button
                                                 type="button"
@@ -9102,7 +9131,11 @@ function App() {
                                                   setActiveComposerToolId('text-to-video');
                                                   setActiveTab('video');
                                                   setPrompt(scene.videoPrompt || '');
-                                                  showAccessDeniedToast(`✅ Đã chuyển Prompt Video Cảnh ${sceneNum} sang tab Tạo Video!`);
+                                                  if (needsImg) {
+                                                    showAccessDeniedToast(`✅ Đã chuyển Prompt Video Cảnh ${sceneNum} sang tab Tạo Video! (💡 Nhớ tải ảnh vừa tạo ở trên vào ô Ảnh đầu vào)`);
+                                                  } else {
+                                                    showAccessDeniedToast(`✅ Đã chuyển Prompt Video Cảnh ${sceneNum} sang tab Tạo Video!`);
+                                                  }
                                                 }}
                                                 style={{
                                                   padding: '2px 9px',
@@ -9119,6 +9152,26 @@ function App() {
                                               </button>
                                             </div>
                                           </div>
+
+                                          {/* Hướng dẫn chi tiết ảnh đầu vào */}
+                                          <div
+                                            style={{
+                                              fontSize: '0.68rem',
+                                              color: needsImg ? '#fef08a' : '#bae6fd',
+                                              background: needsImg ? 'rgba(251, 191, 36, 0.08)' : 'rgba(56, 189, 248, 0.08)',
+                                              border: `1px dashed ${needsImg ? 'rgba(251, 191, 36, 0.35)' : 'rgba(56, 189, 248, 0.3)'}`,
+                                              borderRadius: '7px',
+                                              padding: '4px 8px',
+                                              lineHeight: 1.4,
+                                            }}
+                                          >
+                                            📌 <strong>Ảnh đầu vào:</strong>{' '}
+                                            {scene.inputRequirementNote ||
+                                              (needsImg
+                                                ? `Dùng ảnh tạo từ "Prompt Ảnh Cảnh ${sceneNum}" ở trên tải vào ô Ảnh đầu vào để video khớp nhân vật & bối cảnh 100%.`
+                                                : 'Không bắt buộc ảnh đầu vào (có thể dán trực tiếp Prompt Video này để tạo).')}
+                                          </div>
+
                                           <div style={{ fontSize: '0.71rem', color: '#e2e8f0', lineHeight: 1.4, userSelect: 'all', wordBreak: 'break-word' }}>
                                             {scene.videoPrompt}
                                           </div>
@@ -9209,82 +9262,124 @@ function App() {
                                 )}
 
                                 {/* Khối Prompt Video (Veo 3 8s) */}
-                                {msg.data?.videoPrompt && (
-                                  <div
-                                    style={{
-                                      marginTop: '8px',
-                                      padding: '9px 10px',
-                                      borderRadius: '10px',
-                                      background: 'rgba(15, 23, 42, 0.85)',
-                                      border: '1px solid rgba(56, 189, 248, 0.35)',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      gap: '6px',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
-                                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#7dd3fc' }}>
-                                        🎬 Prompt Video Veo 3 (Tối ưu 8 giây):
-                                      </span>
-                                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            navigator.clipboard.writeText(msg.data?.videoPrompt || '');
-                                            showAccessDeniedToast('✅ Đã copy Prompt Video!');
-                                          }}
-                                          style={{
-                                            padding: '2px 8px',
-                                            borderRadius: '999px',
-                                            border: '1px solid rgba(255, 255, 255, 0.16)',
-                                            background: 'rgba(255, 255, 255, 0.08)',
-                                            color: '#e0f2fe',
-                                            fontSize: '0.67rem',
-                                            fontWeight: 600,
-                                            cursor: 'pointer',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                        >
-                                          <Copy size={11} /> Copy
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setActiveComposerToolId('text-to-video');
-                                            setActiveTab('video');
-                                            setPrompt(msg.data?.videoPrompt || '');
-                                            showAccessDeniedToast('✅ Đã chuyển Prompt sang tab Tạo Video!');
-                                          }}
-                                          style={{
-                                            padding: '2px 9px',
-                                            borderRadius: '999px',
-                                            border: '1px solid rgba(56, 189, 248, 0.5)',
-                                            background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(37, 99, 235, 0.3) 100%)',
-                                            color: '#e0f2fe',
-                                            fontSize: '0.67rem',
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          🎬 Đẩy sang Tạo Video
-                                        </button>
-                                      </div>
-                                    </div>
+                                {msg.data?.videoPrompt && (() => {
+                                  const singleNeedsImg = msg.data.needsInputImage !== false;
+                                  return (
                                     <div
                                       style={{
-                                        fontSize: '0.72rem',
-                                        color: '#e2e8f0',
-                                        lineHeight: 1.4,
-                                        userSelect: 'all',
-                                        wordBreak: 'break-word',
+                                        marginTop: '8px',
+                                        padding: '9px 10px',
+                                        borderRadius: '10px',
+                                        background: 'rgba(15, 23, 42, 0.85)',
+                                        border: '1px solid rgba(56, 189, 248, 0.35)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '6px',
                                       }}
                                     >
-                                      {msg.data.videoPrompt}
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                          <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#7dd3fc' }}>
+                                            🎬 Prompt Video Veo 3 (Tối ưu 8 giây):
+                                          </span>
+                                          <span
+                                            style={{
+                                              fontSize: '0.64rem',
+                                              fontWeight: 700,
+                                              color: singleNeedsImg ? '#fde68a' : '#7dd3fc',
+                                              background: singleNeedsImg ? 'rgba(245, 158, 11, 0.2)' : 'rgba(14, 165, 233, 0.16)',
+                                              border: `1px solid ${singleNeedsImg ? 'rgba(251, 191, 36, 0.45)' : 'rgba(56, 189, 248, 0.35)'}`,
+                                              padding: '1px 8px',
+                                              borderRadius: '999px',
+                                            }}
+                                          >
+                                            {singleNeedsImg ? '🖼️ Dùng ảnh vừa tạo ở trên (Image-to-Video)' : '✍️ Không cần ảnh (Text-to-Video)'}
+                                          </span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(msg.data?.videoPrompt || '');
+                                              showAccessDeniedToast('✅ Đã copy Prompt Video!');
+                                            }}
+                                            style={{
+                                              padding: '2px 8px',
+                                              borderRadius: '999px',
+                                              border: '1px solid rgba(255, 255, 255, 0.16)',
+                                              background: 'rgba(255, 255, 255, 0.08)',
+                                              color: '#e0f2fe',
+                                              fontSize: '0.67rem',
+                                              fontWeight: 600,
+                                              cursor: 'pointer',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                            }}
+                                          >
+                                            <Copy size={11} /> Copy
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setActiveComposerToolId('text-to-video');
+                                              setActiveTab('video');
+                                              setPrompt(msg.data?.videoPrompt || '');
+                                              if (singleNeedsImg) {
+                                                showAccessDeniedToast('✅ Đã chuyển Prompt sang tab Tạo Video! (💡 Nhớ tải ảnh vừa tạo ở trên vào ô Ảnh đầu vào nhé)');
+                                              } else {
+                                                showAccessDeniedToast('✅ Đã chuyển Prompt sang tab Tạo Video!');
+                                              }
+                                            }}
+                                            style={{
+                                              padding: '2px 9px',
+                                              borderRadius: '999px',
+                                              border: '1px solid rgba(56, 189, 248, 0.5)',
+                                              background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(37, 99, 235, 0.3) 100%)',
+                                              color: '#e0f2fe',
+                                              fontSize: '0.67rem',
+                                              fontWeight: 700,
+                                              cursor: 'pointer',
+                                            }}
+                                          >
+                                            🎬 Đẩy sang Tạo Video
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Hướng dẫn chi tiết ảnh đầu vào */}
+                                      <div
+                                        style={{
+                                          fontSize: '0.69rem',
+                                          color: singleNeedsImg ? '#fef08a' : '#bae6fd',
+                                          background: singleNeedsImg ? 'rgba(251, 191, 36, 0.08)' : 'rgba(56, 189, 248, 0.08)',
+                                          border: `1px dashed ${singleNeedsImg ? 'rgba(251, 191, 36, 0.35)' : 'rgba(56, 189, 248, 0.3)'}`,
+                                          borderRadius: '7px',
+                                          padding: '4px 8px',
+                                          lineHeight: 1.4,
+                                        }}
+                                      >
+                                        📌 <strong>Ảnh đầu vào:</strong>{' '}
+                                        {msg.data?.inputRequirementNote ||
+                                          (singleNeedsImg
+                                            ? 'Dùng ảnh tạo từ "Prompt Ảnh Start Frame" ở trên tải vào ô Ảnh đầu vào để video khớp nhân vật & bối cảnh 100%.'
+                                            : 'Không bắt buộc ảnh đầu vào (có thể dán trực tiếp Prompt Video này để tạo).')}
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          fontSize: '0.72rem',
+                                          color: '#e2e8f0',
+                                          lineHeight: 1.4,
+                                          userSelect: 'all',
+                                          wordBreak: 'break-word',
+                                        }}
+                                      >
+                                        {msg.data.videoPrompt}
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
                               </>
                             )}
                           </div>
