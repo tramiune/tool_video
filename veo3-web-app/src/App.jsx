@@ -1282,12 +1282,59 @@ function App() {
     }
   ]);
   const [chatPromptInput, setChatPromptInput] = useState('');
+  const [chatPromptInputImage, setChatPromptInputImage] = useState(null);
   const [chatPromptLoading, setChatPromptLoading] = useState(false);
   const chatPromptEndRef = useRef(null);
+  const chatPromptFileInputRef = useRef(null);
+
+  const handleChatPromptFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showAccessDeniedToast('Vui lòng chọn file hình ảnh (JPG, PNG, WebP...)');
+      return;
+    }
+    try {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const rawDataUrl = String(ev.target?.result || '');
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          const maxDim = 1280;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              setChatPromptInputImage(canvas.toDataURL('image/jpeg', 0.85));
+              return;
+            }
+          }
+          setChatPromptInputImage(rawDataUrl);
+        };
+        img.onerror = () => setChatPromptInputImage(rawDataUrl);
+        img.src = rawDataUrl;
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      showAccessDeniedToast('Không thể đọc file ảnh, vui lòng thử lại.');
+    }
+  };
 
   const handleSendChatPrompt = async (presetText) => {
     const textToSend = (presetText || chatPromptInput).trim();
-    if (!textToSend || chatPromptLoading) return;
+    const imageToSend = chatPromptInputImage;
+    if ((!textToSend && !imageToSend) || chatPromptLoading) return;
     if (!user?.uid) {
       showAccessDeniedToast('Vui lòng đăng nhập để sử dụng tính năng này.');
       return;
@@ -1299,18 +1346,26 @@ function App() {
       return;
     }
 
+    const effectiveContent = textToSend || (imageToSend ? 'Tạo prompt ảnh & video từ ảnh mẫu này' : '');
     const newMsgs = [
       ...chatPromptMessages,
-      { role: 'user', content: textToSend }
+      {
+        role: 'user',
+        content: effectiveContent,
+        imageUrl: imageToSend || undefined,
+      }
     ];
     setChatPromptMessages(newMsgs);
     setChatPromptInput('');
+    setChatPromptInputImage(null);
+    if (chatPromptFileInputRef.current) chatPromptFileInputRef.current.value = '';
     setChatPromptLoading(true);
 
     try {
       const apiMessages = newMsgs.map(m => ({
         role: m.role,
-        content: m.content || m.data?.reply || ''
+        content: m.content || m.data?.reply || '',
+        imageUrl: m.imageUrl || undefined,
       }));
 
       const res = await authFetch(user, `${API_BASE}/api/drama/chat-prompt`, {
@@ -1359,10 +1414,12 @@ function App() {
     setChatPromptMessages([
       {
         role: 'assistant',
-        content: 'Xin chào! Tôi là Trợ lý Sáng tạo Prompt chuyên sâu cho Google Veo 3 (8s) và Tạo Ảnh AI. Hãy chia sẻ ý tưởng video của bạn (bối cảnh, nhân vật, hành động, phong cách mong muốn), tôi sẽ phân tích và sinh ra cặp Prompt Ảnh & Prompt Video tối ưu nhất cho bạn!',
+        content: 'Xin chào! Tôi là Trợ lý Sáng tạo Prompt chuyên sâu cho Google Veo 3 (8s) và Tạo Ảnh AI. Hãy chia sẻ ý tưởng video của bạn (bối cảnh, nhân vật, hành động, phong cách mong muốn) hoặc bấm "Kèm ảnh" để gửi ảnh mẫu, tôi sẽ phân tích và sinh ra cặp Prompt Ảnh & Prompt Video tối ưu nhất cho bạn!',
       }
     ]);
     setChatPromptInput('');
+    setChatPromptInputImage(null);
+    if (chatPromptFileInputRef.current) chatPromptFileInputRef.current.value = '';
   };
 
   // States cho tính năng Tách Prompt từ Video (reverse-video / rea-video)
@@ -8941,7 +8998,26 @@ function App() {
                               lineHeight: 1.45,
                             }}
                           >
-                            <div>{msg.content}</div>
+                            <div>
+                              {isUser && msg.imageUrl && (
+                                <div style={{ marginBottom: msg.content ? '8px' : '0' }}>
+                                  <img
+                                    src={msg.imageUrl}
+                                    alt="Ảnh mẫu đính kèm"
+                                    style={{
+                                      maxWidth: '180px',
+                                      maxHeight: '180px',
+                                      borderRadius: '10px',
+                                      objectFit: 'cover',
+                                      border: '1px solid rgba(255, 255, 255, 0.4)',
+                                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                                      display: 'block',
+                                    }}
+                                  />
+                                </div>
+                              )}
+                              {msg.content && <div>{msg.content}</div>}
+                            </div>
 
                             {/* Nếu AI sinh kịch bản gồm nhiều phân cảnh (cho video dài > 8s) */}
                             {msg.data?.scenes && Array.isArray(msg.data.scenes) && msg.data.scenes.length > 1 ? (
@@ -9128,10 +9204,15 @@ function App() {
                                               <button
                                                 type="button"
                                                 onClick={() => {
+                                                  const targetImg = scene.userImageUrl || msg.data?.userImageUrl;
                                                   setActiveComposerToolId('text-to-video');
                                                   setActiveTab('video');
                                                   setPrompt(scene.videoPrompt || '');
-                                                  if (needsImg) {
+                                                  if (targetImg) {
+                                                    setStartLibraryUrl(targetImg);
+                                                    setStartFile(null);
+                                                    showAccessDeniedToast(`✅ Đã nạp Ảnh mẫu & Prompt Cảnh ${sceneNum} sang tab Tạo Video!`);
+                                                  } else if (needsImg) {
                                                     showAccessDeniedToast(`✅ Đã chuyển Prompt Video Cảnh ${sceneNum} sang tab Tạo Video! (💡 Nhớ tải ảnh vừa tạo ở trên vào ô Ảnh đầu vào)`);
                                                   } else {
                                                     showAccessDeniedToast(`✅ Đã chuyển Prompt Video Cảnh ${sceneNum} sang tab Tạo Video!`);
@@ -9141,14 +9222,16 @@ function App() {
                                                   padding: '2px 9px',
                                                   borderRadius: '999px',
                                                   border: '1px solid rgba(56, 189, 248, 0.5)',
-                                                  background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(37, 99, 235, 0.3) 100%)',
+                                                  background: (scene.userImageUrl || msg.data?.userImageUrl)
+                                                    ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.3) 0%, rgba(14, 165, 233, 0.4) 100%)'
+                                                    : 'linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(37, 99, 235, 0.3) 100%)',
                                                   color: '#e0f2fe',
                                                   fontSize: '0.65rem',
                                                   fontWeight: 700,
                                                   cursor: 'pointer',
                                                 }}
                                               >
-                                                🎬 Đẩy sang Tạo Video
+                                                🎬 {(scene.userImageUrl || msg.data?.userImageUrl) ? '⚡ Nạp Ảnh mẫu + Prompt' : 'Đẩy sang Tạo Video'}
                                               </button>
                                             </div>
                                           </div>
@@ -9322,10 +9405,15 @@ function App() {
                                           <button
                                             type="button"
                                             onClick={() => {
+                                              const targetImg = msg.data?.userImageUrl;
                                               setActiveComposerToolId('text-to-video');
                                               setActiveTab('video');
                                               setPrompt(msg.data?.videoPrompt || '');
-                                              if (singleNeedsImg) {
+                                              if (targetImg) {
+                                                setStartLibraryUrl(targetImg);
+                                                setStartFile(null);
+                                                showAccessDeniedToast('✅ Đã nạp Ảnh mẫu & Prompt sang tab Tạo Video!');
+                                              } else if (singleNeedsImg) {
                                                 showAccessDeniedToast('✅ Đã chuyển Prompt sang tab Tạo Video! (💡 Nhớ tải ảnh vừa tạo ở trên vào ô Ảnh đầu vào nhé)');
                                               } else {
                                                 showAccessDeniedToast('✅ Đã chuyển Prompt sang tab Tạo Video!');
@@ -9335,14 +9423,16 @@ function App() {
                                               padding: '2px 9px',
                                               borderRadius: '999px',
                                               border: '1px solid rgba(56, 189, 248, 0.5)',
-                                              background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(37, 99, 235, 0.3) 100%)',
+                                              background: msg.data?.userImageUrl
+                                                ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.3) 0%, rgba(14, 165, 233, 0.4) 100%)'
+                                                : 'linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(37, 99, 235, 0.3) 100%)',
                                               color: '#e0f2fe',
                                               fontSize: '0.67rem',
                                               fontWeight: 700,
                                               cursor: 'pointer',
                                             }}
                                           >
-                                            🎬 Đẩy sang Tạo Video
+                                            🎬 {msg.data?.userImageUrl ? '⚡ Nạp Ảnh mẫu + Prompt' : 'Đẩy sang Tạo Video'}
                                           </button>
                                         </div>
                                       </div>
@@ -9397,7 +9487,94 @@ function App() {
                   </div>
 
                   {/* Thanh nhập chat */}
+                  {chatPromptInputImage && (
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '4px 10px',
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        border: '1px solid rgba(245, 158, 11, 0.45)',
+                        borderRadius: '8px',
+                        marginBottom: '6px',
+                        width: 'fit-content',
+                      }}
+                    >
+                      <img
+                        src={chatPromptInputImage}
+                        alt="Ảnh đính kèm"
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          objectFit: 'cover',
+                          borderRadius: '4px',
+                          border: '1px solid rgba(251, 191, 36, 0.6)',
+                        }}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: '#fef08a', fontWeight: 600 }}>
+                        Đã đính kèm ảnh mẫu
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setChatPromptInputImage(null);
+                          if (chatPromptFileInputRef.current) chatPromptFileInputRef.current.value = '';
+                        }}
+                        style={{
+                          background: 'rgba(0,0,0,0.5)',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '18px',
+                          height: '18px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#f87171',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                        title="Xóa ảnh"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+
+                  <input
+                    ref={chatPromptFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleChatPromptFileChange}
+                    style={{ display: 'none' }}
+                  />
+
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => chatPromptFileInputRef.current?.click()}
+                      disabled={chatPromptLoading}
+                      title="Kèm ảnh mẫu (chân dung, nhân vật, sản phẩm, trang phục...)"
+                      style={{
+                        padding: '7px 11px',
+                        borderRadius: '999px',
+                        border: `1px solid ${chatPromptInputImage ? 'rgba(251, 191, 36, 0.65)' : 'rgba(255, 255, 255, 0.18)'}`,
+                        background: chatPromptInputImage ? 'rgba(245, 158, 11, 0.22)' : 'rgba(255, 255, 255, 0.06)',
+                        color: chatPromptInputImage ? '#fbbf24' : '#cbd5e1',
+                        fontSize: '0.75rem',
+                        cursor: chatPromptLoading ? 'default' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <ImageIcon size={14} />
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                        {chatPromptInputImage ? 'Đổi ảnh' : 'Kèm ảnh'}
+                      </span>
+                    </button>
+
                     <input
                       type="text"
                       value={chatPromptInput}
@@ -9409,7 +9586,11 @@ function App() {
                           handleSendChatPrompt();
                         }
                       }}
-                      placeholder="Nhập ý tưởng video bạn muốn làm (hoặc yêu cầu chỉnh sửa prompt)..."
+                      placeholder={
+                        chatPromptInputImage
+                          ? 'Mô tả thêm hành động, góc máy (hoặc bấm Gửi luôn)...'
+                          : 'Nhập ý tưởng video bạn muốn làm (hoặc bấm Kèm ảnh)...'
+                      }
                       style={{
                         flex: 1,
                         background: 'rgba(255, 255, 255, 0.05)',
@@ -9423,24 +9604,34 @@ function App() {
                     />
                     <button
                       type="button"
-                      disabled={chatPromptLoading || !chatPromptInput.trim()}
+                      disabled={chatPromptLoading || (!chatPromptInput.trim() && !chatPromptInputImage)}
                       onClick={() => handleSendChatPrompt()}
                       style={{
                         padding: '7px 16px',
                         borderRadius: '999px',
                         border: '1px solid rgba(251, 191, 36, 0.5)',
-                        background: !chatPromptInput.trim() || chatPromptLoading
-                          ? 'rgba(251, 191, 36, 0.15)'
-                          : 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
-                        color: !chatPromptInput.trim() || chatPromptLoading ? '#94a3b8' : '#fff',
+                        background:
+                          (!chatPromptInput.trim() && !chatPromptInputImage) || chatPromptLoading
+                            ? 'rgba(251, 191, 36, 0.15)'
+                            : 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                        color:
+                          (!chatPromptInput.trim() && !chatPromptInputImage) || chatPromptLoading
+                            ? '#94a3b8'
+                            : '#fff',
                         fontSize: '0.78rem',
                         fontWeight: 700,
-                        cursor: !chatPromptInput.trim() || chatPromptLoading ? 'default' : 'pointer',
+                        cursor:
+                          (!chatPromptInput.trim() && !chatPromptInputImage) || chatPromptLoading
+                            ? 'default'
+                            : 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '6px',
                         whiteSpace: 'nowrap',
-                        boxShadow: !chatPromptInput.trim() || chatPromptLoading ? 'none' : '0 2px 10px rgba(245, 158, 11, 0.3)',
+                        boxShadow:
+                          (!chatPromptInput.trim() && !chatPromptInputImage) || chatPromptLoading
+                            ? 'none'
+                            : '0 2px 10px rgba(245, 158, 11, 0.3)',
                       }}
                     >
                       {chatPromptLoading ? <Loader size={13} className="animate-spin" /> : <Send size={13} />}
