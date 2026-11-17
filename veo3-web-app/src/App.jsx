@@ -7485,14 +7485,14 @@ function App() {
       return;
     }
 
-    // Giới hạn 1 luồng: 1 user chỉ được chạy tối đa 1 task đồng thời
+    // Giới hạn xếp hàng tối đa 3 task đang chờ của 1 user (hệ thống xử lý 1 task tại một thời điểm)
     const userActiveTasks = tasks.filter(t => 
       (t.userId === user.uid || t.user_id === user.uid) && 
       (t.status === 'pending' || t.status === 'processing' || t.status === 'queued' || t.status === 'generating' || t.status === 'rendering')
     ).length;
 
-    if (userActiveTasks >= 1) {
-      alert("Bạn đang có 1 tác vụ đang xử lý. Vui lòng chờ tác vụ hiện tại hoàn thành trước khi tạo tiếp nhé!");
+    if (userActiveTasks >= 3) {
+      alert("Bạn chỉ được xếp hàng tối đa 3 task cùng lúc. Vui lòng đợi các task cũ chạy xong nhé!");
       return;
     }
 

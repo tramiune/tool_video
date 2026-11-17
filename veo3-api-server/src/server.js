@@ -1513,11 +1513,11 @@ app.post('/api/generate-video', upload.fields([{ name: 'startImage', maxCount: 1
       const activeSnap = await db.collection('tasks')
         .where('userId', '==', targetUserId)
         .where('status', 'in', ['pending', 'processing', 'queued', 'generating', 'rendering'])
-        .limit(1)
+        .limit(3)
         .get();
-      if (!activeSnap.empty) {
+      if (activeSnap.size >= 3) {
         return res.status(429).json({
-          error: 'CONCURRENCY_LIMIT: Bạn đang có 1 tác vụ đang xử lý. Vui lòng chờ tác vụ hiện tại hoàn thành trước khi tạo tiếp nhé!'
+          error: 'CONCURRENCY_LIMIT: Bạn chỉ được xếp hàng tối đa 3 task cùng lúc. Vui lòng đợi task trước hoàn thành nhé!'
         });
       }
     }
@@ -1559,11 +1559,11 @@ app.post('/api/generate-image', upload.single('referenceImage'), async (req, res
       const activeSnap = await db.collection('tasks')
         .where('userId', '==', targetUserId)
         .where('status', 'in', ['pending', 'processing', 'queued', 'generating', 'rendering'])
-        .limit(1)
+        .limit(3)
         .get();
-      if (!activeSnap.empty) {
+      if (activeSnap.size >= 3) {
         return res.status(429).json({
-          error: 'CONCURRENCY_LIMIT: Bạn đang có 1 tác vụ đang xử lý. Vui lòng chờ tác vụ hiện tại hoàn thành trước khi tạo tiếp nhé!'
+          error: 'CONCURRENCY_LIMIT: Bạn chỉ được xếp hàng tối đa 3 task cùng lúc. Vui lòng đợi task trước hoàn thành nhé!'
         });
       }
     }
