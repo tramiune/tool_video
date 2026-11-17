@@ -1507,6 +1507,20 @@ app.post('/api/generate-video', upload.fields([{ name: 'startImage', maxCount: 1
     const prompt = String(req.body.prompt || '').trim();
     if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
 
+    const targetUserId = req.body.userId || 'aquaai';
+    if (targetUserId && targetUserId !== 'anonymous' && targetUserId !== 'aquaai') {
+      const activeSnap = await db.collection('tasks')
+        .where('userId', '==', targetUserId)
+        .where('status', 'in', ['pending', 'processing', 'queued', 'generating', 'rendering'])
+        .limit(1)
+        .get();
+      if (!activeSnap.empty) {
+        return res.status(429).json({
+          error: 'CONCURRENCY_LIMIT: Bạn đang có 1 tác vụ đang xử lý. Vui lòng chờ tác vụ hiện tại hoàn thành trước khi tạo tiếp nhé!'
+        });
+      }
+    }
+
     const startImage = req.files?.startImage?.[0]?.path || req.body.startImage || null;
     const endImage = req.files?.endImage?.[0]?.path || req.body.endImage || null;
 
@@ -1538,6 +1552,20 @@ app.post('/api/generate-image', upload.single('referenceImage'), async (req, res
   try {
     const prompt = String(req.body.prompt || '').trim();
     if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
+
+    const targetUserId = req.body.userId || 'aquaai';
+    if (targetUserId && targetUserId !== 'anonymous' && targetUserId !== 'aquaai') {
+      const activeSnap = await db.collection('tasks')
+        .where('userId', '==', targetUserId)
+        .where('status', 'in', ['pending', 'processing', 'queued', 'generating', 'rendering'])
+        .limit(1)
+        .get();
+      if (!activeSnap.empty) {
+        return res.status(429).json({
+          error: 'CONCURRENCY_LIMIT: Bạn đang có 1 tác vụ đang xử lý. Vui lòng chờ tác vụ hiện tại hoàn thành trước khi tạo tiếp nhé!'
+        });
+      }
+    }
 
     const referenceImage = req.file?.path || req.body.referenceImage || null;
     let referenceImages = [];

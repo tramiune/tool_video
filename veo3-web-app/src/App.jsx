@@ -7490,14 +7490,14 @@ function App() {
       return;
     }
 
-    // Giới hạn số lượng task đang chờ của 1 user (tối đa 10)
+    // Giới hạn 1 luồng: 1 user chỉ được chạy tối đa 1 task đồng thời
     const userActiveTasks = tasks.filter(t => 
-      t.userId === user.uid && 
-      (t.status === 'pending' || t.status === 'processing' || t.status === 'queued')
+      (t.userId === user.uid || t.user_id === user.uid) && 
+      (t.status === 'pending' || t.status === 'processing' || t.status === 'queued' || t.status === 'generating' || t.status === 'rendering')
     ).length;
 
-    if (userActiveTasks >= 10) {
-      alert("Bạn chỉ được xếp hàng tối đa 10 task cùng lúc. Vui lòng đợi các task cũ chạy xong nhé!");
+    if (userActiveTasks >= 1) {
+      alert("Bạn đang có 1 tác vụ đang xử lý. Vui lòng chờ tác vụ hiện tại hoàn thành trước khi tạo tiếp nhé!");
       return;
     }
 
