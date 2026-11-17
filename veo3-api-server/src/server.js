@@ -707,6 +707,20 @@ function sanitizeUserErrorText(text, type = 'video') {
   const label = type === 'video' ? 'video' : 'hình ảnh';
   let s = String(text || '').trim();
   if (!s) return `Không tạo được ${label}. Hãy thử lại.`;
+
+  // Xóa HTML tags nếu có
+  s = s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  if (/PROMPT_CONTENT_POLICY_VIOLATION|restricted content|sexual content|CONTENT_POLICY|DANGER_FILTER/i.test(s)) {
+    return `Không thể tạo ${label} này do câu lệnh hoặc ảnh chưa phù hợp với tiêu chuẩn an toàn của hệ thống. Vui lòng đổi prompt.`;
+  }
+  if (/503|Site Maintenance|maintenance/i.test(s)) {
+    return 'Máy chủ AI đang bảo trì hoặc nâng cấp hệ thống. Vui lòng thử lại sau ít phút.';
+  }
+  if (/TIMED_OUT|TIMEOUT|timeout|quá thời gian chờ/i.test(s)) {
+    return `Hệ thống xử lý quá thời gian chờ tạo ${label}. Vui lòng bấm Thử lại.`;
+  }
+
   s = s
     .replace(/^FLOW_TASK_ERROR\s*\|\s*/i, '')
     .replace(/^FLOW_TASK_ERROR:\s*/i, '')
@@ -718,13 +732,16 @@ function sanitizeUserErrorText(text, type = 'video') {
     .replace(/Google đang giới hạn tài khoản/gi, 'Hệ thống đang xử lý nhiều yêu cầu')
     .replace(/\bcủa Google\b/gi, 'của hệ thống')
     .replace(/\bGoogle\b/gi, 'hệ thống')
+    .replace(/image\.aidancing\.net|audio\.aidancing\.net|aidancing\.net|Aidancing/gi, 'máy chủ AI')
+    .replace(/api\.snapgen\.ai|snapgen\.ai|\bsnapgen\b/gi, 'máy chủ AI')
+    .replace(/meo3-server|meo3\.cloud|\bmeo3\b/gi, 'hệ thống')
     .replace(/AutoClick[^:]*/gi, 'Hệ thống xử lý')
     .replace(/PyAutoGUI/gi, 'Hệ thống')
     .replace(/tải về máy tính/gi, 'trả về kết quả')
     .replace(/trên đĩa:?.*/gi, '')
     .replace(/sau\s+\d+(\.\d+)?s\.?$/i, '')
     .trim();
-  if (!s || /^(Error|Exception|failed)/i.test(s)) {
+  if (!s || /^(Error|Exception|failed|Lỗi\s*:?)/i.test(s)) {
     return `Không tạo được ${label}. Vui lòng thử lại.`;
   }
   return s;
@@ -734,6 +751,12 @@ function getFriendlyTaskFailure(error, type = 'video') {
   const rawCode = getTaskFailureText(error) || 'TASK_FAILED';
   const label = type === 'video' ? 'video' : 'hình ảnh';
 
+  if (/503|Site Maintenance|maintenance/i.test(rawCode)) {
+    return { code: 'SERVER_MAINTENANCE', message: 'Máy chủ AI đang bảo trì hoặc nâng cấp hệ thống. Vui lòng thử lại sau ít phút.' };
+  }
+  if (/PROMPT_CONTENT_POLICY_VIOLATION|restricted content|sexual content|CONTENT_POLICY/i.test(rawCode)) {
+    return { code: 'CONTENT_POLICY_VIOLATION', message: `Nội dung câu lệnh hoặc ảnh chưa phù hợp với tiêu chuẩn an toàn của hệ thống. Vui lòng điều chỉnh lại prompt.` };
+  }
   if (/CHILD_DANGER|PUBLIC_ERROR_MINOR/i.test(rawCode)) {
     return { code: rawCode, message: 'Nội dung có yếu tố người chưa thành niên không phù hợp. Hãy đổi ảnh hoặc nội dung.' };
   }

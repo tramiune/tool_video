@@ -122,8 +122,17 @@ async function authFetch(user, url, options = {}) {
 }
 
 const sanitizeDisplayError = (text) => {
-  let s = String(text || '').trim();
+  let s = String(text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   if (!s) return 'Đã xảy ra sự cố không xác định.';
+  if (/PROMPT_CONTENT_POLICY_VIOLATION|restricted content|sexual content|CONTENT_POLICY|DANGER_FILTER/i.test(s)) {
+    return 'Không thể tạo tác phẩm này do câu lệnh hoặc ảnh vi phạm tiêu chuẩn an toàn. Vui lòng đổi prompt.';
+  }
+  if (/503|Site Maintenance|maintenance/i.test(s)) {
+    return 'Máy chủ AI đang bảo trì hoặc nâng cấp hệ thống. Vui lòng thử lại sau ít phút.';
+  }
+  if (/TIMED_OUT|TIMEOUT|timeout|quá thời gian chờ/i.test(s)) {
+    return 'Hệ thống xử lý quá thời gian chờ. Vui lòng bấm Thử lại.';
+  }
   s = s
     .replace(/^FLOW_TASK_ERROR\s*\|\s*/i, '')
     .replace(/^FLOW_TASK_ERROR:\s*/i, '')
@@ -134,6 +143,9 @@ const sanitizeDisplayError = (text) => {
     .replace(/bị Google giới hạn/gi, 'đang bận xử lý nhiều yêu cầu')
     .replace(/\bcủa Google\b/gi, 'của hệ thống')
     .replace(/\bGoogle\b/gi, 'hệ thống')
+    .replace(/image\.aidancing\.net|aidancing\.net|Aidancing/gi, 'máy chủ AI')
+    .replace(/api\.snapgen\.ai|snapgen\.ai|\bsnapgen\b/gi, 'máy chủ AI')
+    .replace(/meo3-server|meo3\.cloud|\bmeo3\b/gi, 'hệ thống')
     .replace(/AutoClick[^:]*/gi, 'Hệ thống xử lý')
     .replace(/PyAutoGUI/gi, 'Hệ thống')
     .replace(/tải về máy tính/gi, 'trả về kết quả')
@@ -146,6 +158,10 @@ const sanitizeDisplayError = (text) => {
 const getTaskErrorText = (task) => {
   const raw = [task?.errorCode, task?.error].filter(Boolean).map(String).join(' | ');
   if (!raw) return 'Đã xảy ra sự cố không xác định.';
+  if (/503|Site Maintenance|maintenance/i.test(raw)) return 'Máy chủ AI đang bảo trì hoặc nâng cấp hệ thống. Vui lòng thử lại sau ít phút.';
+  if (/PROMPT_CONTENT_POLICY_VIOLATION|restricted content|sexual content|CONTENT_POLICY/i.test(raw)) {
+    return 'Không thể tạo tác phẩm này do câu lệnh hoặc ảnh vi phạm tiêu chuẩn an toàn của hệ thống. Vui lòng điều chỉnh lại prompt.';
+  }
   if (/CHILD_DANGER|PUBLIC_ERROR_MINOR/i.test(raw)) return 'Nội dung có yếu tố người chưa thành niên không phù hợp. Hãy đổi ảnh hoặc nội dung.';
   if (/AUDIO_FILTER|AUDIO_GENERATION_FILTERED/i.test(raw)) return 'Âm thanh bị bộ lọc từ chối. Hãy chỉnh prompt rồi thử lại.';
   if (/IP_INPUT_IMAGE|IP_PROHIBITED/i.test(raw)) return 'Ảnh đầu vào có thể chứa nội dung được bảo hộ. Hãy đổi ảnh khác.';

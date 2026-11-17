@@ -178,13 +178,16 @@ async function generateVideoViaSnapGen(task) {
   if (!submitRes.ok) {
     const errText = await submitRes.text();
     logger.error(`[SnapGen Video] Submit lỗi (${submitRes.status}): ${errText}`);
-    throw new Error(`SnapGen API submit thất bại (${submitRes.status}): ${errText.slice(0, 150)}`);
+    if (submitRes.status === 503 || /maintenance/i.test(errText)) {
+      throw new Error('Máy chủ AI đang bảo trì hoặc nâng cấp hệ thống. Vui lòng thử lại sau ít phút.');
+    }
+    throw new Error(`Máy chủ AI tạm thời chưa tiếp nhận được yêu cầu (${submitRes.status}). Vui lòng thử lại sau.`);
   }
 
   const submitData = await submitRes.json();
   const uuid = submitData.uuid;
   if (!uuid) {
-    throw new Error(`SnapGen không trả về task UUID: ${JSON.stringify(submitData)}`);
+    throw new Error('Hệ thống chưa tạo được mã xử lý cho tác phẩm. Vui lòng thử lại.');
   }
   logger.info(`[SnapGen Video] Task UUID: ${uuid} — bắt đầu polling kết quả...`);
 
@@ -213,18 +216,22 @@ async function generateVideoViaSnapGen(task) {
       logger.success(`[SnapGen Video] Render thành công task ${taskId} (UUID: ${uuid})`);
       break;
     } else if (result.status === 3 || result.status < 0) {
-      throw new Error(result.error_message || 'SnapGen video render thất bại');
+      const errMsg = result.error_message || '';
+      if (result.error_code === 'PROMPT_CONTENT_POLICY_VIOLATION' || /restricted content|sexual content|content policy|policy violation/i.test(errMsg)) {
+        throw new Error('Nội dung câu lệnh hoặc hình ảnh vi phạm tiêu chuẩn an toàn của hệ thống (nhạy cảm, bản quyền...). Vui lòng điều chỉnh lại prompt.');
+      }
+      throw new Error(errMsg || 'Quá trình kết xuất video gặp sự cố. Vui lòng thử lại.');
     }
   }
 
   if (!videoDownloadUrl) {
-    throw new Error(`Quá thời gian chờ render video từ SnapGen (UUID: ${uuid})`);
+    throw new Error('Hệ thống xử lý quá thời gian chờ kết xuất video. Vui lòng bấm Thử lại.');
   }
 
   // 3. Tải video kết quả về file tạm
-  logger.info(`[SnapGen Video] Đang tải file video MP4 từ SnapGen...`);
+  logger.info(`[SnapGen Video] Đang tải file video MP4...`);
   const vRes = await fetch(videoDownloadUrl);
-  if (!vRes.ok) throw new Error(`Không thể tải video từ URL SnapGen: ${vRes.statusText}`);
+  if (!vRes.ok) throw new Error(`Không thể tải video từ máy chủ lưu trữ: ${vRes.statusText}`);
   const videoBuffer = Buffer.from(await vRes.arrayBuffer());
 
   const tmpVideoPath = `/tmp/snapgen_vid_${taskId}_${Date.now()}.mp4`;
@@ -301,13 +308,16 @@ async function generateImageViaSnapGen(task) {
   if (!submitRes.ok) {
     const errText = await submitRes.text();
     logger.error(`[SnapGen Image] Submit lỗi (${submitRes.status}): ${errText}`);
-    throw new Error(`SnapGen API sinh ảnh thất bại (${submitRes.status}): ${errText.slice(0, 150)}`);
+    if (submitRes.status === 503 || /maintenance/i.test(errText)) {
+      throw new Error('Máy chủ AI đang bảo trì hoặc nâng cấp hệ thống. Vui lòng thử lại sau ít phút.');
+    }
+    throw new Error(`Máy chủ AI tạm thời chưa tiếp nhận được yêu cầu tạo ảnh (${submitRes.status}). Vui lòng thử lại sau.`);
   }
 
   const submitData = await submitRes.json();
   const uuid = submitData.uuid;
   if (!uuid) {
-    throw new Error(`SnapGen không trả về task UUID: ${JSON.stringify(submitData)}`);
+    throw new Error('Hệ thống chưa tạo được mã xử lý ảnh. Vui lòng thử lại.');
   }
   logger.info(`[SnapGen Image] Task UUID: ${uuid} — bắt đầu polling...`);
 
@@ -335,18 +345,22 @@ async function generateImageViaSnapGen(task) {
       logger.success(`[SnapGen Image] Sinh ảnh thành công task ${taskId} (UUID: ${uuid})`);
       break;
     } else if (result.status === 3 || result.status < 0) {
-      throw new Error(result.error_message || 'SnapGen tạo ảnh thất bại');
+      const errMsg = result.error_message || '';
+      if (result.error_code === 'PROMPT_CONTENT_POLICY_VIOLATION' || /restricted content|sexual content|content policy|policy violation/i.test(errMsg)) {
+        throw new Error('Nội dung câu lệnh hoặc hình ảnh vi phạm tiêu chuẩn an toàn của hệ thống (nhạy cảm, bản quyền...). Vui lòng điều chỉnh lại prompt.');
+      }
+      throw new Error(errMsg || 'Quá trình tạo ảnh gặp sự cố. Vui lòng thử lại.');
     }
   }
 
   if (!imageDownloadUrl) {
-    throw new Error(`Quá thời gian chờ sinh ảnh từ SnapGen (UUID: ${uuid})`);
+    throw new Error('Hệ thống xử lý quá thời gian chờ tạo ảnh. Vui lòng bấm Thử lại.');
   }
 
   // 3. Tải ảnh kết quả về file tạm
-  logger.info(`[SnapGen Image] Đang tải file ảnh từ SnapGen...`);
+  logger.info(`[SnapGen Image] Đang tải file ảnh...`);
   const imgRes = await fetch(imageDownloadUrl);
-  if (!imgRes.ok) throw new Error(`Không thể tải ảnh từ URL SnapGen: ${imgRes.statusText}`);
+  if (!imgRes.ok) throw new Error(`Không thể tải ảnh từ máy chủ lưu trữ: ${imgRes.statusText}`);
   const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
 
   const tmpImgPath = `/tmp/snapgen_img_${taskId}_${Date.now()}.png`;
