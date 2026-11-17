@@ -16,7 +16,9 @@ const VIDEO_LIMITS_BY_TIER = Object.freeze({
   premium_169k: 1,
   premium_199k: 1,
   pro_299k: 1,
-  master_499k: 2
+  master_499k: 1,
+  drama_500k: 1,
+  master_899k: 1
 });
 
 class UserVideoLimitProvider {
@@ -70,11 +72,11 @@ class UserVideoLimitProvider {
       }
       if (!data) data = {};
 
-      // Admin users are not subject to per-user video limits
+      // Admin users - limit to 1 stream per request
       if (data.isAdmin === true) {
         const expiresAt = Date.now() + this.ttlMs;
-        this.cache.set(userId, { tier: 'admin', limit: 999, expiresAt });
-        return 999;
+        this.cache.set(userId, { tier: 'admin', limit: 1, expiresAt });
+        return 1;
       }
       const expiryDate = typeof data.expiryDate?.toMillis === 'function'
         ? data.expiryDate.toMillis()
