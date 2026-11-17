@@ -639,7 +639,8 @@ function setSessionId(userId, sessionId) {
 async function validateSession(userId, sessionId, isSupabase = false) {
   if (!userId || !sessionId) return false;
   const cached = sessionCache.get(userId);
-  if (cached && cached.expiresAt > Date.now()) return cached.sessionId === sessionId;
+  // Nếu cache khớp sessionId gửi lên -> hợp lệ ngay
+  if (cached && cached.expiresAt > Date.now() && cached.sessionId === sessionId) return true;
   try {
     if (isSupabase) {
       const { data, error } = await supabase.from('profiles').select('meo3_session_id').eq('id', userId).maybeSingle();

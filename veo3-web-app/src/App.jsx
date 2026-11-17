@@ -86,9 +86,6 @@ async function initSessionOnServer(user) {
       },
       body: JSON.stringify({ sessionId })
     });
-    try {
-      await supabase.auth.signOut({ scope: 'others' });
-    } catch (_) {}
   } catch (err) {
     console.warn('Session init failed:', err);
   }
@@ -114,7 +111,7 @@ async function authFetch(user, url, options = {}) {
     const body = await res.json().catch(() => ({}));
     if (body.error === 'SESSION_EXPIRED') {
       clearLocalSessionId();
-      try { await supabase.auth.signOut(); } catch (_) {}
+      try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {}
       try { signOut(auth); } catch (_) {}
       alert('Tài khoản của bạn vừa đăng nhập ở một thiết bị khác. Bạn đã bị đăng xuất.');
       window.location.reload();
@@ -7074,7 +7071,7 @@ function App() {
       if (isKicked) return;
       isKicked = true;
       clearLocalSessionId();
-      try { await supabase.auth.signOut(); } catch (_) {}
+      try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {}
       try { signOut(auth); } catch (_) {}
       alert('Tài khoản của bạn vừa đăng nhập ở một thiết bị khác. Bạn đã bị đăng xuất.');
       window.location.reload();
@@ -7093,8 +7090,6 @@ function App() {
         }
       } catch (_) {}
     };
-
-    verifyRemoteSession();
 
     const channel = supabase
       .channel(`meo3-session-${user.uid}`)
