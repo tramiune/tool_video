@@ -3134,10 +3134,32 @@ app.post('/api/internal/upsert-task', async (req, res) => {
 
     if (taskId) {
       const now = Date.now();
-      const updateData = { status, updated_at: now };
-      if (mediaUrl !== undefined && mediaUrl !== null) updateData.media_url = mediaUrl;
-      if (error) updateData.error = error;
-      await supabase.from('tasks').update(updateData).eq('id', taskId);
+      const parsedUserId = parseSupabaseUserId(userId);
+      const { data: existing } = await supabase.from('tasks').select('id').eq('id', taskId).maybeSingle();
+      if (existing) {
+        const updateData = { status, updated_at: now };
+        if (mediaUrl !== undefined && mediaUrl !== null) updateData.media_url = mediaUrl;
+        if (error) updateData.error = error;
+        await supabase.from('tasks').update(updateData).eq('id', taskId);
+      } else {
+        await supabase.from('tasks').insert({
+          id: taskId,
+          user_id: parsedUserId,
+          type,
+          status,
+          aspect_ratio: '9:16',
+          model,
+          count: 1,
+          duration_seconds: Number(durationSeconds) || 16,
+          start_image: startImage || null,
+          prompt: String(prompt || ''),
+          media_url: mediaUrl || null,
+          error: error || null,
+          created_at: now,
+          updated_at: now,
+          app: String(userId).startsWith('aqua') ? 'aquaai' : 'meo3'
+        });
+      }
 
       try {
         const ref = db.collection('tasks').doc(String(taskId));

@@ -1312,7 +1312,8 @@ async function _doEnsureImageChromeWindowOpen() {
     return imgProfile;
   }
 
-  const profileDirName = imgProfile?.profileDir || 'Profile 6';
+  const isBox = Boolean(imgProfile?.isIsolatedBox);
+  const profileDirName = isBox ? 'Default' : (imgProfile?.profileDir || 'Profile 6');
   const userDataDir = imgProfile?.userDataDir || CHROME_MAIN_DIR;
   const flowUrl = (imgProfile?.flowUrl && imgProfile.flowUrl.includes('/tool/'))
     ? imgProfile.flowUrl.trim()
@@ -1365,7 +1366,7 @@ async function _doEnsureImageChromeWindowOpen() {
   const videoWinIds = new Set(openWins.map(w => w.winId));
   const args = [
     `--user-data-dir=${userDataDir}`,
-    `--profile-directory=${profileDirName}`,
+    ...(isBox ? [] : [`--profile-directory=${profileDirName}`]),
     '--disable-extensions',
     '--no-first-run',
     '--no-default-browser-check',
