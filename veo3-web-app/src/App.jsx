@@ -1355,9 +1355,9 @@ function App() {
       showAccessDeniedToast('Vui lòng đăng nhập để sử dụng tính năng này.');
       return;
     }
-    if (!hasAnyMonthlyAccess) {
-      showAccessDeniedToast('Tính năng Tạo Prompt dành cho tất cả Gói Tháng (từ 69k/tháng)!');
-      setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Tạo Prompt!');
+    if (!hasFullToolAccess) {
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
       setShowPricingModal(true);
       return;
     }
@@ -1395,7 +1395,7 @@ function App() {
 
       const json = await res.json().catch(() => ({}));
       if (res.status === 402) {
-        const msgText = json?.error || 'Tính năng Tạo Prompt chỉ dành cho các Gói Tháng (từ 69k/tháng).';
+        const msgText = json?.error || 'Tính năng Tạo Prompt chỉ dành cho Gói VIP 499k/tháng.';
         setPricingModalBanner(msgText);
         setShowPricingModal(true);
         return;
@@ -1523,9 +1523,9 @@ function App() {
       showAccessDeniedToast('Vui lòng đăng nhập để sử dụng tính năng này.');
       return;
     }
-    if (!hasAnyMonthlyAccess) {
-      showAccessDeniedToast('Tính năng Video thành Prompt dành cho tất cả Gói Tháng (từ 69k/tháng)!');
-      setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Video thành Prompt!');
+    if (!hasFullToolAccess) {
+      showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
+      setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
       setShowPricingModal(true);
       return;
     }
@@ -1559,7 +1559,7 @@ function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 402) {
-        const msgText = data?.error || 'Tính năng Video thành Prompt dành cho các Gói Tháng (từ 69k/tháng).';
+        const msgText = data?.error || 'Tính năng Video thành Prompt chỉ dành cho Gói VIP 499k/tháng.';
         setPricingModalBanner(msgText);
         setShowPricingModal(true);
         return;
@@ -8688,8 +8688,6 @@ function App() {
                   const isLockedTool =
                     tool.id === 'text-to-video'
                       ? false
-                      : tool.id === 'reverse-video'
-                      ? !hasAnyMonthlyAccess
                       : !hasFullToolAccess;
                   const ToolIcon = tool.icon;
                   return (
@@ -8697,13 +8695,7 @@ function App() {
                       key={tool.id}
                       type="button"
                       onClick={(e) => {
-                        if (tool.id === 'reverse-video' && !hasAnyMonthlyAccess) {
-                          showAccessDeniedToast('Tính năng Video thành Prompt dành cho tất cả Gói Tháng (chỉ từ 69k/tháng)!');
-                          setPricingModalBanner('Đăng ký bất kỳ Gói Tháng nào (chỉ từ 69k/tháng) để mở khóa tính năng Video thành Prompt!');
-                          setShowPricingModal(true);
-                          return;
-                        }
-                        if (tool.id !== 'text-to-video' && tool.id !== 'reverse-video' && !hasFullToolAccess) {
+                        if (tool.id !== 'text-to-video' && !hasFullToolAccess) {
                           showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
                           setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
                           setShowPricingModal(true);
@@ -12477,7 +12469,7 @@ function App() {
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '9px', fontSize: '0.78rem', color: 'var(--text-secondary)', flex: 1 }}>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Không giới hạn Video, Ảnh & Giọng nói</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#34d399', fontWeight: '800' }}>✨ Không dính logo (Xóa Watermark 100%)</li>
-                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Mở khóa Mẹ chồng nàng dâu, Review đồ ăn, Thời trang...</li>
+                  <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#f472b6', fontWeight: '700' }}>✓ Mở khóa Tạo Prompt, Video thành Prompt, Mẹ chồng nàng dâu, Review đồ ăn, Thời trang...</li>
                   <li style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#fff', fontWeight: '700' }}>✓ Mở hết quyền toàn bộ công cụ VIP</li>
                 </ul>
                 <button

@@ -2095,7 +2095,7 @@ async function requireDramaAccess(req, res, next) {
     const ADMIN_EMAILS = ['traderfinn0312@gmail.com'];
     const isAdmin = userData.isAdmin === true || ADMIN_EMAILS.includes(email);
     const isActiveDramaTier =
-      ['drama_500k', 'master_499k', 'vip_399k', 'pro_299k', 'pro_499k', 'master_899k'].includes(userData.tier) &&
+      ['drama_500k', 'master_499k', 'vip_399k', 'pro_499k', 'master_899k'].includes(userData.tier) &&
       (!userData.expiryDate || Number(userData.expiryDate) > Date.now());
     const hasDramaVideoAccess = isAdmin || userData.hasDramaAccess === true || isActiveDramaTier;
     const isActiveMonthlyTier =
@@ -3397,9 +3397,15 @@ app.post('/api/drama/fashion-mirror/jobs/:id/cancel', requireDramaAccess, async 
   }
 });
 
-// Chat Prompt AI (Trò chuyện AI sinh Prompt Veo 3 8s & Start Frame Image - gói tháng từ 69k)
+// Chat Prompt AI (Trò chuyện AI sinh Prompt Veo 3 8s & Start Frame Image - gói VIP 499k)
 app.post('/api/drama/chat-prompt', requireDramaAccess, async (req, res) => {
   try {
+    if (!req.authUser?.hasDramaVideoAccess && !req.authUser?.isAdmin) {
+      return res.status(402).json({
+        error: 'Gói của bạn không có quyền truy cập! Đăng ký gói VIP 499k/tháng để mở hết quyền.',
+        code: 'DRAMA_SUBSCRIPTION_REQUIRED'
+      });
+    }
     const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/chat-prompt`, {
       method: 'POST',
       headers: {
@@ -3416,9 +3422,16 @@ app.post('/api/drama/chat-prompt', requireDramaAccess, async (req, res) => {
   }
 });
 
-// Reverse-Engineer Video to Shot-by-Shot Prompts proxy route (available for all active monthly packages 69k+)
+// Reverse-Engineer Video to Shot-by-Shot Prompts proxy route (gói VIP 499k)
 app.post('/api/drama/reverse-video/analyze', requireDramaAccess, parseReverseVideoUpload, async (req, res) => {
   try {
+    if (!req.authUser?.hasDramaVideoAccess && !req.authUser?.isAdmin) {
+      if (req.file?.path) await fs.promises.unlink(req.file.path).catch(() => {});
+      return res.status(402).json({
+        error: 'Gói của bạn không có quyền truy cập! Đăng ký gói VIP 499k/tháng để mở hết quyền.',
+        code: 'DRAMA_SUBSCRIPTION_REQUIRED'
+      });
+    }
     let videoUrl = String(req.body?.videoUrl || '').trim();
     if (req.file) {
       if (req.file.size > 200 * 1024 * 1024) {
