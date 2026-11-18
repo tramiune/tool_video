@@ -51,24 +51,19 @@ class UserVideoLimitProvider {
 
   async loadLimit(userId, now, version) {
     try {
-      const snapshot = await this.db.collection('users').doc(userId).get();
-      let data = snapshot.exists ? snapshot.data() : null;
-
-      // Nếu không có trong Firestore (user mới từ Supabase), kiểm tra từ Supabase
-      if (!data) {
-        const supa = getSupabaseModule();
-        if (supa) {
-          try {
-            const sub = await supa.getSupabaseUserSubscription(userId);
-            if (sub && (sub.isAdmin || (sub.tier && sub.tier !== 'free'))) {
-              data = {
-                tier: sub.tier,
-                isAdmin: sub.isAdmin,
-                expiryDate: Date.now() + 24 * 60 * 60 * 1000
-              };
-            }
-          } catch (_) {}
-        }
+      let data = null;
+      const supa = getSupabaseModule();
+      if (supa) {
+        try {
+          const sub = await supa.getSupabaseUserSubscription(userId);
+          if (sub && (sub.isAdmin || (sub.tier && sub.tier !== 'free'))) {
+            data = {
+              tier: sub.tier,
+              isAdmin: sub.isAdmin,
+              expiryDate: Date.now() + 24 * 60 * 60 * 1000
+            };
+          }
+        } catch (_) {}
       }
       if (!data) data = {};
 

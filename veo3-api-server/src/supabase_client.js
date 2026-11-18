@@ -110,17 +110,37 @@ async function getSupabaseUserSubscription(userId, email = '') {
     };
   }
 
+  const cleanUserId = String(userId || '').trim().replace(/^aqua_(food_)?/, '');
+  const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanUserId);
+  if (!isValidUuid && !normEmail) {
+    return {
+      isAdmin: false,
+      isSuperAdmin: false,
+      hasDramaVideoAccess: false,
+      hasMonthlySubAccess: false,
+      noWatermark: false,
+      tier: 'free',
+      activePackage: null
+    };
+  }
+
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: topups, error } = await supabase
-      .from('topups')
-      .select('id, package_id, package_name, created_at, status')
-      .eq('user_id', userId)
-      .eq('status', 'success')
-      .in('package_id', ALL_MONTHLY_PACKAGE_IDS)
-      .gte('created_at', thirtyDaysAgo)
-      .order('created_at', { ascending: false });
+    let topups = [];
+    let error = null;
+    if (isValidUuid) {
+      const res = await supabase
+        .from('topups')
+        .select('id, package_id, package_name, created_at, status')
+        .eq('user_id', cleanUserId)
+        .eq('status', 'success')
+        .in('package_id', ALL_MONTHLY_PACKAGE_IDS)
+        .gte('created_at', thirtyDaysAgo)
+        .order('created_at', { ascending: false });
+      topups = res.data || [];
+      error = res.error;
+    }
 
     if (error) {
       logger.error('[Supabase] Error fetching user subscription:', error.message);
@@ -137,7 +157,7 @@ async function getSupabaseUserSubscription(userId, email = '') {
 
     if (!topups || topups.length === 0) {
       // Kiểm tra danh sách di trú từ Firebase cũ (Auto-claim cho user chuyển từ Firebase sang Supabase)
-      if (normEmail && MIGRATION_SUBS_MAP[normEmail]) {
+      if (isValidUuid && normEmail && MIGRATION_SUBS_MAP[normEmail]) {
         const legacySub = MIGRATION_SUBS_MAP[normEmail];
         let createdAtIso = new Date().toISOString();
         if (legacySub.expiryDate && legacySub.tier !== 'hocvien') {
@@ -149,7 +169,7 @@ async function getSupabaseUserSubscription(userId, email = '') {
         }
         try {
           await supabase.from('topups').insert({
-            user_id: userId,
+            user_id: cleanUserId,
             package_id: legacySub.tier,
             package_name: `Gói ${legacySub.tier} (Meo3 Migration)`,
             amount: 0,

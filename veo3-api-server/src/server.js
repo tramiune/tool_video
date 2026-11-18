@@ -1508,16 +1508,6 @@ Identity preservation is the highest priority.`;
       logger.error(`[Supabase Task] Insert error for ${taskId}: ${insErr.message}`);
     }
 
-    try {
-      await db.collection('tasks').doc(taskId).set({
-        ...taskData,
-        userId: userId || 'anonymous',
-        aspectRatio: taskData.aspect_ratio,
-        referenceImages: taskData.reference_images,
-        createdAt: taskData.created_at
-      });
-    } catch (_) {}
-
     processSupabaseTask({
       ...taskData,
       referenceImages: refImages,
@@ -1568,28 +1558,16 @@ app.post('/api/generate-video', upload.fields([{ name: 'startImage', maxCount: 1
     const targetUserId = req.body.userId || 'aquaai';
     const parsedUserId = parseSupabaseUserId(targetUserId);
 
-    if (targetUserId && targetUserId !== 'anonymous' && targetUserId !== 'aquaai') {
+    if (targetUserId && targetUserId !== 'anonymous' && targetUserId !== 'aquaai' && parsedUserId) {
       let activeCount = 0;
-      if (parsedUserId) {
-        try {
-          const { count } = await supabase
-            .from('tasks')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', parsedUserId)
-            .in('status', ['pending', 'processing', 'queued', 'generating', 'rendering']);
-          activeCount = count || 0;
-        } catch (_) {}
-      }
-      if (activeCount < 3) {
-        try {
-          const activeSnap = await db.collection('tasks')
-            .where('userId', '==', targetUserId)
-            .where('status', 'in', ['pending', 'processing', 'queued', 'generating', 'rendering'])
-            .limit(3)
-            .get();
-          activeCount += activeSnap.size;
-        } catch (_) {}
-      }
+      try {
+        const { count } = await supabase
+          .from('tasks')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', parsedUserId)
+          .in('status', ['pending', 'processing', 'queued', 'generating', 'rendering']);
+        activeCount = count || 0;
+      } catch (_) {}
       if (activeCount >= 3) {
         return res.status(429).json({
           error: 'CONCURRENCY_LIMIT: Bạn chỉ được xếp hàng tối đa 3 task cùng lúc. Vui lòng đợi task trước hoàn thành nhé!'
@@ -1626,21 +1604,7 @@ app.post('/api/generate-video', upload.fields([{ name: 'startImage', maxCount: 1
       logger.error(`[Supabase Task] Insert error for ${taskId}: ${insErr.message}`);
     }
 
-    // 2. Ghi song song vào Firestore fallback (để không làm gián đoạn bất kỳ luồng nào)
-    try {
-      await db.collection('tasks').doc(taskId).set({
-        ...taskData,
-        userId: targetUserId,
-        aspectRatio: taskData.aspect_ratio,
-        durationSeconds: taskData.duration_seconds,
-        startImage: taskData.start_image,
-        endImage: taskData.end_image,
-        watermarkText: taskData.watermark_text,
-        createdAt: taskData.created_at
-      });
-    } catch (_) {}
-
-    // 3. Đưa ngay vào hàng đợi xử lý của server
+    // 2. Đưa ngay vào hàng đợi xử lý của server (100% Supabase, không qua Firestore)
     processSupabaseTask({
       ...taskData,
       userId: targetUserId
@@ -1662,28 +1626,16 @@ app.post('/api/generate-image', upload.single('referenceImage'), async (req, res
     const targetUserId = req.body.userId || 'aquaai';
     const parsedUserId = parseSupabaseUserId(targetUserId);
 
-    if (targetUserId && targetUserId !== 'anonymous' && targetUserId !== 'aquaai') {
+    if (targetUserId && targetUserId !== 'anonymous' && targetUserId !== 'aquaai' && parsedUserId) {
       let activeCount = 0;
-      if (parsedUserId) {
-        try {
-          const { count } = await supabase
-            .from('tasks')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', parsedUserId)
-            .in('status', ['pending', 'processing', 'queued', 'generating', 'rendering']);
-          activeCount = count || 0;
-        } catch (_) {}
-      }
-      if (activeCount < 3) {
-        try {
-          const activeSnap = await db.collection('tasks')
-            .where('userId', '==', targetUserId)
-            .where('status', 'in', ['pending', 'processing', 'queued', 'generating', 'rendering'])
-            .limit(3)
-            .get();
-          activeCount += activeSnap.size;
-        } catch (_) {}
-      }
+      try {
+        const { count } = await supabase
+          .from('tasks')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', parsedUserId)
+          .in('status', ['pending', 'processing', 'queued', 'generating', 'rendering']);
+        activeCount = count || 0;
+      } catch (_) {}
       if (activeCount >= 3) {
         return res.status(429).json({
           error: 'CONCURRENCY_LIMIT: Bạn chỉ được xếp hàng tối đa 3 task cùng lúc. Vui lòng đợi task trước hoàn thành nhé!'
@@ -1733,19 +1685,7 @@ app.post('/api/generate-image', upload.single('referenceImage'), async (req, res
       logger.error(`[Supabase Task] Insert error for ${taskId}: ${insErr.message}`);
     }
 
-    // 2. Ghi song song vào Firestore fallback
-    try {
-      await db.collection('tasks').doc(taskId).set({
-        ...taskData,
-        userId: targetUserId,
-        aspectRatio: taskData.aspect_ratio,
-        referenceImages: taskData.reference_images,
-        watermarkText: taskData.watermark_text,
-        createdAt: taskData.created_at
-      });
-    } catch (_) {}
-
-    // 3. Đưa ngay vào hàng đợi xử lý của server
+    // 2. Đưa ngay vào hàng đợi xử lý của server (100% Supabase, không qua Firestore)
     processSupabaseTask({
       ...taskData,
       referenceImages,
@@ -1760,13 +1700,13 @@ app.post('/api/generate-image', upload.single('referenceImage'), async (req, res
   }
 });
 
-// Task status endpoint (hỗ trợ Supabase trước, Firestore fallback)
+// Task status endpoint (100% Supabase + in-memory RAM cache)
 app.get('/api/status/:taskId', async (req, res) => {
   try {
     const taskId = req.params.taskId;
     const statusMap = { pending: 'queued', processing: 'generating' };
 
-    // 1. Kiểm tra trong Supabase trước
+    const memTask = tasks[taskId];
     const { data: supaTask } = await supabase
       .from('tasks')
       .select('*')
@@ -1774,50 +1714,57 @@ app.get('/api/status/:taskId', async (req, res) => {
       .maybeSingle();
 
     if (supaTask) {
+      const effectiveStatus = (memTask && (memTask.status === 'completed' || memTask.status === 'failed') && supaTask.status !== memTask.status)
+        ? memTask.status
+        : supaTask.status;
+      const effectiveMediaUrl = supaTask.media_url || memTask?.mediaUrl || null;
+      const effectiveMedia = (Array.isArray(supaTask.media) && supaTask.media.length > 0)
+        ? supaTask.media
+        : (Array.isArray(memTask?.media) && memTask.media.length > 0
+          ? memTask.media
+          : (effectiveMediaUrl ? [{ mediaId: supaTask.id, status: 'success', url: effectiveMediaUrl }] : []));
+
       return res.json({
         id: supaTask.id,
         type: supaTask.type || 'image',
         prompt: supaTask.prompt || '',
         aspectRatio: supaTask.aspect_ratio || '1:1',
         model: supaTask.model || '',
-        status: statusMap[supaTask.status] || supaTask.status,
-        progress: supaTask.progress || null,
-        error: supaTask.error || null,
-        media: supaTask.media || (supaTask.media_url ? [{ mediaId: supaTask.id, status: 'success', url: supaTask.media_url }] : []),
+        status: statusMap[effectiveStatus] || effectiveStatus,
+        progress: supaTask.progress || memTask?.progress || null,
+        error: supaTask.error || memTask?.error || null,
+        media: effectiveMedia,
         createdAt: Number(supaTask.created_at) || null
       });
     }
 
-    // 2. Fallback Firestore cũ
-    const docRef = db.collection('tasks').doc(taskId);
-    const docSnap = await docRef.get();
-    if (!docSnap.exists) {
-      return res.status(404).json({ error: 'Task not found' });
+    if (memTask) {
+      return res.json({
+        id: memTask.id,
+        type: memTask.type || 'image',
+        prompt: memTask.prompt || '',
+        aspectRatio: memTask.aspectRatio || '1:1',
+        model: memTask.model || '',
+        status: statusMap[memTask.status] || memTask.status,
+        progress: memTask.progress || null,
+        error: memTask.error || null,
+        media: memTask.media || (memTask.mediaUrl ? [{ mediaId: memTask.id, status: 'success', url: memTask.mediaUrl }] : []),
+        createdAt: memTask.createdAt || null
+      });
     }
-    const task = docSnap.data();
-    res.json({
-      id: docSnap.id,
-      type: task.type || 'image',
-      prompt: task.prompt || '',
-      aspectRatio: task.aspectRatio || '1:1',
-      model: task.model || '',
-      status: statusMap[task.status] || task.status,
-      progress: task.progress || null,
-      error: task.error || null,
-      media: task.media || (task.mediaUrl ? [{ mediaId: docSnap.id, status: 'success', url: task.mediaUrl }] : []),
-      createdAt: task.createdAt || null
-    });
+
+    return res.status(404).json({ error: 'Task not found' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Retrieve task status and output details (hỗ trợ Supabase trước, Firestore fallback)
+// Retrieve task status and output details (100% Supabase + in-memory RAM cache)
 app.get('/api/tasks/:id', async (req, res) => {
   try {
     const taskId = req.params.id;
+    const memTask = tasks[taskId];
 
-    // 1. Kiểm tra trong Supabase trước
     const { data: supaTask } = await supabase
       .from('tasks')
       .select('*')
@@ -1825,32 +1772,56 @@ app.get('/api/tasks/:id', async (req, res) => {
       .maybeSingle();
 
     if (supaTask) {
+      const effectiveStatus = (memTask && (memTask.status === 'completed' || memTask.status === 'failed') && supaTask.status !== memTask.status)
+        ? memTask.status
+        : supaTask.status;
+      const effectiveMediaUrl = supaTask.media_url || memTask?.mediaUrl || null;
+      const effectiveMedia = (Array.isArray(supaTask.media) && supaTask.media.length > 0)
+        ? supaTask.media
+        : (Array.isArray(memTask?.media) && memTask.media.length > 0
+          ? memTask.media
+          : (effectiveMediaUrl ? [{ mediaId: supaTask.id, status: 'success', url: effectiveMediaUrl }] : []));
+
       return res.json({
         id: supaTask.id,
         userId: supaTask.user_id,
         userEmail: supaTask.user_email,
         prompt: supaTask.prompt,
         type: supaTask.type,
-        status: supaTask.status,
+        status: effectiveStatus,
         aspectRatio: supaTask.aspect_ratio,
         model: supaTask.model,
-        mediaUrl: supaTask.media_url,
-        media: supaTask.media || (supaTask.media_url ? [{ mediaId: supaTask.id, status: 'success', url: supaTask.media_url }] : []),
-        error: supaTask.error,
-        errorCode: supaTask.error_code,
-        progress: supaTask.progress,
+        mediaUrl: effectiveMediaUrl,
+        media: effectiveMedia,
+        error: supaTask.error || memTask?.error || null,
+        errorCode: supaTask.error_code || memTask?.errorCode || null,
+        progress: supaTask.progress || memTask?.progress || null,
         createdAt: Number(supaTask.created_at) || Date.now(),
         updatedAt: Number(supaTask.updated_at) || Date.now()
       });
     }
 
-    // 2. Fallback Firestore cũ
-    const docRef = db.collection('tasks').doc(taskId);
-    const docSnap = await docRef.get();
-    if (!docSnap.exists) {
-      return res.status(404).json({ error: 'Task not found' });
+    if (memTask) {
+      return res.json({
+        id: memTask.id,
+        userId: memTask.userId,
+        userEmail: memTask.userEmail,
+        prompt: memTask.prompt,
+        type: memTask.type,
+        status: memTask.status,
+        aspectRatio: memTask.aspectRatio,
+        model: memTask.model,
+        mediaUrl: memTask.mediaUrl || null,
+        media: memTask.media || (memTask.mediaUrl ? [{ mediaId: memTask.id, status: 'success', url: memTask.mediaUrl }] : []),
+        error: memTask.error || null,
+        errorCode: memTask.errorCode || null,
+        progress: memTask.progress || 0,
+        createdAt: memTask.createdAt || Date.now(),
+        updatedAt: Date.now()
+      });
     }
-    res.json({ id: docSnap.id, ...docSnap.data() });
+
+    return res.status(404).json({ error: 'Task not found' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1956,77 +1927,42 @@ app.post('/api/session/init', requireUser, async (req, res) => {
 app.post('/api/tasks/:id/retry', requireUser, async (req, res) => {
   try {
     const taskId = req.params.id;
+    const { data: supaTask, error: fetchErr } = await supabase.from('tasks').select('*').eq('id', taskId).maybeSingle();
+    if (fetchErr) {
+      return res.status(500).json({ error: fetchErr.message });
+    }
+    if (!supaTask) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    if (supaTask.user_id && supaTask.user_id !== req.authUser.uid) {
+      return res.status(403).json({ error: 'You cannot retry this task' });
+    }
+    if (supaTask.status !== 'failed') {
+      return res.status(409).json({ error: 'Only failed tasks can be retried' });
+    }
+    if (!isRetryableTaskFailure({ error: supaTask.error, errorCode: supaTask.error_code })) {
+      return res.status(400).json({ error: 'Lỗi này cần đổi ảnh hoặc nội dung và không thể thử lại tự động.' });
+    }
+    const retryCount = Number(supaTask.retry_count) || 0;
+    if (retryCount >= TASK_RETRY_LIMIT) {
+      return res.status(429).json({ error: `Task đã đạt giới hạn ${TASK_RETRY_LIMIT} lần thử lại.` });
+    }
+    await supabase.from('tasks').update({
+      status: 'pending',
+      media_url: null,
+      error: null,
+      error_code: null,
+      retry_count: retryCount + 1,
+      updated_at: Date.now()
+    }).eq('id', taskId);
 
-    // 1. Thử trên Supabase tasks trước
-    try {
-      const { data: supaTask } = await supabase.from('tasks').select('*').eq('id', taskId).maybeSingle();
-      if (supaTask) {
-        if (supaTask.user_id && supaTask.user_id !== req.authUser.uid) {
-          return res.status(403).json({ error: 'You cannot retry this task' });
-        }
-        if (supaTask.status !== 'failed') {
-          return res.status(409).json({ error: 'Only failed tasks can be retried' });
-        }
-        const retryCount = Number(supaTask.retry_count) || 0;
-        if (retryCount >= TASK_RETRY_LIMIT) {
-          return res.status(429).json({ error: `Task đã đạt giới hạn ${TASK_RETRY_LIMIT} lần thử lại.` });
-        }
-        await supabase.from('tasks').update({
-          status: 'pending',
-          media_url: null,
-          error: null,
-          error_code: null,
-          retry_count: retryCount + 1,
-          updated_at: Date.now()
-        }).eq('id', taskId);
-
-        processSupabaseTask({
-          ...supaTask,
-          status: 'pending',
-          retry_count: retryCount + 1
-        });
-        logger.info(`Supabase task ${taskId} queued for retry (${retryCount + 1}/${TASK_RETRY_LIMIT})`);
-        return res.json({ success: true, taskId, status: 'pending', retryCount: retryCount + 1 });
-      }
-    } catch (_) {}
-
-    // 2. Fallback Firestore cũ
-    const taskRef = db.collection('tasks').doc(req.params.id);
-    let retriedTask;
-    await db.runTransaction(async transaction => {
-      const snapshot = await transaction.get(taskRef);
-      if (!snapshot.exists) throw Object.assign(new Error('Task not found'), { statusCode: 404 });
-
-      const task = snapshot.data();
-      if (task.userId !== req.authUser.uid) {
-        throw Object.assign(new Error('You cannot retry this task'), { statusCode: 403 });
-      }
-      if (task.status !== 'failed') {
-        throw Object.assign(new Error('Only failed tasks can be retried'), { statusCode: 409 });
-      }
-      if (!isRetryableTaskFailure(task)) {
-        throw Object.assign(new Error('Lỗi này cần đổi ảnh hoặc nội dung và không thể thử lại tự động.'), { statusCode: 400 });
-      }
-
-      const retryCount = Number(task.retryCount) || 0;
-      if (retryCount >= TASK_RETRY_LIMIT) {
-        throw Object.assign(new Error(`Task đã đạt giới hạn ${TASK_RETRY_LIMIT} lần thử lại.`), { statusCode: 429 });
-      }
-
-      const updates = {
-        status: 'pending',
-        mediaUrl: null,
-        error: null,
-        errorCode: null,
-        retryCount: retryCount + 1,
-        retriedAt: Date.now()
-      };
-      transaction.update(taskRef, updates);
-      retriedTask = { ...task, ...updates };
+    processSupabaseTask({
+      ...supaTask,
+      status: 'pending',
+      retry_count: retryCount + 1
     });
-
-    logger.info(`Task ${taskRef.id} queued for retry (${retriedTask.retryCount}/${TASK_RETRY_LIMIT})`);
-    return res.json({ success: true, taskId: taskRef.id, status: 'pending', retryCount: retriedTask.retryCount });
+    logger.info(`Supabase task ${taskId} queued for retry (${retryCount + 1}/${TASK_RETRY_LIMIT})`);
+    return res.json({ success: true, taskId, status: 'pending', retryCount: retryCount + 1 });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -3161,15 +3097,6 @@ app.post('/api/internal/upsert-task', async (req, res) => {
         });
       }
 
-      try {
-        const ref = db.collection('tasks').doc(String(taskId));
-        const fsUpdate = { status, updatedAt: now };
-        if (mediaUrl !== undefined && mediaUrl !== null) fsUpdate.mediaUrl = mediaUrl;
-        if (status === 'completed') fsUpdate.completedAt = now;
-        if (error) fsUpdate.error = error;
-        await ref.set(fsUpdate, { merge: true });
-      } catch (_) {}
-
       return res.json({ ok: true, taskId });
     }
 
@@ -3194,23 +3121,6 @@ app.post('/api/internal/upsert-task', async (req, res) => {
       updated_at: now,
       app: String(userId).startsWith('aqua') ? 'aquaai' : 'meo3'
     });
-
-    try {
-      await db.collection('tasks').doc(newTaskId).set({
-        userId: String(userId),
-        type,
-        status,
-        aspectRatio: '9:16',
-        model,
-        count: 1,
-        durationSeconds: Number(durationSeconds) || 16,
-        startImage: startImage || null,
-        prompt: String(prompt || ''),
-        mediaUrl: mediaUrl || null,
-        createdAt: now,
-        updatedAt: now
-      });
-    } catch (_) {}
 
     return res.json({ ok: true, taskId: newTaskId });
   } catch (err) {
@@ -4167,105 +4077,11 @@ async function rehydrateTasks() {
       logger.error('Rehydrate Supabase tasks error: ', supaErr.message);
     }
 
-    // 2. Rehydrate từ Firestore fallback cũ (nếu còn)
-    try {
-      const snap = await db.collection('tasks')
-        .where('status', 'in', ['processing', 'pending'])
-        .get();
-      for (const doc of snap.docs) {
-        const taskData = doc.data();
-        const taskId = doc.id;
-        if (tasks[taskId]) continue;
-        if (taskData.createdAt && now - taskData.createdAt > 30 * 60 * 1000) {
-          doc.ref.update({ status: 'failed', error: 'Task expired on server restart' }).catch(() => {});
-          continue;
-        }
-        tasks[taskId] = {
-          id: taskId,
-          docRef: doc.ref,
-          media: [],
-          error: null,
-          ...taskData,
-          status: 'queued',
-        };
-        if (taskData.type === 'video') {
-          videoScheduler.enqueue(taskId);
-          vid++;
-        } else if (taskData.type === 'image') {
-          imageQueue.push(taskId);
-          img++;
-        }
-      }
-    } catch (_) {}
-
-    logger.info(`Rehydrated ${vid} video task(s), ${img} image task(s)`);
+    logger.info(`Rehydrated ${vid} video task(s), ${img} image task(s) from Supabase`);
     if (img > 0) drainImageQueue();
   } catch (err) {
     logger.error('Rehydrate tasks error: ', err);
   }
-}
-
-function startFirestoreListener() {
-  logger.info("Starting Firestore Listener for tasks...");
-  
-  db.collection('tasks')
-    .where('status', '==', 'pending')
-    .onSnapshot((snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const doc = change.doc;
-          const taskData = doc.data();
-          const taskId = doc.id;
-          
-          if (!tasks[taskId] || tasks[taskId].status === 'failed') {
-            const rawPromptLen = String(taskData.prompt || '').trim().length;
-            if (rawPromptLen > 3500) {
-              const errMsg = `Câu lệnh (Prompt) của bạn quá dài (${rawPromptLen}/3500 ký tự). Vui lòng rút gọn xuống dưới 3500 ký tự để tạo video không bị lỗi!`;
-              logger.warn(`[Task] Rejected overly long prompt (${rawPromptLen} chars) for task ${taskId}`);
-              doc.ref.update({ status: 'failed', error: errMsg }).catch(() => {});
-              return;
-            }
-            // Register local task
-            tasks[taskId] = {
-              id: taskId,
-              docRef: doc.ref,
-              media: [],
-              error: null,
-              ...taskData,
-              status: 'queued',
-            };
-
-            if (taskData.type === 'video') {
-              videoScheduler.enqueue(taskId);
-              logger.info(`Task queued from Firestore: ${taskId} (type: video, prompt: "${String(taskData.prompt || '').substring(0, 20)}...")`);
-            } else {
-              imageQueue.push(taskId);
-              logger.info(`Task queued from Firestore: ${taskId} (type: image, prompt: "${String(taskData.prompt || '').substring(0, 20)}...")`);
-              drainImageQueue();
-            }
-          }
-        } else if (change.type === 'removed') {
-          const taskId = change.doc.id;
-          // Check if document was genuinely deleted from Firestore (not just changed status from pending to processing)
-          db.collection('tasks').doc(taskId).get().then(snap => {
-            if (!snap.exists) {
-              if (tasks[taskId]) {
-                delete tasks[taskId];
-                const imgIdx = imageQueue.indexOf(taskId);
-                if (imgIdx >= 0) imageQueue.splice(imgIdx, 1);
-                logger.info(`[Task] Genuinely deleted task removed from queue: ${taskId}`);
-              }
-              if (extensionBridge.isPending(taskId)) {
-                extensionBridge.cancel(taskId, 'Task was deleted/cancelled by user');
-                logger.info(`[Task] Active task ${taskId} cancelled in extensionBridge because document was deleted`);
-              }
-            }
-          }).catch(() => {});
-        }
-      });
-    }, (error) => {
-      logger.error("Firestore listen error: ", error);
-    });
 }
 
 function createSupabaseDocRef(taskId) {
@@ -4292,11 +4108,6 @@ function createSupabaseDocRef(taskId) {
       } catch (err) {
         logger.error(`[Supabase Task] Exception updating task ${taskId}:`, err.message);
       }
-
-      // Mirror update vào Firestore fallback
-      try {
-        await db.collection('tasks').doc(taskId).set(updates, { merge: true });
-      } catch (_) {}
     }
   };
 }
@@ -5075,82 +4886,73 @@ async function runVideoTask(taskId) {
 }
 
 
-// Cleanup tasks older than 24 hours (1 day)
+// Cleanup expired tasks on Supabase (meo3: >24h, aquaai: >72h) & Cloudflare R2
 async function cleanupOldTasks() {
   const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-  logger.info(`Running periodic cleanup for tasks created before ${new Date(oneDayAgo).toISOString()}...`);
+  const threeDaysAgo = Date.now() - 72 * 60 * 60 * 1000;
+  logger.info(`Running periodic Supabase tasks cleanup (meo3 < ${new Date(oneDayAgo).toISOString()}, aquaai < ${new Date(threeDaysAgo).toISOString()})...`);
   try {
     let totalTasksDeleted = 0;
-    while (true) {
-      const snapshot = await db.collection('tasks')
-        .where('createdAt', '<', oneDayAgo)
-        .limit(400)
-        .get();
+    const r2Base = (process.env.R2_PUBLIC_BASE || '').replace(/\/+$/, '');
 
-      if (snapshot.empty) break;
-
-      const batch = db.batch();
-      const r2Base = (process.env.R2_PUBLIC_BASE || '').replace(/\/+$/, '');
-      for (const doc of snapshot.docs) {
-        const data = doc.data() || {};
-        const filesToDelete = [];
-        if (data.mediaUrl) filesToDelete.push(data.mediaUrl);
-        if (data.startImage && typeof data.startImage === 'string') filesToDelete.push(data.startImage);
-        if (data.endImage && typeof data.endImage === 'string') filesToDelete.push(data.endImage);
-        if (data.media && Array.isArray(data.media)) {
-          for (const m of data.media) {
-            if (m && m.url) filesToDelete.push(m.url);
-          }
+    for (const [cutoff, isAqua] of [[oneDayAgo, false], [threeDaysAgo, true]]) {
+      while (true) {
+        let query = supabase
+          .from('tasks')
+          .select('id, media_url, start_image, end_image, media, app')
+          .lt('created_at', cutoff)
+          .limit(300);
+        if (isAqua) {
+          query = query.eq('app', 'aquaai');
+        } else {
+          query = query.neq('app', 'aquaai');
         }
 
-        for (const url of filesToDelete) {
-          if (r2Base && typeof url === 'string' && url.startsWith(`${r2Base}/`)) {
-            const fileKey = url.slice(r2Base.length + 1);
-            const isOurFolder =
-              fileKey.startsWith('meo3/') ||
-              fileKey.startsWith('aqua/') ||
-              fileKey.startsWith('outputs/') ||
-              fileKey.startsWith('inputs/');
-            if (isOurFolder) {
-              try {
-                await deleteFromR2(fileKey);
-              } catch (r2Err) {}
+        const { data: rows, error } = await query;
+        if (error || !rows || rows.length === 0) break;
+
+        const idsToDelete = [];
+        for (const row of rows) {
+          idsToDelete.push(row.id);
+          const filesToDelete = [];
+          if (row.media_url) filesToDelete.push(row.media_url);
+          if (row.start_image && typeof row.start_image === 'string') filesToDelete.push(row.start_image);
+          if (row.end_image && typeof row.end_image === 'string') filesToDelete.push(row.end_image);
+          if (Array.isArray(row.media)) {
+            for (const m of row.media) {
+              if (m && m.url) filesToDelete.push(m.url);
+            }
+          }
+
+          for (const url of filesToDelete) {
+            if (r2Base && typeof url === 'string' && url.startsWith(`${r2Base}/`)) {
+              const fileKey = url.slice(r2Base.length + 1);
+              const isOurFolder =
+                fileKey.startsWith('meo3/') ||
+                fileKey.startsWith('aqua/') ||
+                fileKey.startsWith('outputs/') ||
+                fileKey.startsWith('inputs/');
+              if (isOurFolder) {
+                try {
+                  await deleteFromR2(fileKey);
+                } catch (_) {}
+              }
             }
           }
         }
 
-        batch.delete(doc.ref);
+        if (idsToDelete.length > 0) {
+          await supabase.from('tasks').delete().in('id', idsToDelete);
+          totalTasksDeleted += idsToDelete.length;
+        }
+        if (rows.length < 300) break;
       }
-
-      await batch.commit();
-      totalTasksDeleted += snapshot.size;
-      if (snapshot.size < 400) break;
     }
 
     if (totalTasksDeleted > 0) {
-      logger.success(`Successfully deleted ${totalTasksDeleted} expired tasks from Firestore and matching media files from Cloudflare R2.`);
+      logger.success(`Successfully deleted ${totalTasksDeleted} expired tasks from Supabase and matching media files from Cloudflare R2.`);
     } else {
       logger.info('No expired tasks to clean up.');
-    }
-
-    // Clean up expired audio_tasks docs after 24h in batches of 400
-    let totalAudioDeleted = 0;
-    while (true) {
-      const audioSnap = await db.collection('audio_tasks')
-        .where('createdAt', '<', oneDayAgo)
-        .limit(400)
-        .get();
-      if (audioSnap.empty) break;
-      const audioBatch = db.batch();
-      for (const doc of audioSnap.docs) {
-        audioBatch.delete(doc.ref);
-      }
-      await audioBatch.commit();
-      totalAudioDeleted += audioSnap.size;
-      if (audioSnap.size < 400) break;
-    }
-    if (totalAudioDeleted > 0) {
-      logger.success(`Successfully deleted ${totalAudioDeleted} expired audio_tasks from Firestore.`);
     }
   } catch (err) {
     logger.error('Error during expired tasks cleanup', err);
@@ -5158,12 +4960,12 @@ async function cleanupOldTasks() {
 }
 
 function scheduleDailyCleanup() {
-  // Chạy ngay sau khi khởi động 15 giây để dọn sạch các task đã quá hạn 24h
+  // Chạy ngay sau khi khởi động 15 giây để dọn sạch các task đã quá hạn
   setTimeout(() => {
     cleanupOldTasks().catch(err => logger.error('Startup cleanup failed', err));
   }, 15000);
 
-  // Quét dọn định kỳ mỗi 1 tiếng (3600s) để task nào quá 24h là xoá khỏi Firestore & R2 ngay
+  // Quét dọn định kỳ mỗi 1 tiếng (3600s)
   setInterval(() => {
     cleanupOldTasks().catch(err => logger.error('Hourly cleanup failed', err));
   }, 60 * 60 * 1000);
@@ -5172,12 +4974,9 @@ function scheduleDailyCleanup() {
 // Start HTTP + Socket.io Server
 captchaService.attach(io);
 
-// Start Firestore Cookie Sync first
+// Start Cookie Sync & Supabase Task Queue (100% Supabase tasks, Firestore tasks listener disabled)
 startCookieSyncListener().then(() => {
-  // Rehydrate in-flight/queued tasks across restarts
   rehydrateTasks().then(() => {
-    // Start Firestore Listener
-    startFirestoreListener();
     startSupabaseListener();
     resumeAutoToolJobs().catch(err => logger.error('[AutoTool] Resume failed', err));
     drama.resumeDramaJobs().catch(err => logger.error('[Drama] Resume failed', err));
