@@ -10455,26 +10455,59 @@ function App() {
                         <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#6ee7b7', flex: 1, minWidth: '150px' }}>
                           ✅ Đã tạo xong: {quickDramaJob?.title || quickDramaScript?.title || 'Mẹ chồng nàng dâu'}
                         </span>
-                        <a
-                          href={quickDramaJob.finalUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '5px 12px',
-                            borderRadius: '9px',
-                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                            color: '#fff',
-                            fontSize: '0.74rem',
-                            fontWeight: 700,
-                            textDecoration: 'none',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          🎬 Xem / Tải Video
-                        </a>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveLightboxMedia({
+                                type: 'video',
+                                mediaUrl: quickDramaJob.finalUrl,
+                                prompt: quickDramaJob?.title || quickDramaScript?.title || 'Mẹ chồng nàng dâu',
+                              })
+                            }
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '5px 10px',
+                              borderRadius: '9px',
+                              border: '1px solid rgba(52, 211, 153, 0.45)',
+                              background: 'rgba(16, 185, 129, 0.18)',
+                              color: '#6ee7b7',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Play size={12} fill="currentColor" /> Xem
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDownload(
+                                quickDramaJob.finalUrl,
+                                `video_me_chong_nang_dau_tap_${quickDramaJob?.episodeNumber || 1}.mp4`
+                              )
+                            }
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '5px 12px',
+                              borderRadius: '9px',
+                              border: 'none',
+                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              color: '#fff',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Download size={13} /> Tải Video
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -10809,26 +10842,59 @@ function App() {
                         <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#6ee7b7', flex: 1, minWidth: '150px' }}>
                           ✅ Đã tạo xong Review: {foodReviewJob?.productName || foodReviewProductName}
                         </span>
-                        <a
-                          href={foodReviewJob.finalUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '5px 12px',
-                            borderRadius: '9px',
-                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                            color: '#fff',
-                            fontSize: '0.74rem',
-                            fontWeight: 700,
-                            textDecoration: 'none',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          🎬 Xem / Tải Video
-                        </a>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveLightboxMedia({
+                                type: 'video',
+                                mediaUrl: foodReviewJob.finalUrl,
+                                prompt: `Review đồ ăn: ${foodReviewJob?.productName || foodReviewProductName || ''}`,
+                              })
+                            }
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '5px 10px',
+                              borderRadius: '9px',
+                              border: '1px solid rgba(52, 211, 153, 0.45)',
+                              background: 'rgba(16, 185, 129, 0.18)',
+                              color: '#6ee7b7',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Play size={12} fill="currentColor" /> Xem
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDownload(
+                                foodReviewJob.finalUrl,
+                                `video_review_${foodReviewJob?.id || 'final'}.mp4`
+                              )
+                            }
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '5px 12px',
+                              borderRadius: '9px',
+                              border: 'none',
+                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              color: '#fff',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Download size={13} /> Tải Video
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -11345,26 +11411,59 @@ function App() {
                         <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#6ee7b7', flex: 1, minWidth: '150px' }}>
                           ✅ Đã tạo xong Thời trang trước gương: {fashionJob?.outfitName || fashionOutfitName || 'Trang phục mới'}
                         </span>
-                        <a
-                          href={fashionJob.finalUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '5px 12px',
-                            borderRadius: '9px',
-                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                            color: '#fff',
-                            fontSize: '0.74rem',
-                            fontWeight: 700,
-                            textDecoration: 'none',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          🎬 Xem / Tải Video
-                        </a>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveLightboxMedia({
+                                type: 'video',
+                                mediaUrl: fashionJob.finalUrl,
+                                prompt: `Thời trang trước gương: ${fashionJob?.outfitName || fashionOutfitName || 'Trang phục mới'}`,
+                              })
+                            }
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '5px 10px',
+                              borderRadius: '9px',
+                              border: '1px solid rgba(52, 211, 153, 0.45)',
+                              background: 'rgba(16, 185, 129, 0.18)',
+                              color: '#6ee7b7',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Play size={12} fill="currentColor" /> Xem
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDownload(
+                                fashionJob.finalUrl,
+                                `video_thoi_trang_${fashionJob?.id || 'final'}.mp4`
+                              )
+                            }
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '5px 12px',
+                              borderRadius: '9px',
+                              border: 'none',
+                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              color: '#fff',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Download size={13} /> Tải Video
+                          </button>
+                        </div>
                       </div>
                     )}
 

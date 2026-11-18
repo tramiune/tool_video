@@ -4,6 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const { db } = require('./firebase_worker');
+const { supabase } = require('./supabase_client');
 const { uploadToR2 } = require('./s3_uploader');
 const { logger, sleep } = require('./utils');
 const audioClient = require('./audio_client');
@@ -736,6 +737,30 @@ async function runDramaJob(jobId) {
       await recordDramaEpisode(jobRef, completedJob).catch(() => {});
       if (job.userId && !String(job.userId).startsWith('aqua_')) {
         const firstScene = Array.isArray(job.scenes) && job.scenes[0] ? job.scenes[0] : {};
+        const now = Date.now();
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(String(job.userId))) {
+          const mergedTaskId = `task_${now}_drama_${Math.random().toString(36).substring(2, 7)}`;
+          await supabase.from('tasks').insert({
+            id: mergedTaskId,
+            user_id: String(job.userId),
+            user_email: job.userEmail || null,
+            type: 'video',
+            status: 'completed',
+            aspect_ratio: '9:16',
+            model: 'mother-in-law',
+            count: 1,
+            duration_seconds: Math.max(16, (Array.isArray(job.scenes) ? job.scenes.length : 6) * 8),
+            start_image: firstScene.startImageUrl || firstScene.imageUrl || null,
+            prompt: `Phim Mẹ chồng nàng dâu (Tập ${job.episodeNumber || 1}): ${job.title || ''}`,
+            media_url: finalUrl,
+            media: [{ mediaId: mergedTaskId, status: 'success', url: finalUrl }],
+            progress: 100,
+            created_at: now,
+            updated_at: now,
+            app: 'meo3'
+          }).catch((e) => logger.warn(`[Drama] Supabase merged task insert warning: ${e?.message || e}`));
+        }
         await db.collection('tasks').add({
           userId: job.userId,
           email: job.userEmail || null,
@@ -750,8 +775,8 @@ async function runDramaJob(jobId) {
           mediaUrl: finalUrl,
           dramaJobId: jobId,
           isMergedEpisode: true,
-          createdAt: Date.now(),
-          completedAt: Date.now()
+          createdAt: now,
+          completedAt: now
         }).catch(() => {});
       }
       logger.success(`[Drama] Job ${jobId} completed: ${finalUrl}`);
