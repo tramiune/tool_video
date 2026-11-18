@@ -3466,16 +3466,15 @@ app.post('/api/payment-webhook', async (req, res) => {
         // Đồng bộ cập nhật thêm vào Firestore để fallback
         try {
           const userDocRef = db.collection('users').doc(userId);
-          const userSnap = await userDocRef.get();
-          if (userSnap.exists) {
-            const newExpiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
-            await userDocRef.update({
-              tier: tier,
-              expiryDate: newExpiryDate,
-              pendingPayment: null,
-              updatedAt: Date.now()
-            });
-          }
+          const newExpiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
+          await userDocRef.set({
+            tier: tier,
+            expiryDate: newExpiryDate,
+            pendingPayment: null,
+            updatedAt: Date.now(),
+            ...(email ? { email } : {}),
+            isSupabase: true
+          }, { merge: true });
         } catch (fsErr) {
           logger.warn(`[Payment] Sync to Firestore warning: ${fsErr.message}`);
         }
@@ -3746,11 +3745,19 @@ app.get('/api/audio/jobs', async (req, res) => {
 
     let tier = 'free';
     try {
-      const u = await db.collection('users').doc(userId).get();
-      const ud = u.exists ? u.data() : {};
-      tier = ud.tier || 'free';
-      if (tier !== 'free' && ud.expiryDate && ud.expiryDate < Date.now()) tier = 'free';
-    } catch (e) {}
+      const supaSub = await getSupabaseUserSubscription(userId);
+      if (supaSub && (supaSub.isAdmin || (supaSub.tier && supaSub.tier !== 'free'))) {
+        tier = supaSub.isAdmin ? 'admin' : supaSub.tier;
+      }
+    } catch (_) {}
+    if (tier === 'free') {
+      try {
+        const u = await db.collection('users').doc(userId).get();
+        const ud = u.exists ? u.data() : {};
+        tier = ud.tier || 'free';
+        if (tier !== 'free' && ud.expiryDate && ud.expiryDate < Date.now()) tier = 'free';
+      } catch (e) {}
+    }
 
     res.json({ jobs, used, limit: audioLimitFor(tier), tier });
   } catch (err) {
@@ -4126,14 +4133,32 @@ async function resolveTaskWatermarkText(task) {
     return null;
   }
   try {
+    // 1. Kiểm tra subscription từ Supabase trước (hỗ trợ toàn bộ tài khoản meo3.cloud đăng nhập/nạp qua Supabase)
+    try {
+      const supaSub = await getSupabaseUserSubscription(uid, task.userEmail || '');
+      if (supaSub) {
+        if (supaSub.isAdmin || supaSub.noWatermark) {
+          return null;
+        }
+        if (NO_WATERMARK_TIERS.has(supaSub.tier)) {
+          return null;
+        }
+      }
+    } catch (supaErr) {
+      logger.warn(`[Watermark] Lỗi kiểm tra Supabase cho user ${uid}: ${supaErr.message}`);
+    }
+
+    // 2. Kiểm tra Firestore (cho tài khoản Firebase cũ)
     const userDoc = await db.collection('users').doc(uid).get();
-    if (!userDoc.exists) return 'meo3.cloud';
-    const data = userDoc.data() || {};
-    const email = String(data.email || '').toLowerCase();
-    if (data.isAdmin || email.includes('traderfinn0312')) return null;
-    const isExpired = Boolean(data.expiryDate && data.expiryDate < Date.now());
-    const activeTier = isExpired ? 'free' : String(data.tier || 'free');
-    if (NO_WATERMARK_TIERS.has(activeTier)) return null;
+    if (userDoc.exists) {
+      const data = userDoc.data() || {};
+      const email = String(data.email || '').toLowerCase();
+      if (data.isAdmin || email.includes('traderfinn0312')) return null;
+      const isExpired = Boolean(data.expiryDate && data.expiryDate < Date.now());
+      const activeTier = isExpired ? 'free' : String(data.tier || 'free');
+      if (NO_WATERMARK_TIERS.has(activeTier)) return null;
+      return 'meo3.cloud';
+    }
     return 'meo3.cloud';
   } catch (err) {
     logger.warn(`[Watermark] Không thể kiểm tra gói của user ${uid}: ${err.message}`);
