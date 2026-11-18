@@ -1447,7 +1447,40 @@ function App() {
   const [reverseVideoError, setReverseVideoError] = useState(null);
   const reverseVideoInputRef = useRef(null);
 
-  const handleSelectReverseVideoFile = (file) => {
+  const MAX_REVERSE_VIDEO_BYTES = 200 * 1024 * 1024;
+  const MAX_REVERSE_VIDEO_DURATION_SEC = 60.5;
+
+  const readVideoDurationSec = (file) =>
+    new Promise((resolve) => {
+      if (typeof document === 'undefined') return resolve(null);
+      const tempUrl = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      let settled = false;
+      const finish = (val) => {
+        if (settled) return;
+        settled = true;
+        try {
+          v.removeAttribute('src');
+          v.load();
+          URL.revokeObjectURL(tempUrl);
+        } catch (_) {}
+        resolve(val);
+      };
+      const timer = setTimeout(() => finish(null), 5000);
+      v.onloadedmetadata = () => {
+        clearTimeout(timer);
+        const d = v.duration;
+        finish(Number.isFinite(d) && d > 0 ? d : null);
+      };
+      v.onerror = () => {
+        clearTimeout(timer);
+        finish(null);
+      };
+      v.src = tempUrl;
+    });
+
+  const handleSelectReverseVideoFile = async (file) => {
     if (reverseVideoPreviewUrl) {
       try {
         URL.revokeObjectURL(reverseVideoPreviewUrl);
@@ -1456,6 +1489,27 @@ function App() {
     if (!file) {
       setReverseVideoFile(null);
       setReverseVideoPreviewUrl(null);
+      if (reverseVideoInputRef.current) reverseVideoInputRef.current.value = '';
+      return;
+    }
+    if (file.size > MAX_REVERSE_VIDEO_BYTES) {
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      const errMsg = `Video không được vượt quá 200MB (video hiện tại ${sizeMb}MB). Vui lòng chọn video dưới 200MB!`;
+      setReverseVideoFile(null);
+      setReverseVideoPreviewUrl(null);
+      setReverseVideoError(errMsg);
+      if (reverseVideoInputRef.current) reverseVideoInputRef.current.value = '';
+      showAccessDeniedToast(errMsg);
+      return;
+    }
+    const dur = await readVideoDurationSec(file);
+    if (dur !== null && dur > MAX_REVERSE_VIDEO_DURATION_SEC) {
+      const errMsg = `Video mẫu chỉ hỗ trợ tối đa 60 giây (video bạn chọn dài ${Math.ceil(dur)} giây). Vui lòng chọn hoặc cắt ngắn video xuống tối đa 60 giây!`;
+      setReverseVideoFile(null);
+      setReverseVideoPreviewUrl(null);
+      setReverseVideoError(errMsg);
+      if (reverseVideoInputRef.current) reverseVideoInputRef.current.value = '';
+      showAccessDeniedToast(errMsg);
       return;
     }
     setReverseVideoFile(file);
@@ -1476,8 +1530,21 @@ function App() {
       return;
     }
     if (!reverseVideoFile) {
-      showAccessDeniedToast('Vui lòng chọn 1 video mẫu (.mp4, .mov, .webm) để bóc tách Prompt!');
+      showAccessDeniedToast('Vui lòng chọn 1 video mẫu (.mp4, .mov, .webm) tối đa 60s để bóc tách Prompt!');
       reverseVideoInputRef.current?.click();
+      return;
+    }
+    if (reverseVideoFile.size > MAX_REVERSE_VIDEO_BYTES) {
+      const errMsg = 'Video không được vượt quá 200MB! Vui lòng chọn video dưới 200MB và tối đa 60 giây.';
+      setReverseVideoError(errMsg);
+      showAccessDeniedToast(errMsg);
+      return;
+    }
+    const durCheck = await readVideoDurationSec(reverseVideoFile);
+    if (durCheck !== null && durCheck > MAX_REVERSE_VIDEO_DURATION_SEC) {
+      const errMsg = `Video mẫu chỉ hỗ trợ tối đa 60 giây (video bạn chọn dài ${Math.ceil(durCheck)} giây). Vui lòng cắt ngắn video xuống tối đa 60 giây!`;
+      setReverseVideoError(errMsg);
+      showAccessDeniedToast(errMsg);
       return;
     }
     setReverseVideoAnalyzing(true);
@@ -10079,13 +10146,13 @@ function App() {
                     fontSize: '0.75rem',
                     fontWeight: 700,
                     cursor: reverseVideoAnalyzing ? 'default' : 'pointer',
-                    maxWidth: '220px',
+                    maxWidth: '245px',
                     flexShrink: 0,
                   }}
                 >
                   <Upload size={13} style={{ flexShrink: 0 }} />
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {reverseVideoFile ? reverseVideoFile.name : 'Tải video mẫu (.mp4/.mov)'}
+                    {reverseVideoFile ? reverseVideoFile.name : 'Tải video mẫu (≤60s, ≤200MB)'}
                   </span>
                 </button>
 

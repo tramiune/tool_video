@@ -452,6 +452,52 @@ const autoToolUpload = multer({
   limits: { files: 3, fileSize: 10 * 1024 * 1024 }
 }).fields([{ name: 'characterImages', maxCount: 3 }]);
 
+const reverseVideoUpload = multer({
+  dest: path.join(__dirname, '../uploads/'),
+  limits: { files: 1, fileSize: 200 * 1024 * 1024 }
+}).single('video');
+
+function parseReverseVideoUpload(req, res, next) {
+  reverseVideoUpload(req, res, error => {
+    if (!error) return next();
+    if (req.file && req.file.path) {
+      fs.promises.unlink(req.file.path).catch(() => {});
+    }
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        error: 'Video không được vượt quá 200MB! Vui lòng chọn video dưới 200MB và tối đa 60 giây.'
+      });
+    }
+    return res.status(400).json({ error: error.message || 'Không thể tải video lên.' });
+  });
+}
+
+function probeLocalVideoDurationSec(filePath) {
+  return new Promise(resolve => {
+    const proc = spawn('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      filePath
+    ]);
+    let out = '';
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      resolve(null);
+    }, 10000);
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.on('close', () => {
+      clearTimeout(timer);
+      const val = parseFloat(out.trim());
+      resolve(Number.isFinite(val) && val > 0 ? val : null);
+    });
+    proc.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+  });
+}
+
 function parseAutoToolUpload(req, res, next) {
   autoToolUpload(req, res, error => {
     if (!error) return next();
@@ -3371,10 +3417,23 @@ app.post('/api/drama/chat-prompt', requireDramaAccess, async (req, res) => {
 });
 
 // Reverse-Engineer Video to Shot-by-Shot Prompts proxy route (available for all active monthly packages 69k+)
-app.post('/api/drama/reverse-video/analyze', requireDramaAccess, upload.single('video'), async (req, res) => {
+app.post('/api/drama/reverse-video/analyze', requireDramaAccess, parseReverseVideoUpload, async (req, res) => {
   try {
     let videoUrl = String(req.body?.videoUrl || '').trim();
     if (req.file) {
+      if (req.file.size > 200 * 1024 * 1024) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
+        return res.status(400).json({
+          error: 'Video không được vượt quá 200MB! Vui lòng chọn video dưới 200MB và tối đa 60 giây.'
+        });
+      }
+      const durSec = await probeLocalVideoDurationSec(req.file.path);
+      if (durSec !== null && durSec > 60.5) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
+        return res.status(400).json({
+          error: `Video mẫu chỉ hỗ trợ tối đa 60 giây (video bạn chọn dài ${Math.round(durSec)} giây). Vui lòng chọn hoặc cắt ngắn video xuống tối đa 60 giây!`
+        });
+      }
       const uploaded = await uploadTempFilesToR2List([req.file], 'meo3/reverse-video/inputs');
       if (uploaded[0]) videoUrl = uploaded[0];
     }
