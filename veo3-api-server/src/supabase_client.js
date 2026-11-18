@@ -43,6 +43,17 @@ const DRAMA_PACKAGE_IDS = [
   'vip_399k'
 ];
 
+const PROMPT_199K_PACKAGE_IDS = [
+  'premium_169k',
+  'premium_199k',
+  'pro_299k',
+  'vip_399k',
+  'master_499k',
+  'drama_500k',
+  'pro_499k',
+  'master_899k'
+];
+
 const NO_WATERMARK_PACKAGE_IDS = [
   'pro_299k',
   'vip_399k',
@@ -103,6 +114,7 @@ async function getSupabaseUserSubscription(userId, email = '') {
       isAdmin: true,
       isSuperAdmin: true,
       hasDramaVideoAccess: true,
+      hasPromptToolAccess: true,
       hasMonthlySubAccess: true,
       noWatermark: true,
       tier: 'admin',
@@ -203,6 +215,7 @@ async function getSupabaseUserSubscription(userId, email = '') {
     const pkgId = latest.package_id;
 
     const hasDramaVideoAccess = topups.some(t => DRAMA_PACKAGE_IDS.includes(t.package_id));
+    const hasPromptToolAccess = topups.some(t => PROMPT_199K_PACKAGE_IDS.includes(t.package_id));
     const noWatermark = topups.some(t => NO_WATERMARK_PACKAGE_IDS.includes(t.package_id));
     const hasMonthlySubAccess = topups.some(t => ALL_MONTHLY_PACKAGE_IDS.includes(t.package_id));
 
@@ -210,6 +223,7 @@ async function getSupabaseUserSubscription(userId, email = '') {
       isAdmin: false,
       isSuperAdmin: false,
       hasDramaVideoAccess,
+      hasPromptToolAccess,
       hasMonthlySubAccess,
       noWatermark,
       tier: pkgId,

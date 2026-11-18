@@ -2078,6 +2078,7 @@ async function requireDramaAccess(req, res, next) {
           isAdmin: sub.isAdmin,
           isSuperAdmin: sub.isSuperAdmin,
           hasDramaVideoAccess: sub.hasDramaVideoAccess,
+          hasPromptToolAccess: Boolean(sub.hasPromptToolAccess || sub.hasDramaVideoAccess),
           hasMonthlySubAccess: sub.hasMonthlySubAccess,
           tier: sub.tier,
           noWatermark: sub.noWatermark,
@@ -2098,6 +2099,10 @@ async function requireDramaAccess(req, res, next) {
       ['drama_500k', 'master_499k', 'vip_399k', 'pro_499k', 'master_899k'].includes(userData.tier) &&
       (!userData.expiryDate || Number(userData.expiryDate) > Date.now());
     const hasDramaVideoAccess = isAdmin || userData.hasDramaAccess === true || isActiveDramaTier;
+    const isActivePrompt199kTier =
+      ['premium_169k', 'premium_199k', 'pro_299k', 'vip_399k', 'master_499k', 'drama_500k', 'pro_499k', 'master_899k'].includes(userData.tier) &&
+      (!userData.expiryDate || Number(userData.expiryDate) > Date.now());
+    const hasPromptToolAccess = isAdmin || hasDramaVideoAccess || isActivePrompt199kTier;
     const isActiveMonthlyTier =
       Boolean(userData.tier && userData.tier !== 'free') &&
       (!userData.expiryDate || Number(userData.expiryDate) > Date.now());
@@ -2108,6 +2113,7 @@ async function requireDramaAccess(req, res, next) {
       isAdmin,
       isSuperAdmin: isAdmin,
       hasDramaVideoAccess,
+      hasPromptToolAccess,
       hasMonthlySubAccess,
       isSupabase: false
     };
@@ -3183,7 +3189,8 @@ function buildMeo3BridgeHeaders(authUser) {
     'X-Meo3-User-Id': String(authUser?.uid || ''),
     'X-Meo3-User-Email': String(authUser?.email || 'user@meo3.cloud'),
     'X-Meo3-Drama-Sub': authUser?.hasDramaVideoAccess ? '1' : '0',
-    'X-Meo3-Monthly-Sub': (authUser?.hasMonthlySubAccess || authUser?.hasDramaVideoAccess) ? '1' : '0',
+    'X-Meo3-Prompt-Sub': (authUser?.hasPromptToolAccess || authUser?.hasDramaVideoAccess) ? '1' : '0',
+    'X-Meo3-Monthly-Sub': (authUser?.hasMonthlySubAccess || authUser?.hasPromptToolAccess || authUser?.hasDramaVideoAccess) ? '1' : '0',
     'X-Meo3-Is-Admin': authUser?.isSuperAdmin ? '1' : '0'
   };
 }
@@ -3397,13 +3404,13 @@ app.post('/api/drama/fashion-mirror/jobs/:id/cancel', requireDramaAccess, async 
   }
 });
 
-// Chat Prompt AI (Trò chuyện AI sinh Prompt Veo 3 8s & Start Frame Image - gói VIP 499k)
+// Chat Prompt AI (Trò chuyện AI sinh Prompt Veo 3 8s & Start Frame Image - từ gói 199k+)
 app.post('/api/drama/chat-prompt', requireDramaAccess, async (req, res) => {
   try {
-    if (!req.authUser?.hasDramaVideoAccess && !req.authUser?.isAdmin) {
+    if (!req.authUser?.hasPromptToolAccess && !req.authUser?.hasDramaVideoAccess && !req.authUser?.isAdmin) {
       return res.status(402).json({
-        error: 'Gói của bạn không có quyền truy cập! Đăng ký gói VIP 499k/tháng để mở hết quyền.',
-        code: 'DRAMA_SUBSCRIPTION_REQUIRED'
+        error: 'Tính năng Tạo Prompt chỉ dành cho Gói Premium 199k/tháng trở lên. Vui lòng đăng ký hoặc nâng cấp gói từ 199k để mở khóa!',
+        code: 'PROMPT_199K_REQUIRED'
       });
     }
     const resp = await fetch(`${AQUA_BACKEND_URL}/api/drama/chat-prompt`, {
@@ -3422,14 +3429,14 @@ app.post('/api/drama/chat-prompt', requireDramaAccess, async (req, res) => {
   }
 });
 
-// Reverse-Engineer Video to Shot-by-Shot Prompts proxy route (gói VIP 499k)
+// Reverse-Engineer Video to Shot-by-Shot Prompts proxy route (từ gói 199k+)
 app.post('/api/drama/reverse-video/analyze', requireDramaAccess, parseReverseVideoUpload, async (req, res) => {
   try {
-    if (!req.authUser?.hasDramaVideoAccess && !req.authUser?.isAdmin) {
+    if (!req.authUser?.hasPromptToolAccess && !req.authUser?.hasDramaVideoAccess && !req.authUser?.isAdmin) {
       if (req.file?.path) await fs.promises.unlink(req.file.path).catch(() => {});
       return res.status(402).json({
-        error: 'Gói của bạn không có quyền truy cập! Đăng ký gói VIP 499k/tháng để mở hết quyền.',
-        code: 'DRAMA_SUBSCRIPTION_REQUIRED'
+        error: 'Tính năng Video thành Prompt chỉ dành cho Gói Premium 199k/tháng trở lên. Vui lòng đăng ký hoặc nâng cấp gói từ 199k để mở khóa!',
+        code: 'PROMPT_199K_REQUIRED'
       });
     }
     let videoUrl = String(req.body?.videoUrl || '').trim();
