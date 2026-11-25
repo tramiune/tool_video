@@ -4,6 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const { db } = require('./firebase_worker');
+const { supabase } = require('./supabase_client');
 const { uploadToR2 } = require('./s3_uploader');
 const { logger, sleep } = require('./utils');
 
@@ -151,20 +152,90 @@ async function updateScene(jobRef, sceneIndex, changes, jobChanges = {}) {
   });
 }
 
-async function waitForTask(taskRef, timeoutMs) {
+function extractChildTaskMediaUrl(task) {
+  if (!task) return null;
+  if (task.media_url) return task.media_url;
+  if (task.mediaUrl) return task.mediaUrl;
+  if (Array.isArray(task.media) && task.media[0]?.url) return task.media[0].url;
+  return null;
+}
+
+async function getSupabaseChildTask(taskId) {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('id', taskId)
+    .maybeSingle();
+  if (error) {
+    logger.warn(`[AutoTool] Supabase read error for child task ${taskId}: ${error.message}`);
+    return null;
+  }
+  return data || null;
+}
+
+function buildSupabaseChildTaskPayload(taskId, taskType, extraTaskData = {}) {
+  const isVideo = extraTaskData.type === 'video' || String(taskType || '').toLowerCase().includes('video');
+  const type = isVideo ? 'video' : 'image';
+  const now = Date.now();
+  return {
+    id: taskId,
+    user_id: null, // Tránh làm rác lịch sử cá nhân & không bị tính trùng giới hạn concurrent của user
+    user_email: extraTaskData.email || extraTaskData.userEmail || null,
+    type,
+    status: 'pending',
+    prompt: String(extraTaskData.prompt || ''),
+    aspect_ratio: String(extraTaskData.aspectRatio || '9:16'),
+    model: String(extraTaskData.model || (isVideo ? 'veo_3_1_lite' : 'nano_banana_2')),
+    count: Number(extraTaskData.count) || 1,
+    duration_seconds: isVideo ? (Number(extraTaskData.durationSeconds) || 8) : null,
+    start_image: extraTaskData.startImage || null,
+    end_image: extraTaskData.endImage || null,
+    reference_images: Array.isArray(extraTaskData.referenceImages) ? extraTaskData.referenceImages : [],
+    watermark_text: '', // Tuyệt đối không gắn watermark vào ảnh/video trung gian Drama/AutoTool/Sumo
+    tool_type: extraTaskData.dramaJobId
+      ? 'drama_child'
+      : (extraTaskData.dramaScriptId ? 'drama_script_child' : 'autotool_child'),
+    app: String(extraTaskData.userId || '').startsWith('aqua') ? 'aquaai' : 'meo3',
+    created_at: now,
+    updated_at: now
+  };
+}
+
+async function waitForTask(taskRefOrId, timeoutMs) {
+  const isSupabaseId = typeof taskRefOrId === 'string';
+  const taskId = isSupabaseId ? taskRefOrId : taskRefOrId.id;
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    const snapshot = await taskRef.get();
-    if (!snapshot.exists) throw new Error(`Child task ${taskRef.id} was deleted`);
-    const task = snapshot.data();
-    if (task.status === 'completed') {
-      if (!task.mediaUrl) throw new Error(`Child task ${taskRef.id} completed without mediaUrl`);
-      return task.mediaUrl;
+    let task = null;
+    if (isSupabaseId) {
+      task = await getSupabaseChildTask(taskId);
+      if (!task) {
+        // Cho phép trễ replica nhỏ trong 15s đầu trước khi báo deleted
+        if (Date.now() - startedAt > 15000) {
+          throw new Error(`Child task ${taskId} was deleted`);
+        }
+        await sleep(TASK_POLL_INTERVAL_MS);
+        continue;
+      }
+    } else {
+      const snapshot = await taskRefOrId.get();
+      if (!snapshot.exists) throw new Error(`Child task ${taskId} was deleted`);
+      task = snapshot.data();
     }
-    if (task.status === 'failed') throw new Error(task.error || `Child task ${taskRef.id} failed`);
+
+    if (task.status === 'completed') {
+      const url = extractChildTaskMediaUrl(task);
+      if (!url) throw new Error(`Child task ${taskId} completed without mediaUrl`);
+      return url;
+    }
+    if (task.status === 'failed') {
+      const err = new Error(task.error || `Child task ${taskId} failed`);
+      if (task.error_code || task.errorCode) err.code = task.error_code || task.errorCode;
+      throw err;
+    }
     await sleep(TASK_POLL_INTERVAL_MS);
   }
-  throw new Error(`Child task ${taskRef.id} timed out after ${Math.round(timeoutMs / 60000)} minutes`);
+  throw new Error(`Child task ${taskId} timed out after ${Math.round(timeoutMs / 60000)} minutes`);
 }
 
 async function downloadFile(url, destination) {
@@ -325,37 +396,36 @@ async function runChildTaskWithRetry({
   const jobId = jobRef.id;
   let currentPrompt = prompt;
   let lastFailure = null;
+  let lastFailureCategory = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const taskId = `${jobId}_scene_${sceneIndex + 1}_${taskType}${attempt > 1 ? `_r${attempt}` : ''}`;
-    const taskRef = db.collection('tasks').doc(taskId);
+    const doc = await getSupabaseChildTask(taskId);
+    const existingMediaUrl = extractChildTaskMediaUrl(doc);
 
-    let existing = null;
-    try { existing = await taskRef.get(); } catch (error) { existing = null; }
-    const doc = existing?.exists ? existing.data() : null;
-
-    if (doc && doc.status === 'completed' && doc.mediaUrl) {
-      const updates = { [`${taskType}Url`]: doc.mediaUrl, status: 'completed' };
+    if (doc && doc.status === 'completed' && existingMediaUrl) {
+      const updates = { [`${taskType}Url`]: existingMediaUrl, status: 'completed' };
       if (taskType === 'startImage' || taskType === 'image') {
-        updates.imageUrl = doc.mediaUrl;
-        updates.startImageUrl = doc.mediaUrl;
+        updates.imageUrl = existingMediaUrl;
+        updates.startImageUrl = existingMediaUrl;
         updates.startImageStatus = 'completed';
         updates.imageStatus = 'completed';
       } else if (taskType === 'endImage') {
-        updates.endImageUrl = doc.mediaUrl;
+        updates.endImageUrl = existingMediaUrl;
         updates.endImageStatus = 'completed';
       } else if (taskType === 'video') {
-        updates.videoUrl = doc.mediaUrl;
+        updates.videoUrl = existingMediaUrl;
         updates.videoStatus = 'completed';
       }
       await updateScene(jobRef, sceneIndex, updates);
-      return { url: doc.mediaUrl, attempts: attempt, taskId };
+      return { url: existingMediaUrl, attempts: attempt, taskId };
     }
 
     if (doc && TERMINAL_CHILD_STATUSES.has(doc.status)) {
       // A previous run already ended this attempt; capture the failure and decide.
-      lastFailure = { errorCode: doc.errorCode, error: doc.error || `${taskType} task failed` };
+      lastFailure = { errorCode: doc.error_code || doc.errorCode, error: doc.error || `${taskType} task failed` };
       const category = classifyFailure(lastFailure);
+      lastFailureCategory = category;
       if (attempt >= maxAttempts) {
         throw new Error(`${taskType} scene ${sceneIndex + 1} thất bại sau ${maxAttempts} lần: ${lastFailure.error}`);
       }
@@ -386,19 +456,38 @@ async function runChildTaskWithRetry({
     }
 
     const attemptTaskData = { ...extraTaskData, prompt: currentPrompt };
-    if (attempt >= 2 && String(taskType).toLowerCase().includes('video') && attemptTaskData.startImage && attemptTaskData.endImage) {
-      logger.info(`[AutoTool] Scene ${sceneIndex + 1} video retry lần ${attempt}: chỉ dùng startImage (bỏ endImage) để tránh xung đột cặp ảnh trên Google Flow.`);
-      delete attemptTaskData.endImage;
+    if (String(taskType).toLowerCase().includes('video')) {
+      if (attempt === 2 && attemptTaskData.startImage && attemptTaskData.endImage) {
+        logger.info(`[AutoTool] Scene ${sceneIndex + 1} video retry lần 2: chỉ dùng startImage (bỏ endImage) để tránh xung đột cặp ảnh.`);
+        delete attemptTaskData.endImage;
+      } else if (attempt === 3 && lastFailureCategory === 'safety') {
+        if (extraTaskData.endImage && extraTaskData.endImage !== extraTaskData.startImage) {
+          logger.info(`[AutoTool] Scene ${sceneIndex + 1} video retry lần 3 (safety): đổi sang dùng endImage làm ảnh đầu vì startImage bị bộ lọc từ chối.`);
+          attemptTaskData.startImage = extraTaskData.endImage;
+          delete attemptTaskData.endImage;
+        } else {
+          logger.info(`[AutoTool] Scene ${sceneIndex + 1} video retry lần 3 (safety): chuyển sang tạo video thuần từ prompt (bỏ ảnh đầu bị từ chối).`);
+          delete attemptTaskData.startImage;
+          delete attemptTaskData.endImage;
+        }
+      } else if (attempt >= 4 && lastFailureCategory === 'safety') {
+        logger.info(`[AutoTool] Scene ${sceneIndex + 1} video retry lần ${attempt} (safety): chuyển sang tạo video thuần từ prompt (bỏ cả startImage & endImage).`);
+        delete attemptTaskData.startImage;
+        delete attemptTaskData.endImage;
+      } else if (attempt >= 3 && attemptTaskData.startImage && attemptTaskData.endImage) {
+        delete attemptTaskData.endImage;
+      }
     }
 
     if (!doc) {
-      try {
-        await taskRef.create(attemptTaskData);
-      } catch (error) {
-        if (error.code !== 6 && error.code !== 'already-exists') throw error;
+      const payload = buildSupabaseChildTaskPayload(taskId, taskType, attemptTaskData);
+      const { error: insErr } = await supabase.from('tasks').insert(payload);
+      if (insErr && insErr.code !== '23505') {
+        throw new Error(`Không tạo được child task ${taskId} trên Supabase: ${insErr.message}`);
       }
+      logger.info(`[AutoTool] 📨 Đã gửi child task ${taskId} (${payload.type}) lên Supabase tasks`);
     } else if (doc.prompt !== currentPrompt) {
-      await taskRef.update({ prompt: currentPrompt }).catch(() => {});
+      await supabase.from('tasks').update({ prompt: currentPrompt, updated_at: Date.now() }).eq('id', taskId);
     }
 
     const sceneUpdates = {
@@ -421,19 +510,19 @@ async function runChildTaskWithRetry({
     await updateScene(jobRef, sceneIndex, sceneUpdates, progressUpdate);
 
     try {
-      const url = await waitForTask(taskRef, timeoutMs);
+      const url = await waitForTask(taskId, timeoutMs);
       return { url, attempts: attempt, taskId };
     } catch (error) {
       let failure = { errorCode: error.code, error: error.message };
       try {
-        const snapshot = await taskRef.get();
-        if (snapshot.exists) {
-          const task = snapshot.data();
-          failure = { errorCode: task.errorCode, error: task.error || error.message };
+        const task = await getSupabaseChildTask(taskId);
+        if (task) {
+          failure = { errorCode: task.error_code || task.errorCode || error.code, error: task.error || error.message };
         }
       } catch (e) {}
       lastFailure = failure;
       const category = classifyFailure(failure);
+      lastFailureCategory = category;
       if (attempt >= maxAttempts) {
         throw new Error(`${taskType} scene ${sceneIndex + 1} thất bại sau ${maxAttempts} lần: ${failure.error}`);
       }
@@ -813,22 +902,25 @@ function buildCharacterImagePrompt(project, character) {
 // Generate a character portrait image via the normal image task pipeline.
 async function generateCharacterImage(project, character, characterIndex) {
   if (!project || !project.userId) throw new Error('Project has no owner');
-  const taskRef = db.collection('tasks').doc(`autotool_char_${Date.now()}_${characterIndex}`);
+  const taskId = `autotool_char_${Date.now()}_${characterIndex}`;
   const prompt = buildCharacterImagePrompt(project, character);
-  await taskRef.set({
+  const payload = buildSupabaseChildTaskPayload(taskId, 'image', {
     userId: project.userId,
+    email: project.userEmail || null,
     type: 'image',
-    status: 'pending',
     prompt,
     aspectRatio: '9:16',
     model: 'nano_banana_2',
     count: 1,
-    referenceImages: [],
-    autotoolProjectId: project.id || null,
-    createdAt: Date.now()
+    referenceImages: []
   });
-  logger.info(`[AutoTool] Generating character image for "${character.name}"...`);
-  const mediaUrl = await waitForTask(taskRef, IMAGE_TIMEOUT_MS);
+  payload.tool_type = 'autotool_char';
+  const { error: insErr } = await supabase.from('tasks').insert(payload);
+  if (insErr) {
+    throw new Error(`Không tạo được task ảnh nhân vật ${taskId}: ${insErr.message}`);
+  }
+  logger.info(`[AutoTool] Generating character image for "${character.name}" (${taskId})...`);
+  const mediaUrl = await waitForTask(taskId, IMAGE_TIMEOUT_MS);
   logger.success(`[AutoTool] Character image ready for "${character.name}": ${mediaUrl.substring(0, 60)}...`);
   return mediaUrl;
 }

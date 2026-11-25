@@ -460,6 +460,7 @@ async function concatenateClips(jobId, clipPaths) {
 async function runDramaJob(jobId) {
   const jobRef = db.collection('drama_jobs').doc(jobId);
   let failedSceneIndex = null;
+  let completedFinalUrl = null;
   try {
     let snapshot = await jobRef.get();
     if (!snapshot.exists || TERMINAL_JOB_STATUSES.has(snapshot.data().status)) return;
@@ -752,6 +753,7 @@ async function runDramaJob(jobId) {
             },
             timeoutMs: VIDEO_TIMEOUT_MS,
             stageStatus: 'video_processing',
+            maxAttempts: 4,
             progressUpdate: {
               status: 'generating',
               currentScene: index + 1,
@@ -804,62 +806,81 @@ async function runDramaJob(jobId) {
         completedAt: Date.now(),
         updatedAt: Date.now()
       });
+      completedFinalUrl = finalUrl;
       const completedJob = { ...job, status: 'completed', progress: 100, finalUrl, completedAt: Date.now() };
-      await recordDramaEpisode(jobRef, completedJob).catch(() => {});
+      await recordDramaEpisode(jobRef, completedJob).catch((e) => logger.warn(`[Drama] recordDramaEpisode warning: ${e?.message || e}`));
       if (job.userId && !String(job.userId).startsWith('aqua_')) {
         const firstScene = Array.isArray(job.scenes) && job.scenes[0] ? job.scenes[0] : {};
         const now = Date.now();
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (uuidRegex.test(String(job.userId))) {
-          const mergedTaskId = `task_${now}_drama_${Math.random().toString(36).substring(2, 7)}`;
-          await supabase.from('tasks').insert({
-            id: mergedTaskId,
-            user_id: String(job.userId),
-            user_email: job.userEmail || null,
+          try {
+            const mergedTaskId = `task_${now}_drama_${Math.random().toString(36).substring(2, 7)}`;
+            const { error: supaInsertErr } = await supabase.from('tasks').insert({
+              id: mergedTaskId,
+              user_id: String(job.userId),
+              user_email: job.userEmail || null,
+              type: 'video',
+              status: 'completed',
+              aspect_ratio: '9:16',
+              model: 'mother-in-law',
+              count: 1,
+              duration_seconds: Math.max(16, (Array.isArray(job.scenes) ? job.scenes.length : 6) * 8),
+              start_image: firstScene.startImageUrl || firstScene.imageUrl || null,
+              prompt: `Phim Mẹ chồng nàng dâu (Tập ${job.episodeNumber || 1}): ${job.title || ''}`,
+              media_url: finalUrl,
+              media: [{ mediaId: mergedTaskId, status: 'success', url: finalUrl }],
+              progress: 100,
+              created_at: now,
+              updated_at: now,
+              app: 'meo3'
+            });
+            if (supaInsertErr) {
+              logger.warn(`[Drama] Supabase merged task insert warning: ${supaInsertErr.message || supaInsertErr}`);
+            }
+          } catch (e) {
+            logger.warn(`[Drama] Supabase merged task insert warning: ${e?.message || e}`);
+          }
+        }
+        try {
+          await db.collection('tasks').add({
+            userId: job.userId,
+            email: job.userEmail || null,
             type: 'video',
             status: 'completed',
-            aspect_ratio: '9:16',
+            aspectRatio: '9:16',
             model: 'mother-in-law',
             count: 1,
-            duration_seconds: Math.max(16, (Array.isArray(job.scenes) ? job.scenes.length : 6) * 8),
-            start_image: firstScene.startImageUrl || firstScene.imageUrl || null,
+            durationSeconds: Math.max(16, (Array.isArray(job.scenes) ? job.scenes.length : 6) * 8),
+            startImage: firstScene.startImageUrl || firstScene.imageUrl || null,
             prompt: `Phim Mẹ chồng nàng dâu (Tập ${job.episodeNumber || 1}): ${job.title || ''}`,
-            media_url: finalUrl,
-            media: [{ mediaId: mergedTaskId, status: 'success', url: finalUrl }],
-            progress: 100,
-            created_at: now,
-            updated_at: now,
-            app: 'meo3'
-          }).catch((e) => logger.warn(`[Drama] Supabase merged task insert warning: ${e?.message || e}`));
+            mediaUrl: finalUrl,
+            dramaJobId: jobId,
+            isMergedEpisode: true,
+            createdAt: now,
+            completedAt: now
+          });
+        } catch (e) {
+          logger.warn(`[Drama] Firestore merged task insert warning: ${e?.message || e}`);
         }
-        await db.collection('tasks').add({
-          userId: job.userId,
-          email: job.userEmail || null,
-          type: 'video',
-          status: 'completed',
-          aspectRatio: '9:16',
-          model: 'mother-in-law',
-          count: 1,
-          durationSeconds: Math.max(16, (Array.isArray(job.scenes) ? job.scenes.length : 6) * 8),
-          startImage: firstScene.startImageUrl || firstScene.imageUrl || null,
-          prompt: `Phim Mẹ chồng nàng dâu (Tập ${job.episodeNumber || 1}): ${job.title || ''}`,
-          mediaUrl: finalUrl,
-          dramaJobId: jobId,
-          isMergedEpisode: true,
-          createdAt: now,
-          completedAt: now
-        }).catch(() => {});
       }
       logger.success(`[Drama] Job ${jobId} completed: ${finalUrl}`);
     } finally {
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   } catch (error) {
+    if (completedFinalUrl) {
+      logger.warn(`[Drama] Post-completion warning for already-completed job ${jobId}: ${error?.message || error}`);
+      return;
+    }
     logger.error(`[Drama] Job ${jobId} failed`, error);
     const rawMsg = String(error?.message || 'Tạo video thất bại, vui lòng thử lại.');
-    const friendlyMsg = (failedSceneIndex === null && /aborted|timeout|fetch|socket|ECONN|502|504/i.test(rawMsg))
-      ? 'AI đang bận khi sáng tác kịch bản, vui lòng bấm Tạo video lại sau ít giây nhé!'
-      : rawMsg;
+    let friendlyMsg = rawMsg;
+    if (failedSceneIndex === null && /aborted|timeout|fetch|socket|ECONN|502|504/i.test(rawMsg)) {
+      friendlyMsg = 'AI đang bận khi sáng tác kịch bản, vui lòng bấm Tạo video lại sau ít giây nhé!';
+    } else if (/supabase|is not a function|TypeError|ReferenceError|SyntaxError|Cannot read propert|aidancing|meo3|flow/i.test(rawMsg)) {
+      friendlyMsg = 'Hệ thống gặp sự cố tạm thời khi dựng video, vui lòng bấm Tạo video lại nhé!';
+    }
     const update = { status: 'failed', error: friendlyMsg, failedAt: Date.now(), updatedAt: Date.now() };
     await jobRef.set(update, { merge: true }).catch(() => {});
     if (failedSceneIndex === null) {
