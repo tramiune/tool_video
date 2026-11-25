@@ -2820,6 +2820,104 @@ app.post('/api/drama/scripts', requireDramaAccess, async (req, res) => {
   }
 });
 
+// Async Quick-Start 1 nút cho Mẹ chồng nàng dâu: trả về ngay jobId (<0.3s), viết kịch bản 6 cảnh + dựng phim hoàn toàn ở nền
+app.post('/api/drama/quick-start', requireDramaAccess, async (req, res) => {
+  try {
+    if (!req.authUser.hasDramaVideoAccess) {
+      return res.status(402).json({
+        error: 'Gói hiện tại không hỗ trợ tính năng này. Cần nâng cấp Gói VIP 499k/tháng để mở khóa!',
+        code: 'DRAMA_SUBSCRIPTION_REQUIRED'
+      });
+    }
+
+    const startOfDayMs = getStartOfDayVnMs();
+    const jobsSnap = await db.collection('drama_jobs').where('userId', '==', req.authUser.uid).get();
+    const allJobs = jobsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const activeJob = allJobs.find(jd => jd.status && jd.status !== 'completed' && jd.status !== 'failed');
+    if (activeJob) {
+      let activeScript = null;
+      if (activeJob.scriptId) {
+        const sSnap = await db.collection('drama_scripts').doc(activeJob.scriptId).get().catch(() => null);
+        if (sSnap && sSnap.exists) activeScript = { id: sSnap.id, ...sSnap.data() };
+      }
+      return res.status(429).json({
+        error: 'Bạn đang có 1 video Mẹ chồng nàng dâu đang dựng. Vui lòng đợi hoàn tất hoặc bấm Dừng!',
+        code: 'DRAMA_JOB_RUNNING',
+        activeJob,
+        activeScript
+      });
+    }
+    if (!req.authUser.isSuperAdmin) {
+      const todayEpisodes = allJobs.filter(jd => Number(jd.createdAt || 0) >= startOfDayMs && jd.status !== 'failed').length;
+      if (todayEpisodes >= 20) {
+        return res.status(429).json({
+          error: 'Bạn đã tạo đủ 20/20 tập phim Mẹ chồng nàng dâu hôm nay. Vui lòng quay lại vào ngày mai nhé!',
+          code: 'DRAMA_DAILY_LIMIT'
+        });
+      }
+    }
+
+    const topic = String(req.body?.topic || '').trim();
+    const channelType = String(req.body?.channelType || 'drama').trim() || 'drama';
+    const now = Date.now();
+
+    const scriptRef = db.collection('drama_scripts').doc();
+    const jobRef = db.collection('drama_jobs').doc();
+    const placeholderTitle = 'Đang sáng tác kịch bản Mẹ chồng nàng dâu...';
+
+    const scriptDoc = {
+      userId: req.authUser.uid,
+      userEmail: req.authUser.email,
+      topic,
+      channelType,
+      title: placeholderTitle,
+      characters: [],
+      baseImagePrompt: '',
+      scenes: [],
+      episodeCount: 1,
+      status: 'generating',
+      createdAt: now,
+      updatedAt: now
+    };
+    const jobDoc = {
+      userId: req.authUser.uid,
+      userEmail: req.authUser.email,
+      isAdmin: req.authUser.isAdmin || false,
+      scriptId: scriptRef.id,
+      topic,
+      channelType,
+      title: placeholderTitle,
+      characters: [],
+      baseImagePrompt: '',
+      scenes: [],
+      episodeNumber: 1,
+      status: 'generating_script',
+      progress: 8,
+      currentScene: null,
+      finalUrl: null,
+      error: null,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    await Promise.all([scriptRef.set(scriptDoc), jobRef.set(jobDoc)]);
+    drama.processDramaJob(jobRef.id);
+    logger.info(`[Drama] Quick-start queued async job ${jobRef.id} (script ${scriptRef.id}) for ${req.authUser.email}`);
+    return res.status(202).json({
+      success: true,
+      jobId: jobRef.id,
+      scriptId: scriptRef.id,
+      status: 'generating_script',
+      episodeNumber: 1,
+      title: placeholderTitle,
+      job: { id: jobRef.id, ...jobDoc }
+    });
+  } catch (error) {
+    logger.error('Drama quick-start failed', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 
 app.post('/api/drama/scripts/:id/ai/generate', requireDramaAccess, async (req, res) => {
   try {
@@ -3096,6 +3194,13 @@ app.post('/api/drama/jobs/:id/cancel', requireDramaAccess, async (req, res) => {
       error: 'Tác vụ bị người dùng dừng chạy.',
       updatedAt: Date.now()
     });
+    if (job.status === 'generating_script' && job.scriptId) {
+      const sRef = db.collection('drama_scripts').doc(job.scriptId);
+      const sSnap = await sRef.get().catch(() => null);
+      if (sSnap && sSnap.exists && sSnap.data()?.status === 'generating') {
+        await sRef.delete().catch(() => {});
+      }
+    }
     
     return res.json({ success: true, message: 'Đã dừng tác vụ thành công.' });
   } catch (error) {

@@ -1645,6 +1645,11 @@ function App() {
         const data = await res.json();
         if (cancelled) return;
         setQuickDramaJob(data);
+        if (Array.isArray(data.scenes) && data.scenes.length > 0 && data.scriptId) {
+          setQuickDramaScript((prev) => (prev && prev.id === data.scriptId && prev.scenes?.length > 0)
+            ? prev
+            : normalizeDramaScript({ ...data, id: data.scriptId }));
+        }
         if (data.status === 'completed' || data.status === 'failed') {
           if (interval) {
             clearInterval(interval);
@@ -1695,72 +1700,67 @@ function App() {
     setQuickDramaGeneratingScript(true);
 
     try {
-      const scriptRes = await authFetch(user, `${API_BASE}/api/drama/scripts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: '', channelType: 'drama', checkVideoEligibility: true }),
-        signal: abortCtrl.signal,
-      });
-      const scriptData = await scriptRes.json().catch(() => ({}));
-
-      if (scriptRes.status === 402 || scriptData.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
-        setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
-        setShowPricingModal(true);
-        return;
-      }
-      if (scriptData.code === 'DRAMA_JOB_RUNNING' && scriptData.activeJob) {
-        if (scriptData.activeScript) {
-          setQuickDramaScript(normalizeDramaScript({ ...scriptData.activeScript, id: scriptData.activeScript.id }));
+      let startRes = null;
+      let lastFetchErr = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          startRes = await authFetch(user, `${API_BASE}/api/drama/quick-start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ topic: '', channelType: 'drama' }),
+            signal: abortCtrl.signal,
+          });
+          lastFetchErr = null;
+          break;
+        } catch (fetchErr) {
+          if (fetchErr?.name === 'AbortError') throw fetchErr;
+          lastFetchErr = fetchErr;
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
         }
-        setQuickDramaJobId(scriptData.activeJob.id);
-        setQuickDramaJob(scriptData.activeJob);
-        showAccessDeniedToast(scriptData.error || 'Bạn đang có 1 video đang dựng.');
-        return;
       }
-      if (!scriptRes.ok) {
-        throw new Error(scriptData.error || scriptData.detail || 'Không đủ điều kiện hoặc không thể tạo kịch bản.');
+      if (lastFetchErr || !startRes) {
+        throw lastFetchErr || new Error('Mất kết nối tới máy chủ, vui lòng thử lại.');
       }
-      if (abortCtrl.signal.aborted) return;
 
-      const normalized = normalizeDramaScript({ ...scriptData.script, id: scriptData.script.id });
-      setQuickDramaScript(normalized);
-      setQuickDramaGeneratingScript(false);
-      setQuickDramaCreatingVideo(true);
+      const startData = await startRes.json().catch(() => ({}));
 
-      const jobRes = await authFetch(user, `${API_BASE}/api/drama/scripts/${normalized.id}/jobs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-        signal: abortCtrl.signal,
-      });
-      const jobData = await jobRes.json().catch(() => ({}));
-
-      if (jobRes.status === 402 || jobData.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
+      if (startRes.status === 402 || startData.code === 'DRAMA_SUBSCRIPTION_REQUIRED') {
         setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
         setShowPricingModal(true);
         return;
       }
-      if (!jobRes.ok) {
-        throw new Error(jobData.error || jobData.detail || 'Không thể bắt đầu tạo video.');
+      if (startData.code === 'DRAMA_JOB_RUNNING' && startData.activeJob) {
+        if (startData.activeScript) {
+          setQuickDramaScript(normalizeDramaScript({ ...startData.activeScript, id: startData.activeScript.id }));
+        }
+        setQuickDramaJobId(startData.activeJob.id);
+        setQuickDramaJob(startData.activeJob);
+        showAccessDeniedToast(startData.error || 'Bạn đang có 1 video đang dựng.');
+        return;
+      }
+      if (!startRes.ok) {
+        throw new Error(startData.error || startData.detail || 'Không đủ điều kiện hoặc không thể bắt đầu tạo video.');
       }
       if (abortCtrl.signal.aborted) return;
 
-      setQuickDramaJobId(jobData.jobId);
-      setQuickDramaJob({
-        id: jobData.jobId,
-        status: jobData.status || 'queued',
-        progress: 5,
-        episodeNumber: jobData.episodeNumber || 1,
-        title: normalized.title,
-        scenes: (normalized.scenes || []).map((s, idx) => ({
-          ...s,
-          index: idx,
-          status: 'pending',
-        })),
-      });
+      setQuickDramaJobId(startData.jobId);
+      setQuickDramaJob(
+        startData.job || {
+          id: startData.jobId,
+          scriptId: startData.scriptId || null,
+          status: startData.status || 'generating_script',
+          progress: 8,
+          episodeNumber: startData.episodeNumber || 1,
+          title: startData.title || 'Đang sáng tác kịch bản Mẹ chồng nàng dâu...',
+          scenes: [],
+        }
+      );
     } catch (err) {
       if (err?.name === 'AbortError') return;
-      const errMsg = err?.message || 'Không thể tạo video, vui lòng thử lại.';
+      const rawMsg = String(err?.message || '');
+      const errMsg = /load failed|failed to fetch|networkerror/i.test(rawMsg)
+        ? 'Kết nối mạng tạm thời bị gián đoạn, vui lòng bấm Tạo video lại nhé!'
+        : (rawMsg || 'Không thể tạo video, vui lòng thử lại.');
       setQuickDramaError(errMsg);
       showAccessDeniedToast(errMsg);
     } finally {
@@ -3851,14 +3851,19 @@ function App() {
         headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic, channelType })
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || data.message || `Không thể tạo kịch bản (HTTP ${response.status}).`);
+      if (!data.script) throw new Error('Máy chủ chưa trả về kịch bản, vui lòng thử lại.');
       const normalized = normalizeDramaScript({ ...data.script, id: data.script.id });
       setDramaScript(normalized);
       setDramaScriptSavedState(normalized);
       setDramaScripts(current => [normalized, ...current]);
     } catch (error) {
       console.error('Drama script creation failed:', error);
-      setDramaError(error.message || 'Không thể tạo kịch bản.');
+      const rawMsg = String(error?.message || '');
+      setDramaError(/load failed|failed to fetch|networkerror/i.test(rawMsg)
+        ? 'Kết nối mạng bị gián đoạn khi tạo kịch bản. Vui lòng giữ màn hình sáng và thử lại!'
+        : (rawMsg || 'Không thể tạo kịch bản.'));
     } finally {
       setDramaSaving(false);
     }
@@ -10272,7 +10277,8 @@ function App() {
                 const isBusyAll = quickDramaGeneratingScript || quickDramaCreatingVideo || isJobRunning;
                 const rawProg = Number(quickDramaJob?.progress) || 0;
                 const normalizedProg = rawProg > 0 && rawProg <= 1 ? Math.round(rawProg * 100) : Math.round(rawProg);
-                const displayPercent = quickDramaGeneratingScript
+                const isGeneratingScriptStep = quickDramaGeneratingScript || quickDramaJob?.status === 'generating_script';
+                const displayPercent = isGeneratingScriptStep
                   ? 8
                   : quickDramaCreatingVideo
                   ? 14
@@ -10329,7 +10335,7 @@ function App() {
                               textOverflow: 'ellipsis',
                             }}
                           >
-                            {quickDramaGeneratingScript
+                            {isGeneratingScriptStep
                               ? 'Bước 1/2: Đang tự động viết kịch bản 6 cảnh...'
                               : quickDramaCreatingVideo
                               ? `Bước 2/2: Đang khởi tạo dựng phim "${quickDramaScript?.title || 'Mẹ chồng nàng dâu'}"...`

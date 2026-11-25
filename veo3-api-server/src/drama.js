@@ -51,7 +51,8 @@ async function callDramaAI({ system, user, temperature = 0.8, maxRetries = 3 }) 
   let lastError = null;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), Number(process.env.AUTOTOOL_SCRIPT_TIMEOUT_MS || 180000));
+    const timeoutMs = Number(process.env.AUTOTOOL_SCRIPT_TIMEOUT_MS || 120000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -85,6 +86,11 @@ async function callDramaAI({ system, user, temperature = 0.8, maxRetries = 3 }) 
         user += '\n\nQUAN TRỌNG: Phản hồi trước của bạn KHÔNG phải JSON hợp lệ. Hãy chỉ trả về MỘT đối tượng JSON thuần túy đúng schema yêu cầu, không mở đầu, không giải thích, không markdown.';
         await sleep(1000 * attempt);
       }
+    } catch (fetchErr) {
+      lastError = fetchErr;
+      logger.warn(`[Drama] AI call error on attempt ${attempt}/${maxRetries}: ${fetchErr?.message || fetchErr}`);
+      if (attempt >= maxRetries) throw lastError;
+      await sleep(1500 * attempt);
     } finally {
       clearTimeout(timeout);
     }
@@ -461,6 +467,71 @@ async function runDramaJob(jobId) {
     // Guard: sumo jobs must only be processed by sumo.js, not drama pipeline
     if (job.channelType === 'sumo') return;
 
+    // Async Quick-Start: tự viết kịch bản 6 cảnh ở nền để API phản hồi ngay <0.5s (tránh Safari/iOS timeout "Load failed")
+    if (job.status === 'generating_script' || !Array.isArray(job.scenes) || job.scenes.length === 0) {
+      logger.info(`[Drama] Generating script in background for quick-start job ${jobId}...`);
+      const draft = await generateDramaScript({
+        topic: job.topic || '',
+        channelType: job.channelType || 'drama'
+      });
+      const latestSnap = await jobRef.get();
+      if (!latestSnap.exists || TERMINAL_JOB_STATUSES.has(latestSnap.data().status)) {
+        if (job.scriptId) {
+          await db.collection('drama_scripts').doc(job.scriptId).delete().catch(() => {});
+        }
+        logger.info(`[Drama] Quick-start job ${jobId} was cancelled during script generation.`);
+        return;
+      }
+      const normalized = normalizeDramaScript(draft);
+      const nowTs = Date.now();
+      const initializedScenes = normalized.scenes.map((scene, index) => ({
+        index,
+        title: scene.title,
+        description: scene.description,
+        shotType: scene.shotType || (index === 1 || index === 3 ? 'zoom_in_3_to_1' : (index === 2 || index === 4 ? 'zoom_out_1_to_3' : 'wide_3')),
+        imagePrompt: scene.imagePrompt,
+        endImagePrompt: scene.endImagePrompt || '',
+        videoPrompt: scene.videoPrompt,
+        dialogue: scene.dialogue,
+        imageUrl: null,
+        startImageUrl: null,
+        endImageUrl: null,
+        imageTaskId: null,
+        startImageTaskId: null,
+        endImageTaskId: null,
+        videoTaskId: null,
+        videoUrl: null,
+        audioStatus: null,
+        status: 'pending',
+        error: null
+      }));
+      if (job.scriptId) {
+        await db.collection('drama_scripts').doc(job.scriptId).set({
+          userId: job.userId,
+          userEmail: job.userEmail || '',
+          topic: job.topic || '',
+          channelType: job.channelType || 'drama',
+          ...normalized,
+          episodeCount: job.episodeNumber || 1,
+          status: 'draft',
+          createdAt: job.createdAt || nowTs,
+          updatedAt: nowTs
+        }, { merge: true });
+      }
+      await jobRef.update({
+        title: normalized.title,
+        characters: normalized.characters,
+        baseImagePrompt: normalized.baseImagePrompt,
+        scenes: initializedScenes,
+        status: 'queued',
+        progress: 12,
+        updatedAt: nowTs
+      });
+      logger.success(`[Drama] Background script ready for job ${jobId}: ${normalized.title} (${initializedScenes.length} scenes)`);
+      snapshot = await jobRef.get();
+      job = snapshot.data();
+    }
+
     const totalSteps = job.scenes.length * 3;
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), `drama-${jobId}-`));
     const clipPaths = [];
@@ -785,10 +856,26 @@ async function runDramaJob(jobId) {
     }
   } catch (error) {
     logger.error(`[Drama] Job ${jobId} failed`, error);
-    const update = { status: 'failed', error: error.message, failedAt: Date.now(), updatedAt: Date.now() };
+    const rawMsg = String(error?.message || 'Tạo video thất bại, vui lòng thử lại.');
+    const friendlyMsg = (failedSceneIndex === null && /aborted|timeout|fetch|socket|ECONN|502|504/i.test(rawMsg))
+      ? 'AI đang bận khi sáng tác kịch bản, vui lòng bấm Tạo video lại sau ít giây nhé!'
+      : rawMsg;
+    const update = { status: 'failed', error: friendlyMsg, failedAt: Date.now(), updatedAt: Date.now() };
     await jobRef.set(update, { merge: true }).catch(() => {});
-    if (failedSceneIndex !== null) {
-      await updateScene(jobRef, failedSceneIndex, { status: 'failed', error: error.message }).catch(() => {});
+    if (failedSceneIndex === null) {
+      // Dọn placeholder script rỗng nếu thất bại ngay lúc viết kịch bản
+      try {
+        const failedJobSnap = await jobRef.get();
+        const sid = failedJobSnap.exists ? failedJobSnap.data()?.scriptId : null;
+        if (sid) {
+          const sSnap = await db.collection('drama_scripts').doc(sid).get();
+          if (sSnap.exists && sSnap.data()?.status === 'generating') {
+            await db.collection('drama_scripts').doc(sid).delete().catch(() => {});
+          }
+        }
+      } catch (_) {}
+    } else {
+      await updateScene(jobRef, failedSceneIndex, { status: 'failed', error: friendlyMsg }).catch(() => {});
     }
   }
 }
