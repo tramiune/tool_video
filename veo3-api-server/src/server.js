@@ -26,6 +26,7 @@ const {
 } = require('./supabase_client');
 const { uploadToR2, deleteFromR2 } = require('./s3_uploader');
 const telegram = require('./telegram');
+const metaCapi = require('./meta_capi');
 const audioClient = require('./audio_client');
 const { processAutoToolJob, resumeAutoToolJobs, generateProjectIdea, generateCharacterSuggestions, generateStyleSuggestion, generateScenes, generateCharacterImage, validatePlan } = require('./autotool');
 const drama = require('./drama');
@@ -3786,6 +3787,48 @@ app.get('/api/download', async (req, res) => {
   }
 });
 
+// Meta Conversions API user context & non-Purchase event relay (Pixel meo3.cloud)
+app.post('/api/meta/context', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const clientIp = metaCapi.extractClientIp(req);
+    const userAgent = String(req.headers['user-agent'] || '').trim();
+    metaCapi.saveUserContext({
+      paymentCode: body.paymentCode || '',
+      userId: body.userId || '',
+      email: body.email || '',
+      fullName: body.fullName || '',
+      fbp: body.fbp || '',
+      fbc: body.fbc || '',
+      clientIp,
+      userAgent,
+      sourceUrl: body.sourceUrl || 'https://meo3.cloud/',
+    });
+
+    const eventName = String(body.eventName || '').trim();
+    // Purchase chỉ được bắn trực tiếp từ Casso Webhook để chống trùng/giả mạo
+    if (eventName && eventName !== 'Purchase') {
+      metaCapi.sendMetaEvent({
+        eventName,
+        eventId: body.eventId || '',
+        paymentCode: body.paymentCode || '',
+        email: body.email || '',
+        userId: body.userId || '',
+        fullName: body.fullName || '',
+        fbp: body.fbp || '',
+        fbc: body.fbc || '',
+        clientIp,
+        userAgent,
+        eventSourceUrl: body.sourceUrl || 'https://meo3.cloud/',
+        customData: body.customData || null,
+      }).catch(() => {});
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.json({ ok: false });
+  }
+});
+
 // Auto payment webhook (connects with Casso)
 app.post('/api/payment-webhook', async (req, res) => {
   try {
@@ -3819,6 +3862,10 @@ app.post('/api/payment-webhook', async (req, res) => {
         description: content
       });
 
+      if (supabaseResult && supabaseResult.alreadyProcessed) {
+        continue;
+      }
+
       if (supabaseResult && supabaseResult.success) {
         const userId = supabaseResult.userId;
         const tier = supabaseResult.tier;
@@ -3845,6 +3892,15 @@ app.post('/api/payment-webhook', async (req, res) => {
         } catch (fsErr) {
           logger.warn(`[Payment] Sync to Firestore warning: ${fsErr.message}`);
         }
+
+        // Gửi sự kiện Purchase lên Meta CAPI cho Pixel meo3.cloud (3081788372015433) với event_id = paymentCode
+        metaCapi.sendPurchase({
+          paymentCode,
+          amount: supabaseResult.amount || amount,
+          tier,
+          email,
+          userId,
+        }).catch(e => logger.warn('Meta CAPI sendPurchase failed:', e.message));
 
         // Send Telegram notification
         telegram.notifyPayment({
@@ -3905,6 +3961,15 @@ app.post('/api/payment-webhook', async (req, res) => {
 
       logger.info(`Automatically upgraded user ${userDoc.id} to tier ${pending.tier} via Legacy Firestore Webhook!`);
       processedCount++;
+
+      // Gửi sự kiện Purchase lên Meta CAPI cho Pixel meo3.cloud (3081788372015433)
+      metaCapi.sendPurchase({
+        paymentCode,
+        amount: amount || pending.amount,
+        tier: pending.tier,
+        email: userData.email || '',
+        userId: userDoc.id,
+      }).catch(e => logger.warn('Meta CAPI sendPurchase failed:', e.message));
 
       // Send Telegram notification
       telegram.notifyPayment({

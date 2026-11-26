@@ -46,6 +46,128 @@ const trackTikTokEvent = (eventName, metadata = {}) => {
   }
 };
 
+const MEO3_META_PIXEL_ID = '3081788372015433';
+const MEO3_FBP_KEY = 'meo3_fbp_v1';
+const MEO3_FBC_KEY = 'meo3_fbc_v1';
+const firedMeoPurchaseCodes = new Set();
+let lastMeoAdvMatchUid = '';
+
+const readBrowserCookie = (name) => {
+  if (typeof document === 'undefined') return '';
+  try {
+    const match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch {
+    return '';
+  }
+};
+
+const getMeoMetaCookies = () => {
+  if (typeof window === 'undefined') return { fbp: '', fbc: '' };
+  try {
+    let fbp = readBrowserCookie('_fbp') || safeGetLocalStorage(MEO3_FBP_KEY) || '';
+    if (!fbp) {
+      fbp = `fb.1.${Date.now()}.${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+    }
+    safeSetLocalStorage(MEO3_FBP_KEY, fbp);
+
+    let fbc = readBrowserCookie('_fbc') || '';
+    const params = new URLSearchParams(window.location.search);
+    const fbclid = (params.get('fbclid') || '').trim();
+    if (fbclid) {
+      fbc = `fb.1.${Date.now()}.${fbclid}`;
+      safeSetLocalStorage(MEO3_FBC_KEY, fbc);
+    } else if (!fbc) {
+      fbc = safeGetLocalStorage(MEO3_FBC_KEY) || '';
+    } else {
+      safeSetLocalStorage(MEO3_FBC_KEY, fbc);
+    }
+    return { fbp, fbc };
+  } catch {
+    return { fbp: '', fbc: '' };
+  }
+};
+
+const syncMeoMetaAdvancedMatching = (u) => {
+  if (typeof window === 'undefined' || !u?.uid) return;
+  if (lastMeoAdvMatchUid === u.uid) return;
+  lastMeoAdvMatchUid = u.uid;
+  try {
+    if (typeof window.fbq === 'function') {
+      const matchData = { external_id: u.uid };
+      if (u.email) matchData.em = String(u.email).trim().toLowerCase();
+      window.fbq('init', MEO3_META_PIXEL_ID, matchData);
+    }
+  } catch {}
+};
+
+const syncMeoMetaContext = ({ user: u = null, paymentCode = '', eventName = '', eventId = '', customData = null } = {}) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const { fbp, fbc } = getMeoMetaCookies();
+    fetch(`${API_BASE}/api/meta/context`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentCode: paymentCode || '',
+        userId: u?.uid || '',
+        email: u?.email || '',
+        fullName: u?.displayName || '',
+        fbp,
+        fbc,
+        sourceUrl: window.location.href,
+        eventName,
+        eventId,
+        customData,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+};
+
+const trackMeoFbPurchase = ({ paymentCode = '', tier = '', amount = 0 } = {}) => {
+  if (typeof window === 'undefined') return;
+  const val = Math.round(Number(amount || 0));
+  if (val <= 0) return;
+
+  const code = String(paymentCode || '').trim().toUpperCase();
+  const eventId = code || `VE_PUR_${Date.now()}`;
+  const dedupeKey = `meo3_meta_pur_${eventId}`;
+  if (firedMeoPurchaseCodes.has(eventId)) return;
+  if (safeGetLocalStorage(dedupeKey) === '1') {
+    firedMeoPurchaseCodes.add(eventId);
+    return;
+  }
+  firedMeoPurchaseCodes.add(eventId);
+  safeSetLocalStorage(dedupeKey, '1');
+
+  const pkgId = String(tier || 'meo3_package').trim();
+  const payload = {
+    value: val,
+    currency: 'VND',
+    content_name: pkgId,
+    content_type: 'product',
+    content_ids: [pkgId],
+    num_items: 1,
+    contents: [{ id: pkgId, quantity: 1, item_price: val }],
+    order_id: eventId,
+  };
+
+  try {
+    window.fbq?.('track', 'Purchase', payload, { eventID: eventId });
+  } catch {}
+  try {
+    window.ttq?.track('CompletePayment', {
+      value: val,
+      currency: 'VND',
+      content_type: 'product',
+      content_id: pkgId,
+      content_name: pkgId,
+      contents: [{ content_id: pkgId, content_name: pkgId, quantity: 1, price: val }],
+    }, { event_id: eventId });
+  } catch {}
+};
+
 const APP_VERSION = 'v2.5.1';
 const TASK_RETRY_LIMIT = 3;
 
@@ -594,12 +716,26 @@ function App() {
   const [activeLightboxMedia, setActiveLightboxMedia] = useState(null); // null or { type, mediaUrl, prompt }
 
   useEffect(() => {
+    getMeoMetaCookies();
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    syncMeoMetaAdvancedMatching(user);
+    syncMeoMetaContext({ user });
+  }, [user?.uid, user?.email, user?.displayName]);
+
+  useEffect(() => {
     if (showPricingModal) {
       trackTikTokEvent('open_pricing');
-      window.fbq?.('track', 'AddToCart', {
+      const evId = `ev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const atcData = {
         content_name: 'Bảng Giá Dịch Vụ meo3',
-        content_category: 'Pricing Plans'
-      });
+        content_category: 'Pricing Plans',
+        content_type: 'product',
+      };
+      window.fbq?.('track', 'AddToCart', atcData, { eventID: evId });
+      syncMeoMetaContext({ user, eventName: 'AddToCart', eventId: evId, customData: atcData });
       window.ttq?.track('AddToCart', {
         content_name: 'Bảng Giá Dịch Vụ meo3',
         content_category: 'Pricing Plans',
@@ -1198,6 +1334,11 @@ function App() {
   // Real auto-redirect/success check
   useEffect(() => {
     if (selectedTierForPay && userTier === selectedTierForPay) {
+      trackMeoFbPurchase({
+        paymentCode: pendingPayment?.code || '',
+        tier: selectedTierForPay,
+        amount: pendingPayment?.amount || getUpgradeCost(selectedTierForPay),
+      });
       setSelectedTierForPay(null);
       setPendingPayment(null);
       setShowPricingModal(false);
@@ -1216,11 +1357,16 @@ function App() {
         if (pendingPayment && pendingPayment.code) {
           const { data: topup, error: topupErr } = await supabase
             .from('topups')
-            .select('status, package_id')
+            .select('status, package_id, amount')
             .eq('transfer_content', pendingPayment.code)
             .maybeSingle();
 
           if (!cancelled && topup && topup.status === 'success') {
+            trackMeoFbPurchase({
+              paymentCode: pendingPayment.code,
+              tier: topup.package_id || selectedTierForPay,
+              amount: Number(topup.amount || pendingPayment.amount || 0),
+            });
             setSelectedTierForPay(null);
             setPendingPayment(null);
             setShowPricingModal(false);
@@ -2431,10 +2577,22 @@ function App() {
     if (pendingPayment && pendingPayment.tier === tierKey && pendingPayment.code) {
       trackTikTokEvent('open_payment_qr', { tier: tierKey, cost });
       setSelectedTierForPay(tierKey);
-      window.fbq?.('track', 'InitiateCheckout', {
+      const icEventId = `ic_${pendingPayment.code}_${Date.now().toString(36)}`;
+      const icPayload = {
         value: cost,
         currency: 'VND',
-        content_name: tierKey
+        content_name: tierKey,
+        content_type: 'product',
+        content_ids: [tierKey],
+        num_items: 1,
+      };
+      window.fbq?.('track', 'InitiateCheckout', icPayload, { eventID: icEventId });
+      syncMeoMetaContext({
+        user,
+        paymentCode: pendingPayment.code,
+        eventName: 'InitiateCheckout',
+        eventId: icEventId,
+        customData: icPayload,
       });
       window.ttq?.track('InitiateCheckout', {
         value: cost,
@@ -2493,10 +2651,22 @@ function App() {
     }
 
     trackTikTokEvent('open_payment_qr', { tier: tierKey, cost });
-    window.fbq?.('track', 'InitiateCheckout', {
+    const icEventId = `ic_${code}`;
+    const icPayload = {
       value: cost,
       currency: 'VND',
-      content_name: tierKey
+      content_name: tierKey,
+      content_type: 'product',
+      content_ids: [tierKey],
+      num_items: 1,
+    };
+    window.fbq?.('track', 'InitiateCheckout', icPayload, { eventID: icEventId });
+    syncMeoMetaContext({
+      user,
+      paymentCode: code,
+      eventName: 'InitiateCheckout',
+      eventId: icEventId,
+      customData: icPayload,
     });
     window.ttq?.track('InitiateCheckout', {
       value: cost,

@@ -301,6 +301,11 @@ async function processSupabasePayment({ paymentCode, amount, description = '' })
     const topup = (topups && topups.length > 0) ? topups[0] : null;
 
     if (topup) {
+      if (topup.status === 'success') {
+        logger.info(`[Supabase Payment] ${paymentCode} already processed (status=success), skipping duplicate webhook.`);
+        return { success: false, alreadyProcessed: true, reason: 'Already processed' };
+      }
+
       const expectedAmount = Number(topup.amount || 0);
       const receivedAmount = Number(amount || 0);
 
