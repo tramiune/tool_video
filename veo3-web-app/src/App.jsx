@@ -8699,7 +8699,7 @@ function App() {
                   transition: 'padding-left 0.15s ease',
                 }}
               >
-                {MEO_COMPOSER_TOOLS.map((tool) => {
+                {MEO_COMPOSER_TOOLS.filter((tool) => tool.id !== 'reverse-video').map((tool) => {
                   const isSelected = activeComposerToolId === tool.id;
                   const isLockedTool =
                     tool.id === 'text-to-video'
@@ -8757,7 +8757,7 @@ function App() {
                         <ToolIcon size={12} strokeWidth={2.2} />
                       </span>
                       <span>{tool.label}</span>
-                      {tool.id === 'reverse-video' && (
+                      {tool.id === 'mother-in-law' && (
                         <span
                           style={{
                             fontSize: '0.58rem',
