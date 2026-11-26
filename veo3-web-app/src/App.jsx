@@ -8713,18 +8713,7 @@ function App() {
                       key={tool.id}
                       type="button"
                       onClick={(e) => {
-                        if (tool.id === 'reverse-video' && !hasPrompt199kAccess) {
-                          showAccessDeniedToast('Tính năng Tạo Prompt & Video thành Prompt dành cho Gói Premium 199k/tháng trở lên!');
-                          setPricingModalBanner('Đăng ký hoặc nâng cấp từ Gói Premium 199k/tháng trở lên để mở khóa Tạo Prompt & Video thành Prompt!');
-                          setShowPricingModal(true);
-                          return;
-                        }
-                        if (tool.id !== 'text-to-video' && tool.id !== 'reverse-video' && !hasFullToolAccess) {
-                          showAccessDeniedToast('Gói của bạn không có quyền truy cập! Đăng ký gói 499k/1 tháng để được mở hết quyền.');
-                          setPricingModalBanner('Gói của bạn không có quyền truy cập! Vui lòng đăng ký hoặc nâng cấp gói 499k/1 tháng để được mở hết quyền.');
-                          setShowPricingModal(true);
-                          return;
-                        }
+                        setShowAddMenu(false);
                         setActiveComposerToolId(tool.id);
                         e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
                       }}
@@ -8861,7 +8850,14 @@ function App() {
               </div>
             </div>
 
-            {(activeComposerTool.badgeText || activeComposerToolId === 'mother-in-law') && (
+            {(() => {
+              const isCurrentToolLocked =
+                activeComposerToolId === 'reverse-video'
+                  ? !hasPrompt199kAccess
+                  : activeComposerToolId !== 'text-to-video' && !hasFullToolAccess;
+              if (isCurrentToolLocked) return null;
+              if (!activeComposerTool.badgeText && activeComposerToolId !== 'mother-in-law') return null;
+              return (
               <div
                 style={{
                   display: 'flex',
@@ -8907,10 +8903,114 @@ function App() {
                   </button>
                 )}
               </div>
-            )}
+              );
+            })()}
           </div>
 
-          {activeComposerToolId === 'reverse-video' ? (
+          {/* Nếu Tạo Prompt / Video thành Prompt đang khóa (!hasPrompt199kAccess) -> Hiện thông báo mở khóa ngay trong Composer (giống aquaai.vn) */}
+          {activeComposerToolId === 'reverse-video' && !hasPrompt199kAccess ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                flexWrap: 'wrap',
+                padding: '6px 4px 2px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#fde68a',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  lineHeight: 1.35,
+                  flex: 1,
+                  minWidth: '190px',
+                }}
+              >
+                <Lock size={15} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                <span>Tính năng Tạo Prompt &amp; Video thành Prompt mở khóa từ Gói Premium 199k/tháng trở lên.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSelectTierForPay('premium_169k')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(251, 191, 36, 0.5)',
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                  color: '#fff',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                ⚡ Nạp gói từ 199k
+              </button>
+            </div>
+          ) : activeComposerToolId !== 'text-to-video' && activeComposerToolId !== 'reverse-video' && !hasFullToolAccess ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                flexWrap: 'wrap',
+                padding: '6px 4px 2px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#fde68a',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  lineHeight: 1.35,
+                  flex: 1,
+                  minWidth: '190px',
+                }}
+              >
+                <Lock size={15} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                <span>Gói hiện tại không hỗ trợ tính năng này. Cần nạp gói VIP 499k để mở khóa.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSelectTierForPay('master_499k')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(251, 191, 36, 0.5)',
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                  color: '#fff',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                ⚡ Nạp gói VIP 499k
+              </button>
+            </div>
+          ) : activeComposerToolId === 'reverse-video' ? (
             /* Luồng Tạo Prompt AI: 2 chế độ (Trò chuyện AI & Bóc tách Video mẫu) */
             <div
               style={{
