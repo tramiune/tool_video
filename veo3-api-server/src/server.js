@@ -5148,8 +5148,9 @@ async function cleanupOldTasks() {
       while (true) {
         let query = supabase
           .from('tasks')
-          .select('id, media_url, start_image, end_image, media, app')
+          .select('id, type, media_url, start_image, end_image, media, app')
           .lt('created_at', cutoff)
+          .not('id', 'like', '__%')
           .limit(300);
         if (isAqua) {
           query = query.eq('app', 'aquaai');
@@ -5162,6 +5163,10 @@ async function cleanupOldTasks() {
 
         const idsToDelete = [];
         for (const row of rows) {
+          // Bảo vệ tuyệt đối các bản ghi cấu hình hệ thống (__system_config__, __motion_engine_config__, ...)
+          if (!row?.id || String(row.id).startsWith('__') || row.type === 'config' || row.app === 'all') {
+            continue;
+          }
           idsToDelete.push(row.id);
           const filesToDelete = [];
           if (row.media_url) filesToDelete.push(row.media_url);
@@ -5193,6 +5198,8 @@ async function cleanupOldTasks() {
         if (idsToDelete.length > 0) {
           await supabase.from('tasks').delete().in('id', idsToDelete);
           totalTasksDeleted += idsToDelete.length;
+        } else {
+          break;
         }
         if (rows.length < 300) break;
       }
